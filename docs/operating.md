@@ -158,7 +158,7 @@ Recommended early versions:
 Do not publish to crates.io until:
 
 - provenance is audited
-- license files exist
+- MIT `LICENSE` file exists
 - docs exist
 - examples compile
 - public API is reviewed

@@ -59,9 +59,13 @@ examples/*             -> adapter and service crates as needed
 - Email identity is exact match on an app-provided normalized value; do not add Gmail dot folding, plus-tag stripping, or hidden provider-specific alias rules.
 - Magic-link consumption must be one-time and atomic relative to session creation.
 - Cookie helpers must default to normal lower `snake_case` names, `HttpOnly`, `Secure` outside explicit local development, conservative `SameSite`, host-only scope, explicit `Path=/` for primary session cookies, narrow auth paths for temporary helper cookies where practical, and explicit TTL.
+- Use the documented TTL baseline unless the consuming app explicitly configures stricter values: magic link 10m, flow 5m, PoW challenge 5m, PoW proof cookie 10m, session idle 24h, session absolute 30d, cleanup grace 24h.
 - Use purpose-separated keys/peppers; do not reuse one secret across token, cookie, HMAC, and PoW contexts.
+- Production secret storage uses the thin supported-manager enum with `AwsSecretsManager` for v1; core crates receive loaded keyrings only and must not resolve secrets or depend on AWS SDK.
+- For 30-day session validity, rotate session/cookie keys about every 90 days and keep the previous key verify-only for at least 31 days; map `AWSCURRENT` to active and `AWSPREVIOUS` to verify-only when enabled.
 - Scrub magic-link token material from URLs, logs, redirects, headers, telemetry, errors, fixtures, and snapshots.
-- Rate-limit request and consume flows through service limiter hooks with generic public responses.
+- Magic-link email links must be scanner-safe: `GET` landing routes never consume or create sessions; user confirmation sends a same-origin `POST` that atomically consumes and redirects to a clean URL.
+- Rate-limit request, consume, outbox, and PoW flows through service limiter hooks with generic public responses; use the documented v1 threshold baseline unless a consuming app explicitly configures stricter values.
 - Prefer one current supported token/storage shape. Do not add legacy compatibility paths unless explicitly versioned and approved.
 
 ## Testing and validation
