@@ -1,0 +1,24 @@
+# Rust build outputs
+/target/
+
+# Node/browser package outputs
+/node_modules/
+/packages/*/node_modules/
+/packages/*/dist/
+/packages/*/build/
+
+# Local environment/secrets
+.env
+.env.*
+!.env.example
+
+# OS/editor files
+.DS_Store
+*.swp
+*.swo
+
+# Pi/subagent local artifacts
+.pi-subagents/
+
+# Local source-import scratch space
+/to-be-porting/
