@@ -1,0 +1,16 @@
+[package]
+name = "dd-magic-link-axum"
+description = "Optional Axum HTTP integration for dd-magic-link-service."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+dd-magic-link-service = { path = "../dd-magic-link-service" }

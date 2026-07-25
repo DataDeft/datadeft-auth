@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-# Members are added in step 0b (crate skeletons). Kept empty here so this
-# commit is independently buildable; switch to globs when skeletons land.
-members = []
+# Rust crates and examples are workspace members. The optional
+# `packages/dd-protect-client` TS package is managed separately.
+members = ["crates/*", "examples/*"]
 
 [workspace.package]
 version = "0.1.0"

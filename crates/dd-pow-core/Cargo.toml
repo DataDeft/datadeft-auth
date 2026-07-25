@@ -1,0 +1,15 @@
+[package]
+name = "dd-pow-core"
+description = "Pure, IO-free proof-of-work challenge mint/verify."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

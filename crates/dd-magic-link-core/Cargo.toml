@@ -1,0 +1,17 @@
+[package]
+name = "dd-magic-link-core"
+description = "IO-free magic-link token grammar and auth primitives."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+dd-auth-token-core = { path = "../dd-auth-token-core" }
+dd-pow-core = { path = "../dd-pow-core" }

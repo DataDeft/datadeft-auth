@@ -1,0 +1,14 @@
+{
+  "name": "dd-protect-client",
+  "version": "0.1.0",
+  "description": "Browser proof-of-work client for dd-pow-core. De-branded; matches dd-pow-core challenge/solution vectors.",
+  "type": "module",
+  "main": "./ts/protect.ts",
+  "private": true,
+  "scripts": {
+    "lint": "echo 'lint not configured yet'",
+    "test": "echo 'tests not configured yet'"
+  },
+  "license": "MIT",
+  "author": "Istvan <dev@l1x.be>"
+}

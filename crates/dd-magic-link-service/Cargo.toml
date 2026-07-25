@@ -1,0 +1,18 @@
+[package]
+name = "dd-magic-link-service"
+description = "Framework-neutral magic-link request/consume orchestration."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+dd-magic-link-core = { path = "../dd-magic-link-core" }
+dd-auth-token-core = { path = "../dd-auth-token-core" }
+dd-pow-core = { path = "../dd-pow-core" }
