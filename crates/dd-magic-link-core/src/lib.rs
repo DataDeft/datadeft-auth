@@ -20,6 +20,6 @@ pub use hmac_lookup::{
     VERIFIER_HASH_PREFIX, VerifierHash, email_lookup_hmac, selector_lookup_hmac, verifier_hash,
 };
 pub use magic_link::{
-    MagicLinkSelector, MagicLinkToken, MagicLinkVerifier, SELECTOR_BYTES, SELECTOR_HEX_LEN,
-    VERIFIER_BYTES, VERIFIER_HEX_LEN,
+    MAGIC_LINK_TOKEN_VERSION_PREFIX, MagicLinkSelector, MagicLinkToken, MagicLinkVerifier,
+    SELECTOR_BYTES, SELECTOR_HEX_LEN, VERIFIER_BYTES, VERIFIER_HEX_LEN,
 };

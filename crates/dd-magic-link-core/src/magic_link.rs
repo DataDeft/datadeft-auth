@@ -3,13 +3,14 @@
 //! Current token format is exactly:
 //!
 //! ```text
-//! <selector>.<verifier>
+//! mlv1.<selector>.<verifier>
 //! ```
 //!
 //! `selector` is 128 bits of CSPRNG entropy encoded as 32 lowercase hex
 //! characters. `verifier` is 256 bits encoded as 64 lowercase hex characters.
-//! The selector is the lower-value lookup half; the verifier is the bearer
-//! secret. Store only keyed lookup/HMAC material for both halves.
+//! The `mlv1` prefix is the explicit wire-format version marker. `selector` is
+//! the lower-value lookup half; the verifier is the bearer secret. Store only
+//! keyed lookup/HMAC material for both halves.
 
 use core::fmt;
 
@@ -17,6 +18,9 @@ use rand_core::{CryptoRng, RngCore};
 use zeroize::Zeroize;
 
 use crate::error::MagicLinkError;
+
+/// Magic-link token wire-format version prefix.
+pub const MAGIC_LINK_TOKEN_VERSION_PREFIX: &str = "mlv1";
 
 /// Raw selector entropy bytes.
 pub const SELECTOR_BYTES: usize = 16;
@@ -117,12 +121,19 @@ impl MagicLinkToken {
         })
     }
 
-    /// Parse `<selector>.<verifier>` with no extra segments or whitespace.
+    /// Parse `mlv1.<selector>.<verifier>` with no extra segments or whitespace.
     pub fn parse(value: &str) -> Result<Self, MagicLinkError> {
-        let Some((selector, verifier)) = value.split_once('.') else {
+        let mut parts = value.split('.');
+        let Some(version) = parts.next() else {
             return Err(MagicLinkError::InvalidToken);
         };
-        if verifier.contains('.') {
+        let Some(selector) = parts.next() else {
+            return Err(MagicLinkError::InvalidToken);
+        };
+        let Some(verifier) = parts.next() else {
+            return Err(MagicLinkError::InvalidToken);
+        };
+        if parts.next().is_some() || version != MAGIC_LINK_TOKEN_VERSION_PREFIX {
             return Err(MagicLinkError::InvalidToken);
         }
         Ok(Self {
@@ -145,7 +156,7 @@ impl MagicLinkToken {
     #[must_use]
     pub fn as_secret_value(&self) -> String {
         format!(
-            "{}.{}",
+            "{MAGIC_LINK_TOKEN_VERSION_PREFIX}.{}.{}",
             self.selector.as_lookup_value(),
             self.verifier.as_secret_value()
         )
