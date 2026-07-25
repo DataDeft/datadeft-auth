@@ -266,19 +266,15 @@ fn request_flow_stores_hmac_material_and_enqueues_redacted_token() {
     let outbox = FakeOutbox::default();
     let clock = FixedClock { now: 1_000 };
     let lookup_key = lookup_key();
-    let session_keyring = session_keyring();
     let mut rng = CounterRng::new();
 
-    let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+    let mut service = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
         magic_links: &repo,
-        users: &repo,
-        sessions: &repo,
         limiter: &limiter,
         outbox: &outbox,
         clock: &clock,
         rng: &mut rng,
         lookup_hmac_key: &lookup_key,
-        session_keyring: &session_keyring,
         config: config(),
     });
 
@@ -336,16 +332,13 @@ fn consume_flow_burns_token_creates_user_session_and_cookie() {
     let cfg = config();
 
     {
-        let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+        let mut service = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
             magic_links: &repo,
-            users: &repo,
-            sessions: &repo,
             limiter: &limiter,
             outbox: &outbox,
             clock: &clock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
-            session_keyring: &session_keyring,
             config: cfg.clone(),
         });
         service
@@ -355,12 +348,11 @@ fn consume_flow_burns_token_creates_user_session_and_cookie() {
 
     let token = outbox.emails.borrow()[0].token.as_secret_value();
     let outcome = {
-        let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+        let mut service = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
             magic_links: &repo,
             users: &repo,
             sessions: &repo,
             limiter: &limiter,
-            outbox: &outbox,
             clock: &clock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
@@ -406,16 +398,13 @@ fn consumed_token_cannot_create_second_session() {
     let cfg = config();
 
     {
-        let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+        let mut service = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
             magic_links: &repo,
-            users: &repo,
-            sessions: &repo,
             limiter: &limiter,
             outbox: &outbox,
             clock: &clock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
-            session_keyring: &session_keyring,
             config: cfg.clone(),
         });
         service
@@ -425,12 +414,11 @@ fn consumed_token_cannot_create_second_session() {
     let token = outbox.emails.borrow()[0].token.as_secret_value();
 
     for expected in [Ok(()), Err(MagicLinkServiceError::MagicLinkUnavailable)] {
-        let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+        let mut service = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
             magic_links: &repo,
             users: &repo,
             sessions: &repo,
             limiter: &limiter,
-            outbox: &outbox,
             clock: &clock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
@@ -457,16 +445,13 @@ fn wrong_verifier_is_generic_and_creates_no_session() {
     let cfg = config();
 
     {
-        let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+        let mut service = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
             magic_links: &repo,
-            users: &repo,
-            sessions: &repo,
             limiter: &limiter,
             outbox: &outbox,
             clock: &clock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
-            session_keyring: &session_keyring,
             config: cfg.clone(),
         });
         service
@@ -477,12 +462,11 @@ fn wrong_verifier_is_generic_and_creates_no_session() {
     let last = token.pop().expect("last char");
     token.push(if last == '0' { '1' } else { '0' });
 
-    let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+    let mut service = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
         magic_links: &repo,
         users: &repo,
         sessions: &repo,
         limiter: &limiter,
-        outbox: &outbox,
         clock: &clock,
         rng: &mut rng,
         lookup_hmac_key: &lookup_key,
@@ -506,19 +490,15 @@ fn request_rate_limit_is_generic_and_suppresses_storage_and_email() {
     let outbox = FakeOutbox::default();
     let clock = FixedClock { now: 1_000 };
     let lookup_key = lookup_key();
-    let session_keyring = session_keyring();
     let mut rng = CounterRng::new();
 
-    let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+    let mut service = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
         magic_links: &repo,
-        users: &repo,
-        sessions: &repo,
         limiter: &limiter,
         outbox: &outbox,
         clock: &clock,
         rng: &mut rng,
         lookup_hmac_key: &lookup_key,
-        session_keyring: &session_keyring,
         config: config(),
     });
 
@@ -536,18 +516,16 @@ fn request_rate_limit_is_generic_and_suppresses_storage_and_email() {
 fn malformed_consume_is_client_limited_and_generic() {
     let repo = FakeRepo::default();
     let limiter = FakeLimiter::default();
-    let outbox = FakeOutbox::default();
     let clock = FixedClock { now: 1_000 };
     let lookup_key = lookup_key();
     let session_keyring = session_keyring();
     let mut rng = CounterRng::new();
 
-    let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+    let mut service = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
         magic_links: &repo,
         users: &repo,
         sessions: &repo,
         limiter: &limiter,
-        outbox: &outbox,
         clock: &clock,
         rng: &mut rng,
         lookup_hmac_key: &lookup_key,
@@ -586,16 +564,13 @@ fn expired_token_is_generic_and_creates_no_user_or_session() {
     let cfg = config();
 
     {
-        let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+        let mut service = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
             magic_links: &repo,
-            users: &repo,
-            sessions: &repo,
             limiter: &limiter,
             outbox: &outbox,
             clock: &clock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
-            session_keyring: &session_keyring,
             config: cfg.clone(),
         });
         service
@@ -611,12 +586,11 @@ fn expired_token_is_generic_and_creates_no_user_or_session() {
         .record
         .expires_at_unix = 999;
 
-    let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+    let mut service = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
         magic_links: &repo,
         users: &repo,
         sessions: &repo,
         limiter: &limiter,
-        outbox: &outbox,
         clock: &clock,
         rng: &mut rng,
         lookup_hmac_key: &lookup_key,
@@ -666,16 +640,13 @@ fn disabled_user_is_generic_and_gets_no_session_after_token_burn() {
     });
 
     {
-        let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+        let mut service = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
             magic_links: &repo,
-            users: &repo,
-            sessions: &repo,
             limiter: &limiter,
             outbox: &outbox,
             clock: &clock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
-            session_keyring: &session_keyring,
             config: cfg.clone(),
         });
         service
@@ -684,12 +655,11 @@ fn disabled_user_is_generic_and_gets_no_session_after_token_burn() {
     }
     let token = outbox.emails.borrow()[0].token.as_secret_value();
 
-    let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+    let mut service = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
         magic_links: &repo,
         users: &repo,
         sessions: &repo,
         limiter: &limiter,
-        outbox: &outbox,
         clock: &clock,
         rng: &mut rng,
         lookup_hmac_key: &lookup_key,
@@ -728,16 +698,13 @@ fn session_write_failure_after_consume_burns_token() {
     let cfg = config();
 
     {
-        let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+        let mut service = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
             magic_links: &repo,
-            users: &repo,
-            sessions: &repo,
             limiter: &limiter,
             outbox: &outbox,
             clock: &clock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
-            session_keyring: &session_keyring,
             config: cfg.clone(),
         });
         service
@@ -748,12 +715,11 @@ fn session_write_failure_after_consume_burns_token() {
     repo.fail_next_session_write.set(true);
 
     {
-        let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+        let mut service = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
             magic_links: &repo,
             users: &repo,
             sessions: &repo,
             limiter: &limiter,
-            outbox: &outbox,
             clock: &clock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
@@ -780,12 +746,11 @@ fn session_write_failure_after_consume_burns_token() {
             .is_some()
     );
 
-    let mut service = MagicLinkService::new(MagicLinkServiceInputs {
+    let mut service = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
         magic_links: &repo,
         users: &repo,
         sessions: &repo,
         limiter: &limiter,
-        outbox: &outbox,
         clock: &clock,
         rng: &mut rng,
         lookup_hmac_key: &lookup_key,

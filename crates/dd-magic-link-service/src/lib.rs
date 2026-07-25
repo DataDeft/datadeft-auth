@@ -16,7 +16,10 @@ pub mod types;
 
 pub use config::{MagicLinkServiceConfig, RateLimitConfig};
 pub use error::{ConsumeMagicLinkError, DependencyError, MagicLinkServiceError};
-pub use service::{MagicLinkService, MagicLinkServiceInputs};
+pub use service::{
+    MagicLinkConsumeService, MagicLinkConsumeServiceInputs, MagicLinkRequestService,
+    MagicLinkRequestServiceInputs,
+};
 pub use session_body::{SessionCookieBody, decode_session_cookie_body, encode_session_cookie_body};
 pub use traits::{
     Clock, MagicLinkOutbox, MagicLinkRepository, RateLimitDecision, RateLimiter, SessionRepository,
