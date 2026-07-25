@@ -1,0 +1,456 @@
+//! Request and consume orchestration.
+
+use dd_auth_token_core::cookie::mint_bound_cookie;
+use dd_auth_token_core::keyring::{KeyRing, SessionCookie};
+use dd_magic_link_core::{
+    LookupHmacKey, MagicLinkToken, email_lookup_hmac, selector_lookup_hmac, verifier_hash,
+};
+use rand_core::{CryptoRng, RngCore};
+
+use crate::config::MagicLinkServiceConfig;
+use crate::error::{ConsumeMagicLinkError, DependencyError, MagicLinkServiceError};
+use crate::session_body::encode_session_cookie_body;
+use crate::traits::{
+    Clock, MagicLinkOutbox, MagicLinkRepository, RateLimitDecision, RateLimiter, SessionRepository,
+    UserRepository,
+};
+use crate::types::{
+    ClientKey, ConsumeMagicLinkCommand, ConsumeMagicLinkOutcome, ConsumedMagicLink, MagicLinkEmail,
+    MagicLinkRecord, RateLimitKey, RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionId,
+    SessionRecord, UserId, validate_country,
+};
+
+/// Framework-neutral magic-link service.
+pub struct MagicLinkService<'a, Repositories, Limiter, Outbox, ServiceClock, Rng> {
+    repositories: &'a Repositories,
+    limiter: &'a Limiter,
+    outbox: &'a Outbox,
+    clock: &'a ServiceClock,
+    rng: &'a mut Rng,
+    lookup_hmac_key: &'a LookupHmacKey,
+    session_keyring: &'a KeyRing<SessionCookie>,
+    config: MagicLinkServiceConfig,
+}
+
+/// Constructor inputs for [`MagicLinkService`].
+pub struct MagicLinkServiceInputs<'a, Repositories, Limiter, Outbox, ServiceClock, Rng> {
+    pub repositories: &'a Repositories,
+    pub limiter: &'a Limiter,
+    pub outbox: &'a Outbox,
+    pub clock: &'a ServiceClock,
+    pub rng: &'a mut Rng,
+    pub lookup_hmac_key: &'a LookupHmacKey,
+    pub session_keyring: &'a KeyRing<SessionCookie>,
+    pub config: MagicLinkServiceConfig,
+}
+
+impl<'a, Repositories, Limiter, Outbox, ServiceClock, Rng>
+    MagicLinkService<'a, Repositories, Limiter, Outbox, ServiceClock, Rng>
+{
+    #[must_use]
+    pub fn new(
+        inputs: MagicLinkServiceInputs<'a, Repositories, Limiter, Outbox, ServiceClock, Rng>,
+    ) -> Self {
+        Self {
+            repositories: inputs.repositories,
+            limiter: inputs.limiter,
+            outbox: inputs.outbox,
+            clock: inputs.clock,
+            rng: inputs.rng,
+            lookup_hmac_key: inputs.lookup_hmac_key,
+            session_keyring: inputs.session_keyring,
+            config: inputs.config,
+        }
+    }
+}
+
+impl<Repositories, Limiter, Outbox, ServiceClock, Rng>
+    MagicLinkService<'_, Repositories, Limiter, Outbox, ServiceClock, Rng>
+where
+    Repositories: MagicLinkRepository + UserRepository + SessionRepository,
+    Limiter: RateLimiter,
+    Outbox: MagicLinkOutbox,
+    ServiceClock: Clock,
+    Rng: RngCore + CryptoRng,
+{
+    /// Request a magic link. Throttled request/outbox paths return the same
+    /// or throttling policy from the public response.
+    pub fn request_magic_link(
+        &mut self,
+        command: RequestMagicLinkCommand,
+    ) -> Result<RequestMagicLinkOutcome, MagicLinkServiceError> {
+        if !command.terms_accepted() || !command.privacy_accepted() {
+            return Err(MagicLinkServiceError::BadRequest);
+        }
+
+        let now_unix = self.clock.now_unix()?;
+        let expires_at_unix = now_unix
+            .checked_add(self.config.magic_link_ttl_secs)
+            .ok_or(MagicLinkServiceError::Internal)?;
+        let email_lookup = email_lookup_hmac(self.lookup_hmac_key, command.email())?;
+
+        if self.request_limits_deny(email_lookup.as_storage_value(), command.client_key())? {
+            return Ok(RequestMagicLinkOutcome);
+        }
+        if self.outbox_limits_deny(email_lookup.as_storage_value())? {
+            return Ok(RequestMagicLinkOutcome);
+        }
+
+        let token = MagicLinkToken::generate(self.rng)?;
+        let selector_lookup = selector_lookup_hmac(self.lookup_hmac_key, token.selector())?;
+        let verifier_hash = verifier_hash(self.lookup_hmac_key, token.verifier())?;
+
+        let record = MagicLinkRecord {
+            selector_lookup_hmac: selector_lookup,
+            email: command.email().clone(),
+            user_id: None,
+            verifier_hash,
+            expires_at_unix,
+            consumed_at_unix: None,
+            terms_version: self.config.terms_version.clone(),
+            privacy_version: self.config.privacy_version.clone(),
+            consented_at_unix: now_unix,
+        };
+
+        self.repositories
+            .put_magic_link_if_absent(record)
+            .map_err(map_dependency_error)?;
+        self.outbox
+            .enqueue_magic_link(MagicLinkEmail {
+                email: command.email().clone(),
+                token,
+                locale: command.locale(),
+                expires_at_unix,
+            })
+            .map_err(map_dependency_error)?;
+
+        Ok(RequestMagicLinkOutcome)
+    }
+
+    /// Parse and consume a raw token. Malformed tokens are rate-limited by client
+    /// key when supplied, then collapsed into `MagicLinkUnavailable`.
+    pub fn consume_magic_link_token(
+        &mut self,
+        token: &str,
+        client_key: Option<ClientKey>,
+        request_country: Option<String>,
+    ) -> Result<ConsumeMagicLinkOutcome, MagicLinkServiceError> {
+        let parsed = match MagicLinkToken::parse(token) {
+            Ok(token) => token,
+            Err(_) => {
+                if let Some(client_key) = client_key.as_ref() {
+                    let _ = self.malformed_consume_limit_denied(client_key)?;
+                }
+                return Err(MagicLinkServiceError::MagicLinkUnavailable);
+            }
+        };
+        let command = ConsumeMagicLinkCommand::new(parsed, client_key, request_country)?;
+        self.consume_magic_link(command)
+    }
+
+    /// Consume a parsed magic-link token, atomically burning the stored challenge
+    /// before creating a session.
+    pub fn consume_magic_link(
+        &mut self,
+        command: ConsumeMagicLinkCommand,
+    ) -> Result<ConsumeMagicLinkOutcome, MagicLinkServiceError> {
+        let country = self.mint_country(command.request_country())?;
+        let now_unix = self.clock.now_unix()?;
+        let selector_lookup =
+            selector_lookup_hmac(self.lookup_hmac_key, command.token().selector())?;
+
+        if self.consume_limits_deny(selector_lookup.as_storage_value(), command.client_key())? {
+            return Err(MagicLinkServiceError::MagicLinkUnavailable);
+        }
+
+        let verifier_hash = verifier_hash(self.lookup_hmac_key, command.token().verifier())?;
+        let consumed = self
+            .repositories
+            .consume_magic_link(&selector_lookup, &verifier_hash, now_unix)
+            .map_err(map_consume_error)?;
+
+        self.validate_consumed_magic_link(&consumed)?;
+        let (user_id, user_created) = self.ensure_user(&consumed)?;
+        let session_id = self.create_session(&user_id, &consumed.email, now_unix)?;
+        let session_cookie = self.mint_session_cookie(&session_id, now_unix, country.as_deref())?;
+
+        Ok(ConsumeMagicLinkOutcome {
+            session_cookie,
+            user_id,
+            session_id,
+            user_created,
+            country,
+        })
+    }
+
+    /// Revoke a server-side session by id.
+    pub fn revoke_session(&self, session_id: &SessionId) -> Result<(), MagicLinkServiceError> {
+        let now_unix = self.clock.now_unix()?;
+        self.repositories
+            .revoke_session(session_id, now_unix)
+            .map_err(map_dependency_error)
+    }
+
+    fn request_limits_deny(
+        &self,
+        email_lookup: &str,
+        client_key: Option<&ClientKey>,
+    ) -> Result<bool, MagicLinkServiceError> {
+        let limits = &self.config.rate_limits;
+        let email_short = format!("magic-link:request:email:short:{email_lookup}");
+        if self.limit_denied(
+            &email_short,
+            limits.request_email_short_limit,
+            limits.request_email_short_window_secs,
+        )? {
+            return Ok(true);
+        }
+        let email_daily = format!("magic-link:request:email:daily:{email_lookup}");
+        if self.limit_denied(
+            &email_daily,
+            limits.request_email_daily_limit,
+            limits.request_email_daily_window_secs,
+        )? {
+            return Ok(true);
+        }
+        if let Some(client_key) = client_key {
+            let client_short = format!("magic-link:request:client:short:{}", client_key.as_str());
+            if self.limit_denied(
+                &client_short,
+                limits.request_client_short_limit,
+                limits.request_client_short_window_secs,
+            )? {
+                return Ok(true);
+            }
+            let client_hourly = format!("magic-link:request:client:hourly:{}", client_key.as_str());
+            if self.limit_denied(
+                &client_hourly,
+                limits.request_client_hourly_limit,
+                limits.request_client_hourly_window_secs,
+            )? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn outbox_limits_deny(&self, email_lookup: &str) -> Result<bool, MagicLinkServiceError> {
+        let limits = &self.config.rate_limits;
+        let hourly = format!("magic-link:outbox:email:hourly:{email_lookup}");
+        if self.limit_denied(
+            &hourly,
+            limits.outbox_email_hourly_limit,
+            limits.outbox_email_hourly_window_secs,
+        )? {
+            return Ok(true);
+        }
+        let daily = format!("magic-link:outbox:email:daily:{email_lookup}");
+        self.limit_denied(
+            &daily,
+            limits.outbox_email_daily_limit,
+            limits.outbox_email_daily_window_secs,
+        )
+    }
+
+    fn consume_limits_deny(
+        &self,
+        selector_lookup: &str,
+        client_key: Option<&ClientKey>,
+    ) -> Result<bool, MagicLinkServiceError> {
+        let limits = &self.config.rate_limits;
+        let selector_key = format!("magic-link:consume:selector:{selector_lookup}");
+        if self.limit_denied(
+            &selector_key,
+            limits.consume_selector_limit,
+            self.config.magic_link_ttl_secs,
+        )? {
+            return Ok(true);
+        }
+        if let Some(client_key) = client_key {
+            let client_short = format!("magic-link:consume:client:short:{}", client_key.as_str());
+            if self.limit_denied(
+                &client_short,
+                limits.consume_client_short_limit,
+                limits.consume_client_short_window_secs,
+            )? {
+                return Ok(true);
+            }
+            let client_hourly = format!("magic-link:consume:client:hourly:{}", client_key.as_str());
+            if self.limit_denied(
+                &client_hourly,
+                limits.consume_client_hourly_limit,
+                limits.consume_client_hourly_window_secs,
+            )? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn malformed_consume_limit_denied(
+        &self,
+        client_key: &ClientKey,
+    ) -> Result<bool, MagicLinkServiceError> {
+        let key = format!("magic-link:consume:malformed:{}", client_key.as_str());
+        self.limit_denied(
+            &key,
+            self.config.rate_limits.malformed_consume_client_limit,
+            self.config.rate_limits.malformed_consume_client_window_secs,
+        )
+    }
+
+    fn limit_denied(
+        &self,
+        key: &str,
+        limit: u32,
+        window_secs: u64,
+    ) -> Result<bool, MagicLinkServiceError> {
+        let key = RateLimitKey::parse(key)?;
+        let decision = self
+            .limiter
+            .check_rate_limit(&key, limit, window_secs)
+            .map_err(map_dependency_error)?;
+        Ok(decision == RateLimitDecision::Denied)
+    }
+
+    fn mint_country(&self, country: Option<&str>) -> Result<Option<String>, MagicLinkServiceError> {
+        if !self.config.enforce_country {
+            return Ok(country.map(str::to_owned));
+        }
+        let Some(country) = country else {
+            return Err(MagicLinkServiceError::MagicLinkUnavailable);
+        };
+        validate_country(country)?;
+        Ok(Some(country.to_owned()))
+    }
+
+    fn validate_consumed_magic_link(
+        &self,
+        consumed: &ConsumedMagicLink,
+    ) -> Result<(), MagicLinkServiceError> {
+        if consumed.terms_version != self.config.terms_version
+            || consumed.privacy_version != self.config.privacy_version
+            || consumed.consented_at_unix == 0
+        {
+            return Err(MagicLinkServiceError::MagicLinkUnavailable);
+        }
+        Ok(())
+    }
+
+    fn ensure_user(
+        &mut self,
+        consumed: &ConsumedMagicLink,
+    ) -> Result<(UserId, bool), MagicLinkServiceError> {
+        if let Some(existing) = self
+            .repositories
+            .find_user_by_email(&consumed.email)
+            .map_err(map_dependency_error)?
+        {
+            if existing.disabled {
+                return Err(MagicLinkServiceError::MagicLinkUnavailable);
+            }
+            return Ok((existing.user_id, false));
+        }
+
+        let user_id = generate_user_id(self.rng)?;
+        let user = crate::types::UserRecord {
+            user_id: user_id.clone(),
+            email: consumed.email.clone(),
+            disabled: false,
+            terms_version: Some(consumed.terms_version.clone()),
+            privacy_version: Some(consumed.privacy_version.clone()),
+            consented_at_unix: Some(consumed.consented_at_unix),
+        };
+
+        match self.repositories.put_user_if_absent(user) {
+            Ok(()) => Ok((user_id, true)),
+            Err(DependencyError::ConditionalWriteFailed) => {
+                let Some(existing) = self
+                    .repositories
+                    .find_user_by_email(&consumed.email)
+                    .map_err(map_dependency_error)?
+                else {
+                    return Err(MagicLinkServiceError::Unavailable);
+                };
+                if existing.disabled {
+                    return Err(MagicLinkServiceError::MagicLinkUnavailable);
+                }
+                Ok((existing.user_id, false))
+            }
+            Err(error) => Err(map_dependency_error(error)),
+        }
+    }
+
+    fn create_session(
+        &mut self,
+        user_id: &UserId,
+        email: &dd_magic_link_core::NormalizedEmail,
+        now_unix: u64,
+    ) -> Result<SessionId, MagicLinkServiceError> {
+        let session_id = generate_session_id(self.rng)?;
+        let record = SessionRecord {
+            session_id: session_id.clone(),
+            user_id: user_id.clone(),
+            email: email.clone(),
+            created_at_unix: now_unix,
+            revoked_at_unix: None,
+        };
+        self.repositories
+            .put_session_if_absent(record)
+            .map_err(map_dependency_error)?;
+        Ok(session_id)
+    }
+
+    fn mint_session_cookie(
+        &mut self,
+        session_id: &SessionId,
+        now_unix: u64,
+        country: Option<&str>,
+    ) -> Result<String, MagicLinkServiceError> {
+        let timestamp = u32::try_from(now_unix).map_err(|_| MagicLinkServiceError::Internal)?;
+        let body = encode_session_cookie_body(session_id, country)?;
+        mint_bound_cookie::<SessionCookie, _>(
+            &body,
+            self.session_keyring,
+            self.rng,
+            timestamp,
+            timestamp,
+            now_unix,
+        )
+        .map_err(MagicLinkServiceError::from)
+    }
+}
+
+fn generate_user_id<R: RngCore + CryptoRng + ?Sized>(
+    rng: &mut R,
+) -> Result<UserId, MagicLinkServiceError> {
+    let mut bytes = [0u8; 16];
+    rng.try_fill_bytes(&mut bytes)
+        .map_err(|_| MagicLinkServiceError::Unavailable)?;
+    UserId::parse(&format!("usr_{}", hex::encode(bytes)))
+}
+
+fn generate_session_id<R: RngCore + CryptoRng + ?Sized>(
+    rng: &mut R,
+) -> Result<SessionId, MagicLinkServiceError> {
+    let mut bytes = [0u8; 32];
+    rng.try_fill_bytes(&mut bytes)
+        .map_err(|_| MagicLinkServiceError::Unavailable)?;
+    SessionId::parse(&format!("sid_{}", hex::encode(bytes)))
+}
+
+fn map_dependency_error(error: DependencyError) -> MagicLinkServiceError {
+    MagicLinkServiceError::from(error)
+}
+
+fn map_consume_error(error: ConsumeMagicLinkError) -> MagicLinkServiceError {
+    match error {
+        ConsumeMagicLinkError::Unavailable => MagicLinkServiceError::MagicLinkUnavailable,
+        ConsumeMagicLinkError::DependencyUnavailable => MagicLinkServiceError::Unavailable,
+        ConsumeMagicLinkError::Internal => MagicLinkServiceError::Internal,
+    }
+}
+
+#[cfg(test)]
+#[path = "service_tests.rs"]
+mod tests;

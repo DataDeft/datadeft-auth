@@ -214,6 +214,8 @@ dependencies = [
  "dd-auth-token-core",
  "dd-magic-link-core",
  "dd-pow-core",
+ "hex",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
