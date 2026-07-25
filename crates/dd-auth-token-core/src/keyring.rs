@@ -84,15 +84,25 @@ impl RootSecret {
         Self(bytes)
     }
 
-    /// Derive a purpose-specific Branca key with HKDF-SHA256.
+    /// Derive a purpose- and `kid`-specific Branca key with HKDF-SHA256.
     ///
-    /// AWS/adapters load only the root bytes; purpose separation is enforced by
-    /// the KDF `info` string, not a runtime flag. A session key and PoW key
-    /// derived from the same root are unrelated AEAD keys.
-    pub fn derive_key<P: KeyPurpose>(&self) -> Result<BrancaKey<P>, TokenError> {
+    /// AWS/adapters load only the root bytes; separation is enforced by the KDF
+    /// `info` string, not a runtime flag. The `info` binds both the purpose and
+    /// the key id (`purpose || 0x00 || kid`), so two kids derived from the same
+    /// root are cryptographically independent keys — rotation is real, not two
+    /// labels on one key. `KeyId` charset excludes `0x00`, so the separator is
+    /// unambiguous. A session key and a PoW key, or two kids, are unrelated AEAD
+    /// keys.
+    pub fn derive_key<P: KeyPurpose>(&self, kid: &KeyId) -> Result<BrancaKey<P>, TokenError> {
+        let kid_bytes = kid.as_str().as_bytes();
+        let mut info = Vec::with_capacity(P::HKDF_INFO.len() + 1 + kid_bytes.len());
+        info.extend_from_slice(P::HKDF_INFO);
+        info.push(0x00);
+        info.extend_from_slice(kid_bytes);
+
         let mut out = [0u8; KEY_BYTES];
         Hkdf::<Sha256>::new(None, self.as_bytes())
-            .expand(P::HKDF_INFO, &mut out)
+            .expand(&info, &mut out)
             .map_err(|_| TokenError::Internal)?;
         Ok(BrancaKey::new(out))
     }
@@ -214,7 +224,13 @@ pub struct KeySlot<P: KeyPurpose> {
 }
 
 impl<P: KeyPurpose> KeySlot<P> {
-    /// Active key with no window bound (use only for tests/dev).
+    /// Active key with unbounded mint/verify windows.
+    ///
+    /// Gated behind `test-support` (and crate tests): an unbounded verify window
+    /// makes any missing-TTL bug (see the cookie layer) valid forever, so it must
+    /// never exist in a production build. Production code uses
+    /// [`KeySlot::active_with_windows`] with explicit windows.
+    #[cfg(any(test, feature = "test-support"))]
     #[must_use]
     pub fn active(kid: KeyId, key: BrancaKey<P>) -> Self {
         Self::active_with_windows(kid, key, u64::MAX, u64::MAX)

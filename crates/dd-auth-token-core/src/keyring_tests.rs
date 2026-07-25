@@ -27,19 +27,29 @@ fn branca_key_debug_does_not_contain_key_bytes() {
 }
 
 #[test]
-fn root_secret_derives_deterministic_purpose_separated_keys() {
+fn root_secret_derives_deterministic_kid_and_purpose_separated_keys() {
     let root = RootSecret::new([0x11; KEY_BYTES]);
 
-    let session_a = root.derive_key::<SessionCookie>().expect("derive session");
-    let session_b = root
-        .derive_key::<SessionCookie>()
+    let session_a = root
+        .derive_key::<SessionCookie>(&kid("k1"))
+        .expect("derive session");
+    let session_a2 = root
+        .derive_key::<SessionCookie>(&kid("k1"))
         .expect("derive session again");
-    let pow = root.derive_key::<PowCookie>().expect("derive pow");
+    let session_k2 = root
+        .derive_key::<SessionCookie>(&kid("k2"))
+        .expect("derive session kid2");
+    let pow = root.derive_key::<PowCookie>(&kid("k1")).expect("derive pow");
 
     assert_eq!(
         session_a.as_bytes(),
-        session_b.as_bytes(),
-        "same root+purpose is deterministic"
+        session_a2.as_bytes(),
+        "same root+purpose+kid is deterministic"
+    );
+    assert_ne!(
+        session_a.as_bytes(),
+        session_k2.as_bytes(),
+        "different kid separates keys (rotation is cryptographic, not a label)"
     );
     assert_ne!(
         session_a.as_bytes(),
@@ -67,20 +77,25 @@ fn hkdf_info_strings_are_versioned_constants() {
 
 #[test]
 fn hkdf_vectors_are_pinned() {
-    // HKDF-SHA256 with salt=None, IKM=[0x11; 32], L=32. These vectors pin the
-    // exact `info` strings and output length; changing either invalidates every
+    // HKDF-SHA256 with salt=None, IKM=[0x11; 32], L=32,
+    // info = HKDF_INFO || 0x00 || kid. These vectors pin the exact info framing
+    // (purpose + kid) and output length; changing any of them invalidates every
     // token minted under the previous derived key.
     let root = RootSecret::new([0x11; KEY_BYTES]);
-    let session = root.derive_key::<SessionCookie>().expect("derive session");
-    let pow = root.derive_key::<PowCookie>().expect("derive pow");
+    let session = root
+        .derive_key::<SessionCookie>(&kid("session-active"))
+        .expect("derive session");
+    let pow = root
+        .derive_key::<PowCookie>(&kid("pow-active"))
+        .expect("derive pow");
 
     assert_eq!(
         hex::encode(session.as_bytes()),
-        "1a5f48d042788494465be1b88e21df206809b659828787d1c7e3c499ae675e41"
+        "eda74d6ba28134ffe9c380e3a14729aa1fa4474dfbf63014a8b82e0325e4b10b"
     );
     assert_eq!(
         hex::encode(pow.as_bytes()),
-        "8841529c6bfc5232cde6ec45875f11bbee84f9963095694081b337ce6e7a78c1"
+        "4aa0804a52c9437f12e0087883a0f0aa8ef319bea122d3402399f0b3d60d96f6"
     );
 }
 
@@ -91,8 +106,12 @@ fn kid(value: &str) -> KeyId {
 #[test]
 fn typed_keyring_mints_with_active_and_verifies_with_previous() {
     let root = RootSecret::new([0x33; KEY_BYTES]);
-    let active = root.derive_key::<SessionCookie>().expect("active key");
-    let previous = root.derive_key::<SessionCookie>().expect("previous key");
+    let active = root
+        .derive_key::<SessionCookie>(&kid("session-active"))
+        .expect("active key");
+    let previous = root
+        .derive_key::<SessionCookie>(&kid("session-prev"))
+        .expect("previous key");
 
     let ring = KeyRing::<SessionCookie>::new(
         kid("session-active"),
@@ -127,8 +146,12 @@ fn typed_keyring_mints_with_active_and_verifies_with_previous() {
 #[test]
 fn keyring_rejects_duplicate_or_missing_active_keys() {
     let root = RootSecret::new([0x44; KEY_BYTES]);
-    let active = root.derive_key::<PowCookie>().expect("active key");
-    let previous = root.derive_key::<PowCookie>().expect("previous key");
+    let active = root
+        .derive_key::<PowCookie>(&kid("pow-active"))
+        .expect("active key");
+    let previous = root
+        .derive_key::<PowCookie>(&kid("pow-old"))
+        .expect("previous key");
 
     let dup = KeyRing::<PowCookie>::new(
         kid("pow-active"),
@@ -162,7 +185,9 @@ fn retired_keys_are_absent_and_return_unknown_key() {
     // longer verify, remove the slot; holding retired material in memory is
     // needless liability.
     let root = RootSecret::new([0x55; KEY_BYTES]);
-    let active = root.derive_key::<SessionCookie>().expect("active key");
+    let active = root
+        .derive_key::<SessionCookie>(&kid("session-active"))
+        .expect("active key");
     let ring = KeyRing::<SessionCookie>::new(
         kid("session-active"),
         vec![KeySlot::active(kid("session-active"), active)],

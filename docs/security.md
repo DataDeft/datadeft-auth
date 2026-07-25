@@ -25,6 +25,10 @@ This repo must never contain:
 - Token parsers must reject malformed, ambiguous, mixed-version, or trailing-data inputs.
 - Token encodings must be canonical: exactly one accepted string per token. Where the underlying codec is non-canonical, the token parser must reject non-canonical spellings (for example by re-encoding and comparing). base62 is a big-*integer* codec, so leading `'0'` digits and embedded `CR`/`LF` decode to the same bytes; `dd-auth-token-core::branca::decode` rejects those forms so `"0"+token` cannot pass as a second valid spelling. This is malleability, not forgery — the AEAD payload is unchanged — but it breaks any layer that treats the token string as a unique handle.
 - Do not use an integer codec (base62 here) to round-trip arbitrary byte strings such as hashes, IDs, or serialized blobs: leading `0x00` bytes are silently dropped. Use a byte-oriented codec (hex/base64) or frame the length.
+- Cookie/token validation must enforce freshness, and the freshness bound must be a required parameter of the validation call — never optional, never a documentation-only expectation. A caller must not be able to obtain a verified value without stating a TTL. Passing the current time into a validator that does not itself check the token's age is a footgun; make the age check mandatory in the same call.
+- Sliding sessions need two clocks: an idle bound against last-activity time and an absolute bound against a separate issue-time (`iat`) claim carried inside the authenticated payload. A single re-minted timestamp cannot express both, so absolute expiry silently disappears if `iat` is not stored. Decide this in the payload format before launch.
+- Reject future-dated tokens beyond a small clock-skew tolerance. `now - timestamp` with saturating subtraction reads a rewound/skewed minting clock as permanently fresh; bound the timestamp in both directions.
+- Internal encrypted payloads that are never parsed by a client should use a compact, non-self-describing framing, not JSON. A JSON byte array expands ~3.5x against a fixed ciphertext budget and turns a large body into an inexplicable generic failure; there is no interop reason for a self-describing codec on an internal payload.
 
 ## Bearer secret entropy
 
@@ -173,6 +177,7 @@ Enumeration-resistant flows must also avoid obvious timing or work-factor differ
 - Do not reuse one secret across token kinds, lookup domains, cookies, and proof-of-work contexts.
 - Symmetric keys and peppers must provide at least 256 bits of entropy unless a chosen primitive requires more.
 - Key IDs must be validated and domain-separated; unknown key IDs fail closed.
+- Key derivation must bind the key id, not only the purpose: derive with `info = purpose || 0x00 || kid` (or an equivalent unambiguous framing). Otherwise two kids derived from one root secret produce identical keys, "rotation" becomes two labels on one key, and cross-kid separation rests only on a string compare. Changing the derivation `info` invalidates all live tokens, so fix the framing before launch.
 - Keyrings should support explicit states: active for minting, verify-only for migration, and retired/disabled for rejection.
 - Rotation tests must cover active-key minting, verify-only validation, retired-key rejection, and unknown-key rejection.
 - Development examples may generate fake keys, but production code must require caller-supplied key material.
