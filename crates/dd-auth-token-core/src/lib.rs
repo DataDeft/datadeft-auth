@@ -17,13 +17,15 @@
 //! Fixed-nonce encoding is hidden behind tests / the explicit `test-support`
 //! feature for official vectors only.
 //!
-//! Cookie wrappers, keyrings, session IDs, and PoW proof cookies are deliberately
-//! out of scope for this packet.
+//! Cookie wrappers, session IDs, PoW proof cookies, and full keyring rotation
+//! are deliberately out of scope for this packet. The [`keyring`] module only
+//! contains key-material wrappers and best-effort zeroize documentation so far.
 
 #![forbid(unsafe_code)]
 
 pub mod base62;
 pub mod branca;
 pub mod error;
+pub mod keyring;
 
 pub use error::TokenError;
