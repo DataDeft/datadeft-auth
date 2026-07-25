@@ -23,6 +23,8 @@ This repo must never contain:
 - Token kinds must be domain-separated so one token type cannot validate as another.
 - Verification must fail closed, including unknown key IDs, expired values, malformed inputs, and storage races.
 - Token parsers must reject malformed, ambiguous, mixed-version, or trailing-data inputs.
+- Token encodings must be canonical: exactly one accepted string per token. Where the underlying codec is non-canonical, the token parser must reject non-canonical spellings (for example by re-encoding and comparing). base62 is a big-*integer* codec, so leading `'0'` digits and embedded `CR`/`LF` decode to the same bytes; `dd-auth-token-core::branca::decode` rejects those forms so `"0"+token` cannot pass as a second valid spelling. This is malleability, not forgery — the AEAD payload is unchanged — but it breaks any layer that treats the token string as a unique handle.
+- Do not use an integer codec (base62 here) to round-trip arbitrary byte strings such as hashes, IDs, or serialized blobs: leading `0x00` bytes are silently dropped. Use a byte-oriented codec (hex/base64) or frame the length.
 
 ## Bearer secret entropy
 
@@ -108,6 +110,7 @@ Required behavior:
 - Compare verifier-derived material in constant time.
 - Atomically consume the token before or in the same transaction as session creation.
 - Use conditional delete/update, consumed markers, or an equivalent compare-and-swap mechanism in storage adapters.
+- Key consumed-markers, revocation lists, replay caches, and dedup rows on an authenticated, string-independent token identity — never on the raw token string. For Branca tokens this is the authenticated nonce, exposed as `dd-auth-token-core::branca::Jti`; type such stores as `Set<Jti>` / `Map<Jti, _>`. Keying on the string is unsafe because non-canonical spellings map to distinct strings but the same token, and because upstream infrastructure you do not control (CDN/edge cache keys, gateway rate limiters, WAF rules, SIEM dedup, a unique index added in a migration) may also key on the string.
 - Treat already-consumed, missing, expired, malformed, and invalid-verifier tokens as the same public failure class.
 - Apply failed-attempt throttling where the store can safely count attempts without leaking identifiers.
 - Include replay tests and concurrent consume/race tests for service logic and real storage adapters.
@@ -381,6 +384,7 @@ Before a phase is accepted, confirm:
 - `Debug` is redacted for sensitive types.
 - Error messages do not expose sensitive values.
 - Tests include tamper, replay, expired-token, malformed-token, and unknown-key cases where applicable.
+- Token parsers reject non-canonical encodings (for example zero-prefixed base62), and revocation/replay/dedup stores key on a string-independent token identity (`Jti`), not the raw token string.
 - Bearer secret generation enforces documented entropy minimums and uses CSPRNG entropy outside tests.
 - Magic-link consume tests prove one-time use and include a concurrent consume/race case for service/storage layers.
 - Scanner-safe flow tests prove `GET` does not consume, `POST` requires bound flow state, confirmation pages cannot be framed, terminal failures clear temporary cookies, and redirects are fixed/same-origin/allowlisted.
