@@ -53,6 +53,33 @@ fn root_secret_derives_deterministic_purpose_separated_keys() {
     );
 }
 
+#[test]
+fn hkdf_info_strings_are_versioned_constants() {
+    assert_eq!(HKDF_INFO_SESSION_COOKIE_V1, b"auth/session-v1");
+    assert_eq!(HKDF_INFO_POW_COOKIE_V1, b"auth/pow-v1");
+    assert_eq!(SessionCookie::HKDF_INFO, HKDF_INFO_SESSION_COOKIE_V1);
+    assert_eq!(PowCookie::HKDF_INFO, HKDF_INFO_POW_COOKIE_V1);
+}
+
+#[test]
+fn hkdf_vectors_are_pinned() {
+    // HKDF-SHA256 with salt=None, IKM=[0x11; 32], L=32. These vectors pin the
+    // exact `info` strings and output length; changing either invalidates every
+    // token minted under the previous derived key.
+    let root = RootSecret::new([0x11; KEY_BYTES]);
+    let session = root.derive_key::<SessionCookie>().expect("derive session");
+    let pow = root.derive_key::<PowCookie>().expect("derive pow");
+
+    assert_eq!(
+        hex::encode(session.as_bytes()),
+        "1a5f48d042788494465be1b88e21df206809b659828787d1c7e3c499ae675e41"
+    );
+    assert_eq!(
+        hex::encode(pow.as_bytes()),
+        "8841529c6bfc5232cde6ec45875f11bbee84f9963095694081b337ce6e7a78c1"
+    );
+}
+
 fn kid(value: &str) -> KeyId {
     KeyId::parse(value).expect("kid parses")
 }

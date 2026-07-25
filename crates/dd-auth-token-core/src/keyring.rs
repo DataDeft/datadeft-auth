@@ -34,6 +34,10 @@ use crate::error::TokenError;
 
 /// Required length of all root and Branca key material in this crate.
 pub const KEY_BYTES: usize = 32;
+/// HKDF-SHA256 info string for session-cookie Branca keys.
+pub const HKDF_INFO_SESSION_COOKIE_V1: &[u8] = b"auth/session-v1";
+/// HKDF-SHA256 info string for PoW proof-cookie Branca keys.
+pub const HKDF_INFO_POW_COOKIE_V1: &[u8] = b"auth/pow-v1";
 
 /// HKDF purpose marker for keys derived from a [`RootSecret`].
 pub trait KeyPurpose {
@@ -47,7 +51,7 @@ pub trait KeyPurpose {
 pub enum SessionCookie {}
 
 impl KeyPurpose for SessionCookie {
-    const HKDF_INFO: &'static [u8] = b"auth/session-v1";
+    const HKDF_INFO: &'static [u8] = HKDF_INFO_SESSION_COOKIE_V1;
 }
 
 /// PoW proof-cookie key purpose.
@@ -55,7 +59,7 @@ impl KeyPurpose for SessionCookie {
 pub enum PowCookie {}
 
 impl KeyPurpose for PowCookie {
-    const HKDF_INFO: &'static [u8] = b"auth/pow-v1";
+    const HKDF_INFO: &'static [u8] = HKDF_INFO_POW_COOKIE_V1;
 }
 
 /// Loaded root secret material.
