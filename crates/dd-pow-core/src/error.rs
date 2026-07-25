@@ -1,0 +1,35 @@
+//! Typed verification error. Pure data — the caller decides what to log and
+//! which HTTP status to map each variant to.
+
+/// Everything that can go wrong in [`crate::verify_solution`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PowError {
+    /// Tag is not valid hex or does not match HMAC(secret, `chg:dif:tim`).
+    InvalidTag,
+    /// `tim` is not a parseable RFC3339 timestamp.
+    InvalidTimestamp,
+    /// `tim` + `max_age_secs` is in the past.
+    Expired,
+    /// `tim` is more than [`crate::MAX_FUTURE_SKEW_SECS`] in the future.
+    FutureTimestamp,
+    /// Solution difficulty is below the server's current minimum.
+    DifficultyTooLow,
+    /// Wrong leading zeros, or `sol != SHA-256(chg + non)`.
+    InvalidSolution,
+}
+
+impl core::fmt::Display for PowError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let msg = match self {
+            Self::InvalidTag => "HMAC tag verification failed",
+            Self::InvalidTimestamp => "challenge timestamp has an invalid format",
+            Self::Expired => "challenge has expired",
+            Self::FutureTimestamp => "challenge timestamp is in the future",
+            Self::DifficultyTooLow => "solution difficulty is below the required minimum",
+            Self::InvalidSolution => "proof-of-work solution is incorrect",
+        };
+        f.write_str(msg)
+    }
+}
+
+impl std::error::Error for PowError {}

@@ -13,3 +13,12 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
+blake3 = "1"
+hex = "0.4"
+hmac = "0.12"
+sha2 = "0.10"
+subtle = "2"
+time = { version = "0.3", default-features = false, features = ["parsing"] }
+
+[dev-dependencies]
+proptest = "1"
