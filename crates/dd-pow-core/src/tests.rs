@@ -499,3 +499,216 @@ proptest! {
         );
     }
 }
+
+// --- Tier 1: robustness, official vectors, frozen corpus ----------------
+
+/// Official HMAC-SHA-256 vectors (RFC 4231 §4) validate the primitive
+/// independent of our own golden pipeline — a wrong `hmac`/`sha2` version or
+/// feature flag can't pass this.
+#[test]
+fn hmac_matches_rfc_4231_vectors() {
+    // Test Case 1: key = 0x0b * 20 (padded to 32), data = "Hi There".
+    let mut k1 = [0u8; 32];
+    for b in k1.iter_mut().take(20) {
+        *b = 0x0b;
+    }
+    assert_eq!(
+        hmac_tag_hex(&PowSecret::new(k1), "Hi There"),
+        "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+    );
+    // Test Case 2: key = "Jefe", data = "what do ya want for nothing?".
+    let mut k2 = [0u8; 32];
+    for (dst, src) in k2.iter_mut().zip(b"Jefe".iter()) {
+        *dst = *src;
+    }
+    assert_eq!(
+        hmac_tag_hex(&PowSecret::new(k2), "what do ya want for nothing?"),
+        "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+    );
+}
+
+/// Official BLAKE3 KAT (empty input) validates `chg`'s hasher independently
+/// of our own golden.
+#[test]
+fn blake3_matches_official_empty_kat() {
+    assert_eq!(
+        blake3::hash(b"").to_string(),
+        "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+    );
+}
+
+/// Robustness: `verify_solution` must never panic on hostile, fully
+/// attacker-controlled input — only return Ok or Err. Curated cases
+/// (arbitrary-input coverage lives in the proptest below); this one is
+/// diagnosis-friendly and fast.
+#[test]
+#[allow(clippy::type_complexity)]
+fn verify_never_panics_on_hostile_inputs() {
+    let s = secret();
+    let z64 = "0".repeat(64);
+    let f64 = "f".repeat(64);
+    // (chg, sol, non, tim, tag, dif, now_unix, max_age, min_dif)
+    let cases: &[(&str, &str, &str, &str, &str, u8, u64, u64, u8)] = &[
+        ("", "", "", "", "", 0, 0, 0, 0),
+        ("\0", "\0", "\0", "\0", "\0", 1, 0, 0, 1),
+        ("\r\n", " ", " ", " ", " ", 1, 0, 0, 1),
+        ("é", "é", "1", "2026-07-09T12:00:00Z", "é", 1, 0, 0, 1),
+        (
+            "\u{FF10}",
+            "\u{FF10}",
+            "0",
+            "2026-07-09T12:00:00Z",
+            "\u{FF10}",
+            1,
+            0,
+            0,
+            1,
+        ),
+        (
+            "not-a-timestamp-chg",
+            z64.as_str(),
+            "0",
+            "not-a-timestamp",
+            z64.as_str(),
+            1,
+            0,
+            0,
+            1,
+        ),
+        (
+            "zz",
+            "ff",
+            "-1",
+            "2026-13-99T99:99:99Z",
+            "zz-not-hex",
+            255,
+            u64::MAX,
+            u64::MAX,
+            255,
+        ),
+        (
+            z64.as_str(),
+            f64.as_str(),
+            "999999999999999999999999",
+            "2026-07-09T12:00:00Z",
+            z64.as_str(),
+            0,
+            u64::MAX,
+            u64::MAX,
+            0,
+        ),
+    ];
+    for (chg, sol, non, tim, tag, dif, now, age, min) in cases {
+        let _ = verify_solution(
+            &s,
+            &Solution {
+                chg: chg.to_string(),
+                sol: sol.to_string(),
+                non: non.to_string(),
+                dif: *dif,
+                tim: tim.to_string(),
+                tag: tag.to_string(),
+            },
+            *now,
+            *age,
+            *min,
+        );
+        // Invariant: returned Ok or Err; reaching here means no panic.
+    }
+}
+
+/// Frozen wire corpus: a permanent set of challenge/solution vectors
+/// anchoring the cross-implementation contract. Later, the browser worker
+/// (`dd-protect-client`) must reproduce these exactly. Loaded via
+/// `include_str!` so the test stays IO-free at runtime.
+#[derive(Debug, serde::Deserialize)]
+struct CorpusEntry {
+    chg: String,
+    dif: u8,
+    tim: String,
+    tag: String,
+    sol: String,
+    non: String,
+    now_unix: u64,
+    max_age: u64,
+    min_difficulty: u8,
+    ok: bool,
+    err: Option<String>,
+}
+
+impl CorpusEntry {
+    fn expected_error(&self) -> PowError {
+        match self.err.as_deref() {
+            Some("InvalidTag") => PowError::InvalidTag,
+            Some("InvalidTimestamp") => PowError::InvalidTimestamp,
+            Some("Expired") => PowError::Expired,
+            Some("FutureTimestamp") => PowError::FutureTimestamp,
+            Some("DifficultyTooLow") => PowError::DifficultyTooLow,
+            Some("InvalidSolution") => PowError::InvalidSolution,
+            other => panic!("corpus fixture has unknown err kind {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn frozen_corpus_round_trips() {
+    let corpus: Vec<CorpusEntry> =
+        serde_json::from_str(include_str!("../tests/fixtures/pow_corpus.json"))
+            .expect("corpus fixture must parse");
+    assert!(
+        corpus.len() >= 8,
+        "corpus should cover valid + every error kind"
+    );
+    let s = secret();
+    for entry in &corpus {
+        let sol = Solution {
+            chg: entry.chg.clone(),
+            sol: entry.sol.clone(),
+            non: entry.non.clone(),
+            dif: entry.dif,
+            tim: entry.tim.clone(),
+            tag: entry.tag.clone(),
+        };
+        let result = verify_solution(
+            &s,
+            &sol,
+            entry.now_unix,
+            entry.max_age,
+            entry.min_difficulty,
+        );
+        if entry.ok {
+            assert!(result.is_ok(), "expected Ok for entry: {entry:?}");
+        } else {
+            assert_eq!(
+                result.expect_err("expected Err for corpus entry"),
+                entry.expected_error(),
+                "error mismatch for entry: {entry:?}"
+            );
+        }
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
+
+    /// PROPERTY (robustness / no-panic): for ANY strings in every field and
+    /// any parameter values, `verify_solution` is total — it returns Ok or
+    /// Err and never panics. Covers the u64 conversion branches
+    /// (`now_unix`/`max_age` at full range) and pure garbage in every text
+    /// field. Untrusted input must not be a DoS/oracle.
+    #[test]
+    fn prop_verify_is_total_on_arbitrary_input(
+        chg in ".*",
+        sol in ".*",
+        non in ".*",
+        tim in ".*",
+        tag in ".*",
+        dif in any::<u8>(),
+        now_unix in any::<u64>(),
+        max_age in any::<u64>(),
+        min_dif in any::<u8>(),
+    ) {
+        let s = Solution { chg, sol, non, dif, tim, tag };
+        let _ = verify_solution(&secret(), &s, now_unix, max_age, min_dif);
+    }
+}
