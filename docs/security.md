@@ -44,6 +44,7 @@ Rules:
 - Never derive bearer secrets from timestamps, counters, emails, IP addresses, user IDs, UUIDv1/v7 alone, or non-cryptographic RNGs.
 - Encoded lengths must preserve the required entropy after base64/base62/hex encoding.
 - Generation failures fail closed.
+- Magic-link selectors and verifiers must be generated as two independent CSPRNG draws. Neither may be derived from the other, and they must not share randomness (for example, by slicing one random block). The selector is the lower-value lookup half; if the verifier is computable from it, the two-secret split collapses into a single forgeable secret.
 
 ## Token and cookie inventory
 
@@ -90,7 +91,8 @@ Rules:
 - PoW difficulty must be configurable with a documented minimum floor; examples may choose development-only low values but production config must be explicit.
 - Challenge formats must be versioned and domain-separated, for example `pow-v1`.
 - Challenge random/nonces must satisfy the bearer entropy table and be MACed/signed.
-- PoW proof cookies must be bound to the challenge, the auth flow, and an app-supplied client key where available.
+- PoW proof cookies must be bound to the challenge, the auth flow, and an app-supplied client key when one is available.
+- In the request-magic-link flow the proof is solved before the email is known, so it cannot be bound to the target email. Cross-email proof reuse is bounded by the per-email HMAC request limiter (`3/15m`, `10/24h`) by design; document this rather than implying per-target binding.
 - PoW proof cookies are short-lived auth-flow continuity values, not general bearer sessions.
 - Prefer single-use proof cookies. If multi-request continuity is needed, enforce a small per-proof use cap and reject replay beyond that cap.
 - PoW proof cookies must be cleared on successful auth-flow completion and on terminal auth-flow failure.
@@ -152,6 +154,7 @@ Enumeration-resistant flows must also avoid obvious timing or work-factor differ
 - Missing selector/token records should still perform dummy verifier/MAC work before returning a generic failure.
 - Unknown-user and throttled request-magic-link paths should avoid observable send-vs-suppress timing differences where practical.
 - Do not promise strict matched latency if it would create a denial-of-service risk; prefer bounded dummy work, background/outbox handoff, and generic responses.
+- The GET landing route's flow-state lookup must perform the same dummy work on a selector miss as on a hit, and must be covered by a limiter, so it is neither a timing/guessing oracle nor an unthrottled DB-read denial-of-service vector.
 
 ## Configuration
 
@@ -247,12 +250,14 @@ Required defaults and rules:
 - Clear cookies on logout, invalid session, expired session responses, successful auth-flow completion, and terminal auth-flow failure where the adapter can do so.
 - Document CSRF expectations for cookie-authenticated routes; unsafe methods need CSRF protection or equivalent same-site guarantees.
 - `__Host-` and `__Secure-` cookie prefixes are optional future hardening, not v1 requirements. If used, document their browser requirements and path/domain tradeoffs.
+- Pre-release review item: before public release, reconsider defaulting the primary session and magic-link flow cookies to `__Host-` (they already use host-only + `Secure` + `Path=/`), since it is the direct defense against cookie-tossing/fixation from a sibling subdomain or active network attacker. Deferred from v1 per the no-`__`-prefix decision.
 
 ## Session revocation
 
 The default session model must support server-side invalidation.
 
 - Logout must invalidate the server-side session record or revocation handle before clearing the browser cookie.
+- Logout must be an unsafe method (POST) protected by same-site cookies or an equivalent CSRF defense. Forced-logout CSRF is a low-severity but real annoyance and must be closed.
 - Compromise response must be able to revoke a session before its absolute TTL expires.
 - Stolen cookies must not remain valid for the full 30-day absolute TTL after logout or explicit revocation.
 - Stateless session tokens without server-side revocation are not the default. If a consuming app chooses stateless-only sessions, document the tradeoff clearly and use shorter TTLs.
@@ -290,7 +295,7 @@ Implementation rules:
 - Do not log full landing/consume URLs, query strings, route captures, or redirect destinations that contain token material.
 - Scrub token path/query fields before tracing, metrics labels, access logs, error reports, and panic payloads.
 - Prefer a short-lived `HttpOnly` flow cookie or server-side nonce between landing and consume so token material is not embedded in HTML forms.
-- Flow state must be bound to the token selector/lookup material, intended account identifier, expiry, and app-supplied client key where available.
+- Flow state must be bound to the token selector/lookup material, intended account identifier, expiry, and an app-supplied client key. If no client key is available, the per-selector and per-email limits remain the only per-client bound.
 - If a fallback form value must carry token material, it must be short-lived, single-use, `Cache-Control: no-store`, and never rendered with third-party assets.
 - Do not place token values in `Location` headers, JavaScript, analytics events, downstream callback URLs, or clean post-consume pages.
 - Post-consume redirect targets must be fixed, same-origin relative paths or explicit allowlist entries. Do not accept arbitrary `next=`/return URLs.
@@ -299,6 +304,7 @@ Implementation rules:
 - Set or document `Referrer-Policy: no-referrer` or an equivalent policy for magic-link landing/consume flows.
 - Terminal consume failures must clear temporary flow and PoW cookies where the adapter can do so.
 - Treat scanner safety as protection against GET-only email scanners; active scanners that submit forms are handled by short TTLs, flow-state binding, one-time atomic consume, and generic failure handling.
+- Login CSRF / cross-account sign-in: the flow cookie is minted on a GET the attacker can trigger, so it cannot prove the victim initiated the flow. The primary mitigation is the confirmation page identifying the account (masked email) and the user recognizing it is not theirs. Offer an optional mode where the user re-enters or explicitly confirms the email at consume. State this UX dependency explicitly in consuming apps.
 
 ## Rate limiting and abuse controls
 
@@ -321,6 +327,7 @@ V1 starting thresholds:
 | Magic-link consume | selector-derived key | 5 failed attempts per token TTL | Generic invalid/expired |
 | Magic-link consume | client key | 20 per 10 min, 100 per 1h | Generic invalid/expired |
 | Malformed consume attempts | client key | 20 per 10 min | Generic invalid/expired |
+| Magic-link landing route | client key + selector-derived key | 30 per 10 min each | Generic landing page; no flow state created |
 | PoW challenge mint | client key | 30 per 10 min | Generic throttled/try later |
 | PoW verify failures | client key | 30 per 10 min | Generic failure |
 
@@ -332,6 +339,7 @@ Rules:
 - Limiter storage failures on abuse-sensitive paths should fail closed with a generic try-later response.
 - Per-email request limits intentionally trade availability for inbox-abuse protection; targeted attackers can spend a victim's quota. Document this tradeoff in consuming apps that surface retry guidance.
 - Public responses for throttled, unknown-user, already-consumed, expired, and invalid-token cases must remain generic unless a consuming app explicitly opts into different UX.
+- "Where available" client-key binding is not optional to implement: apps that cannot supply a client key lose only the client-key limiter rows. The per-email and per-selector limits still apply and remain the minimum guarantee. Document in consuming apps that, without a client key, per-client abuse is bounded only by those email/selector limits.
 
 ## One supported way
 
