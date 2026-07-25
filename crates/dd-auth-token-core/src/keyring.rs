@@ -1,9 +1,9 @@
 //! Purpose-derived key material and typed in-memory keyrings.
 //!
 //! This module owns loaded root secret material, HKDF-derived Branca keys, and
-//! purpose-typed keyrings. Cookie wrappers and AWS/Secrets Manager loading are
-//! separate packets: this core module only accepts already-loaded bytes and
-//! deterministic timestamps/windows.
+//! purpose-typed keyrings. AWS/Secrets Manager loading remains outside this core
+//! crate: callers pass already-loaded bytes plus deterministic timestamps and
+//! rotation windows.
 //!
 //! # Zeroization is best-effort only
 //!
@@ -17,10 +17,25 @@
 //! # Purpose separation
 //!
 //! A single root secret is expanded into independent Branca keys with
-//! HKDF-SHA256. The `info` string is a versioned constant per purpose
-//! (`auth/session-v1`, `auth/pow-v1`). Keyrings are also typed: a
-//! `KeyRing<SessionCookie>` cannot be passed where a `KeyRing<PowCookie>` is
+//! HKDF-SHA256. The `info` string binds both a versioned purpose constant and
+//! the validated `kid` (`purpose || 0x00 || kid`) so rotation slots are
+//! cryptographically independent keys, not just labels. Keyrings are also typed:
+//! a `KeyRing<SessionCookie>` cannot be passed where a `KeyRing<PowCookie>` is
 //! expected.
+//!
+//! ```compile_fail
+//! use dd_auth_token_core::keyring::{KeyRing, PowCookie, SessionCookie};
+//!
+//! fn requires_pow(_: &KeyRing<PowCookie>) {}
+//!
+//! fn cannot_mix_purposes(session_ring: &KeyRing<SessionCookie>) {
+//!     requires_pow(session_ring);
+//! }
+//! ```
+//!
+//! `KeyRing` deliberately does not implement `Clone`: cloning would duplicate
+//! key material. Adapters that need hot-swappable shared keyrings should store
+//! `Arc<KeyRing<P>>` (for example behind their chosen watch/ArcSwap mechanism).
 
 use std::collections::HashSet;
 use std::fmt;
