@@ -5,8 +5,12 @@ use crate::challenge::Solution;
 use crate::error::PowError;
 use crate::ops::{has_leading_zero_prefix, hmac_tag_hex, tag_message};
 use crate::secret::PowSecret;
-use crate::{MAX_FUTURE_SKEW_SECS, mint_challenge, verify_solution};
+use crate::{
+    MAX_DIFFICULTY, MAX_FUTURE_SKEW_SECS, RECOMMENDED_PRODUCTION_MIN_DIFFICULTY, mint_challenge,
+    verify_solution,
+};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 
 const TIM: &str = "2026-07-09T12:00:00Z";
 /// Unix timestamp of TIM (2026-07-09T12:00:00Z).
@@ -51,11 +55,10 @@ fn solve_like_worker(chg: &str, dif: u8) -> (u64, String) {
 }
 
 fn solved_solution(dif: u8) -> Solution {
-    let challenge = mint_challenge(&secret(), dif, TIM, entropy());
+    let challenge = mint_challenge(&secret(), dif, TIM, entropy()).expect("mint");
     let (nonce, hash) = solve_like_worker(&challenge.chg, dif);
-    // Field mapping as the client builds its Solution JSON: chg/tim/tag
-    // echoed, sol = hash, non = nonce.toString(). dif is NOT sent by the
-    // client; the API layer fills it with the server's difficulty.
+    // Field mapping as the client builds its Solution JSON: chg/tim/tag/dif
+    // echoed, sol = hash, non = nonce.toString().
     Solution {
         chg: challenge.chg,
         sol: hash,
@@ -153,42 +156,62 @@ fn secret_debug_redacts_and_error_display_is_stable() {
             PowError::InvalidSolution,
             "proof-of-work solution is incorrect",
         ),
+        (
+            PowError::DifficultyTooHigh,
+            "solution difficulty exceeds the supported maximum",
+        ),
+        (
+            PowError::MaxAgeTooLarge,
+            "maximum challenge age is too large",
+        ),
     ];
     for (err, msg) in cases {
         assert_eq!(err.to_string(), msg);
     }
 }
 
+#[test]
+fn production_difficulty_guidance_is_above_test_fixtures() {
+    let max = MAX_DIFFICULTY;
+    let recommended = RECOMMENDED_PRODUCTION_MIN_DIFFICULTY;
+    assert_eq!(max, 64);
+    assert!(recommended >= 5);
+}
+
 // --- Determinism goldens -------------------------------------------------
 
 #[test]
 fn mint_is_deterministic_golden() {
-    let a = mint_challenge(&secret(), 3, TIM, entropy());
-    let b = mint_challenge(&secret(), 3, TIM, entropy());
+    let a = mint_challenge(&secret(), 3, TIM, entropy()).expect("mint a");
+    let b = mint_challenge(&secret(), 3, TIM, entropy()).expect("mint b");
     assert_eq!(a, b);
     assert_eq!(a.dif, 3);
     assert_eq!(a.tim, TIM);
     // Golden values pin the derivation: chg = hex BLAKE3 of
     // "Time=2026-07-09T12:00:00Z:Nonce=000102030405060708090a0b0c0d0e0f",
-    // tag = HMAC-SHA256 over "pow-tag-v1:{chg}:3:{tim}" with key bytes 0..32 (the tag
-    // golden was computed externally with Python hmac/hashlib).
+    // tag = HMAC-SHA256 over framed ("pow-tag-v1", chg, 3, tim) with key
+    // bytes 0..32 (the tag golden was computed externally with Python
+    // hmac/hashlib).
     assert_eq!(
         a.chg,
         "c92da1677dc682632c77af723ed48d6ccd288ac1d99f68fcef2ff430433fd6f8"
     );
     assert_eq!(
         a.tag,
-        "0664c2801631370f8d8d2860d167d0fc3b81232d36d4ab1bd39cabe901f89b33"
+        "6d0e8bec7c1c4f0e3c1391ca873df6ffb67eddc32b641ae1cddd39b7c18287a6"
     );
 }
 
 #[test]
 fn hmac_tag_matches_external_vector() {
     // Computed outside Rust (Python hmac/hashlib) to break circularity:
-    // HMAC-SHA256(key=bytes(0..32), "pow-tag-v1:somechg:3:2026-07-09T12:00:00Z").
+    // HMAC-SHA256(key=bytes(0..32), framed("pow-tag-v1", "somechg", 3, TIM)).
     assert_eq!(
-        hmac_tag_hex(&secret(), "pow-tag-v1:somechg:3:2026-07-09T12:00:00Z"),
-        "2ac36b56952ec58dae92521f40f5793915ea1d0b5cd5c5ad900378102f8ff6ff"
+        hmac_tag_hex(
+            &secret(),
+            &tag_message("somechg", 3, "2026-07-09T12:00:00Z"),
+        ),
+        "8b68060e834b2479e05ea4e7f2292500360351c2285ae2546da79502afed9850"
     );
 }
 
@@ -196,19 +219,18 @@ fn hmac_tag_matches_external_vector() {
 
 #[test]
 fn accepts_real_worker_style_vector() {
-    // REAL vector for the browser worker algorithm, computed externally
-    // (Python hashlib):
-    //   sha256("cross-contract-vector" + "3").hexdigest()
-    //     = "00a3d6e01cb95126d77b7dfc73fb0036827e6cfc83bc9fbad1f8dbcebd248b95"
-    // i.e. challenge "cross-contract-vector", nonce 3 (decimal string,
-    // concatenated exactly as the worker does: challenge + nonce), and the
-    // digest happens to have two leading zero nibbles, satisfying dif=2.
-    let chg = "cross-contract-vector";
-    let expected_hash = "00a3d6e01cb95126d77b7dfc73fb0036827e6cfc83bc9fbad1f8dbcebd248b95";
+    // REAL vector for the browser worker algorithm:
+    //   sha256(existing challenge chg + "89").hexdigest()
+    //     = "007060c2f73f6b7ce87ad3eccac9692a27449d0f012b607359cac1fd8a96d716"
+    // i.e. the deterministic minted challenge below, nonce 89 (decimal string,
+    // concatenated exactly as the worker does: challenge + nonce), and two
+    // leading zero nibbles for dif=2.
+    let chg = "c92da1677dc682632c77af723ed48d6ccd288ac1d99f68fcef2ff430433fd6f8";
+    let expected_hash = "007060c2f73f6b7ce87ad3eccac9692a27449d0f012b607359cac1fd8a96d716";
 
     // Guard: our in-test worker mirror reproduces the external vector.
     let (nonce, hash) = solve_like_worker(chg, 2);
-    assert_eq!(nonce, 3);
+    assert_eq!(nonce, 89);
     assert_eq!(hash, expected_hash);
 
     // verify_solution accepts it (tag minted over the same chg:dif:tim).
@@ -216,7 +238,7 @@ fn accepts_real_worker_style_vector() {
     let sol = Solution {
         chg: chg.to_string(),
         sol: expected_hash.to_string(),
-        non: "3".to_string(),
+        non: nonce.to_string(),
         dif: 2,
         tim: TIM.to_string(),
         tag: hmac_tag_hex(&s, &tag_message(chg, 2, TIM)),
@@ -239,8 +261,8 @@ fn wrong_secret_rejected() {
 #[test]
 fn solution_for_different_challenge_rejected() {
     // Valid tag/chg from challenge A, but sol/non solve challenge B.
-    let a = mint_challenge(&secret(), 1, TIM, entropy());
-    let b = mint_challenge(&secret(), 1, TIM, [0xFF; 16]);
+    let a = mint_challenge(&secret(), 1, TIM, entropy()).expect("mint a");
+    let b = mint_challenge(&secret(), 1, TIM, [0xFF; 16]).expect("mint b");
     assert_ne!(a.chg, b.chg);
     let (nonce, hash) = solve_like_worker(&b.chg, 1);
     let sol = Solution {
@@ -260,7 +282,7 @@ fn solution_for_different_challenge_rejected() {
 #[test]
 fn missing_leading_zeros_rejected() {
     // Honest hash of chg+non, but the nonce does no work (no zeros).
-    let challenge = mint_challenge(&secret(), 1, TIM, entropy());
+    let challenge = mint_challenge(&secret(), 1, TIM, entropy()).expect("mint");
     let mut nonce: u64 = 0;
     let hash = loop {
         let digest = Sha256::digest(format!("{}{nonce}", challenge.chg).as_bytes());
@@ -329,7 +351,7 @@ fn garbage_tim_needs_valid_tag_first() {
     // A non-RFC3339 tim with a correctly minted tag reaches the timestamp
     // check and fails there (proves order: authenticity before parsing).
     let s = secret();
-    let chg = "garbage-tim-chg";
+    let chg = "c92da1677dc682632c77af723ed48d6ccd288ac1d99f68fcef2ff430433fd6f8";
     let sol = Solution {
         chg: chg.to_string(),
         sol: "0".repeat(64),
@@ -371,7 +393,7 @@ fn zero_difficulty_rejected() {
     // as zero work. The tag is minted honestly over dif=0, so it clears
     // authenticity and freshness and reaches the floor check.
     let s = secret();
-    let chg = "zero-work-chg";
+    let chg = "c92da1677dc682632c77af723ed48d6ccd288ac1d99f68fcef2ff430433fd6f8";
     let sol = Solution {
         chg: chg.to_string(),
         sol: "0".repeat(64),
@@ -383,6 +405,66 @@ fn zero_difficulty_rejected() {
     assert_eq!(
         verify_solution(&s, &sol, TIM_UNIX + 1, MAX_AGE, 0),
         Err(PowError::DifficultyTooLow)
+    );
+}
+
+#[test]
+fn difficulty_above_digest_width_is_rejected() {
+    assert_eq!(
+        mint_challenge(&secret(), MAX_DIFFICULTY + 1, TIM, entropy()).unwrap_err(),
+        PowError::DifficultyTooHigh
+    );
+
+    let mut sol = solved_solution(1);
+    sol.dif = MAX_DIFFICULTY + 1;
+    assert_eq!(
+        verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 1).unwrap_err(),
+        PowError::DifficultyTooHigh
+    );
+    assert_eq!(
+        verify_solution(
+            &secret(),
+            &solved_solution(1),
+            TIM_UNIX + 1,
+            MAX_AGE,
+            MAX_DIFFICULTY + 1
+        )
+        .unwrap_err(),
+        PowError::DifficultyTooHigh
+    );
+}
+
+#[test]
+fn oversized_fields_are_rejected_before_hmac_work() {
+    let huge = "a".repeat(10 * 1024 * 1024);
+    let mut sol = solved_solution(1);
+    sol.chg = huge;
+    assert_eq!(
+        verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 1).unwrap_err(),
+        PowError::InvalidTag
+    );
+
+    let mut sol = solved_solution(1);
+    sol.non = "1".repeat(21);
+    assert_eq!(
+        verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 1).unwrap_err(),
+        PowError::InvalidSolution
+    );
+
+    let mut sol = solved_solution(1);
+    sol.tim = "2".repeat(33);
+    assert_eq!(
+        verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 1).unwrap_err(),
+        PowError::InvalidTimestamp
+    );
+}
+
+#[test]
+fn oversized_max_age_is_rejected_explicitly() {
+    let sol = solved_solution(1);
+    assert_eq!(
+        verify_solution(&secret(), &sol, TIM_UNIX + 1, u64::MAX, 1).unwrap_err(),
+        PowError::MaxAgeTooLarge
     );
 }
 
@@ -421,7 +503,7 @@ proptest! {
         age in 0u64..=MAX_AGE,
     ) {
         let s = PowSecret::new(secret_bytes);
-        let challenge = mint_challenge(&s, dif, TIM, entropy);
+        let challenge = mint_challenge(&s, dif, TIM, entropy).unwrap();
         let (nonce, hash) = solve_like_worker(&challenge.chg, dif);
         let sol = Solution {
             chg: challenge.chg,
@@ -454,7 +536,7 @@ proptest! {
         dif_delta in 1u8..=255,
     ) {
         let s = secret();
-        let challenge = mint_challenge(&s, dif, TIM, entropy);
+        let challenge = mint_challenge(&s, dif, TIM, entropy).unwrap();
         let (nonce, hash) = solve_like_worker(&challenge.chg, dif);
         let mut sol = Solution {
             chg: challenge.chg,
@@ -492,10 +574,15 @@ proptest! {
                 };
                 PowError::InvalidSolution
             }
-            // dif: ANY other claimed difficulty (including 0) breaks the tag.
+            // dif: supported alternate difficulties break the tag; values above
+            // the digest width are rejected by the cheap shape/config gate.
             3 => {
                 sol.dif = sol.dif.wrapping_add(dif_delta);
-                PowError::InvalidTag
+                if sol.dif > MAX_DIFFICULTY {
+                    PowError::DifficultyTooHigh
+                } else {
+                    PowError::InvalidTag
+                }
             }
             // tim: a shifted valid timestamp or garbage — tag dies first.
             4 => {
@@ -536,7 +623,7 @@ fn hmac_matches_rfc_4231_vectors() {
         *b = 0x0b;
     }
     assert_eq!(
-        hmac_tag_hex(&PowSecret::new(k1), "Hi There"),
+        hmac_tag_hex(&PowSecret::new(k1), b"Hi There"),
         "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
     );
     // Test Case 2: key = "Jefe", data = "what do ya want for nothing?".
@@ -545,7 +632,7 @@ fn hmac_matches_rfc_4231_vectors() {
         *dst = *src;
     }
     assert_eq!(
-        hmac_tag_hex(&PowSecret::new(k2), "what do ya want for nothing?"),
+        hmac_tag_hex(&PowSecret::new(k2), b"what do ya want for nothing?"),
         "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
     );
 }
@@ -668,6 +755,8 @@ impl CorpusEntry {
             Some("FutureTimestamp") => PowError::FutureTimestamp,
             Some("DifficultyTooLow") => PowError::DifficultyTooLow,
             Some("InvalidSolution") => PowError::InvalidSolution,
+            Some("DifficultyTooHigh") => PowError::DifficultyTooHigh,
+            Some("MaxAgeTooLarge") => PowError::MaxAgeTooLarge,
             other => panic!("corpus fixture has unknown err kind {other:?}"),
         }
     }
@@ -678,10 +767,21 @@ fn frozen_corpus_round_trips() {
     let corpus: Vec<CorpusEntry> =
         serde_json::from_str(include_str!("../tests/fixtures/pow_corpus.json"))
             .expect("corpus fixture must parse");
-    assert!(
-        corpus.len() >= 8,
-        "corpus should cover valid + every error kind"
-    );
+    let expected_errors = BTreeSet::from([
+        "DifficultyTooHigh",
+        "DifficultyTooLow",
+        "Expired",
+        "FutureTimestamp",
+        "InvalidSolution",
+        "InvalidTag",
+        "InvalidTimestamp",
+        "MaxAgeTooLarge",
+    ]);
+    let observed_errors = corpus
+        .iter()
+        .filter_map(|entry| entry.err.as_deref())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(observed_errors, expected_errors);
     let s = secret();
     for entry in &corpus {
         let sol = Solution {

@@ -4,7 +4,7 @@
 /// Everything that can go wrong in [`crate::verify_solution`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowError {
-    /// Tag is not valid hex or does not match HMAC(secret, `chg:dif:tim`).
+    /// Tag is not valid canonical hex or does not match the framed HMAC input.
     InvalidTag,
     /// `tim` is not a parseable RFC3339 timestamp.
     InvalidTimestamp,
@@ -14,6 +14,10 @@ pub enum PowError {
     FutureTimestamp,
     /// Solution difficulty is below the server's current minimum.
     DifficultyTooLow,
+    /// Configured or echoed difficulty is above the 64-hex-nibble maximum.
+    DifficultyTooHigh,
+    /// `max_age_secs` cannot be represented by the timestamp arithmetic.
+    MaxAgeTooLarge,
     /// Wrong leading zeros, or `sol != SHA-256(chg + non)`.
     InvalidSolution,
 }
@@ -26,6 +30,8 @@ impl core::fmt::Display for PowError {
             Self::Expired => "challenge has expired",
             Self::FutureTimestamp => "challenge timestamp is in the future",
             Self::DifficultyTooLow => "solution difficulty is below the required minimum",
+            Self::DifficultyTooHigh => "solution difficulty exceeds the supported maximum",
+            Self::MaxAgeTooLarge => "maximum challenge age is too large",
             Self::InvalidSolution => "proof-of-work solution is incorrect",
         };
         f.write_str(msg)
