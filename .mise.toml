@@ -1,0 +1,42 @@
+# Workspace task runner. Run `mise tasks` to list tasks.
+
+[tasks.fmt]
+description = "Format all Rust code"
+run = "cargo fmt --all"
+
+[tasks.fmt-check]
+description = "Check formatting without writing"
+run = "cargo fmt --all --check"
+
+[tasks.check]
+description = "Type-check the workspace"
+run = "cargo check --workspace --all-targets --all-features"
+
+[tasks.clippy]
+description = "Lint with Clippy, failing on warnings"
+run = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
+
+[tasks.test]
+description = "Run all tests"
+run = "cargo test --workspace --all-features"
+
+[tasks.docs]
+description = "Build documentation"
+run = "cargo doc --workspace --all-features --no-deps"
+
+[tasks.audit]
+description = "Dependency/advisory check (cargo-deny if present, else cargo audit)"
+run = """
+if command -v cargo-deny >/dev/null 2>&1; then
+  cargo deny check
+elif command -v cargo-audit >/dev/null 2>&1; then
+  cargo audit
+else
+  echo "Neither cargo-deny nor cargo-audit installed; install one to run audit" >&2
+  exit 1
+fi
+"""
+
+[tasks.verify]
+description = "Full verification: fmt-check + clippy + test + docs + audit"
+depends = ["fmt-check", "clippy", "test", "docs", "audit"]

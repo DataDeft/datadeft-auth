@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+# Members are added in step 0b (crate skeletons). Kept empty here so this
+# commit is independently buildable; switch to globs when skeletons land.
+members = []
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/datadeft/datadeft-auth"
+publish = false
+authors = ["Istvan <dev@l1x.be>"]
+
+# Shared lint policy: production code never unwraps or leaves stubs behind.
+# Test code is exempted via clippy.toml (allow-unwrap-in-tests etc.).
+[workspace.lints.clippy]
+uninlined_format_args = "allow"
+unwrap_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+
+[profile.dev]
+incremental = true
+
+[profile.bench]
+lto = "thin"
+codegen-units = 16
