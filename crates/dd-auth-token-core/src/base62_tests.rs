@@ -114,6 +114,9 @@ fn new_rejects_malformed_alphabets() {
     let mut dup = ENCODE_STD.to_vec();
     dup[5] = dup[0]; // two '0's
     assert!(Encoding::new(std::str::from_utf8(&dup).unwrap()).is_err());
+    // Non-ASCII alphabets are rejected even when their UTF-8 byte length is 62.
+    assert_eq!("é".repeat(31).len(), 62);
+    assert!(Encoding::new(&"é".repeat(31)).is_err());
 }
 
 #[test]

@@ -199,7 +199,79 @@ fn bound_cookie_enforces_idle_absolute_and_skew() {
     assert_eq!(
         mint_bound_cookie::<SessionCookie, _>(b"body", &ring, &mut rng, 1_000, 2_000, 1_000)
             .unwrap_err(),
-        TokenError::Internal
+        TokenError::InvalidTimestamp
+    );
+}
+
+#[test]
+fn mint_rejects_timestamps_outside_skew_tolerance() {
+    let ring = session_ring(0x8C, "active");
+    let mut rng = FixedNonceRng([0xAB; branca::NONCE_BYTES]);
+
+    assert_eq!(
+        mint_bound_cookie::<SessionCookie, _>(b"body", &ring, &mut rng, 1_000, 1_000, 1_061)
+            .unwrap_err(),
+        TokenError::InvalidTimestamp
+    );
+
+    let mut rng = FixedNonceRng([0xAC; branca::NONCE_BYTES]);
+    assert_eq!(
+        mint_bound_cookie::<SessionCookie, _>(b"body", &ring, &mut rng, 1_000, 1_000, 939)
+            .unwrap_err(),
+        TokenError::InvalidTimestamp
+    );
+}
+
+#[test]
+fn mint_preserves_keyring_errors_instead_of_funneling_to_invalid_token() {
+    let root = RootSecret::new([0x8D; crate::keyring::KEY_BYTES]);
+    let key = root
+        .derive_key::<SessionCookie>(&kid("active"))
+        .expect("derive key");
+    let ring = KeyRing::<SessionCookie>::new(
+        kid("active"),
+        vec![KeySlot::active_with_windows(kid("active"), key, 10, 20)],
+    )
+    .expect("ring");
+    let mut rng = FixedNonceRng([0xAD; branca::NONCE_BYTES]);
+
+    assert_eq!(
+        mint_bound_cookie::<SessionCookie, _>(b"body", &ring, &mut rng, 11, 11, 11).unwrap_err(),
+        TokenError::KeyExpired
+    );
+}
+
+#[test]
+fn body_cap_helper_accounts_for_framing() {
+    let id = kid("active");
+    let cap = max_body_bytes::<SessionCookie>(&id);
+    assert_eq!(
+        cap,
+        branca::MAX_PAYLOAD_BYTES
+            - (1 + 4 + 1 + SessionCookie::TOKEN_TYPE.len() + 1 + id.as_str().len())
+    );
+
+    let ring = session_ring(0x8E, "active");
+    let mut rng = FixedNonceRng([0xAE; branca::NONCE_BYTES]);
+    let ok_body = vec![0x42; cap];
+    assert!(mint_bound_cookie::<SessionCookie, _>(&ok_body, &ring, &mut rng, 1, 1, 1).is_ok());
+
+    let mut rng = FixedNonceRng([0xAF; branca::NONCE_BYTES]);
+    let too_big = vec![0x42; cap + 1];
+    assert_eq!(
+        mint_bound_cookie::<SessionCookie, _>(&too_big, &ring, &mut rng, 1, 1, 1).unwrap_err(),
+        TokenError::PayloadTooLarge
+    );
+}
+
+#[test]
+fn cookie_edge_rejects_oversized_token_before_decode() {
+    let ring = session_ring(0x8F, "active");
+    let oversized = format!("v1.active.{}", "1".repeat(branca::MAX_TOKEN_BYTES + 1));
+
+    assert_eq!(
+        decrypt_wrapped_token::<SessionCookie>(&oversized, &ring, 1, 60).unwrap_err(),
+        TokenError::InvalidToken
     );
 }
 

@@ -10,10 +10,13 @@
 //!
 //! # Determinism
 //!
-//! [`encode`] does NOT accept a caller-chosen nonce. The caller supplies a
-//! [`CryptoRng`], and this module draws the 24-byte nonce internally.
-//! Fixed-nonce encoding is available only for crate tests and the explicit
-//! `test-support` feature via plain `encode_with_nonce` (hidden by default).
+//! [`encode`] draws the 24-byte nonce internally from the caller-supplied
+//! [`CryptoRng`]. This is API hygiene, not a proof that callers cannot build a
+//! deterministic RNG: `CryptoRng` is a marker trait. Production callers MUST use
+//! an OS-backed CSPRNG. Fixed raw nonce bytes are additionally hidden from the
+//! default public API; `encode_with_nonce` is available only for crate tests and
+//! the explicit `test-support` feature. CI guards that gate so the fixed-nonce
+//! helper cannot accidentally enter the default public API.
 
 use std::fmt;
 
@@ -35,21 +38,23 @@ const TAG_BYTES: usize = 16;
 /// Encode-side payload guard: a Branca token encrypts a small JSON payload,
 /// not arbitrary blobs. Caps work on the auth hot path.
 pub const MAX_PAYLOAD_BYTES: usize = 1024;
-/// Decode-side guard on the base62 token string.
-pub const MAX_TOKEN_BYTES: usize = 2048;
+/// Maximum decoded Branca blob: header + 1 KiB payload ciphertext + tag.
+pub const MAX_TOKEN_BLOB_BYTES: usize = HEADER_BYTES + MAX_PAYLOAD_BYTES + TAG_BYTES;
+/// Decode-side guard on the base62 token string for [`MAX_PAYLOAD_BYTES`].
+pub const MAX_TOKEN_BYTES: usize = 1437;
 
-/// String-independent identity of a Branca token, for revocation / replay /
-/// dedup keys.
+/// String-independent identity of one Branca token instance.
 ///
 /// Wraps the token's 24-byte nonce, which lives in the AEAD-authenticated header
-/// rather than in the mutable base62 spelling. Every encoding of a given token —
-/// including non-canonical, zero-prefixed forms — therefore maps to the *same*
-/// `Jti`. Revocation lists, replay caches, and rate-limit rows MUST key on this,
-/// never on the raw token string: type such stores as `Set<Jti>` / `Map<Jti, _>`
-/// so a caller cannot accidentally key on the malleable string.
+/// rather than in the mutable base62 spelling. Every accepted spelling of the
+/// same token therefore maps to the same `Jti`. Use it for replay/single-use
+/// caches where the credential itself is the thing being consumed (magic links,
+/// PoW proofs, one-time flow tokens).
 ///
-/// This holds even without the canonicality gate in [`decode`] — keying on the
-/// nonce is the primary defense; the parser gate is defense in depth.
+/// Do **not** use `Jti` as a session revocation key for sliding sessions. A
+/// sliding re-mint intentionally produces a fresh nonce and therefore a fresh
+/// `Jti`. Session logout/compromise revocation must key on a caller-supplied
+/// stable session id inside the encrypted body that survives re-minting.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Jti([u8; NONCE_BYTES]);
 
@@ -74,7 +79,6 @@ impl fmt::Debug for Jti {
 /// Returned by [`decode`] instead of a bare tuple so callers key on typed,
 /// canonical fields — never on the raw token string, which is not a unique
 /// handle for the token (see the malleability note on [`decode`]).
-#[derive(Clone)]
 pub struct Verified {
     /// Mint time in unix seconds (authenticated as AAD). TTL is the caller's
     /// responsibility; this function performs no clock check.
@@ -113,8 +117,9 @@ impl fmt::Debug for Verified {
 /// `key` must be exactly 32 bytes. `timestamp` is the mint time in unix
 /// seconds (stored big-endian and authenticated as AAD). Production callers
 /// MUST pass an OS-backed CSPRNG. Nonce reuse under the same key is
-/// catastrophic, so the default public API does not accept caller-chosen nonce
-/// bytes.
+/// catastrophic. The public API draws nonce bytes internally for hygiene, but
+/// callers still control the RNG object; production code must pass a reviewed
+/// OS-backed CSPRNG, not a deterministic fixture RNG.
 pub fn encode<R: RngCore + CryptoRng + ?Sized>(
     data: &[u8],
     key: &[u8],
@@ -187,6 +192,21 @@ fn validate_encode_inputs(data: &[u8], key: &[u8]) -> Result<(), TokenError> {
     Ok(())
 }
 
+/// Upper bound on base62 characters for a Branca token carrying `payload_bytes`
+/// bytes of plaintext.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+#[must_use]
+pub fn max_token_chars_for_payload(payload_bytes: usize) -> usize {
+    let blob_bytes = HEADER_BYTES
+        .saturating_add(TAG_BYTES)
+        .saturating_add(payload_bytes);
+    ((blob_bytes as f64) * (256_f64.ln() / 62_f64.ln())).ceil() as usize
+}
+
 /// Decrypt a Branca token, returning a [`Verified`] (timestamp, nonce,
 /// plaintext) without any clock check. TTL is the caller's responsibility (the
 /// cookie layers apply it with an injected `now_unix`), which keeps this
@@ -222,17 +242,21 @@ pub fn decode(token: &str, key: &[u8]) -> Result<Verified, TokenError> {
 
     let blob = base62::decode(token).map_err(|_| TokenError::InvalidBase62)?;
 
-    // Canonicality backstop: require the token to be the *unique* base62 spelling
-    // of its bytes. Re-encode and demand an exact match. This subsumes the cheap
-    // check above and also rejects embedded-newline forms that `base62::decode`
-    // otherwise tolerates — neither belongs in a token.
-    if base62::encode(&blob) != token {
+    // Header (29) + at least the Poly1305 tag (16), and no more than the
+    // configured payload cap. Check this before canonical re-encoding so an
+    // oversized decoded blob cannot drive extra O(n²) encode work.
+    if blob.len() < HEADER_BYTES + TAG_BYTES {
         return Err(TokenError::InvalidBase62);
     }
+    if blob.len() > MAX_TOKEN_BLOB_BYTES {
+        return Err(TokenError::PayloadTooLarge);
+    }
 
-    // Header (29) + at least the Poly1305 tag (16). A shorter blob cannot be a
-    // well-formed token; reject before touching the AEAD.
-    if blob.len() < HEADER_BYTES + TAG_BYTES {
+    // Canonicality backstop: require the token to be the *unique* base62 spelling
+    // of its bytes. Re-encode and demand an exact match. This is intentionally
+    // stricter than generic Branca decoders: non-canonical leading-zero or
+    // embedded-newline spellings may decode elsewhere but are not accepted here.
+    if base62::encode(&blob) != token {
         return Err(TokenError::InvalidBase62);
     }
 

@@ -38,6 +38,8 @@ pub enum TokenError {
     KeyringMisconfigured,
     /// Token / cookie TTL has been exceeded.
     Expired,
+    /// Caller supplied incoherent mint timestamps.
+    InvalidTimestamp,
     /// Catch-all for JSON / overflow / invariant failures (never carries data).
     Internal,
 }
@@ -57,6 +59,7 @@ impl fmt::Display for TokenError {
             TokenError::KeyExpired => f.write_str("key is outside its validity window"),
             TokenError::KeyringMisconfigured => f.write_str("keyring is misconfigured"),
             TokenError::Expired => f.write_str("token has expired"),
+            TokenError::InvalidTimestamp => f.write_str("invalid token timestamp"),
             TokenError::Internal => f.write_str("internal token error"),
         }
     }

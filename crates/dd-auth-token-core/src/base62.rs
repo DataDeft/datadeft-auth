@@ -39,7 +39,7 @@ pub const ENCODE_STD: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
 pub enum Base62Error {
     /// An input byte is not in the alphabet.
     InvalidByte { byte: u8, position: usize },
-    /// A custom alphabet was malformed (wrong length, duplicates, or newline).
+    /// A custom alphabet was malformed (wrong length, duplicates, non-ASCII, or newline).
     InvalidAlphabet,
 }
 
@@ -53,7 +53,7 @@ impl fmt::Display for Base62Error {
                 position = *position,
             ),
             Base62Error::InvalidAlphabet => {
-                f.write_str("base62 alphabet must be 62 unique non-newline bytes")
+                f.write_str("base62 alphabet must be 62 unique ASCII non-newline bytes")
             }
         }
     }
@@ -71,15 +71,18 @@ pub struct Encoding {
 impl Encoding {
     /// Build an encoding from a 62-byte alphabet.
     ///
-    /// The alphabet must be exactly 62 bytes, contain no `\n` / `\r`, and have
-    /// no duplicate bytes. User-supplied alphabets are validated; the standard
-    /// alphabet should be obtained via [`Encoding::std`].
+    /// The alphabet must be exactly 62 ASCII bytes, contain no `\n` / `\r`,
+    /// and have no duplicate bytes. User-supplied alphabets are validated; the
+    /// standard alphabet should be obtained via [`Encoding::std`].
     pub fn new(alphabet: &str) -> Result<Self, Base62Error> {
         let bytes = alphabet.as_bytes();
         if bytes.len() != 62 {
             return Err(Base62Error::InvalidAlphabet);
         }
-        if bytes.contains(&b'\n') || bytes.contains(&b'\r') {
+        if bytes
+            .iter()
+            .any(|&b| !b.is_ascii() || matches!(b, b'\n' | b'\r'))
+        {
             return Err(Base62Error::InvalidAlphabet);
         }
 
@@ -159,11 +162,10 @@ impl Encoding {
     #[must_use]
     pub fn encode_to_string(&self, src: &[u8]) -> String {
         let encoded = self.encode(src);
-        // The standard alphabet is ASCII; a custom alphabet is validated to be
-        // non-newline, but a caller could still inject non-UTF-8 bytes via
-        // `new`. Use lossy conversion to stay infallible for the common path.
-        String::from_utf8(encoded)
-            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+        // `Encoding::new` validates every alphabet byte as ASCII, and
+        // `Encoding::std` is a known-good ASCII constant, so this conversion is
+        // infallible without a lossy replacement path.
+        encoded.into_iter().map(char::from).collect()
     }
 
     /// Decode base62 `src`, tolerating embedded `\n` / `\r`.

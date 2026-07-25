@@ -1,11 +1,11 @@
 //! Cookie wrapper helpers for `v1.{kid}.{branca-token}` values.
 //!
 //! This module owns the shared wrapper grammar, early `kid` validation, redacted
-//! debug output, generic public error mapping, freshness enforcement, and
-//! encrypted payload binding. Every high-level cookie payload stores its `typ`,
-//! `kid`, and issue time (`iat`) inside the AEAD-protected body and verifies them
-//! against the outer `v1.{kid}.` wrapper and the caller's freshness bounds after
-//! decrypt.
+//! debug output, generic public error mapping for verification, freshness
+//! enforcement, and encrypted payload binding. Every high-level cookie payload
+//! stores its `typ`, `kid`, and issue time (`iat`) inside the AEAD-protected body
+//! and verifies them against the outer `v1.{kid}.` wrapper and the caller's
+//! freshness bounds after decrypt.
 //!
 //! # Freshness is mandatory
 //!
@@ -14,12 +14,20 @@
 //! timestamp is *last activity* (idle bound) and the payload `iat` is *first
 //! issue* (absolute bound), so a re-minted sliding session cannot outlive its
 //! absolute lifetime. Future-dated timestamps (a skewed or rewound minting host)
-//! are rejected beyond [`CLOCK_SKEW_TOLERANCE_SECS`]. All expiry funnels to the
-//! single generic [`TokenError::InvalidToken`] at the public edge.
+//! are rejected beyond [`CLOCK_SKEW_TOLERANCE_SECS`]. All verification failures
+//! funnel to the single generic [`TokenError::InvalidToken`] at the public edge;
+//! mint/configuration failures remain distinct so operators can alarm on them.
+//!
+//! # Payload sizing
+//!
+//! [`branca::MAX_PAYLOAD_BYTES`] applies after internal framing, not directly to
+//! the caller body. Use [`max_body_bytes`] to compute the effective body budget
+//! for a purpose and key id.
 
 use std::fmt;
 
 use rand_core::{CryptoRng, RngCore};
+use zeroize::Zeroize;
 
 use crate::branca::{self, Jti, Verified};
 use crate::error::TokenError;
@@ -129,6 +137,10 @@ pub fn decrypt_wrapped_token<P: KeyPurpose>(
     max_age_secs: u64,
 ) -> Result<(KeyId, Verified), TokenError> {
     let parts = parse_cookie_wrapper(value)?;
+    if parts.token().len() > max_cookie_token_bytes::<P>(parts.kid()) {
+        return Err(TokenError::InvalidToken);
+    }
+
     let key = keyring
         .verification_key_at(parts.kid(), now_unix)
         .map_err(|_| TokenError::InvalidToken)?;
@@ -140,7 +152,6 @@ pub fn decrypt_wrapped_token<P: KeyPurpose>(
 }
 
 /// Verified bound cookie payload.
-#[derive(Clone)]
 pub struct VerifiedCookie {
     kid: KeyId,
     timestamp: u32,
@@ -178,6 +189,12 @@ impl VerifiedCookie {
     }
 }
 
+impl Drop for VerifiedCookie {
+    fn drop(&mut self) {
+        self.body.as_mut_slice().zeroize();
+    }
+}
+
 impl fmt::Debug for VerifiedCookie {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VerifiedCookie")
@@ -199,7 +216,13 @@ impl fmt::Debug for VerifiedCookie {
 /// `timestamp` is the last-activity/mint time (stored in the Branca header);
 /// `iat` is the first-issue anchor for the absolute lifetime. On a first mint
 /// pass `iat == timestamp`; on a sliding re-mint carry the original `iat` forward
-/// with a fresh `timestamp`. `iat` must not postdate `timestamp`.
+/// with a fresh `timestamp`. `timestamp` must be within
+/// [`CLOCK_SKEW_TOLERANCE_SECS`] of `now_unix`, and `iat` must not postdate
+/// `timestamp`.
+///
+/// Unlike verification, minting does not funnel keyring/configuration failures
+/// into [`TokenError::InvalidToken`]; rotation faults must be visible to
+/// operators as distinct errors.
 pub fn mint_bound_cookie<P, R>(
     body: &[u8],
     keyring: &KeyRing<P>,
@@ -212,15 +235,26 @@ where
     P: KeyPurpose,
     R: RngCore + CryptoRng + ?Sized,
 {
+    check_mint_timestamp(timestamp, now_unix)?;
     if iat > timestamp {
-        return Err(TokenError::Internal);
+        return Err(TokenError::InvalidTimestamp);
     }
-    let active = keyring
-        .minting_key_at(now_unix)
-        .map_err(|_| TokenError::InvalidToken)?;
-    let payload = encode_bound_payload(P::TOKEN_TYPE, active.kid().as_str(), iat, body)?;
-    let token = branca::encode(&payload, active.key().as_bytes(), rng, timestamp)
-        .map_err(|_| TokenError::InvalidToken)?;
+
+    let active = keyring.minting_key_at(now_unix)?;
+    if body.len() > max_body_bytes::<P>(active.kid()) {
+        return Err(TokenError::PayloadTooLarge);
+    }
+
+    let mut payload = encode_bound_payload(P::TOKEN_TYPE, active.kid().as_str(), iat, body)?;
+    let token = match branca::encode(&payload, active.key().as_bytes(), rng, timestamp) {
+        Ok(token) => token,
+        Err(err) => {
+            payload.as_mut_slice().zeroize();
+            return Err(err);
+        }
+    };
+    payload.as_mut_slice().zeroize();
+
     Ok(format!(
         "{TOKEN_VERSION_PREFIX}.{}.{}",
         active.kid().as_str(),
@@ -260,6 +294,42 @@ pub fn parse_bound_cookie<P: KeyPurpose>(
         jti: verified.jti(),
         body: payload.body.to_vec(),
     })
+}
+
+/// Maximum application body bytes that fit in the encrypted bound-cookie payload
+/// for purpose `P` and this validated `kid`.
+///
+/// The Branca payload cap applies after internal framing:
+/// `v(1) || iat(4) || typ_len(1) || typ || kid_len(1) || kid || body`.
+#[must_use]
+pub fn max_body_bytes<P: KeyPurpose>(kid: &KeyId) -> usize {
+    max_body_bytes_for_parts(P::TOKEN_TYPE, kid.as_str())
+}
+
+fn max_body_bytes_for_parts(typ: &str, kid: &str) -> usize {
+    branca::MAX_PAYLOAD_BYTES.saturating_sub(bound_payload_overhead(typ, kid))
+}
+
+fn max_cookie_token_bytes<P: KeyPurpose>(kid: &KeyId) -> usize {
+    branca::max_token_chars_for_payload(
+        bound_payload_overhead(P::TOKEN_TYPE, kid.as_str())
+            .saturating_add(max_body_bytes::<P>(kid)),
+    )
+}
+
+fn bound_payload_overhead(typ: &str, kid: &str) -> usize {
+    1 + 4 + 1 + typ.len() + 1 + kid.len()
+}
+
+fn check_mint_timestamp(timestamp: u32, now_unix: u64) -> Result<(), TokenError> {
+    let timestamp = u64::from(timestamp);
+    if timestamp > now_unix.saturating_add(CLOCK_SKEW_TOLERANCE_SECS) {
+        return Err(TokenError::InvalidTimestamp);
+    }
+    if now_unix > timestamp.saturating_add(CLOCK_SKEW_TOLERANCE_SECS) {
+        return Err(TokenError::InvalidTimestamp);
+    }
+    Ok(())
 }
 
 /// Idle-bound freshness on the Branca timestamp (last activity). Returns
@@ -320,6 +390,10 @@ fn encode_bound_payload(
     iat: u32,
     body: &[u8],
 ) -> Result<Vec<u8>, TokenError> {
+    if body.len() > max_body_bytes_for_parts(typ, kid) {
+        return Err(TokenError::PayloadTooLarge);
+    }
+
     let typ = typ.as_bytes();
     let kid = kid.as_bytes();
     // `typ` is a small crate constant and `kid` is <= 64 bytes via KeyId::parse;
@@ -327,6 +401,7 @@ fn encode_bound_payload(
     if typ.len() > usize::from(u8::MAX) || kid.len() > usize::from(u8::MAX) {
         return Err(TokenError::Internal);
     }
+
     let mut out = Vec::with_capacity(1 + 4 + 1 + typ.len() + 1 + kid.len() + body.len());
     out.push(PAYLOAD_V1);
     out.extend_from_slice(&iat.to_be_bytes());
