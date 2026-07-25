@@ -24,6 +24,8 @@ pub enum TokenError {
     BadNonceLength,
     /// AEAD decryption failed (tag mismatch / wrong key / tamper).
     DecryptFailed,
+    /// Entropy source failed while minting a token.
+    EntropyUnavailable,
     /// AEAD encryption failed (should not happen for valid inputs).
     EncryptFailed,
     /// Payload exceeded the documented size guard (DoS backstop).
@@ -50,6 +52,7 @@ impl fmt::Display for TokenError {
             TokenError::BadKeyLength => f.write_str("key must be 32 bytes"),
             TokenError::BadNonceLength => f.write_str("nonce must be 24 bytes"),
             TokenError::DecryptFailed => f.write_str("token decryption failed"),
+            TokenError::EntropyUnavailable => f.write_str("entropy source unavailable"),
             TokenError::EncryptFailed => f.write_str("token encryption failed"),
             TokenError::PayloadTooLarge => f.write_str("payload too large"),
             TokenError::MalformedCookie => f.write_str("malformed cookie"),

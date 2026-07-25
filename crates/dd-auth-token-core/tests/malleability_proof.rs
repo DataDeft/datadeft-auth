@@ -8,12 +8,51 @@
 
 use dd_auth_token_core::branca;
 use proptest::prelude::*;
+use rand_core::{CryptoRng, RngCore};
+
+struct FixedNonceRng([u8; branca::NONCE_BYTES]);
+
+impl RngCore for FixedNonceRng {
+    fn next_u32(&mut self) -> u32 {
+        0
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        0
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        assert_eq!(
+            dest.len(),
+            self.0.len(),
+            "Branca requests exactly one nonce"
+        );
+        dest.copy_from_slice(&self.0);
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
+        self.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+impl CryptoRng for FixedNonceRng {}
+
+fn encode_with_fixed_nonce(
+    payload: &[u8],
+    key: &[u8],
+    nonce: [u8; branca::NONCE_BYTES],
+    timestamp: u32,
+) -> String {
+    let mut rng = FixedNonceRng(nonce);
+    branca::encode(payload, key, &mut rng, timestamp).expect("encode")
+}
 
 #[test]
 fn zero_prefixed_tokens_are_rejected() {
     let key = b"supersecretkeyyoushouldnotcommit";
     let nonce = [7u8; branca::NONCE_BYTES];
-    let token = branca::encode(b"Hello world!", key, &nonce, 123_206_400).expect("encode");
+    let token = encode_with_fixed_nonce(b"Hello world!", key, nonce, 123_206_400);
 
     // Baseline: the canonical token authenticates.
     assert!(branca::decode(&token, key).is_ok());
@@ -43,7 +82,7 @@ proptest! {
         k in 1usize..40,
     ) {
         let key = [0x11u8; branca::KEY_BYTES];
-        let token = branca::encode(&payload, &key, &nonce, timestamp).unwrap();
+        let token = encode_with_fixed_nonce(&payload, &key, nonce, timestamp);
 
         // Canonical token authenticates to the minted fields; Jti tracks the nonce.
         let v = branca::decode(&token, &key).unwrap();

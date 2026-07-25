@@ -140,7 +140,9 @@ fn integer_codec_limitations_are_pinned() {
     let enc = Encoding::std();
 
     // 1. A leading 0x00 byte is dropped on a round trip.
-    let round = enc.decode_str(&enc.encode_to_string(&[0x00, 0x01, 0x02])).unwrap();
+    let round = enc
+        .decode_str(&enc.encode_to_string(&[0x00, 0x01, 0x02]))
+        .unwrap();
     assert_eq!(round, vec![0x01, 0x02], "leading 0x00 is not preserved");
 
     // 2. Decoding is non-canonical: leading '0' digits decode to the same bytes.

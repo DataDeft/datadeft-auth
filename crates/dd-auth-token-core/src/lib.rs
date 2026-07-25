@@ -11,9 +11,11 @@
 //! # Determinism contract
 //!
 //! Core APIs never read the system clock, environment, filesystem, network, or
-//! a random number generator. Branca minting takes an explicit 24-byte nonce;
-//! production callers MUST supply fresh OS-CSPRNG bytes and never reuse a
-//! `(key, nonce)` pair. Tests use fixed nonces for deterministic vectors.
+//! a random number generator directly. Branca minting takes a caller-supplied
+//! [`rand_core::CryptoRng`] and draws the nonce internally; production callers
+//! MUST pass an OS-CSPRNG-backed RNG and never reuse a `(key, nonce)` pair.
+//! Fixed-nonce encoding is hidden behind tests / the explicit `test-support`
+//! feature for official vectors only.
 //!
 //! Cookie wrappers, keyrings, session IDs, and PoW proof cookies are deliberately
 //! out of scope for this packet.

@@ -72,7 +72,7 @@ fn official_vectors_encode_decode_and_reject() {
                     .as_slice()
                     .try_into()
                     .expect("fixture nonce is 24 bytes");
-                let result = encode(&msg, &key, &nonce, t.timestamp);
+                let result = encode_with_nonce(&msg, &key, &nonce, t.timestamp);
 
                 if t.is_valid {
                     let token = result.expect("valid encoding vector should encode");
@@ -111,7 +111,7 @@ fn deterministic_encode_with_fixed_nonce_round_trips() {
     let ts = 123_206_400;
 
     for msg in [b"".as_slice(), b"Hello world!", b"Test", &[0x80]] {
-        let token = encode(msg, key, &nonce, ts).expect("encode");
+        let token = encode_with_nonce(msg, key, &nonce, ts).expect("encode");
         let v = decode(&token, key).expect("decode");
         assert_eq!(v.timestamp, ts);
         assert_eq!(v.payload, msg);
@@ -124,7 +124,7 @@ fn deterministic_encode_with_fixed_nonce_round_trips() {
 fn decode_rejects_wrong_key_version_and_short_key() {
     let key = b"supersecretkeyyoushouldnotcommit";
     let nonce = [0u8; NONCE_BYTES];
-    let token = encode(b"Hello world!", key, &nonce, 0).expect("encode");
+    let token = encode_with_nonce(b"Hello world!", key, &nonce, 0).expect("encode");
 
     // Wrong key → tag mismatch (coarse DecryptFailed).
     let wrong = b"supersecretkeyyoushouldnotcommi.";
@@ -152,7 +152,7 @@ fn payload_and_token_size_guards_fire() {
     // Payload over 1 KiB is rejected.
     let big = vec![0u8; MAX_PAYLOAD_BYTES + 1];
     assert_eq!(
-        encode(&big, &key, &nonce, 0).unwrap_err(),
+        encode_with_nonce(&big, &key, &nonce, 0).unwrap_err(),
         TokenError::PayloadTooLarge
     );
     // Oversized token string is rejected pre-decode.
@@ -167,7 +167,7 @@ fn payload_and_token_size_guards_fire() {
 fn non_canonical_zero_prefixed_tokens_are_rejected() {
     let key = [0x11u8; KEY_BYTES];
     let nonce = [0x22u8; NONCE_BYTES];
-    let token = encode(b"Hello world!", &key, &nonce, 123_206_400).expect("encode");
+    let token = encode_with_nonce(b"Hello world!", &key, &nonce, 123_206_400).expect("encode");
 
     // The canonical token decodes.
     let v = decode(&token, &key).expect("canonical token decodes");
@@ -187,7 +187,8 @@ fn non_canonical_zero_prefixed_tokens_are_rejected() {
 
     // A different token (different nonce) yields a different Jti; keying
     // revocation on Jti is stable across spellings and unique across tokens.
-    let other = encode(b"Hello world!", &key, &[0x23u8; NONCE_BYTES], 123_206_400).expect("encode");
+    let other = encode_with_nonce(b"Hello world!", &key, &[0x23u8; NONCE_BYTES], 123_206_400)
+        .expect("encode");
     assert_ne!(decode(&other, &key).unwrap().jti(), jti);
 }
 
@@ -196,7 +197,7 @@ fn empty_and_non_utf8_payloads_round_trip() {
     let key = [0xAB; KEY_BYTES];
     let nonce = [0xCD; NONCE_BYTES];
     for msg in [b"".as_slice(), &[0x80, 0x81, 0x82]] {
-        let token = encode(msg, &key, &nonce, 9_999).expect("encode");
+        let token = encode_with_nonce(msg, &key, &nonce, 9_999).expect("encode");
         let got = decode(&token, &key).expect("decode").payload;
         assert_eq!(got, msg);
     }
@@ -215,7 +216,7 @@ proptest! {
         payload in prop::collection::vec(any::<u8>(), 0..256),
         timestamp in any::<u32>(),
     ) {
-        let token = encode(&payload, &key, &nonce, timestamp).unwrap();
+        let token = encode_with_nonce(&payload, &key, &nonce, timestamp).unwrap();
         let v = decode(&token, &key).unwrap();
         prop_assert_eq!(v.timestamp, timestamp);
         prop_assert_eq!(&v.payload, &payload);
@@ -236,7 +237,7 @@ proptest! {
         pos in any::<prop::sample::Index>(),
         alphabet_idx in 0usize..62,
     ) {
-        let token = encode(&payload, &key, &nonce, timestamp).unwrap();
+        let token = encode_with_nonce(&payload, &key, &nonce, timestamp).unwrap();
         let mut bytes = token.into_bytes();
         let i = pos.index(bytes.len());
         let alphabet = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";

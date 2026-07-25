@@ -10,15 +10,16 @@
 //!
 //! # Determinism
 //!
-//! [`encode`] does NOT generate the nonce. The caller supplies a 24-byte
-//! nonce, which for production MUST come from an OS CSPRNG. This keeps the
-//! crate IO-free and matches the entropy-injection pattern used by the other
-//! core crates in this workspace.
+//! [`encode`] does NOT accept a caller-chosen nonce. The caller supplies a
+//! [`CryptoRng`], and this module draws the 24-byte nonce internally.
+//! Fixed-nonce encoding is available only for crate tests and the explicit
+//! `test-support` feature via plain `encode_with_nonce` (hidden by default).
 
 use std::fmt;
 
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
+use rand_core::{CryptoRng, RngCore};
 use subtle::ConstantTimeEq;
 
 use crate::base62;
@@ -108,24 +109,49 @@ impl fmt::Debug for Verified {
     }
 }
 
-/// Encrypt `data` into a Branca token string.
+/// Encrypt `data` into a Branca token string using a nonce drawn from `rng`.
 ///
-/// `key` must be exactly 32 bytes and `nonce` exactly 24 bytes. `timestamp` is
-/// the mint time in unix seconds (stored big-endian and authenticated as AAD).
-/// The nonce is NOT generated here — production callers MUST supply a fresh
-/// CSPRNG nonce per token (see the crate-level warning on reuse).
-pub fn encode(
+/// `key` must be exactly 32 bytes. `timestamp` is the mint time in unix
+/// seconds (stored big-endian and authenticated as AAD). Production callers
+/// MUST pass an OS-backed CSPRNG. Nonce reuse under the same key is
+/// catastrophic, so the default public API does not accept caller-chosen nonce
+/// bytes.
+pub fn encode<R: RngCore + CryptoRng + ?Sized>(
+    data: &[u8],
+    key: &[u8],
+    rng: &mut R,
+    timestamp: u32,
+) -> Result<String, TokenError> {
+    validate_encode_inputs(data, key)?;
+    let mut nonce = [0u8; NONCE_BYTES];
+    rng.try_fill_bytes(&mut nonce)
+        .map_err(|_| TokenError::EntropyUnavailable)?;
+    encode_with_nonce_inner(data, key, &nonce, timestamp)
+}
+
+/// Encrypt `data` using a caller-supplied nonce.
+///
+/// This exists for official test vectors and deterministic fixtures only. It
+/// is deliberately hidden from the default public API because choosing nonces
+/// by hand is a security footgun: XChaCha20-Poly1305 nonce reuse under the same
+/// key is catastrophic.
+#[cfg(any(test, feature = "test-support"))]
+pub fn encode_with_nonce(
     data: &[u8],
     key: &[u8],
     nonce: &[u8; NONCE_BYTES],
     timestamp: u32,
 ) -> Result<String, TokenError> {
-    if data.len() > MAX_PAYLOAD_BYTES {
-        return Err(TokenError::PayloadTooLarge);
-    }
-    if key.len() != KEY_BYTES {
-        return Err(TokenError::BadKeyLength);
-    }
+    encode_with_nonce_inner(data, key, nonce, timestamp)
+}
+
+fn encode_with_nonce_inner(
+    data: &[u8],
+    key: &[u8],
+    nonce: &[u8; NONCE_BYTES],
+    timestamp: u32,
+) -> Result<String, TokenError> {
+    validate_encode_inputs(data, key)?;
 
     let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
 
@@ -150,6 +176,16 @@ pub fn encode(
     blob.extend_from_slice(&ciphertext);
 
     Ok(base62::encode(&blob))
+}
+
+fn validate_encode_inputs(data: &[u8], key: &[u8]) -> Result<(), TokenError> {
+    if data.len() > MAX_PAYLOAD_BYTES {
+        return Err(TokenError::PayloadTooLarge);
+    }
+    if key.len() != KEY_BYTES {
+        return Err(TokenError::BadKeyLength);
+    }
+    Ok(())
 }
 
 /// Decrypt a Branca token, returning a [`Verified`] (timestamp, nonce,
