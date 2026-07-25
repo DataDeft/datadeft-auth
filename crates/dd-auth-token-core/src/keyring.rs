@@ -139,24 +139,18 @@ pub struct BrancaKey<P = ()> {
 }
 
 impl<P> BrancaKey<P> {
-    /// Wrap derived/loaded Branca key material.
+    /// Wrap derived Branca key material. Private to keep public typed keys on
+    /// the HKDF path through [`RootSecret::derive_key`].
     #[must_use]
-    pub fn new(bytes: [u8; KEY_BYTES]) -> Self {
+    pub(crate) fn new(bytes: [u8; KEY_BYTES]) -> Self {
         Self {
             bytes,
             _purpose: PhantomData,
         }
     }
 
-    #[allow(dead_code)] // used by cookie encryption once cookie wrappers land
     pub(crate) fn as_bytes(&self) -> &[u8; KEY_BYTES] {
         &self.bytes
-    }
-}
-
-impl<P> Clone for BrancaKey<P> {
-    fn clone(&self) -> Self {
-        Self::new(self.bytes)
     }
 }
 
@@ -220,7 +214,7 @@ fn is_valid_key_id(value: &str) -> bool {
 }
 
 /// One purpose-typed keyring slot.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct KeySlot<P: KeyPurpose> {
     kid: KeyId,
     key: BrancaKey<P>,
@@ -299,16 +293,17 @@ impl<P: KeyPurpose> KeySlot<P> {
 ///
 /// A `KeyRing<SessionCookie>` cannot be passed where a `KeyRing<PowCookie>` is
 /// expected. Purpose separation is enforced both by HKDF output and Rust type.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct KeyRing<P: KeyPurpose> {
     active_kid: KeyId,
     keys: Vec<KeySlot<P>>,
 }
 
 impl<P: KeyPurpose> KeyRing<P> {
-    /// Build a ring with exactly one active key and no duplicate `kid`s.
+    /// Build a ring with exactly one active key, no duplicate `kid`s, and
+    /// coherent rotation windows.
     pub fn new(active_kid: KeyId, keys: Vec<KeySlot<P>>) -> Result<Self, TokenError> {
-        if keys.is_empty() || has_duplicate_key_ids(&keys) {
+        if keys.is_empty() || has_duplicate_key_ids(&keys) || has_incoherent_windows(&keys) {
             return Err(TokenError::KeyringMisconfigured);
         }
 
@@ -367,6 +362,12 @@ impl<P: KeyPurpose> KeyRing<P> {
 fn has_duplicate_key_ids<P: KeyPurpose>(keys: &[KeySlot<P>]) -> bool {
     let mut seen = HashSet::new();
     keys.iter().any(|slot| !seen.insert(&slot.kid))
+}
+
+fn has_incoherent_windows<P: KeyPurpose>(keys: &[KeySlot<P>]) -> bool {
+    keys.iter().any(|slot| {
+        slot.status == KeyStatus::Active && slot.mint_until_unix > slot.verify_until_unix
+    })
 }
 
 #[cfg(test)]

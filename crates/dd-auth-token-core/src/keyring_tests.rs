@@ -148,18 +148,21 @@ fn typed_keyring_mints_with_active_and_verifies_with_previous() {
 #[test]
 fn keyring_rejects_duplicate_or_missing_active_keys() {
     let root = RootSecret::new([0x44; KEY_BYTES]);
-    let active = root
+    let active_dup = root
         .derive_key::<PowCookie>(&kid("pow-active"))
         .expect("active key");
-    let previous = root
+    let previous_dup = root
+        .derive_key::<PowCookie>(&kid("pow-active"))
+        .expect("previous key");
+    let previous_only = root
         .derive_key::<PowCookie>(&kid("pow-old"))
         .expect("previous key");
 
     let dup = KeyRing::<PowCookie>::new(
         kid("pow-active"),
         vec![
-            KeySlot::active(kid("pow-active"), active.clone()),
-            KeySlot::verify_only(kid("pow-active"), previous.clone(), u64::MAX),
+            KeySlot::active(kid("pow-active"), active_dup),
+            KeySlot::verify_only(kid("pow-active"), previous_dup, u64::MAX),
         ],
     )
     .unwrap_err();
@@ -167,10 +170,35 @@ fn keyring_rejects_duplicate_or_missing_active_keys() {
 
     let no_active = KeyRing::<PowCookie>::new(
         kid("pow-active"),
-        vec![KeySlot::verify_only(kid("pow-old"), previous, u64::MAX)],
+        vec![KeySlot::verify_only(
+            kid("pow-old"),
+            previous_only,
+            u64::MAX,
+        )],
     )
     .unwrap_err();
     assert_eq!(no_active, TokenError::KeyringMisconfigured);
+}
+
+#[test]
+fn keyring_rejects_active_mint_window_after_verify_window() {
+    let root = RootSecret::new([0x45; KEY_BYTES]);
+    let key = root
+        .derive_key::<SessionCookie>(&kid("session-active"))
+        .expect("active key");
+
+    let err = KeyRing::<SessionCookie>::new(
+        kid("session-active"),
+        vec![KeySlot::active_with_windows(
+            kid("session-active"),
+            key,
+            100,
+            50,
+        )],
+    )
+    .unwrap_err();
+
+    assert_eq!(err, TokenError::KeyringMisconfigured);
 }
 
 #[test]
