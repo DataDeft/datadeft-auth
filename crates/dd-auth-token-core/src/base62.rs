@@ -163,9 +163,14 @@ impl Encoding {
     pub fn encode_to_string(&self, src: &[u8]) -> String {
         let encoded = self.encode(src);
         // `Encoding::new` validates every alphabet byte as ASCII, and
-        // `Encoding::std` is a known-good ASCII constant, so this conversion is
-        // infallible without a lossy replacement path.
-        encoded.into_iter().map(char::from).collect()
+        // `Encoding::std` is a known-good ASCII constant, so the Ok path moves
+        // the encoded bytes into the String. The Err branch is unreachable for
+        // validated alphabets but avoids panicking in production code if this
+        // module is refactored incorrectly.
+        match String::from_utf8(encoded) {
+            Ok(value) => value,
+            Err(err) => String::from_utf8_lossy(&err.into_bytes()).into_owned(),
+        }
     }
 
     /// Decode base62 `src`, tolerating embedded `\n` / `\r`.

@@ -20,9 +20,9 @@
 //!
 //! # Payload sizing
 //!
-//! [`branca::MAX_PAYLOAD_BYTES`] applies after internal framing, not directly to
-//! the caller body. Use [`max_body_bytes`] to compute the effective body budget
-//! for a purpose and key id.
+//! [`branca::MAX_PAYLOAD_BYTES`] is a hard primitive ceiling, but each purpose
+//! has a smaller [`KeyPurpose::MAX_BODY_BYTES`] application budget. Use
+//! [`max_body_bytes`] to compute the effective body budget for a purpose.
 
 use std::fmt;
 
@@ -130,7 +130,7 @@ pub fn parse_cookie_wrapper(value: &str) -> Result<CookieParts<'_>, TokenError> 
 /// `max_age_secs` bounds seconds since the Branca timestamp (last activity).
 /// Lower-level primitives keep more specific errors for tests/configuration, but
 /// cookie validation paths must not let attackers enumerate which stage failed.
-pub fn decrypt_wrapped_token<P: KeyPurpose>(
+pub(crate) fn decrypt_wrapped_token<P: KeyPurpose>(
     value: &str,
     keyring: &KeyRing<P>,
     now_unix: u64,
@@ -245,7 +245,7 @@ where
         return Err(TokenError::PayloadTooLarge);
     }
 
-    let mut payload = encode_bound_payload(P::TOKEN_TYPE, active.kid().as_str(), iat, body)?;
+    let mut payload = encode_bound_payload::<P>(P::TOKEN_TYPE, active.kid().as_str(), iat, body)?;
     let token = match branca::encode(&payload, active.key().as_bytes(), rng, timestamp) {
         Ok(token) => token,
         Err(err) => {
@@ -303,11 +303,13 @@ pub fn parse_bound_cookie<P: KeyPurpose>(
 /// `v(1) || iat(4) || typ_len(1) || typ || kid_len(1) || kid || body`.
 #[must_use]
 pub fn max_body_bytes<P: KeyPurpose>(kid: &KeyId) -> usize {
-    max_body_bytes_for_parts(P::TOKEN_TYPE, kid.as_str())
+    max_body_bytes_for_parts::<P>(P::TOKEN_TYPE, kid.as_str())
 }
 
-fn max_body_bytes_for_parts(typ: &str, kid: &str) -> usize {
-    branca::MAX_PAYLOAD_BYTES.saturating_sub(bound_payload_overhead(typ, kid))
+fn max_body_bytes_for_parts<P: KeyPurpose>(typ: &str, kid: &str) -> usize {
+    branca::MAX_PAYLOAD_BYTES
+        .min(P::MAX_BODY_BYTES)
+        .saturating_sub(bound_payload_overhead(typ, kid))
 }
 
 fn max_cookie_token_bytes<P: KeyPurpose>(kid: &KeyId) -> usize {
@@ -384,13 +386,13 @@ struct DecodedPayload<'a> {
 /// codec surface:
 ///
 /// `v(1) || iat(4 BE) || typ_len(1) || typ || kid_len(1) || kid || body`
-fn encode_bound_payload(
+fn encode_bound_payload<P: KeyPurpose>(
     typ: &str,
     kid: &str,
     iat: u32,
     body: &[u8],
 ) -> Result<Vec<u8>, TokenError> {
-    if body.len() > max_body_bytes_for_parts(typ, kid) {
+    if body.len() > max_body_bytes_for_parts::<P>(typ, kid) {
         return Err(TokenError::PayloadTooLarge);
     }
 

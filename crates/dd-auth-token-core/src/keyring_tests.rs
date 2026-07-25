@@ -75,6 +75,10 @@ fn hkdf_info_strings_are_versioned_constants() {
     assert_eq!(TOKEN_TYPE_POW_COOKIE_V1, "pow-v1");
     assert_eq!(SessionCookie::TOKEN_TYPE, TOKEN_TYPE_SESSION_COOKIE_V1);
     assert_eq!(PowCookie::TOKEN_TYPE, TOKEN_TYPE_POW_COOKIE_V1);
+    assert_eq!(SessionCookie::MAX_BODY_BYTES, 128);
+    assert_eq!(PowCookie::MAX_BODY_BYTES, 128);
+    assert_eq!(SessionCookie::MAX_ABSOLUTE_AGE_SECS, 30 * 24 * 60 * 60);
+    assert_eq!(PowCookie::MAX_ABSOLUTE_AGE_SECS, 10 * 60);
 }
 
 #[test]
@@ -118,7 +122,12 @@ fn typed_keyring_mints_with_active_and_verifies_with_previous() {
     let ring = KeyRing::<SessionCookie>::new(
         kid("session-active"),
         vec![
-            KeySlot::active_with_windows(kid("session-active"), active, 10, 100),
+            KeySlot::active_with_windows(
+                kid("session-active"),
+                active,
+                10,
+                10 + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
+            ),
             KeySlot::verify_only(kid("session-prev"), previous, 100),
         ],
     )
@@ -178,6 +187,27 @@ fn keyring_rejects_duplicate_or_missing_active_keys() {
     )
     .unwrap_err();
     assert_eq!(no_active, TokenError::KeyringMisconfigured);
+}
+
+#[test]
+fn keyring_rejects_active_verify_window_shorter_than_absolute_lifetime() {
+    let root = RootSecret::new([0x46; KEY_BYTES]);
+    let key = root
+        .derive_key::<SessionCookie>(&kid("session-active"))
+        .expect("active key");
+
+    let err = KeyRing::<SessionCookie>::new(
+        kid("session-active"),
+        vec![KeySlot::active_with_windows(
+            kid("session-active"),
+            key,
+            100,
+            100 + SessionCookie::MAX_ABSOLUTE_AGE_SECS - 1,
+        )],
+    )
+    .unwrap_err();
+
+    assert_eq!(err, TokenError::KeyringMisconfigured);
 }
 
 #[test]

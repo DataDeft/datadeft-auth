@@ -65,6 +65,13 @@ pub trait KeyPurpose {
     const HKDF_INFO: &'static [u8];
     /// Encrypted cookie payload `typ` string for this purpose.
     const TOKEN_TYPE: &'static str;
+    /// Maximum caller body bytes accepted for this purpose before internal
+    /// framing. Keep this tight: it is also the pre-auth token-length cap at
+    /// the cookie edge.
+    const MAX_BODY_BYTES: usize;
+    /// Longest absolute validity a token of this purpose may have. Active keys
+    /// must verify for at least this long after their final minting instant.
+    const MAX_ABSOLUTE_AGE_SECS: u64;
 }
 
 /// Session-cookie key purpose.
@@ -74,6 +81,8 @@ pub enum SessionCookie {}
 impl KeyPurpose for SessionCookie {
     const HKDF_INFO: &'static [u8] = HKDF_INFO_SESSION_COOKIE_V1;
     const TOKEN_TYPE: &'static str = TOKEN_TYPE_SESSION_COOKIE_V1;
+    const MAX_BODY_BYTES: usize = 128;
+    const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
 }
 
 /// PoW proof-cookie key purpose.
@@ -83,6 +92,8 @@ pub enum PowCookie {}
 impl KeyPurpose for PowCookie {
     const HKDF_INFO: &'static [u8] = HKDF_INFO_POW_COOKIE_V1;
     const TOKEN_TYPE: &'static str = TOKEN_TYPE_POW_COOKIE_V1;
+    const MAX_BODY_BYTES: usize = 128;
+    const MAX_ABSOLUTE_AGE_SECS: u64 = 10 * 60;
 }
 
 /// Loaded root secret material.
@@ -248,7 +259,12 @@ impl<P: KeyPurpose> KeySlot<P> {
     #[cfg(any(test, feature = "test-support"))]
     #[must_use]
     pub fn active(kid: KeyId, key: BrancaKey<P>) -> Self {
-        Self::active_with_windows(kid, key, u64::MAX, u64::MAX)
+        Self::active_with_windows(
+            kid,
+            key,
+            u64::MAX.saturating_sub(P::MAX_ABSOLUTE_AGE_SECS),
+            u64::MAX,
+        )
     }
 
     /// Active key with explicit mint and verify windows.
@@ -316,7 +332,8 @@ pub struct KeyRing<P: KeyPurpose> {
 
 impl<P: KeyPurpose> KeyRing<P> {
     /// Build a ring with exactly one active key, no duplicate `kid`s, and
-    /// coherent rotation windows.
+    /// coherent rotation windows. Active slots must verify through the full
+    /// maximum absolute lifetime after their final minting instant.
     pub fn new(active_kid: KeyId, keys: Vec<KeySlot<P>>) -> Result<Self, TokenError> {
         if keys.is_empty() || has_duplicate_key_ids(&keys) || has_incoherent_windows(&keys) {
             return Err(TokenError::KeyringMisconfigured);
@@ -381,7 +398,15 @@ fn has_duplicate_key_ids<P: KeyPurpose>(keys: &[KeySlot<P>]) -> bool {
 
 fn has_incoherent_windows<P: KeyPurpose>(keys: &[KeySlot<P>]) -> bool {
     keys.iter().any(|slot| {
-        slot.status == KeyStatus::Active && slot.mint_until_unix > slot.verify_until_unix
+        if slot.status != KeyStatus::Active {
+            return false;
+        }
+        let Some(required_verify_until) =
+            slot.mint_until_unix.checked_add(P::MAX_ABSOLUTE_AGE_SECS)
+        else {
+            return true;
+        };
+        slot.verify_until_unix < required_verify_until
     })
 }
 

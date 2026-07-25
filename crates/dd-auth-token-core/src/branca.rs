@@ -23,6 +23,7 @@ use std::fmt;
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use rand_core::{CryptoRng, RngCore};
+use zeroize::Zeroize;
 
 use crate::base62;
 use crate::error::TokenError;
@@ -88,6 +89,12 @@ pub struct Verified {
     pub nonce: [u8; NONCE_BYTES],
     /// Decrypted plaintext payload.
     pub payload: Vec<u8>,
+}
+
+impl Drop for Verified {
+    fn drop(&mut self) {
+        self.payload.as_mut_slice().zeroize();
+    }
 }
 
 impl Verified {

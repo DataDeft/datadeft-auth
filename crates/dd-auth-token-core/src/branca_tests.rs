@@ -164,6 +164,22 @@ fn payload_and_token_size_guards_fire() {
 }
 
 #[test]
+fn max_token_bytes_covers_max_blob() {
+    let worst_case = vec![0xFF; MAX_TOKEN_BLOB_BYTES];
+    let encoded = crate::base62::encode(&worst_case);
+    assert!(
+        encoded.len() <= MAX_TOKEN_BYTES,
+        "max token bound too small: {} > {}",
+        encoded.len(),
+        MAX_TOKEN_BYTES
+    );
+    assert_eq!(
+        MAX_TOKEN_BYTES,
+        max_token_chars_for_payload(MAX_PAYLOAD_BYTES)
+    );
+}
+
+#[test]
 fn non_canonical_zero_prefixed_tokens_are_rejected() {
     let key = [0x11u8; KEY_BYTES];
     let nonce = [0x22u8; NONCE_BYTES];
@@ -198,8 +214,8 @@ fn empty_and_non_utf8_payloads_round_trip() {
     let nonce = [0xCD; NONCE_BYTES];
     for msg in [b"".as_slice(), &[0x80, 0x81, 0x82]] {
         let token = encode_with_nonce(msg, &key, &nonce, 9_999).expect("encode");
-        let got = decode(&token, &key).expect("decode").payload;
-        assert_eq!(got, msg);
+        let got = decode(&token, &key).expect("decode");
+        assert_eq!(got.payload, msg);
     }
 }
 

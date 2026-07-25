@@ -230,7 +230,12 @@ fn mint_preserves_keyring_errors_instead_of_funneling_to_invalid_token() {
         .expect("derive key");
     let ring = KeyRing::<SessionCookie>::new(
         kid("active"),
-        vec![KeySlot::active_with_windows(kid("active"), key, 10, 20)],
+        vec![KeySlot::active_with_windows(
+            kid("active"),
+            key,
+            10,
+            10 + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
+        )],
     )
     .expect("ring");
     let mut rng = FixedNonceRng([0xAD; branca::NONCE_BYTES]);
@@ -247,14 +252,18 @@ fn body_cap_helper_accounts_for_framing() {
     let cap = max_body_bytes::<SessionCookie>(&id);
     assert_eq!(
         cap,
-        branca::MAX_PAYLOAD_BYTES
+        SessionCookie::MAX_BODY_BYTES
             - (1 + 4 + 1 + SessionCookie::TOKEN_TYPE.len() + 1 + id.as_str().len())
     );
 
     let ring = session_ring(0x8E, "active");
     let mut rng = FixedNonceRng([0xAE; branca::NONCE_BYTES]);
     let ok_body = vec![0x42; cap];
-    assert!(mint_bound_cookie::<SessionCookie, _>(&ok_body, &ring, &mut rng, 1, 1, 1).is_ok());
+    let value = mint_bound_cookie::<SessionCookie, _>(&ok_body, &ring, &mut rng, 1, 1, 1)
+        .expect("max-size body mints");
+    let parsed = parse_bound_cookie::<SessionCookie>(&value, &ring, 1, MaxAge::fixed(60))
+        .expect("max-size body parses");
+    assert_eq!(parsed.body(), ok_body);
 
     let mut rng = FixedNonceRng([0xAF; branca::NONCE_BYTES]);
     let too_big = vec![0x42; cap + 1];
@@ -283,7 +292,8 @@ fn encrypted_typ_must_match_expected_purpose() {
         .expect("derive key");
     // Craft a payload whose bound typ is a *different* purpose.
     let payload =
-        encode_bound_payload(PowCookie::TOKEN_TYPE, "active", 1, b"body").expect("payload");
+        encode_bound_payload::<SessionCookie>(PowCookie::TOKEN_TYPE, "active", 1, b"body")
+            .expect("payload");
     let token = encode_with_nonce(&payload, key.as_bytes(), &[0x9A; branca::NONCE_BYTES], 1)
         .expect("token");
     let ring =
@@ -309,8 +319,9 @@ fn encrypted_kid_must_match_wrapper_kid() {
         .derive_key::<SessionCookie>(&kid("outer"))
         .expect("derive key");
     // Craft a payload whose bound kid differs from the outer wrapper kid.
-    let payload = encode_bound_payload(SessionCookie::TOKEN_TYPE, "inner-other", 1, b"body")
-        .expect("payload");
+    let payload =
+        encode_bound_payload::<SessionCookie>(SessionCookie::TOKEN_TYPE, "inner-other", 1, b"body")
+            .expect("payload");
     let token = encode_with_nonce(&payload, key.as_bytes(), &[0x9B; branca::NONCE_BYTES], 1)
         .expect("token");
     let ring =
