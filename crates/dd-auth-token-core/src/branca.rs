@@ -20,7 +20,6 @@ use std::fmt;
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use rand_core::{CryptoRng, RngCore};
-use subtle::ConstantTimeEq;
 
 use crate::base62;
 use crate::error::TokenError;
@@ -237,9 +236,10 @@ pub fn decode(token: &str, key: &[u8]) -> Result<Verified, TokenError> {
         return Err(TokenError::InvalidBase62);
     }
 
-    // Constant-time version check so a timing signal cannot distinguish
-    // "wrong version" from "wrong key".
-    if blob[0].ct_eq(&VERSION).unwrap_u8() == 0 {
+    // The version byte is a public constant, not secret, so a plain compare
+    // leaks nothing a constant-time compare would hide. The distinct error is
+    // kept for logs/tests; the cookie edge funnels it to a generic failure.
+    if blob[0] != VERSION {
         return Err(TokenError::InvalidTokenVersion);
     }
 

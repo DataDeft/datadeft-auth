@@ -27,3 +27,34 @@ jobs:
         run: cargo test --workspace --all-features
       - name: Docs
         run: cargo doc --workspace --all-features --no-deps
+
+  token-core-api-guard:
+    name: token-core public API guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # `encode_with_nonce` is a nonce-reuse footgun; it must never appear in the
+      # default public API. Assert the cfg gate is still on it.
+      - name: encode_with_nonce must stay gated behind test-support
+        run: |
+          f=crates/dd-auth-token-core/src/branca.rs
+          gate=$(awk '/pub fn encode_with_nonce/ {print prev} {prev=$0}' "$f")
+          echo "line above fn: $gate"
+          echo "$gate" | grep -q 'cfg(any(test, feature = "test-support"))' \
+            || { echo "::error::encode_with_nonce is not gated behind test-support"; exit 1; }
+      # A same-line inline dependency enabling test-support would pull the footgun
+      # into a normal build via feature unification. Flag it for review.
+      - name: no crate may enable dd-auth-token-core/test-support as a dependency feature
+        run: |
+          if grep -rnE 'dd-auth-token-core.*test-support|test-support.*dd-auth-token-core' --include=Cargo.toml . ; then
+            echo "::error::a crate enables dd-auth-token-core/test-support; confirm it is a dev-dependency only"; exit 1
+          fi
+      # The crate must build with no features, proving encode_with_nonce is
+      # genuinely test-only and nothing in the default API depends on it.
+      - name: crate builds with no features (default public API)
+        run: cargo build -p dd-auth-token-core --no-default-features
+      # And the symbol must exist and work when the feature is on.
+      - name: test-support surface test runs only with the feature
+        run: cargo test -p dd-auth-token-core --features test-support --test encode_with_nonce_gated

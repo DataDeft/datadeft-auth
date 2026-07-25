@@ -20,8 +20,6 @@ pub enum TokenError {
     InvalidTokenVersion,
     /// Branca key was not exactly 32 bytes.
     BadKeyLength,
-    /// Branca nonce was not exactly 24 bytes.
-    BadNonceLength,
     /// AEAD decryption failed (tag mismatch / wrong key / tamper).
     DecryptFailed,
     /// Entropy source failed while minting a token.
@@ -32,8 +30,6 @@ pub enum TokenError {
     PayloadTooLarge,
     /// Public token/cookie validation failure (malformed, unknown key, bad MAC).
     InvalidToken,
-    /// Internal cookie payload/wrapper shape failure before public error mapping.
-    MalformedCookie,
     /// Key id was not found in the keyring.
     UnknownKey,
     /// Key exists but is outside its minting or verification window.
@@ -52,13 +48,11 @@ impl fmt::Display for TokenError {
             TokenError::InvalidBase62 => f.write_str("invalid base62 encoding"),
             TokenError::InvalidTokenVersion => f.write_str("invalid token version"),
             TokenError::BadKeyLength => f.write_str("key must be 32 bytes"),
-            TokenError::BadNonceLength => f.write_str("nonce must be 24 bytes"),
             TokenError::DecryptFailed => f.write_str("token decryption failed"),
             TokenError::EntropyUnavailable => f.write_str("entropy source unavailable"),
             TokenError::EncryptFailed => f.write_str("token encryption failed"),
             TokenError::PayloadTooLarge => f.write_str("payload too large"),
             TokenError::InvalidToken => f.write_str("invalid token"),
-            TokenError::MalformedCookie => f.write_str("malformed cookie"),
             TokenError::UnknownKey => f.write_str("unknown key id"),
             TokenError::KeyExpired => f.write_str("key is outside its validity window"),
             TokenError::KeyringMisconfigured => f.write_str("keyring is misconfigured"),

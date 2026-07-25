@@ -48,10 +48,16 @@ fn ring_and_value() -> (KeyRing<SessionCookie>, String) {
     let key = root
         .derive_key::<SessionCookie>(&kid("active"))
         .expect("derive key");
-    let token = encode_with_nonce(b"payload", key.as_bytes(), &[0x77; branca::NONCE_BYTES], 123)
-        .expect("token");
-    let ring = KeyRing::<SessionCookie>::new(kid("active"), vec![KeySlot::active(kid("active"), key)])
-        .expect("ring");
+    let token = encode_with_nonce(
+        b"payload",
+        key.as_bytes(),
+        &[0x77; branca::NONCE_BYTES],
+        123,
+    )
+    .expect("token");
+    let ring =
+        KeyRing::<SessionCookie>::new(kid("active"), vec![KeySlot::active(kid("active"), key)])
+            .expect("ring");
     (ring, format!("v1.active.{token}"))
 }
 
@@ -135,12 +141,14 @@ fn bound_cookie_round_trips_body_binds_kid_and_iat() {
     let ring = session_ring(0x88, "active");
     let mut rng = FixedNonceRng([0x99; branca::NONCE_BYTES]);
 
-    let value = mint_bound_cookie::<SessionCookie, _>(b"session-body", &ring, &mut rng, 456, 456, 456)
-        .expect("mint");
+    let value =
+        mint_bound_cookie::<SessionCookie, _>(b"session-body", &ring, &mut rng, 456, 456, 456)
+            .expect("mint");
     assert!(value.starts_with("v1.active."));
 
     let verified =
-        parse_bound_cookie::<SessionCookie>(&value, &ring, 456, MaxAge::fixed(1_000_000)).expect("parse");
+        parse_bound_cookie::<SessionCookie>(&value, &ring, 456, MaxAge::fixed(1_000_000))
+            .expect("parse");
     assert_eq!(verified.kid().as_str(), "active");
     assert_eq!(verified.timestamp(), 456);
     assert_eq!(verified.iat(), 456);
@@ -202,15 +210,22 @@ fn encrypted_typ_must_match_expected_purpose() {
         .derive_key::<SessionCookie>(&kid("active"))
         .expect("derive key");
     // Craft a payload whose bound typ is a *different* purpose.
-    let payload = encode_bound_payload(PowCookie::TOKEN_TYPE, "active", 1, b"body").expect("payload");
+    let payload =
+        encode_bound_payload(PowCookie::TOKEN_TYPE, "active", 1, b"body").expect("payload");
     let token = encode_with_nonce(&payload, key.as_bytes(), &[0x9A; branca::NONCE_BYTES], 1)
         .expect("token");
-    let ring = KeyRing::<SessionCookie>::new(kid("active"), vec![KeySlot::active(kid("active"), key)])
-        .expect("ring");
+    let ring =
+        KeyRing::<SessionCookie>::new(kid("active"), vec![KeySlot::active(kid("active"), key)])
+            .expect("ring");
 
     assert_eq!(
-        parse_bound_cookie::<SessionCookie>(&format!("v1.active.{token}"), &ring, 1, MaxAge::fixed(1_000_000))
-            .unwrap_err(),
+        parse_bound_cookie::<SessionCookie>(
+            &format!("v1.active.{token}"),
+            &ring,
+            1,
+            MaxAge::fixed(1_000_000)
+        )
+        .unwrap_err(),
         TokenError::InvalidToken
     );
 }
@@ -222,16 +237,22 @@ fn encrypted_kid_must_match_wrapper_kid() {
         .derive_key::<SessionCookie>(&kid("outer"))
         .expect("derive key");
     // Craft a payload whose bound kid differs from the outer wrapper kid.
-    let payload =
-        encode_bound_payload(SessionCookie::TOKEN_TYPE, "inner-other", 1, b"body").expect("payload");
+    let payload = encode_bound_payload(SessionCookie::TOKEN_TYPE, "inner-other", 1, b"body")
+        .expect("payload");
     let token = encode_with_nonce(&payload, key.as_bytes(), &[0x9B; branca::NONCE_BYTES], 1)
         .expect("token");
-    let ring = KeyRing::<SessionCookie>::new(kid("outer"), vec![KeySlot::active(kid("outer"), key)])
-        .expect("ring");
+    let ring =
+        KeyRing::<SessionCookie>::new(kid("outer"), vec![KeySlot::active(kid("outer"), key)])
+            .expect("ring");
 
     assert_eq!(
-        parse_bound_cookie::<SessionCookie>(&format!("v1.outer.{token}"), &ring, 1, MaxAge::fixed(1_000_000))
-            .unwrap_err(),
+        parse_bound_cookie::<SessionCookie>(
+            &format!("v1.outer.{token}"),
+            &ring,
+            1,
+            MaxAge::fixed(1_000_000)
+        )
+        .unwrap_err(),
         TokenError::InvalidToken
     );
 }

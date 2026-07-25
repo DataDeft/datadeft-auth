@@ -39,7 +39,9 @@ fn root_secret_derives_deterministic_kid_and_purpose_separated_keys() {
     let session_k2 = root
         .derive_key::<SessionCookie>(&kid("k2"))
         .expect("derive session kid2");
-    let pow = root.derive_key::<PowCookie>(&kid("k1")).expect("derive pow");
+    let pow = root
+        .derive_key::<PowCookie>(&kid("k1"))
+        .expect("derive pow");
 
     assert_eq!(
         session_a.as_bytes(),

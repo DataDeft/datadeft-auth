@@ -101,10 +101,16 @@ impl RootSecret {
         info.extend_from_slice(kid_bytes);
 
         let mut out = [0u8; KEY_BYTES];
-        Hkdf::<Sha256>::new(None, self.as_bytes())
-            .expand(&info, &mut out)
-            .map_err(|_| TokenError::Internal)?;
-        Ok(BrancaKey::new(out))
+        let expanded = Hkdf::<Sha256>::new(None, self.as_bytes()).expand(&info, &mut out);
+        if expanded.is_err() {
+            out.zeroize();
+            return Err(TokenError::Internal);
+        }
+        let key = BrancaKey::new(out);
+        // `out` is a Copy array, so `BrancaKey::new` took a copy; wipe this stack
+        // copy too (best-effort, per the module note).
+        out.zeroize();
+        Ok(key)
     }
 
     pub(crate) fn as_bytes(&self) -> &[u8; KEY_BYTES] {
