@@ -59,6 +59,10 @@ fn hkdf_info_strings_are_versioned_constants() {
     assert_eq!(HKDF_INFO_POW_COOKIE_V1, b"auth/pow-v1");
     assert_eq!(SessionCookie::HKDF_INFO, HKDF_INFO_SESSION_COOKIE_V1);
     assert_eq!(PowCookie::HKDF_INFO, HKDF_INFO_POW_COOKIE_V1);
+    assert_eq!(TOKEN_TYPE_SESSION_COOKIE_V1, "session-v1");
+    assert_eq!(TOKEN_TYPE_POW_COOKIE_V1, "pow-v1");
+    assert_eq!(SessionCookie::TOKEN_TYPE, TOKEN_TYPE_SESSION_COOKIE_V1);
+    assert_eq!(PowCookie::TOKEN_TYPE, TOKEN_TYPE_POW_COOKIE_V1);
 }
 
 #[test]

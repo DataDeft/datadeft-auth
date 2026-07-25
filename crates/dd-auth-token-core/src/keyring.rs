@@ -38,12 +38,18 @@ pub const KEY_BYTES: usize = 32;
 pub const HKDF_INFO_SESSION_COOKIE_V1: &[u8] = b"auth/session-v1";
 /// HKDF-SHA256 info string for PoW proof-cookie Branca keys.
 pub const HKDF_INFO_POW_COOKIE_V1: &[u8] = b"auth/pow-v1";
+/// Encrypted payload `typ` for session cookies.
+pub const TOKEN_TYPE_SESSION_COOKIE_V1: &str = "session-v1";
+/// Encrypted payload `typ` for PoW proof cookies.
+pub const TOKEN_TYPE_POW_COOKIE_V1: &str = "pow-v1";
 
 /// HKDF purpose marker for keys derived from a [`RootSecret`].
 pub trait KeyPurpose {
     /// Versioned HKDF `info` string. Changing this invalidates every token
     /// minted with the derived key, so constants are pinned by tests.
     const HKDF_INFO: &'static [u8];
+    /// Encrypted cookie payload `typ` string for this purpose.
+    const TOKEN_TYPE: &'static str;
 }
 
 /// Session-cookie key purpose.
@@ -52,6 +58,7 @@ pub enum SessionCookie {}
 
 impl KeyPurpose for SessionCookie {
     const HKDF_INFO: &'static [u8] = HKDF_INFO_SESSION_COOKIE_V1;
+    const TOKEN_TYPE: &'static str = TOKEN_TYPE_SESSION_COOKIE_V1;
 }
 
 /// PoW proof-cookie key purpose.
@@ -60,6 +67,7 @@ pub enum PowCookie {}
 
 impl KeyPurpose for PowCookie {
     const HKDF_INFO: &'static [u8] = HKDF_INFO_POW_COOKIE_V1;
+    const TOKEN_TYPE: &'static str = TOKEN_TYPE_POW_COOKIE_V1;
 }
 
 /// Loaded root secret material.

@@ -1,12 +1,17 @@
 //! Cookie wrapper helpers for `v1.{kid}.{branca-token}` values.
 //!
-//! This module does not define session/PoW payloads yet. It owns the shared
-//! wrapper grammar, early `kid` validation, redacted debug output, and generic
-//! public error mapping for token validation paths.
+//! This module owns the shared wrapper grammar, early `kid` validation, redacted
+//! debug output, generic public error mapping, and encrypted payload binding.
+//! Every high-level cookie payload stores both its `typ` and `kid` inside the
+//! AEAD-protected JSON and verifies them against the outer `v1.{kid}.` wrapper
+//! after decrypt.
 
 use std::fmt;
 
-use crate::branca::{self, Verified};
+use rand_core::{CryptoRng, RngCore};
+use serde::{Deserialize, Serialize};
+
+use crate::branca::{self, Jti, Verified};
 use crate::error::TokenError;
 use crate::keyring::{KeyId, KeyPurpose, KeyRing};
 
@@ -76,6 +81,114 @@ pub fn decrypt_wrapped_token<P: KeyPurpose>(
     let verified = branca::decode(parts.token(), key.key().as_bytes())
         .map_err(|_| TokenError::InvalidToken)?;
     Ok((parts.kid, verified))
+}
+
+#[derive(Serialize, Deserialize)]
+struct BoundCookiePayload {
+    v: u8,
+    typ: String,
+    kid: String,
+    body: Vec<u8>,
+}
+
+/// Verified bound cookie payload.
+#[derive(Clone)]
+pub struct VerifiedCookie {
+    kid: KeyId,
+    timestamp: u32,
+    jti: Jti,
+    body: Vec<u8>,
+}
+
+impl VerifiedCookie {
+    #[must_use]
+    pub fn kid(&self) -> &KeyId {
+        &self.kid
+    }
+
+    #[must_use]
+    pub fn timestamp(&self) -> u32 {
+        self.timestamp
+    }
+
+    #[must_use]
+    pub fn jti(&self) -> Jti {
+        self.jti
+    }
+
+    #[must_use]
+    pub fn body(&self) -> &[u8] {
+        &self.body
+    }
+}
+
+impl fmt::Debug for VerifiedCookie {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VerifiedCookie")
+            .field("kid", &"KeyId(..)")
+            .field("timestamp", &self.timestamp)
+            .field("jti", &self.jti)
+            .field(
+                "body",
+                &format_args!("<{} bytes redacted>", self.body.len()),
+            )
+            .finish()
+    }
+}
+
+/// Mint a `v1.{kid}.{branca}` value with `typ` and `kid` bound inside the
+/// encrypted JSON payload.
+pub fn mint_bound_cookie<P, R>(
+    body: &[u8],
+    keyring: &KeyRing<P>,
+    rng: &mut R,
+    timestamp: u32,
+    now_unix: u64,
+) -> Result<String, TokenError>
+where
+    P: KeyPurpose,
+    R: RngCore + CryptoRng + ?Sized,
+{
+    let active = keyring
+        .minting_key_at(now_unix)
+        .map_err(|_| TokenError::InvalidToken)?;
+    let payload = BoundCookiePayload {
+        v: 1,
+        typ: P::TOKEN_TYPE.to_owned(),
+        kid: active.kid().as_str().to_owned(),
+        body: body.to_vec(),
+    };
+    let json = serde_json::to_vec(&payload).map_err(|_| TokenError::Internal)?;
+    let token = branca::encode(&json, active.key().as_bytes(), rng, timestamp)
+        .map_err(|_| TokenError::InvalidToken)?;
+    Ok(format!(
+        "{TOKEN_VERSION_PREFIX}.{}.{}",
+        active.kid().as_str(),
+        token
+    ))
+}
+
+/// Parse and decrypt a bound cookie value, then require encrypted `typ` and
+/// `kid` to match the expected purpose and outer wrapper.
+pub fn parse_bound_cookie<P: KeyPurpose>(
+    value: &str,
+    keyring: &KeyRing<P>,
+    now_unix: u64,
+) -> Result<VerifiedCookie, TokenError> {
+    let (kid, verified) = decrypt_wrapped_token(value, keyring, now_unix)?;
+    let payload: BoundCookiePayload =
+        serde_json::from_slice(&verified.payload).map_err(|_| TokenError::InvalidToken)?;
+
+    if payload.v != 1 || payload.typ != P::TOKEN_TYPE || payload.kid != kid.as_str() {
+        return Err(TokenError::InvalidToken);
+    }
+
+    Ok(VerifiedCookie {
+        kid,
+        timestamp: verified.timestamp,
+        jti: verified.jti(),
+        body: payload.body,
+    })
 }
 
 #[cfg(test)]
