@@ -1,11 +1,12 @@
 //! HMAC secret for the proof-of-work challenge tag.
 
+use zeroize::Zeroize;
+
 /// 32-byte secret key for the challenge HMAC.
 ///
-/// Best-effort zeroed on drop. The workspace does not depend on `zeroize` and
-/// this crate adds no new dependencies, so the drop impl uses volatile writes
-/// plus a compiler fence — the standard hand-rolled equivalent for a fixed
-/// array. If `zeroize` ever enters the workspace tree, switch to it.
+/// Zeroed on drop via the audited `zeroize` crate so key material does not
+/// linger in memory. This is best-effort hygiene: like any in-process key, the
+/// HMAC implementation and the OS may transiently hold copies elsewhere.
 pub struct PowSecret([u8; 32]);
 
 impl PowSecret {
@@ -22,11 +23,7 @@ impl PowSecret {
 
 impl Drop for PowSecret {
     fn drop(&mut self) {
-        for b in &mut self.0 {
-            // SAFETY: `b` is a valid, aligned, exclusive reference into self.
-            unsafe { core::ptr::write_volatile(b, 0) };
-        }
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+        self.0.zeroize();
     }
 }
 
