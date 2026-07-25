@@ -151,3 +151,23 @@ fn key_id_debug_redacts_attacker_input() {
     assert_eq!(debug, "KeyId(..)");
     assert!(!debug.contains("attacker-controlled"));
 }
+
+#[test]
+fn retired_keys_are_absent_and_return_unknown_key() {
+    // There is intentionally no KeyStatus::Retired. Once a key should no
+    // longer verify, remove the slot; holding retired material in memory is
+    // needless liability.
+    let root = RootSecret::new([0x55; KEY_BYTES]);
+    let active = root.derive_key::<SessionCookie>().expect("active key");
+    let ring = KeyRing::<SessionCookie>::new(
+        kid("session-active"),
+        vec![KeySlot::active(kid("session-active"), active)],
+    )
+    .expect("ring builds");
+
+    assert_eq!(
+        ring.verification_key_at(&kid("removed-old-key"), 0)
+            .unwrap_err(),
+        TokenError::UnknownKey
+    );
+}
