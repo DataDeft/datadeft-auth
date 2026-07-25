@@ -199,6 +199,12 @@ version = "0.1.0"
 dependencies = [
  "dd-auth-token-core",
  "dd-pow-core",
+ "hex",
+ "hmac",
+ "rand_core 0.6.4",
+ "sha2",
+ "subtle",
+ "zeroize",
 ]
 
 [[package]]
