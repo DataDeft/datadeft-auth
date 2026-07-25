@@ -30,7 +30,9 @@ pub enum TokenError {
     EncryptFailed,
     /// Payload exceeded the documented size guard (DoS backstop).
     PayloadTooLarge,
-    /// Cookie wrapper, payload purpose, or session id was malformed.
+    /// Public token/cookie validation failure (malformed, unknown key, bad MAC).
+    InvalidToken,
+    /// Internal cookie payload/wrapper shape failure before public error mapping.
     MalformedCookie,
     /// Key id was not found in the keyring.
     UnknownKey,
@@ -55,6 +57,7 @@ impl fmt::Display for TokenError {
             TokenError::EntropyUnavailable => f.write_str("entropy source unavailable"),
             TokenError::EncryptFailed => f.write_str("token encryption failed"),
             TokenError::PayloadTooLarge => f.write_str("payload too large"),
+            TokenError::InvalidToken => f.write_str("invalid token"),
             TokenError::MalformedCookie => f.write_str("malformed cookie"),
             TokenError::UnknownKey => f.write_str("unknown key id"),
             TokenError::KeyExpired => f.write_str("key is outside its validity window"),

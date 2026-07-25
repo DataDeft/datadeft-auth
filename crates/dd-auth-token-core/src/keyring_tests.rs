@@ -52,3 +52,75 @@ fn root_secret_derives_deterministic_purpose_separated_keys() {
         "derived key is not raw root material"
     );
 }
+
+fn kid(value: &str) -> KeyId {
+    KeyId::parse(value).expect("kid parses")
+}
+
+#[test]
+fn typed_keyring_mints_with_active_and_verifies_with_previous() {
+    let root = RootSecret::new([0x33; KEY_BYTES]);
+    let active = root.derive_key::<SessionCookie>().expect("active key");
+    let previous = root.derive_key::<SessionCookie>().expect("previous key");
+
+    let ring = KeyRing::<SessionCookie>::new(
+        kid("session-active"),
+        vec![
+            KeySlot::active_with_windows(kid("session-active"), active, 10, 100),
+            KeySlot::verify_only(kid("session-prev"), previous, 100),
+        ],
+    )
+    .expect("ring builds");
+
+    assert_eq!(
+        ring.minting_key_at(10)
+            .expect("mint at boundary")
+            .kid()
+            .as_str(),
+        "session-active"
+    );
+    assert_eq!(
+        ring.verification_key_at(&kid("session-prev"), 100)
+            .expect("previous verifies at boundary")
+            .status(),
+        KeyStatus::VerifyOnly
+    );
+    assert_eq!(ring.minting_key_at(11).unwrap_err(), TokenError::KeyExpired);
+    assert_eq!(
+        ring.verification_key_at(&kid("session-prev"), 101)
+            .unwrap_err(),
+        TokenError::KeyExpired
+    );
+}
+
+#[test]
+fn keyring_rejects_duplicate_or_missing_active_keys() {
+    let root = RootSecret::new([0x44; KEY_BYTES]);
+    let active = root.derive_key::<PowCookie>().expect("active key");
+    let previous = root.derive_key::<PowCookie>().expect("previous key");
+
+    let dup = KeyRing::<PowCookie>::new(
+        kid("pow-active"),
+        vec![
+            KeySlot::active(kid("pow-active"), active.clone()),
+            KeySlot::verify_only(kid("pow-active"), previous.clone(), u64::MAX),
+        ],
+    )
+    .unwrap_err();
+    assert_eq!(dup, TokenError::KeyringMisconfigured);
+
+    let no_active = KeyRing::<PowCookie>::new(
+        kid("pow-active"),
+        vec![KeySlot::verify_only(kid("pow-old"), previous, u64::MAX)],
+    )
+    .unwrap_err();
+    assert_eq!(no_active, TokenError::KeyringMisconfigured);
+}
+
+#[test]
+fn key_id_debug_redacts_attacker_input() {
+    let id = kid("attacker-controlled");
+    let debug = format!("{id:?}");
+    assert_eq!(debug, "KeyId(..)");
+    assert!(!debug.contains("attacker-controlled"));
+}
