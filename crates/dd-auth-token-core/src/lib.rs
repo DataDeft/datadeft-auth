@@ -25,6 +25,7 @@
 
 pub mod base62;
 pub mod branca;
+pub mod cookie;
 pub mod error;
 pub mod keyring;
 
