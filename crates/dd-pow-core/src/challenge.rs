@@ -42,5 +42,15 @@ pub struct Verified {
     /// Replay-safe token identity: hex BLAKE3 hash of `chg`. Replaying the
     /// same solve always yields the same `tid`, so the API layer can use it
     /// for idempotent cookie minting and a per-tid budget.
+    ///
+    /// # Warning — not a secret or capability
+    ///
+    /// `tid` is derived from `chg`, which is itself derived from public mint
+    /// inputs (time + entropy). Anyone who saw the challenge can recompute
+    /// `tid`, so it carries no authenticity on its own. It must never be used
+    /// as a bearer token, never authorize anything on its own, and never be
+    /// exposed to clients unbound. Single-use / replay enforcement must wrap
+    /// it under a server-held secret (e.g. a signed/encrypted proof cookie)
+    /// in an upper layer.
     pub tid: String,
 }

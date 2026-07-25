@@ -170,7 +170,7 @@ fn mint_is_deterministic_golden() {
     assert_eq!(a.tim, TIM);
     // Golden values pin the derivation: chg = hex BLAKE3 of
     // "Time=2026-07-09T12:00:00Z:Nonce=000102030405060708090a0b0c0d0e0f",
-    // tag = HMAC-SHA256 over "{chg}:3:{tim}" with key bytes 0..32 (the tag
+    // tag = HMAC-SHA256 over "pow-tag-v1:{chg}:3:{tim}" with key bytes 0..32 (the tag
     // golden was computed externally with Python hmac/hashlib).
     assert_eq!(
         a.chg,
@@ -178,17 +178,17 @@ fn mint_is_deterministic_golden() {
     );
     assert_eq!(
         a.tag,
-        "401ccf864ad13ea45e065748ee51656811f4d472a45f32a4ee78b04a174de972"
+        "0664c2801631370f8d8d2860d167d0fc3b81232d36d4ab1bd39cabe901f89b33"
     );
 }
 
 #[test]
 fn hmac_tag_matches_external_vector() {
     // Computed outside Rust (Python hmac/hashlib) to break circularity:
-    // HMAC-SHA256(key=bytes(0..32), "somechg:3:2026-07-09T12:00:00Z").
+    // HMAC-SHA256(key=bytes(0..32), "pow-tag-v1:somechg:3:2026-07-09T12:00:00Z").
     assert_eq!(
-        hmac_tag_hex(&secret(), "somechg:3:2026-07-09T12:00:00Z"),
-        "c4ce585fc371a811032d5b5d269a60543cc5ec580361982daa20402e54084bd3"
+        hmac_tag_hex(&secret(), "pow-tag-v1:somechg:3:2026-07-09T12:00:00Z"),
+        "2ac36b56952ec58dae92521f40f5793915ea1d0b5cd5c5ad900378102f8ff6ff"
     );
 }
 
@@ -361,6 +361,29 @@ fn difficulty_downgrade_rejected() {
 fn higher_difficulty_than_min_accepted() {
     let sol = solved_solution(2);
     verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 1).unwrap();
+}
+
+#[test]
+fn zero_difficulty_rejected() {
+    // Zero-work backstop: dif=0 must never validate, even if a caller mis-sets
+    // min_difficulty=0. `has_leading_zero_prefix(.., 0)` is trivially true, so
+    // the floor's `max(1)` is the only thing preventing any nonce from passing
+    // as zero work. The tag is minted honestly over dif=0, so it clears
+    // authenticity and freshness and reaches the floor check.
+    let s = secret();
+    let chg = "zero-work-chg";
+    let sol = Solution {
+        chg: chg.to_string(),
+        sol: "0".repeat(64),
+        non: "0".to_string(),
+        dif: 0,
+        tim: TIM.to_string(),
+        tag: hmac_tag_hex(&s, &tag_message(chg, 0, TIM)),
+    };
+    assert_eq!(
+        verify_solution(&s, &sol, TIM_UNIX + 1, MAX_AGE, 0),
+        Err(PowError::DifficultyTooLow)
+    );
 }
 
 // --- Properties -------------------------------------------------------

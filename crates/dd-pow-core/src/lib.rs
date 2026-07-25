@@ -19,6 +19,10 @@
 //! - The worker hashes `SHA-256(chg + String(nonce))` (UTF-8, decimal nonce),
 //!   hex-encodes lowercase, and requires `dif` leading zero hex characters
 //!   (checked nibble-by-nibble).
+//! - The tag is `HMAC-SHA256(secret, "pow-tag-v1:{chg}:{dif}:{tim}")` — server-minted
+//!   and domain-separated so the same key cannot validate a tag minted for a
+//!   different protocol/version. The client never computes the tag, only
+//!   echoes it.
 //!
 //! # Replay identity
 //!

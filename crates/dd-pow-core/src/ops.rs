@@ -21,6 +21,16 @@ type HmacSha256 = Hmac<Sha256>;
 /// beyond it means a forged or misconfigured timestamp.
 pub const MAX_FUTURE_SKEW_SECS: u64 = 30;
 
+/// Domain/version separator prefixed to every authenticated tag message,
+/// satisfying the versioned + domain-separated challenge requirement
+/// (`docs/security.md`). The string is library-level and role-unique
+/// ("this is the PoW *tag* message") rather than product-specific, so the
+/// crate stays reusable; consumers that want product-unique domain strings
+/// should fork or override the constant. The browser client never computes
+/// the tag — it only echoes it — so this prefix is a server-side concern;
+/// bumping it cleanly invalidates every previously minted challenge.
+pub(crate) const TAG_DOMAIN: &str = "pow-tag-v1";
+
 /// Mint a challenge. Deterministic: same secret/difficulty/time/entropy
 /// always produce the same challenge. The caller supplies `now_rfc3339`
 /// (e.g. `OffsetDateTime::now_utc().format(&Rfc3339)`) and 16 bytes of
@@ -47,13 +57,17 @@ pub fn mint_challenge(
 /// Verify a proof-of-work solution.
 ///
 /// Pipeline:
-/// 1. Authenticity: `tag == HMAC-SHA256(secret, "{chg}:{dif}:{tim}")`,
+/// 1. Authenticity: `tag == HMAC-SHA256(secret, "{TAG_DOMAIN}:{chg}:{dif}:{tim}")`,
 ///    constant-time compare.
 /// 2. Freshness: `tim` parses as RFC3339, is not more than
 ///    [`MAX_FUTURE_SKEW_SECS`] ahead of `now_unix`, and
 ///    `now_unix - tim <= max_age_secs` (boundary accepted).
-/// 3. Difficulty floor: `dif >= min_difficulty`, so old easier challenges die
-///    when the server raises difficulty.
+/// 3. Difficulty floor: `dif >= max(min_difficulty, 1)` — proof-of-work must
+///    always require at least one leading zero, so a misconfigured
+///    `min_difficulty = 0` can never yield a zero-work pass. Downgrade
+///    protection beyond this comes from the tag, which binds the minted `dif`:
+///    a later server-side difficulty bump invalidates every in-flight solve as
+///    [`PowError::InvalidTag`].
 /// 4. Work: `sol` has `dif` leading `'0'` hex chars and equals
 ///    `hex(SHA-256(chg + non))`, constant-time compare.
 ///
@@ -90,9 +104,14 @@ pub fn verify_solution(
         return Err(PowError::Expired);
     }
 
-    // 3. Difficulty floor (`>=` is the hardened form: raising the server
-    // difficulty invalidates older, easier challenges).
-    if solution.dif < min_difficulty {
+    // 3. Difficulty floor. The effective minimum is at least 1, so a
+    //    misconfigured `min_difficulty = 0` (or a directly injected `dif = 0`)
+    //    can never produce a zero-work pass. NOTE: this floor is a defensive
+    //    backstop; primary downgrade protection comes from the tag binding the
+    //    minted difficulty — a server-side difficulty bump kills in-flight
+    //    solves via `InvalidTag`, which is checked first.
+    let floor = min_difficulty.max(1);
+    if solution.dif < floor {
         return Err(PowError::DifficultyTooLow);
     }
 
@@ -118,7 +137,7 @@ pub fn verify_solution(
 }
 
 pub(crate) fn tag_message(chg: &str, dif: u8, tim: &str) -> String {
-    format!("{chg}:{dif}:{tim}")
+    format!("{TAG_DOMAIN}:{chg}:{dif}:{tim}")
 }
 
 /// True when `sol` begins with at least `dif` `'0'` bytes — the leading-zero
