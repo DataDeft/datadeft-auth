@@ -57,15 +57,21 @@ examples/*             -> adapter and service crates as needed
 - Use constant-time comparison for verifier hashes, token MAC/tag values, and stored secret-derived values.
 - Use HMAC, not bare SHA-256, for lookup keys derived from secrets or PII.
 - Email identity is exact match on an app-provided normalized value; do not add Gmail dot folding, plus-tag stripping, or hidden provider-specific alias rules.
+- Validate `NormalizedEmail` structure before use: one address, no display-name form, no CR/LF/NUL/control characters, no empty values, and documented length caps.
 - Magic-link consumption must be one-time and atomic relative to session creation.
+- Scanner-safe flow state must bind to token/account, and `GET` landing routes never consume or create sessions.
+- Confirmation pages must identify the account, prevent framing, and submit same-origin `POST`; redirects after consume must be fixed, same-origin, or allowlisted.
 - Cookie helpers must default to normal lower `snake_case` names, `HttpOnly`, `Secure` outside explicit local development, conservative `SameSite`, host-only scope, explicit `Path=/` for primary session cookies, narrow auth paths for temporary helper cookies where practical, and explicit TTL.
+- Clear temporary flow/PoW cookies on successful auth completion and terminal failures.
 - Use the documented TTL baseline unless the consuming app explicitly configures stricter values: magic link 10m, flow 5m, PoW challenge 5m, PoW proof cookie 10m, session idle 24h, session absolute 30d, cleanup grace 24h.
+- Generate bearer secrets and nonces from CSPRNG entropy outside tests; enforce the documented entropy minimums for selectors, verifiers, session IDs/tokens, flow nonces, and PoW challenge nonces.
 - Use purpose-separated keys/peppers; do not reuse one secret across token, cookie, HMAC, and PoW contexts.
 - Production secret storage uses the thin supported-manager enum with `AwsSecretsManager` for v1; core crates receive loaded keyrings only and must not resolve secrets or depend on AWS SDK.
 - For 30-day session validity, rotate session/cookie keys about every 90 days and keep the previous key verify-only for at least 31 days; map `AWSCURRENT` to active and `AWSPREVIOUS` to verify-only when enabled.
+- Default session model must support server-side invalidation on logout and compromise before clearing cookies; stateless-only sessions are an explicit non-default tradeoff.
 - Scrub magic-link token material from URLs, logs, redirects, headers, telemetry, errors, fixtures, and snapshots.
-- Magic-link email links must be scanner-safe: `GET` landing routes never consume or create sessions; user confirmation sends a same-origin `POST` that atomically consumes and redirects to a clean URL.
-- Rate-limit request, consume, outbox, and PoW flows through service limiter hooks with generic public responses; use the documented v1 threshold baseline unless a consuming app explicitly configures stricter values.
+- PoW difficulty must be configurable with a documented production floor; proof cookies must bind to challenge, auth flow, and app-supplied client key where available, with single-use or a small replay cap.
+- Rate-limit request, consume, outbox, and PoW flows through service limiter hooks with generic public responses; use the documented v1 threshold baseline unless a consuming app explicitly configures stricter values, and document the per-email targeted-lockout tradeoff.
 - Prefer one current supported token/storage shape. Do not add legacy compatibility paths unless explicitly versioned and approved.
 
 ## Testing and validation

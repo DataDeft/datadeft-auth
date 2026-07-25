@@ -108,9 +108,12 @@ Instead, callers inject:
 
 - `now_unix`
 - `now_rfc3339`
-- entropy bytes
+- CSPRNG entropy bytes for production/adapters
+- deterministic fixture entropy only in tests
 - key material
 - config values
+
+Adapter crates that generate bearer secrets, nonces, session IDs, token verifiers, or proof-of-work challenges must use operating-system CSPRNGs or a reviewed cryptographic RNG seeded from OS entropy.
 
 ## Tests
 

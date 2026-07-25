@@ -24,6 +24,27 @@ This repo must never contain:
 - Verification must fail closed, including unknown key IDs, expired values, malformed inputs, and storage races.
 - Token parsers must reject malformed, ambiguous, mixed-version, or trailing-data inputs.
 
+## Bearer secret entropy
+
+All bearer secrets and anti-guessing nonces must come from a CSPRNG at the adapter/setup boundary. Test fixtures may use deterministic bytes only in tests.
+
+Minimum raw entropy before encoding:
+
+| Value | Minimum entropy | Notes |
+| --- | ---: | --- |
+| Magic-link selector | 128 bits | Not sufficient alone, but must resist online enumeration. |
+| Magic-link verifier | 256 bits | Primary bearer secret. |
+| Magic-link flow nonce/cookie | 128 bits | Prefer 256 bits when cheap. |
+| Session ID/session token random component | 256 bits | Applies to server-side IDs and encrypted-token identifiers. |
+| PoW challenge nonce/random component | 128 bits | Challenge must also be MACed/signed. |
+| CSRF/POST confirmation nonce | 128 bits | May be the same bound flow nonce when designed that way. |
+
+Rules:
+
+- Never derive bearer secrets from timestamps, counters, emails, IP addresses, user IDs, UUIDv1/v7 alone, or non-cryptographic RNGs.
+- Encoded lengths must preserve the required entropy after base64/base62/hex encoding.
+- Generation failures fail closed.
+
 ## Token and cookie inventory
 
 | Item | Where it lives | Secret? | Purpose | Recommended TTL |
@@ -63,6 +84,16 @@ Rules:
 - Sliding sessions may refresh idle expiry, but must never exceed absolute expiry.
 - Cleanup TTL is for storage deletion only; it is not validity TTL.
 - Expired, consumed, missing, malformed, and invalid tokens all return the same generic public failure.
+
+## Proof-of-work requirements
+
+- PoW difficulty must be configurable with a documented minimum floor; examples may choose development-only low values but production config must be explicit.
+- Challenge formats must be versioned and domain-separated, for example `pow-v1`.
+- Challenge random/nonces must satisfy the bearer entropy table and be MACed/signed.
+- PoW proof cookies must be bound to the challenge, the auth flow, and an app-supplied client key where available.
+- PoW proof cookies are short-lived auth-flow continuity values, not general bearer sessions.
+- Prefer single-use proof cookies. If multi-request continuity is needed, enforce a small per-proof use cap and reject replay beyond that cap.
+- PoW proof cookies must be cleared on successful auth-flow completion and on terminal auth-flow failure.
 
 ## One-time magic-link consumption
 
@@ -115,6 +146,12 @@ Use constant-time comparison for:
 - stored secret-derived values
 
 Do not add early-return comparison logic for secrets.
+
+Enumeration-resistant flows must also avoid obvious timing or work-factor differences:
+
+- Missing selector/token records should still perform dummy verifier/MAC work before returning a generic failure.
+- Unknown-user and throttled request-magic-link paths should avoid observable send-vs-suppress timing differences where practical.
+- Do not promise strict matched latency if it would create a denial-of-service risk; prefer bounded dummy work, background/outbox handoff, and generic responses.
 
 ## Configuration
 
@@ -207,8 +244,19 @@ Required defaults and rules:
 - Temporary auth helper cookies use the narrowest practical auth path, such as `/auth` or `/api/auth`, unless they intentionally need app-wide access.
 - Never rely on browser default cookie path behavior; always set `Path` explicitly.
 - Explicit `Max-Age` or expiry tied to the session/token TTL.
-- Clear cookies on logout, invalid session, and expired session responses where the adapter can do so.
+- Clear cookies on logout, invalid session, expired session responses, successful auth-flow completion, and terminal auth-flow failure where the adapter can do so.
 - Document CSRF expectations for cookie-authenticated routes; unsafe methods need CSRF protection or equivalent same-site guarantees.
+- `__Host-` and `__Secure-` cookie prefixes are optional future hardening, not v1 requirements. If used, document their browser requirements and path/domain tradeoffs.
+
+## Session revocation
+
+The default session model must support server-side invalidation.
+
+- Logout must invalidate the server-side session record or revocation handle before clearing the browser cookie.
+- Compromise response must be able to revoke a session before its absolute TTL expires.
+- Stolen cookies must not remain valid for the full 30-day absolute TTL after logout or explicit revocation.
+- Stateless session tokens without server-side revocation are not the default. If a consuming app chooses stateless-only sessions, document the tradeoff clearly and use shorter TTLs.
+- Invalidated, missing, expired, and malformed sessions map to safe generic auth failures and should clear the session cookie where possible.
 
 ## Email identity and normalization
 
@@ -218,6 +266,9 @@ Email identity is an exact match on the app-provided normalized email value.
 - The libraries compare normalized email values exactly for user lookup, HMAC lookup material, rate-limit keys, storage keys, and tests.
 - Do not implement provider-specific alias handling: no Gmail dot folding, no plus-address/tag stripping, and no provider-specific alias expansion.
 - Do not apply hidden case-folding rules. If a consuming app lowercases all or part of an email address, it must do so before constructing `NormalizedEmail`.
+- `NormalizedEmail` must represent exactly one structurally valid mailbox address for this product boundary.
+- Reject empty values, multiple addresses, display-name forms, CR/LF, NUL, control characters, and leading/trailing whitespace before email is used for storage, HMAC, rate limiting, or sending.
+- Enforce documented length limits for local part, domain, and full address.
 - Treat normalized emails as sensitive identifiers and redact them in `Debug`, errors, logs, fixtures, and snapshots.
 
 ## Magic-link URL handling
@@ -228,20 +279,26 @@ Scanner-safe magic-link flow:
 
 1. The email link opens a `GET` landing route with the token in the URL.
 2. The `GET` route must not consume the token, create a session, or mark the token as used.
-3. The `GET` route renders a generic confirmation page requiring an explicit user action, such as a “Continue sign in” button.
-4. The confirmation action submits a same-origin `POST` consume request. Do not auto-submit with JavaScript or redirect automatically from `GET` to consume.
-5. The `POST` consume route atomically consumes the token, clears any temporary flow state, creates the session, and redirects with `303 See Other` to a clean URL without token material.
+3. The `GET` route creates or validates short-lived flow state bound to the token selector/lookup material and intended account identifier.
+4. The `GET` route renders a generic confirmation page requiring an explicit user action, such as a “Continue sign in” button.
+5. The confirmation page must identify the account being signed into using safe, user-recognizable text, for example a masked email, without exposing raw token material.
+6. The confirmation action submits a same-origin `POST` consume request bound to the flow state. Do not auto-submit with JavaScript or redirect automatically from `GET` to consume.
+7. The `POST` consume route validates flow-state binding, atomically consumes the token, clears temporary flow/PoW state, creates the session, and redirects with `303 See Other` to a clean URL without token material.
 
 Implementation rules:
 
 - Do not log full landing/consume URLs, query strings, route captures, or redirect destinations that contain token material.
 - Scrub token path/query fields before tracing, metrics labels, access logs, error reports, and panic payloads.
 - Prefer a short-lived `HttpOnly` flow cookie or server-side nonce between landing and consume so token material is not embedded in HTML forms.
+- Flow state must be bound to the token selector/lookup material, intended account identifier, expiry, and app-supplied client key where available.
 - If a fallback form value must carry token material, it must be short-lived, single-use, `Cache-Control: no-store`, and never rendered with third-party assets.
 - Do not place token values in `Location` headers, JavaScript, analytics events, downstream callback URLs, or clean post-consume pages.
+- Post-consume redirect targets must be fixed, same-origin relative paths or explicit allowlist entries. Do not accept arbitrary `next=`/return URLs.
 - Landing pages must use `Cache-Control: no-store` and no third-party scripts, pixels, stylesheets, or analytics.
+- Landing/confirmation pages must prevent framing with `Content-Security-Policy: frame-ancestors 'none'`; `X-Frame-Options: DENY` may also be sent for older clients.
 - Set or document `Referrer-Policy: no-referrer` or an equivalent policy for magic-link landing/consume flows.
-- Treat scanner safety as protection against GET-only email scanners; active scanners that submit forms are handled by short TTLs, one-time atomic consume, and generic failure handling.
+- Terminal consume failures must clear temporary flow and PoW cookies where the adapter can do so.
+- Treat scanner safety as protection against GET-only email scanners; active scanners that submit forms are handled by short TTLs, flow-state binding, one-time atomic consume, and generic failure handling.
 
 ## Rate limiting and abuse controls
 
@@ -273,6 +330,7 @@ Rules:
 - Unknown user, throttled user, and successful request-magic-link responses must look the same publicly.
 - For request flow throttling, suppress email sends but return the same generic accepted response.
 - Limiter storage failures on abuse-sensitive paths should fail closed with a generic try-later response.
+- Per-email request limits intentionally trade availability for inbox-abuse protection; targeted attackers can spend a victim's quota. Document this tradeoff in consuming apps that surface retry guidance.
 - Public responses for throttled, unknown-user, already-consumed, expired, and invalid-token cases must remain generic unless a consuming app explicitly opts into different UX.
 
 ## One supported way
@@ -315,11 +373,17 @@ Before a phase is accepted, confirm:
 - `Debug` is redacted for sensitive types.
 - Error messages do not expose sensitive values.
 - Tests include tamper, replay, expired-token, malformed-token, and unknown-key cases where applicable.
+- Bearer secret generation enforces documented entropy minimums and uses CSPRNG entropy outside tests.
 - Magic-link consume tests prove one-time use and include a concurrent consume/race case for service/storage layers.
+- Scanner-safe flow tests prove `GET` does not consume, `POST` requires bound flow state, confirmation pages cannot be framed, terminal failures clear temporary cookies, and redirects are fixed/same-origin/allowlisted.
 - Cookie helpers default to `HttpOnly`, `Secure` outside local development, conservative `SameSite`, host-only scope, explicit path, and explicit TTL.
+- Session logout and compromise flows invalidate server-side session state before clearing cookies.
 - Key material is purpose-separated and rotation states are tested where keyrings exist, including 90-day session rotation, at least 31-day verify-only retention, verify-only rejection for minting, and retired-key rejection.
-- Rate-limit hooks cover request, consume, outbox-send, and PoW flows with generic public responses and configurable v1 thresholds.
+- PoW tests cover minimum difficulty config, CSPRNG challenge entropy, challenge/client/flow binding, replay limits, and proof-cookie clearing.
+- Rate-limit hooks cover request, consume, outbox-send, and PoW flows with generic public responses and configurable v1 thresholds, including the documented targeted-lockout tradeoff.
 - Magic-link URL handling scrubs token material from logs, redirects, headers, and telemetry.
+- Email input tests reject multiple addresses, display-name forms, CR/LF, NUL, control characters, empty values, and values outside documented length limits before send/storage/HMAC use.
+- Timing tests or review checks cover dummy verifier/MAC work on missing records and non-enumerating request paths where practical.
 - Core code is deterministic and cannot read clock, randomness, environment, filesystem, or network.
 - Adapter code maps infrastructure failures into safe public errors.
 - Dependency audit/license checks pass before release.
