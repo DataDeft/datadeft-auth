@@ -28,5 +28,5 @@ pub use traits::{
 pub use types::{
     ClientKey, ConsumeMagicLinkCommand, ConsumeMagicLinkOutcome, ConsumedMagicLink, EmailLocale,
     MagicLinkEmail, MagicLinkRecord, RateLimitKey, RequestMagicLinkCommand,
-    RequestMagicLinkOutcome, SessionId, SessionRecord, UserId,
+    RequestMagicLinkOutcome, SessionId, SessionRecord, UserId, UserRecord,
 };
