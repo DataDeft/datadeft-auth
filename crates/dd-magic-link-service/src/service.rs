@@ -1,4 +1,9 @@
 //! Request and consume orchestration.
+//!
+//! Proof-of-work is intentionally outside this service. HTTP adapters or
+//! consuming applications may require and validate a PoW token before calling
+//! these methods, but the magic-link service owns only magic-link, user,
+//! session, limiter, outbox, clock, and randomness policy.
 
 use dd_auth_token_core::cookie::mint_bound_cookie;
 use dd_auth_token_core::keyring::{KeyRing, SessionCookie};
@@ -21,8 +26,10 @@ use crate::types::{
 };
 
 /// Framework-neutral magic-link service.
-pub struct MagicLinkService<'a, Repositories, Limiter, Outbox, ServiceClock, Rng> {
-    repositories: &'a Repositories,
+pub struct MagicLinkService<'a, MagicLinks, Users, Sessions, Limiter, Outbox, ServiceClock, Rng> {
+    magic_links: &'a MagicLinks,
+    users: &'a Users,
+    sessions: &'a Sessions,
     limiter: &'a Limiter,
     outbox: &'a Outbox,
     clock: &'a ServiceClock,
@@ -33,8 +40,19 @@ pub struct MagicLinkService<'a, Repositories, Limiter, Outbox, ServiceClock, Rng
 }
 
 /// Constructor inputs for [`MagicLinkService`].
-pub struct MagicLinkServiceInputs<'a, Repositories, Limiter, Outbox, ServiceClock, Rng> {
-    pub repositories: &'a Repositories,
+pub struct MagicLinkServiceInputs<
+    'a,
+    MagicLinks,
+    Users,
+    Sessions,
+    Limiter,
+    Outbox,
+    ServiceClock,
+    Rng,
+> {
+    pub magic_links: &'a MagicLinks,
+    pub users: &'a Users,
+    pub sessions: &'a Sessions,
     pub limiter: &'a Limiter,
     pub outbox: &'a Outbox,
     pub clock: &'a ServiceClock,
@@ -44,15 +62,26 @@ pub struct MagicLinkServiceInputs<'a, Repositories, Limiter, Outbox, ServiceCloc
     pub config: MagicLinkServiceConfig,
 }
 
-impl<'a, Repositories, Limiter, Outbox, ServiceClock, Rng>
-    MagicLinkService<'a, Repositories, Limiter, Outbox, ServiceClock, Rng>
+impl<'a, MagicLinks, Users, Sessions, Limiter, Outbox, ServiceClock, Rng>
+    MagicLinkService<'a, MagicLinks, Users, Sessions, Limiter, Outbox, ServiceClock, Rng>
 {
     #[must_use]
     pub fn new(
-        inputs: MagicLinkServiceInputs<'a, Repositories, Limiter, Outbox, ServiceClock, Rng>,
+        inputs: MagicLinkServiceInputs<
+            'a,
+            MagicLinks,
+            Users,
+            Sessions,
+            Limiter,
+            Outbox,
+            ServiceClock,
+            Rng,
+        >,
     ) -> Self {
         Self {
-            repositories: inputs.repositories,
+            magic_links: inputs.magic_links,
+            users: inputs.users,
+            sessions: inputs.sessions,
             limiter: inputs.limiter,
             outbox: inputs.outbox,
             clock: inputs.clock,
@@ -64,16 +93,19 @@ impl<'a, Repositories, Limiter, Outbox, ServiceClock, Rng>
     }
 }
 
-impl<Repositories, Limiter, Outbox, ServiceClock, Rng>
-    MagicLinkService<'_, Repositories, Limiter, Outbox, ServiceClock, Rng>
+impl<MagicLinks, Users, Sessions, Limiter, Outbox, ServiceClock, Rng>
+    MagicLinkService<'_, MagicLinks, Users, Sessions, Limiter, Outbox, ServiceClock, Rng>
 where
-    Repositories: MagicLinkRepository + UserRepository + SessionRepository,
+    MagicLinks: MagicLinkRepository,
+    Users: UserRepository,
+    Sessions: SessionRepository,
     Limiter: RateLimiter,
     Outbox: MagicLinkOutbox,
     ServiceClock: Clock,
     Rng: RngCore + CryptoRng,
 {
     /// Request a magic link. Throttled request/outbox paths return the same
+    /// generic accepted outcome as a send so callers cannot enumerate accounts
     /// or throttling policy from the public response.
     pub fn request_magic_link(
         &mut self,
@@ -112,7 +144,7 @@ where
             consented_at_unix: now_unix,
         };
 
-        self.repositories
+        self.magic_links
             .put_magic_link_if_absent(record)
             .map_err(map_dependency_error)?;
         self.outbox
@@ -149,7 +181,10 @@ where
     }
 
     /// Consume a parsed magic-link token, atomically burning the stored challenge
-    /// before creating a session.
+    /// before creating a session. With generic repositories the session write is
+    /// not part of the consume transition; if session creation fails after a
+    /// successful consume, the bearer link remains burned. Adapters with
+    /// transactional storage may make the consume+session transition stronger.
     pub fn consume_magic_link(
         &mut self,
         command: ConsumeMagicLinkCommand,
@@ -165,7 +200,7 @@ where
 
         let verifier_hash = verifier_hash(self.lookup_hmac_key, command.token().verifier())?;
         let consumed = self
-            .repositories
+            .magic_links
             .consume_magic_link(&selector_lookup, &verifier_hash, now_unix)
             .map_err(map_consume_error)?;
 
@@ -186,7 +221,7 @@ where
     /// Revoke a server-side session by id.
     pub fn revoke_session(&self, session_id: &SessionId) -> Result<(), MagicLinkServiceError> {
         let now_unix = self.clock.now_unix()?;
-        self.repositories
+        self.sessions
             .revoke_session(session_id, now_unix)
             .map_err(map_dependency_error)
     }
@@ -342,7 +377,7 @@ where
         consumed: &ConsumedMagicLink,
     ) -> Result<(UserId, bool), MagicLinkServiceError> {
         if let Some(existing) = self
-            .repositories
+            .users
             .find_user_by_email(&consumed.email)
             .map_err(map_dependency_error)?
         {
@@ -362,11 +397,11 @@ where
             consented_at_unix: Some(consumed.consented_at_unix),
         };
 
-        match self.repositories.put_user_if_absent(user) {
+        match self.users.put_user_if_absent(user) {
             Ok(()) => Ok((user_id, true)),
             Err(DependencyError::ConditionalWriteFailed) => {
                 let Some(existing) = self
-                    .repositories
+                    .users
                     .find_user_by_email(&consumed.email)
                     .map_err(map_dependency_error)?
                 else {
@@ -395,7 +430,7 @@ where
             created_at_unix: now_unix,
             revoked_at_unix: None,
         };
-        self.repositories
+        self.sessions
             .put_session_if_absent(record)
             .map_err(map_dependency_error)?;
         Ok(session_id)

@@ -32,8 +32,6 @@ pub enum ConsumeMagicLinkError {
 pub enum MagicLinkServiceError {
     /// Caller input was malformed before any security-sensitive lookup.
     BadRequest,
-    /// PoW proof is required by policy but was absent or invalid.
-    PowRequired,
     /// Magic link could not be consumed. This intentionally covers missing,
     /// expired, already-consumed, throttled, and wrong-verifier cases.
     MagicLinkUnavailable,
@@ -47,7 +45,6 @@ impl fmt::Display for MagicLinkServiceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MagicLinkServiceError::BadRequest => f.write_str("bad request"),
-            MagicLinkServiceError::PowRequired => f.write_str("proof of work required"),
             MagicLinkServiceError::MagicLinkUnavailable => f.write_str("magic link unavailable"),
             MagicLinkServiceError::Unavailable => f.write_str("service unavailable"),
             MagicLinkServiceError::Internal => f.write_str("internal service error"),

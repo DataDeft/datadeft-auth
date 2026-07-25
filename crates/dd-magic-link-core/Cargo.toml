@@ -13,8 +13,6 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
-dd-auth-token-core = { path = "../dd-auth-token-core" }
-dd-pow-core = { path = "../dd-pow-core" }
 hex = "0.4"
 hmac = "0.12"
 rand_core = "0.6"

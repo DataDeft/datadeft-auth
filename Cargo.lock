@@ -197,8 +197,6 @@ dependencies = [
 name = "dd-magic-link-core"
 version = "0.1.0"
 dependencies = [
- "dd-auth-token-core",
- "dd-pow-core",
  "hex",
  "hmac",
  "rand_core 0.6.4",
@@ -213,7 +211,6 @@ version = "0.1.0"
 dependencies = [
  "dd-auth-token-core",
  "dd-magic-link-core",
- "dd-pow-core",
  "hex",
  "rand_core 0.6.4",
 ]
