@@ -1,7 +1,7 @@
 //! Key material wrappers for future typed keyrings.
 //!
-//! This module currently owns only loaded secret/key bytes. Rotation slots,
-//! HKDF purpose derivation, and cookie keyrings are added in later packets.
+//! This module currently owns loaded root secret material and purpose-derived
+//! Branca keys. Rotation slots and cookie keyrings are added in later packets.
 //!
 //! # Zeroization is best-effort only
 //!
@@ -15,10 +15,37 @@
 use std::fmt;
 use std::marker::PhantomData;
 
+use hkdf::Hkdf;
+use sha2::Sha256;
 use zeroize::Zeroize;
+
+use crate::error::TokenError;
 
 /// Required length of all root and Branca key material in this crate.
 pub const KEY_BYTES: usize = 32;
+
+/// HKDF purpose marker for keys derived from a [`RootSecret`].
+pub trait KeyPurpose {
+    /// Versioned HKDF `info` string. Changing this invalidates every token
+    /// minted with the derived key, so constants are pinned by tests.
+    const HKDF_INFO: &'static [u8];
+}
+
+/// Session-cookie key purpose.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum SessionCookie {}
+
+impl KeyPurpose for SessionCookie {
+    const HKDF_INFO: &'static [u8] = b"auth/session-v1";
+}
+
+/// PoW proof-cookie key purpose.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum PowCookie {}
+
+impl KeyPurpose for PowCookie {
+    const HKDF_INFO: &'static [u8] = b"auth/pow-v1";
+}
 
 /// Loaded root secret material.
 ///
@@ -34,7 +61,19 @@ impl RootSecret {
         Self(bytes)
     }
 
-    #[allow(dead_code)] // used once HKDF derivation lands
+    /// Derive a purpose-specific Branca key with HKDF-SHA256.
+    ///
+    /// AWS/adapters load only the root bytes; purpose separation is enforced by
+    /// the KDF `info` string, not a runtime flag. A session key and PoW key
+    /// derived from the same root are unrelated AEAD keys.
+    pub fn derive_key<P: KeyPurpose>(&self) -> Result<BrancaKey<P>, TokenError> {
+        let mut out = [0u8; KEY_BYTES];
+        Hkdf::<Sha256>::new(None, self.as_bytes())
+            .expand(P::HKDF_INFO, &mut out)
+            .map_err(|_| TokenError::Internal)?;
+        Ok(BrancaKey::new(out))
+    }
+
     pub(crate) fn as_bytes(&self) -> &[u8; KEY_BYTES] {
         &self.0
     }
