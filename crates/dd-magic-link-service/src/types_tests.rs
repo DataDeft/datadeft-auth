@@ -73,6 +73,87 @@ fn authentication_attempt_id_grammar_is_strict_and_debug_is_redacted() {
 }
 
 #[test]
+fn scanner_commands_are_bounded_and_debug_redacts_all_sensitive_fields() {
+    let bounded_value = "malformed-secret-sentinel".to_owned();
+    let bounded = BeginMagicLinkLandingCommand::new(
+        bounded_value.clone(),
+        Some(ClientKey::parse("trusted-client").expect("client key")),
+    );
+    assert_eq!(bounded.raw_token(), Some(bounded_value.as_str()));
+    let bounded_debug = format!("{bounded:?}");
+    assert_eq!(bounded_debug, "BeginMagicLinkLandingCommand(..)");
+    assert!(!bounded_debug.contains(&bounded_value));
+    assert!(!bounded_debug.contains("trusted-client"));
+
+    let oversized_value = "x".repeat(MAX_RAW_MAGIC_LINK_TOKEN_BYTES + 1);
+    let oversized = BeginMagicLinkLandingCommand::new(oversized_value.clone(), None);
+    assert_eq!(oversized.raw_token(), None);
+    assert!(!format!("{oversized:?}").contains(&oversized_value));
+
+    let confirm = ConfirmMagicLinkFlowCommand::new(
+        "cookie-secret-sentinel".to_owned(),
+        "confirmation-secret-sentinel".to_owned(),
+        Some(ClientKey::parse("trusted-client").expect("client key")),
+        Some("HU".to_owned()),
+    )
+    .expect("confirmation command");
+    let confirm_debug = format!("{confirm:?}");
+    assert_eq!(confirm_debug, "ConfirmMagicLinkFlowCommand(..)");
+    for secret in [
+        "cookie-secret-sentinel",
+        "confirmation-secret-sentinel",
+        "trusted-client",
+    ] {
+        assert!(!confirm_debug.contains(secret));
+    }
+}
+
+#[test]
+fn account_identity_is_exact_and_redacted() {
+    let email = NormalizedEmail::parse("Exact.Account+tag@example.test").expect("email");
+    let identity = MagicLinkAccountIdentity::from_normalized_email(&email);
+    assert_eq!(identity.as_str(), "Exact.Account+tag@example.test");
+    assert_eq!(format!("{identity:?}"), "MagicLinkAccountIdentity(..)");
+}
+
+#[test]
+fn flow_error_action_is_structurally_clear_except_for_unavailable() {
+    for public_error in [
+        MagicLinkServiceError::BadRequest,
+        MagicLinkServiceError::MagicLinkUnavailable,
+        MagicLinkServiceError::Internal,
+    ] {
+        let error = MagicLinkFlowError::from_public_error(public_error);
+        assert_eq!(error.public_error(), public_error);
+        assert_eq!(
+            error.temporary_state_action(),
+            TemporaryAuthStateAction::Clear
+        );
+    }
+    let unavailable = MagicLinkFlowError::from_public_error(MagicLinkServiceError::Unavailable);
+    assert_eq!(
+        unavailable.temporary_state_action(),
+        TemporaryAuthStateAction::Preserve
+    );
+}
+
+#[test]
+fn confirmation_country_validation_maps_to_clear_bad_request() {
+    let error = ConfirmMagicLinkFlowCommand::new(
+        "cookie".to_owned(),
+        "confirmation".to_owned(),
+        None,
+        Some("hu".to_owned()),
+    )
+    .expect_err("invalid country");
+    assert_eq!(error.public_error(), MagicLinkServiceError::BadRequest);
+    assert_eq!(
+        error.temporary_state_action(),
+        TemporaryAuthStateAction::Clear
+    );
+}
+
+#[test]
 fn authentication_dto_debug_redacts_identity_and_secret_derived_values() {
     let email_value = "account@example.test";
     let user_id_value = "usr_000102030405060708090a0b0c0d0e0f";

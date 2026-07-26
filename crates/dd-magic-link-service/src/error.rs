@@ -43,6 +43,48 @@ impl fmt::Display for MagicLinkServiceError {
 
 impl std::error::Error for MagicLinkServiceError {}
 
+/// Browser disposition for temporary scanner-flow and PoW state.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum TemporaryAuthStateAction {
+    Preserve,
+    Clear,
+}
+
+/// Scanner-flow error with a structurally derived temporary-state disposition.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct MagicLinkFlowError {
+    public_error: MagicLinkServiceError,
+}
+
+impl MagicLinkFlowError {
+    pub(crate) const fn from_public_error(public_error: MagicLinkServiceError) -> Self {
+        Self { public_error }
+    }
+
+    #[must_use]
+    pub const fn public_error(&self) -> MagicLinkServiceError {
+        self.public_error
+    }
+
+    #[must_use]
+    pub const fn temporary_state_action(&self) -> TemporaryAuthStateAction {
+        match self.public_error {
+            MagicLinkServiceError::Unavailable => TemporaryAuthStateAction::Preserve,
+            MagicLinkServiceError::BadRequest
+            | MagicLinkServiceError::MagicLinkUnavailable
+            | MagicLinkServiceError::Internal => TemporaryAuthStateAction::Clear,
+        }
+    }
+}
+
+impl fmt::Display for MagicLinkFlowError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.public_error.fmt(f)
+    }
+}
+
+impl std::error::Error for MagicLinkFlowError {}
+
 /// Outcome of the atomic authentication transaction.
 ///
 /// See [`MagicLinkAuthenticationRepository`](crate::traits::MagicLinkAuthenticationRepository)

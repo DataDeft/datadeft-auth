@@ -60,6 +60,11 @@ pub trait MagicLinkRepository {
 /// command result) and must not mutate storage. An adapter-reported `Internal`
 /// failure is not an ambiguous commit and must not be retried as one.
 pub trait MagicLinkAuthenticationRepository {
+    /// Return one side-effect-free, strongly consistent selector-keyed snapshot.
+    ///
+    /// The read must not consume, update, lock, create user/session state, or
+    /// otherwise mutate the candidate. It is used both for scanner-safe landing
+    /// validation and for confirmation immediately before the atomic commit.
     fn find_magic_link_for_authentication(
         &self,
         selector_lookup_hmac: &LookupHmac,

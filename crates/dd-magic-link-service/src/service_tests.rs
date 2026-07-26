@@ -4,19 +4,24 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::num::NonZeroU32;
 
-use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie};
+use dd_auth_token_core::keyring::{
+    KeyId, KeyPurpose, KeyRing, KeySlot, MagicLinkFlowCookie, RootSecret, SessionCookie,
+};
 use dd_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkToken, NormalizedEmail, selector_lookup_hmac, verifier_hash,
 };
 use rand_core::{CryptoRng, RngCore};
 
 use super::*;
+use crate::TemporaryAuthStateAction;
 use crate::config::MagicLinkServiceConfig;
 use crate::traits::{
     Clock, MagicLinkAuthenticationRepository, MagicLinkOutbox, MagicLinkRepository,
     SessionRepository,
 };
-use crate::types::{EmailLocale, RequestMagicLinkCommand, SessionRecord};
+use crate::types::{
+    EmailLocale, MAX_RAW_MAGIC_LINK_TOKEN_BYTES, RequestMagicLinkCommand, SessionRecord,
+};
 
 const NOW: u64 = 1_000;
 const SELECTOR: &str = "000102030405060708090a0b0c0d0e0f";
@@ -391,6 +396,19 @@ fn session_keyring() -> KeyRing<SessionCookie> {
     session_keyring_with_mint_until(20_000)
 }
 
+fn flow_keyring() -> KeyRing<MagicLinkFlowCookie> {
+    let kid = KeyId::parse("flow-active").expect("key id");
+    let root = RootSecret::new([0x33; 32]);
+    let key = root
+        .derive_key::<MagicLinkFlowCookie>(&kid)
+        .expect("derive flow key");
+    KeyRing::new(
+        kid.clone(),
+        vec![KeySlot::active_with_windows(kid, key, 20_000, 20_300)],
+    )
+    .expect("flow keyring")
+}
+
 fn config() -> MagicLinkServiceConfig {
     let mut config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
     config.session_idle_secs = 100;
@@ -472,6 +490,64 @@ async fn consume(
         .await
 }
 
+async fn begin_flow(
+    repository: &FakeRepository,
+    limiter: &AllowLimiter,
+    clock: &FixedClock,
+    rng: &mut TestRng,
+    raw_token: String,
+    client_key: Option<ClientKey>,
+    config: MagicLinkServiceConfig,
+) -> Result<BeginMagicLinkLandingOutcome, MagicLinkFlowError> {
+    let key = lookup_key();
+    let flow_keyring = flow_keyring();
+    let session_keyring = session_keyring();
+    let mut service = MagicLinkFlowService::new(MagicLinkFlowServiceInputs {
+        authentication: repository,
+        sessions: repository,
+        limiter,
+        clock,
+        rng,
+        lookup_hmac_key: &key,
+        flow_keyring: &flow_keyring,
+        session_keyring: &session_keyring,
+        config,
+    });
+    service
+        .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(raw_token, client_key))
+        .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn confirm_flow(
+    repository: &FakeRepository,
+    limiter: &AllowLimiter,
+    clock: &FixedClock,
+    rng: &mut TestRng,
+    flow_cookie: String,
+    confirmation: String,
+    client_key: Option<ClientKey>,
+    country: Option<String>,
+    config: MagicLinkServiceConfig,
+) -> Result<ConfirmMagicLinkFlowOutcome, MagicLinkFlowError> {
+    let key = lookup_key();
+    let flow_keyring = flow_keyring();
+    let session_keyring = session_keyring();
+    let mut service = MagicLinkFlowService::new(MagicLinkFlowServiceInputs {
+        authentication: repository,
+        sessions: repository,
+        limiter,
+        clock,
+        rng,
+        lookup_hmac_key: &key,
+        flow_keyring: &flow_keyring,
+        session_keyring: &session_keyring,
+        config,
+    });
+    let command = ConfirmMagicLinkFlowCommand::new(flow_cookie, confirmation, client_key, country)?;
+    service.confirm_magic_link_flow(command).await
+}
+
 async fn request(
     repository: &FakeRepository,
     limiter: &AllowLimiter,
@@ -499,6 +575,875 @@ async fn request(
             Some(ClientKey::parse("client-1").expect("client key")),
         ))
         .await
+}
+
+#[tokio::test]
+async fn valid_landing_is_bounded_non_mutating_and_caps_expiry_to_record() {
+    reset_verifier_comparison_count();
+    let repository = FakeRepository::default();
+    *repository.candidate.borrow_mut() = Some(candidate());
+    let limiter = AllowLimiter::default();
+    let clock = FixedClock::at(NOW);
+    let mut rng = TestRng::working();
+    let outcome = begin_flow(
+        &repository,
+        &limiter,
+        &clock,
+        &mut rng,
+        token(VERIFIER).as_secret_value().to_string(),
+        Some(ClientKey::parse("client-1").expect("client key")),
+        config(),
+    )
+    .await
+    .expect("valid landing");
+
+    assert_eq!(clock.calls.get(), 1);
+    assert_eq!(repository.candidate_reads.get(), 1);
+    assert_eq!(repository.user_reads.get(), 0);
+    assert!(repository.commands.borrow().is_empty());
+    assert!(repository.sessions.borrow().is_empty());
+    assert_eq!(verifier_comparison_count(), 1);
+    assert_eq!(limiter.calls.get(), 2);
+    assert!(limiter.checked.borrow()[0].starts_with("magic-link:landing:client:"));
+    assert!(limiter.checked.borrow()[1].starts_with("magic-link:landing:selector:"));
+    assert_eq!(rng.calls, 2);
+    assert_eq!(outcome.cookie_max_age_secs(), 100);
+    assert_eq!(outcome.account_identity().as_str(), "account@example.test");
+    let debug = format!("{outcome:?}");
+    assert!(!debug.contains(outcome.flow_cookie_value()));
+    assert!(!debug.contains(outcome.confirmation_value()));
+    assert!(!debug.contains("account@example.test"));
+}
+
+#[tokio::test]
+async fn landing_selector_miss_does_one_dummy_read_and_creates_no_flow_state() {
+    reset_verifier_comparison_count();
+    let repository = FakeRepository::default();
+    let limiter = AllowLimiter::default();
+    let clock = FixedClock::at(NOW);
+    let mut rng = TestRng::working();
+    let error = begin_flow(
+        &repository,
+        &limiter,
+        &clock,
+        &mut rng,
+        token(VERIFIER).as_secret_value().to_string(),
+        None,
+        config(),
+    )
+    .await
+    .expect_err("selector miss");
+
+    assert_eq!(
+        error.public_error(),
+        MagicLinkServiceError::MagicLinkUnavailable
+    );
+    assert_eq!(
+        error.temporary_state_action(),
+        TemporaryAuthStateAction::Clear
+    );
+    assert_eq!(clock.calls.get(), 1);
+    assert_eq!(limiter.calls.get(), 1);
+    assert!(limiter.checked.borrow()[0].starts_with("magic-link:landing:selector:"));
+    assert_eq!(repository.candidate_reads.get(), 1);
+    assert_eq!(verifier_comparison_count(), 1);
+    assert_eq!(repository.user_reads.get(), 0);
+    assert!(repository.commands.borrow().is_empty());
+    assert!(repository.sessions.borrow().is_empty());
+    assert_eq!(rng.calls, 0);
+}
+
+#[tokio::test]
+async fn landing_uses_configured_expiry_cap_and_rejects_expiry_at_now() {
+    let repository = FakeRepository::default();
+    let mut value = candidate();
+    value.expires_at_unix = NOW + 250;
+    *repository.candidate.borrow_mut() = Some(value);
+    let limiter = AllowLimiter::default();
+    let clock = FixedClock::at(NOW);
+    let mut rng = TestRng::working();
+    let mut policy = config();
+    policy.magic_link_flow_ttl_secs = 30;
+    let outcome = begin_flow(
+        &repository,
+        &limiter,
+        &clock,
+        &mut rng,
+        token(VERIFIER).as_secret_value().to_string(),
+        None,
+        policy,
+    )
+    .await
+    .expect("landing");
+    assert_eq!(outcome.cookie_max_age_secs(), 30);
+
+    let repository = FakeRepository::default();
+    let mut value = candidate();
+    value.expires_at_unix = NOW;
+    *repository.candidate.borrow_mut() = Some(value);
+    let error = begin_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut TestRng::working(),
+        token(VERIFIER).as_secret_value().to_string(),
+        None,
+        config(),
+    )
+    .await
+    .expect_err("expiry at current second is invalid");
+    assert_eq!(
+        error.public_error(),
+        MagicLinkServiceError::MagicLinkUnavailable
+    );
+    assert_eq!(
+        error.temporary_state_action(),
+        TemporaryAuthStateAction::Clear
+    );
+}
+
+#[tokio::test]
+async fn confirmation_accepts_authenticated_expiry_then_rejects_post_expiry() {
+    for (elapsed, succeeds) in [(30_u64, true), (31_u64, false)] {
+        let repository = FakeRepository::default();
+        let mut value = candidate();
+        value.expires_at_unix = NOW + 100;
+        *repository.candidate.borrow_mut() = Some(value);
+        let mut policy = config();
+        policy.magic_link_flow_ttl_secs = 30;
+        let mut rng = TestRng::working();
+        let landing = begin_flow(
+            &repository,
+            &AllowLimiter::default(),
+            &FixedClock::at(NOW),
+            &mut rng,
+            token(VERIFIER).as_secret_value().to_string(),
+            None,
+            policy.clone(),
+        )
+        .await
+        .expect("landing");
+        assert_eq!(landing.cookie_max_age_secs(), 30);
+
+        let result = confirm_flow(
+            &repository,
+            &AllowLimiter::default(),
+            &FixedClock::at(NOW + elapsed),
+            &mut rng,
+            landing.flow_cookie_value().to_owned(),
+            landing.confirmation_value().to_owned(),
+            None,
+            Some("HU".to_owned()),
+            policy,
+        )
+        .await;
+        if succeeds {
+            let outcome = result.expect("authenticated expiry is inclusive in flow core");
+            assert_eq!(
+                outcome.temporary_state_action(),
+                TemporaryAuthStateAction::Clear
+            );
+            assert_eq!(repository.commands.borrow().len(), 1);
+            assert_eq!(repository.sessions.borrow().len(), 1);
+        } else {
+            let error = result.expect_err("post-expiry confirmation");
+            assert_eq!(
+                error.public_error(),
+                MagicLinkServiceError::MagicLinkUnavailable
+            );
+            assert_eq!(
+                error.temporary_state_action(),
+                TemporaryAuthStateAction::Clear
+            );
+            assert!(repository.commands.borrow().is_empty());
+            assert!(repository.sessions.borrow().is_empty());
+            assert!(
+                repository
+                    .candidate
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|candidate| candidate.consumed_at_unix.is_none())
+            );
+        }
+    }
+
+    // Flow-core expiry is inclusive. If the same instant is also the backing
+    // candidate expiry, the service's stricter candidate rule still rejects.
+    let repository = FakeRepository::default();
+    *repository.candidate.borrow_mut() = Some(candidate());
+    let mut rng = TestRng::working();
+    let landing = begin_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        token(VERIFIER).as_secret_value().to_string(),
+        None,
+        config(),
+    )
+    .await
+    .expect("candidate-capped landing");
+    assert_eq!(landing.cookie_max_age_secs(), 100);
+    let error = confirm_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW + 100),
+        &mut rng,
+        landing.flow_cookie_value().to_owned(),
+        landing.confirmation_value().to_owned(),
+        None,
+        Some("HU".to_owned()),
+        config(),
+    )
+    .await
+    .expect_err("candidate expiry instant is invalid");
+    assert_eq!(
+        error.public_error(),
+        MagicLinkServiceError::MagicLinkUnavailable
+    );
+    assert_eq!(
+        error.temporary_state_action(),
+        TemporaryAuthStateAction::Clear
+    );
+    assert!(repository.commands.borrow().is_empty());
+    assert!(repository.sessions.borrow().is_empty());
+    assert!(
+        repository
+            .candidate
+            .borrow()
+            .as_ref()
+            .is_some_and(|candidate| candidate.consumed_at_unix.is_none())
+    );
+}
+
+#[tokio::test]
+async fn malformed_and_oversized_landing_have_identical_client_only_work() {
+    for raw_token in [
+        "malformed".to_owned(),
+        "x".repeat(MAX_RAW_MAGIC_LINK_TOKEN_BYTES + 1),
+    ] {
+        let repository = FakeRepository::default();
+        *repository.candidate.borrow_mut() = Some(candidate());
+        let limiter = AllowLimiter::default();
+        limiter.deny_prefix("magic-link:landing:client:");
+        let clock = FixedClock::at(NOW);
+        let mut rng = TestRng::working();
+        let error = begin_flow(
+            &repository,
+            &limiter,
+            &clock,
+            &mut rng,
+            raw_token,
+            Some(ClientKey::parse("client-1").expect("client key")),
+            config(),
+        )
+        .await
+        .expect_err("invalid landing");
+        assert_eq!(
+            error.public_error(),
+            MagicLinkServiceError::MagicLinkUnavailable
+        );
+        assert_eq!(
+            error.temporary_state_action(),
+            TemporaryAuthStateAction::Clear
+        );
+        assert_eq!(clock.calls.get(), 1);
+        assert_eq!(limiter.calls.get(), 1);
+        assert!(limiter.checked.borrow()[0].starts_with("magic-link:landing:client:"));
+        assert_eq!(repository.candidate_reads.get(), 0);
+        assert_eq!(rng.calls, 0);
+    }
+
+    let error = begin_flow(
+        &FakeRepository::default(),
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut TestRng::working(),
+        "malformed".to_owned(),
+        None,
+        config(),
+    )
+    .await
+    .expect_err("malformed without client");
+    assert_eq!(
+        error.public_error(),
+        MagicLinkServiceError::MagicLinkUnavailable
+    );
+}
+
+#[tokio::test]
+async fn landing_runs_both_buckets_even_when_the_first_denies() {
+    let repository = FakeRepository::default();
+    *repository.candidate.borrow_mut() = Some(candidate());
+    let limiter = AllowLimiter::default();
+    limiter.deny_prefix("magic-link:landing:client:");
+    let error = begin_flow(
+        &repository,
+        &limiter,
+        &FixedClock::at(NOW),
+        &mut TestRng::working(),
+        token(VERIFIER).as_secret_value().to_string(),
+        Some(ClientKey::parse("client-1").expect("client key")),
+        config(),
+    )
+    .await
+    .expect_err("landing denial");
+    assert_eq!(
+        error.public_error(),
+        MagicLinkServiceError::MagicLinkUnavailable
+    );
+    assert_eq!(limiter.calls.get(), 2);
+    assert_eq!(repository.candidate_reads.get(), 0);
+}
+
+#[tokio::test]
+async fn landing_invalid_config_precedes_clock_limiter_repository_and_entropy() {
+    let repository = FakeRepository::default();
+    *repository.candidate.borrow_mut() = Some(candidate());
+    let limiter = AllowLimiter::default();
+    let clock = FixedClock::at(NOW);
+    let mut rng = TestRng::working();
+    let mut policy = config();
+    policy.magic_link_flow_ttl_secs = 0;
+    let error = begin_flow(
+        &repository,
+        &limiter,
+        &clock,
+        &mut rng,
+        token(VERIFIER).as_secret_value().to_string(),
+        Some(ClientKey::parse("client-1").expect("client key")),
+        policy,
+    )
+    .await
+    .expect_err("invalid configuration");
+    assert_eq!(error.public_error(), MagicLinkServiceError::Internal);
+    assert_eq!(
+        error.temporary_state_action(),
+        TemporaryAuthStateAction::Clear
+    );
+    assert_eq!(clock.calls.get(), 0);
+    assert_eq!(limiter.calls.get(), 0);
+    assert_eq!(repository.candidate_reads.get(), 0);
+    assert_eq!(rng.calls, 0);
+}
+
+#[tokio::test]
+async fn landing_dependency_and_entropy_failures_preserve_temporary_state() {
+    let repository = FakeRepository::default();
+    *repository.candidate.borrow_mut() = Some(candidate());
+    let limiter = AllowLimiter::default();
+    limiter.fail_next(DependencyError::Unavailable);
+    let error = begin_flow(
+        &repository,
+        &limiter,
+        &FixedClock::at(NOW),
+        &mut TestRng::working(),
+        "malformed".to_owned(),
+        Some(ClientKey::parse("client-1").expect("client key")),
+        config(),
+    )
+    .await
+    .expect_err("limiter unavailable");
+    assert_eq!(error.public_error(), MagicLinkServiceError::Unavailable);
+    assert_eq!(
+        error.temporary_state_action(),
+        TemporaryAuthStateAction::Preserve
+    );
+
+    for fail_at in [1, 2] {
+        let repository = FakeRepository::default();
+        *repository.candidate.borrow_mut() = Some(candidate());
+        let error = begin_flow(
+            &repository,
+            &AllowLimiter::default(),
+            &FixedClock::at(NOW),
+            &mut TestRng::failing_at(fail_at),
+            token(VERIFIER).as_secret_value().to_string(),
+            None,
+            config(),
+        )
+        .await
+        .expect_err("flow entropy unavailable");
+        assert_eq!(error.public_error(), MagicLinkServiceError::Unavailable);
+        assert_eq!(
+            error.temporary_state_action(),
+            TemporaryAuthStateAction::Preserve
+        );
+        assert!(repository.commands.borrow().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn scanner_confirmation_atomically_authenticates_and_replay_clears() {
+    let repository = FakeRepository::default();
+    *repository.candidate.borrow_mut() = Some(candidate());
+    let mut rng = TestRng::working();
+    let client = ClientKey::parse("client-1").expect("client key");
+    let landing = begin_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        token(VERIFIER).as_secret_value().to_string(),
+        Some(client.clone()),
+        config(),
+    )
+    .await
+    .expect("landing");
+    let cookie = landing.flow_cookie_value().to_owned();
+    let confirmation = landing.confirmation_value().to_owned();
+
+    let outcome = confirm_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        cookie.clone(),
+        confirmation.clone(),
+        Some(client.clone()),
+        Some("HU".to_owned()),
+        config(),
+    )
+    .await
+    .expect("confirmation");
+    assert_eq!(
+        outcome.temporary_state_action(),
+        TemporaryAuthStateAction::Clear
+    );
+    assert!(outcome.authentication().user_created());
+    assert_eq!(outcome.authentication().country(), Some("HU"));
+    assert!(
+        outcome
+            .authentication()
+            .session_cookie_value()
+            .starts_with("v1.active.")
+    );
+    assert_eq!(repository.sessions.borrow().len(), 1);
+    assert_eq!(repository.commands.borrow().len(), 1);
+    assert!(
+        repository
+            .candidate
+            .borrow()
+            .as_ref()
+            .is_some_and(|value| value.consumed_at_unix == Some(NOW))
+    );
+
+    let replay = confirm_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        cookie,
+        confirmation,
+        Some(client),
+        Some("HU".to_owned()),
+        config(),
+    )
+    .await
+    .expect_err("replay");
+    assert_eq!(
+        replay.public_error(),
+        MagicLinkServiceError::MagicLinkUnavailable
+    );
+    assert_eq!(
+        replay.temporary_state_action(),
+        TemporaryAuthStateAction::Clear
+    );
+    assert_eq!(repository.sessions.borrow().len(), 1);
+}
+
+#[tokio::test]
+async fn confirmation_rejects_cookie_nonce_client_verifier_account_and_stale_mismatches() {
+    for case in 0..10 {
+        reset_verifier_comparison_count();
+        let repository = FakeRepository::default();
+        *repository.candidate.borrow_mut() = Some(candidate());
+        let mut rng = TestRng::working();
+        let client = ClientKey::parse("client-1").expect("client key");
+        let landing = begin_flow(
+            &repository,
+            &AllowLimiter::default(),
+            &FixedClock::at(NOW),
+            &mut rng,
+            token(VERIFIER).as_secret_value().to_string(),
+            Some(client.clone()),
+            config(),
+        )
+        .await
+        .expect("landing");
+        let mut cookie = landing.flow_cookie_value().to_owned();
+        let mut confirmation = landing.confirmation_value().to_owned();
+        let mut submitted_client = Some(client);
+        let mut confirm_now = NOW;
+        match case {
+            0 => cookie.push('x'),
+            1 => confirmation.replace_range(0..1, "f"),
+            2 => submitted_client = None,
+            3 => {
+                submitted_client = Some(ClientKey::parse("client-2").expect("client key"));
+            }
+            4 => confirm_now = NOW + 101,
+            5 => {
+                let mut value = repository.candidate.borrow().clone().expect("candidate");
+                value.verifier_hash =
+                    verifier_hash(&lookup_key(), token(OTHER_VERIFIER).verifier())
+                        .expect("other verifier");
+                *repository.candidate.borrow_mut() = Some(value);
+            }
+            6 => {
+                repository
+                    .candidate
+                    .borrow_mut()
+                    .as_mut()
+                    .expect("candidate")
+                    .email = NormalizedEmail::parse("other@example.test").expect("email");
+            }
+            7 => {
+                repository
+                    .candidate
+                    .borrow_mut()
+                    .as_mut()
+                    .expect("candidate")
+                    .terms_version = "stale".to_owned();
+            }
+            8 => {
+                repository
+                    .candidate
+                    .borrow_mut()
+                    .as_mut()
+                    .expect("candidate")
+                    .privacy_version = "stale".to_owned();
+            }
+            _ => {
+                repository
+                    .candidate
+                    .borrow_mut()
+                    .as_mut()
+                    .expect("candidate")
+                    .consented_at_unix = 0;
+            }
+        }
+        let error = confirm_flow(
+            &repository,
+            &AllowLimiter::default(),
+            &FixedClock::at(confirm_now),
+            &mut rng,
+            cookie,
+            confirmation,
+            submitted_client,
+            Some("HU".to_owned()),
+            config(),
+        )
+        .await
+        .expect_err("mismatched confirmation");
+        assert_eq!(
+            error.public_error(),
+            MagicLinkServiceError::MagicLinkUnavailable,
+            "case {case}"
+        );
+        assert_eq!(
+            error.temporary_state_action(),
+            TemporaryAuthStateAction::Clear
+        );
+        assert!(repository.commands.borrow().is_empty());
+        assert!(repository.sessions.borrow().is_empty());
+        if matches!(case, 5..=9) {
+            assert_eq!(
+                verifier_comparison_count(),
+                2,
+                "landing plus confirm case {case}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn scanner_confirmation_disabled_user_is_generic_and_does_not_burn_link() {
+    let repository = FakeRepository::default();
+    *repository.candidate.borrow_mut() = Some(candidate());
+    *repository.user.borrow_mut() =
+        Some(existing_user("usr_000102030405060708090a0b0c0d0e0f", true));
+    let mut rng = TestRng::working();
+    let landing = begin_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        token(VERIFIER).as_secret_value().to_string(),
+        None,
+        config(),
+    )
+    .await
+    .expect("landing");
+    let error = confirm_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        landing.flow_cookie_value().to_owned(),
+        landing.confirmation_value().to_owned(),
+        None,
+        Some("HU".to_owned()),
+        config(),
+    )
+    .await
+    .expect_err("disabled user");
+
+    assert_eq!(
+        error.public_error(),
+        MagicLinkServiceError::MagicLinkUnavailable
+    );
+    assert_eq!(
+        error.temporary_state_action(),
+        TemporaryAuthStateAction::Clear
+    );
+    assert_eq!(repository.user_reads.get(), 1);
+    assert!(repository.commands.borrow().is_empty());
+    assert!(repository.sessions.borrow().is_empty());
+    assert!(
+        repository
+            .candidate
+            .borrow()
+            .as_ref()
+            .is_some_and(|candidate| candidate.consumed_at_unix.is_none())
+    );
+}
+
+#[tokio::test]
+async fn scanner_confirmation_dependency_preserves_and_internal_clears() {
+    for (commit_error, expected_public, expected_action, expected_commits) in [
+        (
+            CommitMagicLinkAuthenticationError::DependencyUnavailable,
+            MagicLinkServiceError::Unavailable,
+            TemporaryAuthStateAction::Preserve,
+            3,
+        ),
+        (
+            CommitMagicLinkAuthenticationError::Internal,
+            MagicLinkServiceError::Internal,
+            TemporaryAuthStateAction::Clear,
+            1,
+        ),
+    ] {
+        let repository = FakeRepository::default();
+        *repository.candidate.borrow_mut() = Some(candidate());
+        for _ in 0..expected_commits {
+            repository
+                .commit_results
+                .borrow_mut()
+                .push_back(commit_error);
+        }
+        let mut rng = TestRng::working();
+        let landing = begin_flow(
+            &repository,
+            &AllowLimiter::default(),
+            &FixedClock::at(NOW),
+            &mut rng,
+            token(VERIFIER).as_secret_value().to_string(),
+            None,
+            config(),
+        )
+        .await
+        .expect("landing");
+        let error = confirm_flow(
+            &repository,
+            &AllowLimiter::default(),
+            &FixedClock::at(NOW),
+            &mut rng,
+            landing.flow_cookie_value().to_owned(),
+            landing.confirmation_value().to_owned(),
+            None,
+            Some("HU".to_owned()),
+            config(),
+        )
+        .await
+        .expect_err("commit error");
+
+        assert_eq!(error.public_error(), expected_public);
+        assert_eq!(error.temporary_state_action(), expected_action);
+        assert_eq!(repository.commands.borrow().len(), expected_commits);
+        assert!(repository.sessions.borrow().is_empty());
+        assert!(
+            repository
+                .candidate
+                .borrow()
+                .as_ref()
+                .is_some_and(|candidate| candidate.consumed_at_unix.is_none())
+        );
+    }
+}
+
+#[tokio::test]
+async fn confirmation_selector_miss_performs_one_dummy_comparison() {
+    reset_verifier_comparison_count();
+    let repository = FakeRepository::default();
+    *repository.candidate.borrow_mut() = Some(candidate());
+    let mut rng = TestRng::working();
+    let landing = begin_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        token(VERIFIER).as_secret_value().to_string(),
+        None,
+        config(),
+    )
+    .await
+    .expect("landing");
+    *repository.candidate.borrow_mut() = None;
+    let error = confirm_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        landing.flow_cookie_value().to_owned(),
+        landing.confirmation_value().to_owned(),
+        None,
+        Some("HU".to_owned()),
+        config(),
+    )
+    .await
+    .expect_err("selector miss");
+    assert_eq!(
+        error.public_error(),
+        MagicLinkServiceError::MagicLinkUnavailable
+    );
+    assert_eq!(verifier_comparison_count(), 2);
+    assert_eq!(repository.candidate_reads.get(), 2);
+    assert_eq!(repository.user_reads.get(), 0);
+    assert!(repository.commands.borrow().is_empty());
+}
+
+#[tokio::test]
+async fn scanner_confirmation_preserves_exact_retry_and_replan_behavior() {
+    reset_verifier_comparison_count();
+    let repository = FakeRepository::default();
+    *repository.candidate.borrow_mut() = Some(candidate());
+    repository
+        .commit_results
+        .borrow_mut()
+        .push_back(CommitMagicLinkAuthenticationError::UserConflict);
+    repository.install_winner_on_user_conflict.set(true);
+    let mut rng = TestRng::working();
+    let landing = begin_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        token(VERIFIER).as_secret_value().to_string(),
+        None,
+        config(),
+    )
+    .await
+    .expect("landing");
+    let outcome = confirm_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        landing.flow_cookie_value().to_owned(),
+        landing.confirmation_value().to_owned(),
+        None,
+        Some("HU".to_owned()),
+        config(),
+    )
+    .await
+    .expect("confirmation replan");
+    assert!(!outcome.authentication().user_created());
+    assert_eq!(repository.commands.borrow().len(), 2);
+    assert_eq!(repository.candidate_reads.get(), 3);
+    assert_eq!(repository.user_reads.get(), 2);
+    assert_eq!(verifier_comparison_count(), 3);
+    let commands = repository.commands.borrow();
+    assert_eq!(commands[0].session_id, commands[1].session_id);
+    assert_ne!(commands[0].attempt_id, commands[1].attempt_id);
+}
+
+#[tokio::test]
+async fn scanner_confirmation_retries_ambiguous_commit_without_replanning() {
+    let repository = FakeRepository::default();
+    *repository.candidate.borrow_mut() = Some(candidate());
+    repository.apply_then_unavailable_once.set(true);
+    let mut rng = TestRng::working();
+    let landing = begin_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        token(VERIFIER).as_secret_value().to_string(),
+        None,
+        config(),
+    )
+    .await
+    .expect("landing");
+    let outcome = confirm_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        landing.flow_cookie_value().to_owned(),
+        landing.confirmation_value().to_owned(),
+        None,
+        Some("HU".to_owned()),
+        config(),
+    )
+    .await
+    .expect("exact retry");
+    let commands = repository.commands.borrow();
+    assert_eq!(commands.len(), 2);
+    assert_eq!(commands[0], commands[1]);
+    assert_eq!(repository.candidate_reads.get(), 2);
+    assert_eq!(repository.user_reads.get(), 1);
+    assert_eq!(repository.sessions.borrow().len(), 1);
+    assert_eq!(
+        repository.sessions.borrow()[0].session_id,
+        *outcome.authentication().session_id()
+    );
+}
+
+#[tokio::test]
+async fn scanner_confirmation_replans_session_conflict_with_fresh_cookie_and_attempt() {
+    let repository = FakeRepository::default();
+    *repository.candidate.borrow_mut() = Some(candidate());
+    repository
+        .commit_results
+        .borrow_mut()
+        .push_back(CommitMagicLinkAuthenticationError::SessionConflict);
+    let mut rng = TestRng::working();
+    let landing = begin_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        token(VERIFIER).as_secret_value().to_string(),
+        None,
+        config(),
+    )
+    .await
+    .expect("landing");
+    let outcome = confirm_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut rng,
+        landing.flow_cookie_value().to_owned(),
+        landing.confirmation_value().to_owned(),
+        None,
+        Some("HU".to_owned()),
+        config(),
+    )
+    .await
+    .expect("session replan");
+    let commands = repository.commands.borrow();
+    assert_eq!(commands.len(), 2);
+    assert_ne!(commands[0].session_id, commands[1].session_id);
+    assert_ne!(commands[0].attempt_id, commands[1].attempt_id);
+    assert_eq!(
+        &commands[1].session_id,
+        outcome.authentication().session_id()
+    );
+    assert_eq!(repository.candidate_reads.get(), 2);
+    assert_eq!(repository.user_reads.get(), 1);
 }
 
 #[tokio::test]
@@ -1224,7 +2169,7 @@ async fn malformed_and_limited_consume_paths_are_generic_and_do_not_read_authent
     });
     let result = service
         .consume_magic_link_token(
-            &token(VERIFIER).as_secret_value(),
+            token(VERIFIER).as_secret_value().as_ref(),
             Some(ClientKey::parse("client-1").expect("client key")),
             Some("HU".to_owned()),
         )

@@ -1,9 +1,11 @@
 //! `dd-magic-link-service` — framework-neutral magic-link orchestration.
 //!
-//! Request and consume flows built on traits for storage, rate limiting,
-//! users, sessions, the email outbox, the clock, and randomness. Public
-//! errors are generic and non-enumerating. No Axum, Tokio, AWS SDK, filesystem,
-//! process environment, network, or logging dependency.
+//! Request, scanner-safe landing (`begin_magic_link_landing`), explicit
+//! confirmation (`confirm_magic_link_flow`), and staged raw-consume flows built
+//! on traits for storage, rate limiting, users, sessions, the email outbox, the
+//! clock, and randomness. Public errors are generic and non-enumerating. No
+//! Axum, Tokio, AWS SDK, filesystem, process environment, network, or logging
+//! dependency.
 
 #![forbid(unsafe_code)]
 
@@ -17,10 +19,13 @@ pub mod types;
 
 pub use config::{MagicLinkConfigError, MagicLinkServiceConfig, RateLimitConfig};
 pub use dd_magic_link_core::NormalizedEmail;
-pub use error::{CommitMagicLinkAuthenticationError, DependencyError, MagicLinkServiceError};
+pub use error::{
+    CommitMagicLinkAuthenticationError, DependencyError, MagicLinkFlowError, MagicLinkServiceError,
+    TemporaryAuthStateAction,
+};
 pub use service::{
-    MagicLinkConsumeService, MagicLinkConsumeServiceInputs, MagicLinkRequestService,
-    MagicLinkRequestServiceInputs,
+    MagicLinkConsumeService, MagicLinkConsumeServiceInputs, MagicLinkFlowService,
+    MagicLinkFlowServiceInputs, MagicLinkRequestService, MagicLinkRequestServiceInputs,
 };
 pub use session::{SessionValidationError, ValidatedSession, validate_session};
 pub use session_body::{
@@ -31,9 +36,11 @@ pub use traits::{
     RateLimitDecision, RateLimiter, SessionRepository,
 };
 pub use types::{
-    AuthenticationAttemptId, ClientKey, CommitMagicLinkAuthentication, ConsumeMagicLinkCommand,
-    ConsumeMagicLinkOutcome, EmailLocale, MagicLinkAuthenticationCandidate,
-    MagicLinkAuthenticationExpectation, MagicLinkAuthenticationUser, MagicLinkEmail,
-    MagicLinkRecord, RateLimitKey, RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionId,
-    SessionRecord, UserId, UserRecord,
+    AuthenticationAttemptId, BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, ClientKey,
+    CommitMagicLinkAuthentication, ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome,
+    ConsumeMagicLinkCommand, ConsumeMagicLinkOutcome, EmailLocale, MAX_RAW_MAGIC_LINK_TOKEN_BYTES,
+    MagicLinkAccountIdentity, MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
+    MagicLinkAuthenticationOutcome, MagicLinkAuthenticationUser, MagicLinkEmail, MagicLinkRecord,
+    RateLimitKey, RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionId, SessionRecord,
+    UserId, UserRecord,
 };

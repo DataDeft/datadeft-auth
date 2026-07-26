@@ -2,14 +2,17 @@
 
 use core::fmt;
 
+use dd_auth_token_core::flow_cookie::MintedMagicLinkFlow;
 use dd_auth_token_core::keyring::{KeyPurpose, SessionCookie};
 use dd_magic_link_core::{LookupHmac, MagicLinkToken, NormalizedEmail, VerifierHash};
 use zeroize::Zeroize;
 
-use crate::error::MagicLinkServiceError;
+use crate::error::{MagicLinkFlowError, MagicLinkServiceError, TemporaryAuthStateAction};
 
 /// Default magic-link bearer token lifetime: 10 minutes.
 pub const DEFAULT_MAGIC_LINK_TTL_SECS: u64 = 10 * 60;
+/// Conservative resource cap applied before parsing an untrusted raw magic-link token.
+pub const MAX_RAW_MAGIC_LINK_TOKEN_BYTES: usize = 512;
 /// Default session idle lifetime: 24 hours.
 pub const DEFAULT_SESSION_IDLE_SECS: u64 = 24 * 60 * 60;
 /// Default session absolute lifetime, owned by the session-cookie purpose.
@@ -423,7 +426,183 @@ impl fmt::Debug for RequestMagicLinkCommand {
     }
 }
 
-/// Consume command. Debug redacts the bearer token.
+enum RawMagicLinkCandidate {
+    Bounded(String),
+    Oversized,
+}
+
+/// Scanner-safe landing command containing a bounded raw token candidate.
+///
+/// Construction immediately destroys oversized attacker input. `Debug` never
+/// exposes the candidate or separately supplied client key.
+pub struct BeginMagicLinkLandingCommand {
+    raw_token: RawMagicLinkCandidate,
+    client_key: Option<ClientKey>,
+}
+
+impl BeginMagicLinkLandingCommand {
+    #[must_use]
+    pub fn new(mut raw_token: String, client_key: Option<ClientKey>) -> Self {
+        let raw_token = if raw_token.len() > MAX_RAW_MAGIC_LINK_TOKEN_BYTES {
+            raw_token.zeroize();
+            RawMagicLinkCandidate::Oversized
+        } else {
+            RawMagicLinkCandidate::Bounded(raw_token)
+        };
+        Self {
+            raw_token,
+            client_key,
+        }
+    }
+
+    pub(crate) fn raw_token(&self) -> Option<&str> {
+        match &self.raw_token {
+            RawMagicLinkCandidate::Bounded(value) => Some(value),
+            RawMagicLinkCandidate::Oversized => None,
+        }
+    }
+
+    pub(crate) fn client_key(&self) -> Option<&ClientKey> {
+        self.client_key.as_ref()
+    }
+}
+
+impl fmt::Debug for BeginMagicLinkLandingCommand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("BeginMagicLinkLandingCommand(..)")
+    }
+}
+
+impl Drop for BeginMagicLinkLandingCommand {
+    fn drop(&mut self) {
+        if let RawMagicLinkCandidate::Bounded(value) = &mut self.raw_token {
+            value.zeroize();
+        }
+    }
+}
+
+/// Exact validated account identity deliberately displayed on confirmation pages.
+pub struct MagicLinkAccountIdentity(String);
+
+impl MagicLinkAccountIdentity {
+    pub(crate) fn from_normalized_email(email: &NormalizedEmail) -> Self {
+        Self(email.as_str().to_owned())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for MagicLinkAccountIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MagicLinkAccountIdentity(..)")
+    }
+}
+
+impl Drop for MagicLinkAccountIdentity {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+/// Successful non-mutating scanner landing result.
+pub struct BeginMagicLinkLandingOutcome {
+    pub(crate) flow: MintedMagicLinkFlow,
+    pub(crate) account_identity: MagicLinkAccountIdentity,
+    pub(crate) cookie_max_age_secs: u64,
+}
+
+impl BeginMagicLinkLandingOutcome {
+    #[must_use]
+    pub fn flow_cookie_value(&self) -> &str {
+        self.flow.cookie().as_secret_value()
+    }
+
+    #[must_use]
+    pub fn confirmation_value(&self) -> &str {
+        self.flow.confirmation().as_value()
+    }
+
+    #[must_use]
+    pub fn account_identity(&self) -> &MagicLinkAccountIdentity {
+        &self.account_identity
+    }
+
+    #[must_use]
+    pub fn cookie_max_age_secs(&self) -> u64 {
+        self.cookie_max_age_secs
+    }
+}
+
+impl fmt::Debug for BeginMagicLinkLandingOutcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("BeginMagicLinkLandingOutcome(..)")
+    }
+}
+
+/// Scanner-safe confirmation command. It contains no raw magic-link token.
+pub struct ConfirmMagicLinkFlowCommand {
+    flow_cookie: String,
+    confirmation: String,
+    client_key: Option<ClientKey>,
+    request_country: Option<String>,
+}
+
+impl ConfirmMagicLinkFlowCommand {
+    pub fn new(
+        mut flow_cookie: String,
+        mut confirmation: String,
+        client_key: Option<ClientKey>,
+        request_country: Option<String>,
+    ) -> Result<Self, MagicLinkFlowError> {
+        if let Some(country) = request_country.as_deref()
+            && let Err(error) = validate_country(country)
+        {
+            flow_cookie.zeroize();
+            confirmation.zeroize();
+            return Err(MagicLinkFlowError::from_public_error(error));
+        }
+        Ok(Self {
+            flow_cookie,
+            confirmation,
+            client_key,
+            request_country,
+        })
+    }
+
+    pub(crate) fn flow_cookie(&self) -> &str {
+        &self.flow_cookie
+    }
+
+    pub(crate) fn confirmation(&self) -> &str {
+        &self.confirmation
+    }
+
+    pub(crate) fn client_key(&self) -> Option<&ClientKey> {
+        self.client_key.as_ref()
+    }
+
+    pub(crate) fn request_country(&self) -> Option<&str> {
+        self.request_country.as_deref()
+    }
+}
+
+impl fmt::Debug for ConfirmMagicLinkFlowCommand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ConfirmMagicLinkFlowCommand(..)")
+    }
+}
+
+impl Drop for ConfirmMagicLinkFlowCommand {
+    fn drop(&mut self) {
+        self.flow_cookie.zeroize();
+        self.confirmation.zeroize();
+    }
+}
+
+/// Consume command retained temporarily for staging raw-token callers.
 #[derive(Clone, Eq, PartialEq)]
 pub struct ConsumeMagicLinkCommand {
     token: MagicLinkToken,
@@ -508,7 +687,89 @@ impl fmt::Debug for MagicLinkEmail {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct RequestMagicLinkOutcome;
 
-/// Successful consume response.
+/// Canonical successful magic-link authentication result.
+pub struct MagicLinkAuthenticationOutcome {
+    pub(crate) session_cookie: String,
+    pub(crate) user_id: UserId,
+    pub(crate) session_id: SessionId,
+    pub(crate) user_created: bool,
+    pub(crate) country: Option<String>,
+}
+
+impl MagicLinkAuthenticationOutcome {
+    #[must_use]
+    pub fn session_cookie_value(&self) -> &str {
+        &self.session_cookie
+    }
+
+    #[must_use]
+    pub fn user_id(&self) -> &UserId {
+        &self.user_id
+    }
+
+    #[must_use]
+    pub fn session_id(&self) -> &SessionId {
+        &self.session_id
+    }
+
+    #[must_use]
+    pub fn user_created(&self) -> bool {
+        self.user_created
+    }
+
+    #[must_use]
+    pub fn country(&self) -> Option<&str> {
+        self.country.as_deref()
+    }
+}
+
+impl fmt::Debug for MagicLinkAuthenticationOutcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MagicLinkAuthenticationOutcome")
+            .field("session_cookie", &"<redacted>")
+            .field("user_id", &"UserId(..)")
+            .field("session_id", &"SessionId(..)")
+            .field("user_created", &self.user_created)
+            .field("country", &self.country)
+            .finish()
+    }
+}
+
+impl Drop for MagicLinkAuthenticationOutcome {
+    fn drop(&mut self) {
+        self.session_cookie.zeroize();
+    }
+}
+
+/// Successful scanner-safe confirmation result.
+pub struct ConfirmMagicLinkFlowOutcome {
+    pub(crate) authentication: MagicLinkAuthenticationOutcome,
+}
+
+impl ConfirmMagicLinkFlowOutcome {
+    #[must_use]
+    pub fn authentication(&self) -> &MagicLinkAuthenticationOutcome {
+        &self.authentication
+    }
+
+    #[must_use]
+    pub fn into_authentication(self) -> MagicLinkAuthenticationOutcome {
+        self.authentication
+    }
+
+    #[must_use]
+    pub fn temporary_state_action(&self) -> TemporaryAuthStateAction {
+        TemporaryAuthStateAction::Clear
+    }
+}
+
+impl fmt::Debug for ConfirmMagicLinkFlowOutcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ConfirmMagicLinkFlowOutcome(..)")
+    }
+}
+
+/// Successful consume response retained temporarily for staging raw-token APIs.
 #[derive(Clone, Eq, PartialEq)]
 pub struct ConsumeMagicLinkOutcome {
     pub session_cookie: String,

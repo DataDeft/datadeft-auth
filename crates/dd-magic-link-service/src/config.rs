@@ -3,7 +3,7 @@
 use core::fmt;
 
 use dd_auth_token_core::cookie::MaxAge;
-use dd_auth_token_core::keyring::{KeyPurpose, SessionCookie};
+use dd_auth_token_core::keyring::{KeyPurpose, MagicLinkFlowCookie, SessionCookie};
 
 use crate::types::{
     DEFAULT_MAGIC_LINK_TTL_SECS, DEFAULT_SESSION_ABSOLUTE_SECS, DEFAULT_SESSION_IDLE_SECS,
@@ -16,6 +16,10 @@ use crate::types::{
 pub enum MagicLinkConfigError {
     /// Magic-link bearer lifetime was zero.
     ZeroMagicLinkTtl,
+    /// Magic-link scanner-flow lifetime was zero.
+    ZeroMagicLinkFlowTtl,
+    /// Magic-link scanner-flow lifetime exceeded the five-minute cookie cap.
+    MagicLinkFlowTtlExceedsCookieCap,
     /// Session idle lifetime was zero.
     ZeroSessionIdleTtl,
     /// Session absolute lifetime was zero.
@@ -34,6 +38,10 @@ impl fmt::Display for MagicLinkConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ZeroMagicLinkTtl => f.write_str("magic-link lifetime must be non-zero"),
+            Self::ZeroMagicLinkFlowTtl => f.write_str("magic-link flow lifetime must be non-zero"),
+            Self::MagicLinkFlowTtlExceedsCookieCap => {
+                f.write_str("magic-link flow lifetime exceeds cookie cap")
+            }
             Self::ZeroSessionIdleTtl => f.write_str("session idle lifetime must be non-zero"),
             Self::ZeroSessionAbsoluteTtl => {
                 f.write_str("session absolute lifetime must be non-zero")
@@ -67,6 +75,10 @@ pub struct RateLimitConfig {
     pub outbox_email_hourly_window_secs: u64,
     pub outbox_email_daily_limit: u32,
     pub outbox_email_daily_window_secs: u64,
+    pub landing_selector_limit: u32,
+    pub landing_selector_window_secs: u64,
+    pub landing_client_limit: u32,
+    pub landing_client_window_secs: u64,
     pub consume_selector_limit: u32,
     pub consume_client_short_limit: u32,
     pub consume_client_short_window_secs: u64,
@@ -91,6 +103,10 @@ impl Default for RateLimitConfig {
             outbox_email_hourly_window_secs: 60 * 60,
             outbox_email_daily_limit: 10,
             outbox_email_daily_window_secs: 24 * 60 * 60,
+            landing_selector_limit: 30,
+            landing_selector_window_secs: 10 * 60,
+            landing_client_limit: 30,
+            landing_client_window_secs: 10 * 60,
             consume_selector_limit: 5,
             consume_client_short_limit: 20,
             consume_client_short_window_secs: 10 * 60,
@@ -108,6 +124,7 @@ pub struct MagicLinkServiceConfig {
     pub terms_version: String,
     pub privacy_version: String,
     pub magic_link_ttl_secs: u64,
+    pub magic_link_flow_ttl_secs: u64,
     pub session_idle_secs: u64,
     pub session_absolute_secs: u64,
     pub enforce_country: bool,
@@ -121,6 +138,7 @@ impl MagicLinkServiceConfig {
             terms_version: terms_version.into(),
             privacy_version: privacy_version.into(),
             magic_link_ttl_secs: DEFAULT_MAGIC_LINK_TTL_SECS,
+            magic_link_flow_ttl_secs: MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS,
             session_idle_secs: DEFAULT_SESSION_IDLE_SECS,
             session_absolute_secs: DEFAULT_SESSION_ABSOLUTE_SECS,
             enforce_country: false,
@@ -135,6 +153,12 @@ impl MagicLinkServiceConfig {
     pub fn validate(&self) -> Result<(), MagicLinkConfigError> {
         if self.magic_link_ttl_secs == 0 {
             return Err(MagicLinkConfigError::ZeroMagicLinkTtl);
+        }
+        if self.magic_link_flow_ttl_secs == 0 {
+            return Err(MagicLinkConfigError::ZeroMagicLinkFlowTtl);
+        }
+        if self.magic_link_flow_ttl_secs > MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS {
+            return Err(MagicLinkConfigError::MagicLinkFlowTtlExceedsCookieCap);
         }
         self.session_max_age()?;
         self.rate_limits.validate()
@@ -174,6 +198,8 @@ impl RateLimitConfig {
             self.request_client_hourly_limit,
             self.outbox_email_hourly_limit,
             self.outbox_email_daily_limit,
+            self.landing_selector_limit,
+            self.landing_client_limit,
             self.consume_selector_limit,
             self.consume_client_short_limit,
             self.consume_client_hourly_limit,
@@ -190,6 +216,8 @@ impl RateLimitConfig {
             self.request_client_hourly_window_secs,
             self.outbox_email_hourly_window_secs,
             self.outbox_email_daily_window_secs,
+            self.landing_selector_window_secs,
+            self.landing_client_window_secs,
             self.consume_client_short_window_secs,
             self.consume_client_hourly_window_secs,
             self.malformed_consume_client_window_secs,

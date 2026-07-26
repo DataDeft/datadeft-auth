@@ -6,26 +6,35 @@
 //! session, limiter, outbox, clock, and randomness policy.
 
 use dd_auth_token_core::cookie::mint_bound_cookie;
-use dd_auth_token_core::keyring::{KeyRing, SessionCookie};
+use dd_auth_token_core::flow_cookie::{
+    MagicLinkFlowBindings, VerifiedMagicLinkFlow, mint_magic_link_flow, verify_magic_link_flow,
+};
+use dd_auth_token_core::keyring::{KeyRing, MagicLinkFlowCookie, SessionCookie};
 use dd_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkToken, VerifierHash, email_lookup_hmac,
-    selector_lookup_hmac, verifier_hash,
+    flow_account_binding, flow_client_binding, flow_selector_binding, flow_verifier_binding,
+    selector_lookup_hmac, selector_lookup_hmac_from_flow_binding, verifier_hash,
+    verifier_hash_from_flow_binding,
 };
 use rand_core::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
 use crate::config::MagicLinkServiceConfig;
-use crate::error::{CommitMagicLinkAuthenticationError, DependencyError, MagicLinkServiceError};
+use crate::error::{
+    CommitMagicLinkAuthenticationError, DependencyError, MagicLinkFlowError, MagicLinkServiceError,
+};
 use crate::session_body::encode_session_cookie_body;
 use crate::traits::{
     Clock, MagicLinkAuthenticationRepository, MagicLinkOutbox, MagicLinkRepository,
     RateLimitDecision, RateLimiter, SessionRepository,
 };
 use crate::types::{
-    AuthenticationAttemptId, ClientKey, CommitMagicLinkAuthentication, ConsumeMagicLinkCommand,
-    ConsumeMagicLinkOutcome, MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
-    MagicLinkAuthenticationUser, MagicLinkEmail, MagicLinkRecord, RateLimitKey,
-    RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionId, UserId, UserRecord,
+    AuthenticationAttemptId, BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, ClientKey,
+    CommitMagicLinkAuthentication, ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome,
+    ConsumeMagicLinkCommand, ConsumeMagicLinkOutcome, MagicLinkAccountIdentity,
+    MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
+    MagicLinkAuthenticationOutcome, MagicLinkAuthenticationUser, MagicLinkEmail, MagicLinkRecord,
+    RateLimitKey, RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionId, UserId, UserRecord,
     validate_country,
 };
 
@@ -153,8 +162,272 @@ where
     }
 }
 
-/// Consume-flow-only service. Authentication reads and the irreversible
-/// consume/user/session transition are owned by one aggregate repository.
+/// Canonical scanner-safe landing, confirmation, and revocation service.
+pub struct MagicLinkFlowService<'a, Authentication, Sessions, Limiter, ServiceClock, Rng> {
+    authentication: &'a Authentication,
+    sessions: &'a Sessions,
+    limiter: &'a Limiter,
+    clock: &'a ServiceClock,
+    rng: &'a mut Rng,
+    lookup_hmac_key: &'a LookupHmacKey,
+    flow_keyring: &'a KeyRing<MagicLinkFlowCookie>,
+    session_keyring: &'a KeyRing<SessionCookie>,
+    config: MagicLinkServiceConfig,
+}
+
+/// Constructor inputs for [`MagicLinkFlowService`].
+pub struct MagicLinkFlowServiceInputs<'a, Authentication, Sessions, Limiter, ServiceClock, Rng> {
+    pub authentication: &'a Authentication,
+    pub sessions: &'a Sessions,
+    pub limiter: &'a Limiter,
+    pub clock: &'a ServiceClock,
+    pub rng: &'a mut Rng,
+    pub lookup_hmac_key: &'a LookupHmacKey,
+    pub flow_keyring: &'a KeyRing<MagicLinkFlowCookie>,
+    pub session_keyring: &'a KeyRing<SessionCookie>,
+    pub config: MagicLinkServiceConfig,
+}
+
+impl<'a, Authentication, Sessions, Limiter, ServiceClock, Rng>
+    MagicLinkFlowService<'a, Authentication, Sessions, Limiter, ServiceClock, Rng>
+{
+    #[must_use]
+    pub fn new(
+        inputs: MagicLinkFlowServiceInputs<
+            'a,
+            Authentication,
+            Sessions,
+            Limiter,
+            ServiceClock,
+            Rng,
+        >,
+    ) -> Self {
+        Self {
+            authentication: inputs.authentication,
+            sessions: inputs.sessions,
+            limiter: inputs.limiter,
+            clock: inputs.clock,
+            rng: inputs.rng,
+            lookup_hmac_key: inputs.lookup_hmac_key,
+            flow_keyring: inputs.flow_keyring,
+            session_keyring: inputs.session_keyring,
+            config: inputs.config,
+        }
+    }
+}
+
+impl<Authentication, Sessions, Limiter, ServiceClock, Rng>
+    MagicLinkFlowService<'_, Authentication, Sessions, Limiter, ServiceClock, Rng>
+where
+    Authentication: MagicLinkAuthenticationRepository,
+    Sessions: SessionRepository,
+    Limiter: RateLimiter,
+    ServiceClock: Clock,
+    Rng: RngCore + CryptoRng,
+{
+    /// Validate a landing token without consuming it or creating user/session state.
+    pub async fn begin_magic_link_landing(
+        &mut self,
+        command: BeginMagicLinkLandingCommand,
+    ) -> Result<BeginMagicLinkLandingOutcome, MagicLinkFlowError> {
+        validate_config(&self.config).map_err(MagicLinkFlowError::from_public_error)?;
+        let now_unix = self
+            .clock
+            .now_unix()
+            .map_err(map_dependency_error)
+            .map_err(MagicLinkFlowError::from_public_error)?;
+
+        let raw_token = match command.raw_token() {
+            Some(raw_token) => raw_token,
+            None => {
+                apply_malformed_landing_limit(
+                    self.limiter,
+                    &self.config,
+                    command.client_key(),
+                    now_unix,
+                )
+                .await
+                .map_err(MagicLinkFlowError::from_public_error)?;
+                return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
+            }
+        };
+        let token = match MagicLinkToken::parse(raw_token) {
+            Ok(token) => token,
+            Err(_) => {
+                apply_malformed_landing_limit(
+                    self.limiter,
+                    &self.config,
+                    command.client_key(),
+                    now_unix,
+                )
+                .await
+                .map_err(MagicLinkFlowError::from_public_error)?;
+                return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
+            }
+        };
+
+        let selector_lookup = selector_lookup_hmac(self.lookup_hmac_key, token.selector())
+            .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+        if landing_limits_deny(
+            self.limiter,
+            &self.config,
+            selector_lookup.as_storage_value(),
+            command.client_key(),
+            now_unix,
+        )
+        .await
+        .map_err(MagicLinkFlowError::from_public_error)?
+        {
+            return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
+        }
+
+        let presented_verifier_hash = verifier_hash(self.lookup_hmac_key, token.verifier())
+            .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+        let candidate = self
+            .authentication
+            .find_magic_link_for_authentication(&selector_lookup)
+            .await
+            .map_err(map_dependency_error)
+            .map_err(MagicLinkFlowError::from_public_error)?;
+        let candidate =
+            validate_scanner_candidate(&self.config, candidate, &presented_verifier_hash, now_unix)
+                .map_err(MagicLinkFlowError::from_public_error)?;
+
+        let email_lookup = email_lookup_hmac(self.lookup_hmac_key, &candidate.email)
+            .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+        let selector_binding = flow_selector_binding(&selector_lookup)
+            .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+        let verifier_binding = flow_verifier_binding(&presented_verifier_hash)
+            .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+        let account_binding = flow_account_binding(&email_lookup)
+            .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+        let client_binding = command
+            .client_key()
+            .map(|client| flow_client_binding(self.lookup_hmac_key, client.as_str()))
+            .transpose()
+            .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+
+        let configured_expiry = now_unix
+            .checked_add(self.config.magic_link_flow_ttl_secs)
+            .ok_or_else(|| flow_error(MagicLinkServiceError::Internal))?;
+        let flow_expiry = candidate.expires_at_unix.min(configured_expiry);
+        if flow_expiry <= now_unix {
+            return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
+        }
+        let flow_expiry_u32 =
+            u32::try_from(flow_expiry).map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+        let cookie_max_age_secs = flow_expiry
+            .checked_sub(now_unix)
+            .ok_or_else(|| flow_error(MagicLinkServiceError::Internal))?;
+        let account_identity = MagicLinkAccountIdentity::from_normalized_email(&candidate.email);
+        let flow = mint_magic_link_flow(
+            MagicLinkFlowBindings::new(
+                selector_binding,
+                verifier_binding,
+                account_binding,
+                client_binding,
+                flow_expiry_u32,
+            ),
+            self.flow_keyring,
+            self.rng,
+            now_unix,
+        )
+        .map_err(MagicLinkServiceError::from)
+        .map_err(MagicLinkFlowError::from_public_error)?;
+
+        Ok(BeginMagicLinkLandingOutcome {
+            flow,
+            account_identity,
+            cookie_max_age_secs,
+        })
+    }
+
+    /// Confirm authenticated scanner-flow state and atomically authenticate.
+    pub async fn confirm_magic_link_flow(
+        &mut self,
+        command: ConfirmMagicLinkFlowCommand,
+    ) -> Result<ConfirmMagicLinkFlowOutcome, MagicLinkFlowError> {
+        validate_config(&self.config).map_err(MagicLinkFlowError::from_public_error)?;
+        let now_unix = self
+            .clock
+            .now_unix()
+            .map_err(map_dependency_error)
+            .map_err(MagicLinkFlowError::from_public_error)?;
+        let country = mint_country(&self.config, command.request_country())
+            .map_err(MagicLinkFlowError::from_public_error)?;
+
+        let verified = match verify_magic_link_flow(
+            command.flow_cookie(),
+            command.confirmation(),
+            self.flow_keyring,
+            now_unix,
+            self.config.magic_link_flow_ttl_secs,
+        ) {
+            Ok(verified) => verified,
+            Err(_) => {
+                if let Some(client_key) = command.client_key() {
+                    let _ = malformed_consume_limit_denied(
+                        self.limiter,
+                        &self.config,
+                        client_key,
+                        now_unix,
+                    )
+                    .await
+                    .map_err(MagicLinkFlowError::from_public_error)?;
+                }
+                return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
+            }
+        };
+        validate_flow_client_binding(self.lookup_hmac_key, &verified, command.client_key())?;
+
+        let selector_lookup = selector_lookup_hmac_from_flow_binding(verified.selector());
+        let presented_verifier_hash = verifier_hash_from_flow_binding(verified.verifier());
+        if consume_limits_deny(
+            self.limiter,
+            &self.config,
+            selector_lookup.as_storage_value(),
+            command.client_key(),
+            now_unix,
+        )
+        .await
+        .map_err(MagicLinkFlowError::from_public_error)?
+        {
+            return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
+        }
+
+        let authentication = authenticate_scanner_flow(
+            self.authentication,
+            self.session_keyring,
+            self.rng,
+            self.lookup_hmac_key,
+            &self.config,
+            &selector_lookup,
+            &presented_verifier_hash,
+            &verified,
+            now_unix,
+            country,
+        )
+        .await
+        .map_err(MagicLinkFlowError::from_public_error)?;
+        Ok(ConfirmMagicLinkFlowOutcome { authentication })
+    }
+
+    /// Revoke a server-side session by id.
+    pub async fn revoke_session(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<(), MagicLinkServiceError> {
+        let now_unix = self.clock.now_unix()?;
+        self.sessions
+            .revoke_session(session_id, now_unix)
+            .await
+            .map_err(map_dependency_error)
+    }
+}
+
+/// Consume-flow-only service retained temporarily for staging raw-token callers.
+/// Authentication reads and the irreversible consume/user/session transition are
+/// owned by one aggregate repository.
 pub struct MagicLinkConsumeService<'a, Authentication, Sessions, Limiter, ServiceClock, Rng> {
     authentication: &'a Authentication,
     sessions: &'a Sessions,
@@ -369,6 +642,260 @@ fn validate_config(config: &MagicLinkServiceConfig) -> Result<(), MagicLinkServi
     config
         .validate()
         .map_err(|_| MagicLinkServiceError::Internal)
+}
+
+const fn flow_error(public_error: MagicLinkServiceError) -> MagicLinkFlowError {
+    MagicLinkFlowError::from_public_error(public_error)
+}
+
+async fn apply_malformed_landing_limit<Limiter: RateLimiter>(
+    limiter: &Limiter,
+    config: &MagicLinkServiceConfig,
+    client_key: Option<&ClientKey>,
+    now_unix: u64,
+) -> Result<(), MagicLinkServiceError> {
+    if let Some(client_key) = client_key {
+        let key = format!("magic-link:landing:client:{}", client_key.as_str());
+        let _ = limit_denied(
+            limiter,
+            &key,
+            config.rate_limits.landing_client_limit,
+            config.rate_limits.landing_client_window_secs,
+            now_unix,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn landing_limits_deny<Limiter: RateLimiter>(
+    limiter: &Limiter,
+    config: &MagicLinkServiceConfig,
+    selector_lookup: &str,
+    client_key: Option<&ClientKey>,
+    now_unix: u64,
+) -> Result<bool, MagicLinkServiceError> {
+    let mut denied = false;
+    if let Some(client_key) = client_key {
+        let key = format!("magic-link:landing:client:{}", client_key.as_str());
+        denied |= limit_denied(
+            limiter,
+            &key,
+            config.rate_limits.landing_client_limit,
+            config.rate_limits.landing_client_window_secs,
+            now_unix,
+        )
+        .await?;
+    }
+    let selector_key = format!("magic-link:landing:selector:{selector_lookup}");
+    denied |= limit_denied(
+        limiter,
+        &selector_key,
+        config.rate_limits.landing_selector_limit,
+        config.rate_limits.landing_selector_window_secs,
+        now_unix,
+    )
+    .await?;
+    Ok(denied)
+}
+
+fn validate_flow_client_binding(
+    lookup_hmac_key: &LookupHmacKey,
+    verified: &VerifiedMagicLinkFlow,
+    client_key: Option<&ClientKey>,
+) -> Result<(), MagicLinkFlowError> {
+    let matches = match (verified.client(), client_key) {
+        (None, None) => true,
+        (Some(expected), Some(client_key)) => {
+            let presented = flow_client_binding(lookup_hmac_key, client_key.as_str())
+                .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+            expected.matches_constant_time(&presented)
+        }
+        (None, Some(_)) | (Some(_), None) => false,
+    };
+    if matches {
+        Ok(())
+    } else {
+        Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable))
+    }
+}
+
+fn validate_scanner_candidate(
+    config: &MagicLinkServiceConfig,
+    candidate: Option<MagicLinkAuthenticationCandidate>,
+    presented_verifier_hash: &VerifierHash,
+    now_unix: u64,
+) -> Result<MagicLinkAuthenticationCandidate, MagicLinkServiceError> {
+    let candidate = compare_candidate_verifier(candidate, presented_verifier_hash)?;
+    validate_scanner_candidate_state(config, &candidate, now_unix)?;
+    Ok(candidate)
+}
+
+fn compare_candidate_verifier(
+    candidate: Option<MagicLinkAuthenticationCandidate>,
+    presented_verifier_hash: &VerifierHash,
+) -> Result<MagicLinkAuthenticationCandidate, MagicLinkServiceError> {
+    let Some(candidate) = candidate else {
+        note_verifier_comparison();
+        perform_dummy_verifier_comparison(presented_verifier_hash);
+        return Err(MagicLinkServiceError::MagicLinkUnavailable);
+    };
+    note_verifier_comparison();
+    if !candidate
+        .verifier_hash
+        .matches_hash_constant_time(presented_verifier_hash)
+    {
+        return Err(MagicLinkServiceError::MagicLinkUnavailable);
+    }
+    Ok(candidate)
+}
+
+fn validate_scanner_candidate_state(
+    config: &MagicLinkServiceConfig,
+    candidate: &MagicLinkAuthenticationCandidate,
+    now_unix: u64,
+) -> Result<(), MagicLinkServiceError> {
+    if candidate.consumed_at_unix.is_some()
+        || candidate.expires_at_unix <= now_unix
+        || candidate.terms_version != config.terms_version
+        || candidate.privacy_version != config.privacy_version
+        || candidate.consented_at_unix == 0
+    {
+        Err(MagicLinkServiceError::MagicLinkUnavailable)
+    } else {
+        Ok(())
+    }
+}
+
+async fn load_scanner_authentication_state<Authentication: MagicLinkAuthenticationRepository>(
+    authentication: &Authentication,
+    lookup_hmac_key: &LookupHmacKey,
+    config: &MagicLinkServiceConfig,
+    selector_lookup: &LookupHmac,
+    presented_verifier_hash: &VerifierHash,
+    expected_account: &dd_auth_token_core::flow_cookie::FlowAccountBinding,
+    now_unix: u64,
+) -> Result<(MagicLinkAuthenticationCandidate, Option<UserRecord>), MagicLinkServiceError> {
+    let candidate = authentication
+        .find_magic_link_for_authentication(selector_lookup)
+        .await
+        .map_err(map_dependency_error)?;
+    let candidate = compare_candidate_verifier(candidate, presented_verifier_hash)?;
+    let email_lookup = email_lookup_hmac(lookup_hmac_key, &candidate.email)
+        .map_err(|_| MagicLinkServiceError::Internal)?;
+    let candidate_account =
+        flow_account_binding(&email_lookup).map_err(|_| MagicLinkServiceError::Internal)?;
+    if !expected_account.matches_constant_time(&candidate_account) {
+        return Err(MagicLinkServiceError::MagicLinkUnavailable);
+    }
+    validate_scanner_candidate_state(config, &candidate, now_unix)?;
+    let user = authentication
+        .find_user_for_authentication(&candidate.email)
+        .await
+        .map_err(map_dependency_error)?;
+    Ok((candidate, user))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn authenticate_scanner_flow<Authentication, Rng>(
+    authentication: &Authentication,
+    session_keyring: &KeyRing<SessionCookie>,
+    rng: &mut Rng,
+    lookup_hmac_key: &LookupHmacKey,
+    config: &MagicLinkServiceConfig,
+    selector_lookup: &LookupHmac,
+    presented_verifier_hash: &VerifierHash,
+    verified: &VerifiedMagicLinkFlow,
+    now_unix: u64,
+    country: Option<String>,
+) -> Result<MagicLinkAuthenticationOutcome, MagicLinkServiceError>
+where
+    Authentication: MagicLinkAuthenticationRepository,
+    Rng: RngCore + CryptoRng,
+{
+    let (candidate, user) = load_scanner_authentication_state(
+        authentication,
+        lookup_hmac_key,
+        config,
+        selector_lookup,
+        presented_verifier_hash,
+        verified.account(),
+        now_unix,
+    )
+    .await?;
+    let (user_branch, mut user_id, mut user_created) = plan_user(user, &candidate.email, rng)?;
+    let expectation = authentication_expectation(selector_lookup, &candidate);
+    let mut plan = build_initial_authentication_plan(
+        session_keyring,
+        rng,
+        expectation,
+        user_branch,
+        now_unix,
+        config.session_absolute_secs,
+        country.as_deref(),
+    )?;
+
+    let mut replans = 0_u8;
+    loop {
+        match commit_with_dependency_retries(authentication, &plan.command).await {
+            Ok(()) => {
+                let session_cookie = core::mem::take(&mut *plan.session_cookie);
+                return Ok(MagicLinkAuthenticationOutcome {
+                    session_cookie,
+                    user_id,
+                    session_id: plan.command.session_id.clone(),
+                    user_created,
+                    country,
+                });
+            }
+            Err(CommitMagicLinkAuthenticationError::Rejected) => {
+                return Err(MagicLinkServiceError::MagicLinkUnavailable);
+            }
+            Err(CommitMagicLinkAuthenticationError::Internal) => {
+                return Err(MagicLinkServiceError::Internal);
+            }
+            Err(CommitMagicLinkAuthenticationError::DependencyUnavailable) => {
+                return Err(MagicLinkServiceError::Unavailable);
+            }
+            Err(CommitMagicLinkAuthenticationError::UserConflict) => {
+                if replans >= 2 {
+                    return Err(MagicLinkServiceError::Unavailable);
+                }
+                replans += 1;
+                let (candidate, user) = load_scanner_authentication_state(
+                    authentication,
+                    lookup_hmac_key,
+                    config,
+                    selector_lookup,
+                    presented_verifier_hash,
+                    verified.account(),
+                    now_unix,
+                )
+                .await?;
+                let (user_branch, replanned_user_id, replanned_user_created) =
+                    plan_user(user, &candidate.email, rng)?;
+                plan.command.magic_link = authentication_expectation(selector_lookup, &candidate);
+                plan.command.user = user_branch;
+                plan.command.attempt_id = generate_authentication_attempt_id(rng)?;
+                user_id = replanned_user_id;
+                user_created = replanned_user_created;
+            }
+            Err(CommitMagicLinkAuthenticationError::SessionConflict) => {
+                if replans >= 2 {
+                    return Err(MagicLinkServiceError::Unavailable);
+                }
+                replans += 1;
+                replace_session_plan(
+                    &mut plan,
+                    session_keyring,
+                    rng,
+                    now_unix,
+                    config.session_absolute_secs,
+                    country.as_deref(),
+                )?;
+            }
+        }
+    }
 }
 
 async fn request_limits_deny<Limiter: RateLimiter>(
