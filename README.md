@@ -81,26 +81,31 @@ database access, rate limiting, Axum, AWS, or application copy.
 
 ### `dd-magic-link-service`
 
-Framework-neutral orchestration for magic-link request and consume flows.
-Depends on traits — not concrete infrastructure — for storage, rate
-limiting, users, sessions, the email outbox, the clock, and randomness.
-Implements the reusable core of:
+Framework-neutral orchestration for magic-link requests, scanner-safe
+confirmation, and server-revocable sessions. Depends on traits — not concrete
+infrastructure — for storage, rate limiting, the email outbox, clock, and
+randomness. Implements the reusable core of:
 
 - **request:** validate caller-decoded input → rate limit → create challenge
   → ask the app-provided outbox to send the email
-- **consume:** rate limit attempts → verify and burn the token atomically →
-  ensure a user according to app policy → create a session → return the
-  session token/cookie payload
+- **landing:** validate and rate limit without consuming → identify the exact
+  account → mint short-lived, token/account/client-bound confirmation state
+- **confirmation:** verify bound state locally → atomically consume the challenge
+  with user/session creation → return the session cookie payload
+- **session:** validate cookie freshness plus server-side state, and support
+  revocation without sliding refresh
 
 Public errors are generic and non-enumerating. No Axum or AWS dependency.
 
 ### `dd-magic-link-axum`
 
-Optional Axum integration. Owns request guards, body decoding helpers, cookie
-response helpers, and safe HTTP error mapping. It does **not** own core
-token/session logic, and it does **not** force a router — consumers can call
-library functions from their own routes. Any route helpers it provides are
-optional and configurable.
+Optional Axum integration. Owns bounded request guards, strict same-origin
+confirmation, secure flow/session cookie helpers, scanner-safe account
+confirmation pages, generic session `401` handling with cookie clearing, and
+safe HTTP error mapping. It does **not** own token/session cryptography or
+storage transactions, and it does **not** force a router — consumers call the
+library functions from their own routes. Production deployments must also
+scrub token-bearing request targets from proxy, access, trace, and error logs.
 
 ### `dd-magic-link-aws`
 
