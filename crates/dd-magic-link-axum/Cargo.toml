@@ -18,6 +18,7 @@ dd-magic-link-service = { path = "../dd-magic-link-service" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_urlencoded = "0.7"
+zeroize = { version = "1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 dd-auth-token-core = { path = "../dd-auth-token-core", features = ["test-support"] }

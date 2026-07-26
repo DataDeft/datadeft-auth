@@ -34,6 +34,7 @@ use dd_magic_link_service::{
     RequestMagicLinkOutcome, SessionValidationError, TemporaryAuthStateAction, ValidatedSession,
 };
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 /// Maximum raw query size accepted by the scanner landing helper.
 pub const MAX_MAGIC_LINK_LANDING_QUERY_BYTES: usize = 768;
@@ -215,7 +216,7 @@ impl MagicLinkLandingToken {
     /// Accept a candidate only within the service-owned pre-parse resource cap.
     pub fn new(mut value: String) -> Result<Self, MagicLinkHttpError> {
         if value.is_empty() || value.len() > MAX_RAW_MAGIC_LINK_TOKEN_BYTES {
-            zeroize_string(&mut value);
+            value.zeroize();
             return Err(MagicLinkHttpError::BadRequest);
         }
         Ok(Self(value))
@@ -234,7 +235,7 @@ impl fmt::Debug for MagicLinkLandingToken {
 
 impl Drop for MagicLinkLandingToken {
     fn drop(&mut self) {
-        zeroize_string(&mut self.0);
+        self.0.zeroize();
     }
 }
 
@@ -258,7 +259,7 @@ impl fmt::Debug for MagicLinkConfirmationBody {
 
 impl Drop for MagicLinkConfirmationBody {
     fn drop(&mut self) {
-        zeroize_string(&mut self.confirmation);
+        self.confirmation.zeroize();
     }
 }
 
@@ -965,7 +966,7 @@ where
     }
 }
 
-/// Redacted, best-effort-zeroized incoming primary session cookie.
+/// Redacted, zeroized incoming primary session cookie.
 pub struct SessionCookieValue(String);
 
 impl SessionCookieValue {
@@ -983,7 +984,7 @@ impl fmt::Debug for SessionCookieValue {
 
 impl Drop for SessionCookieValue {
     fn drop(&mut self) {
-        zeroize_string(&mut self.0);
+        self.0.zeroize();
     }
 }
 
@@ -1695,13 +1696,6 @@ fn escape_html(value: &str) -> String {
         }
     }
     escaped
-}
-
-fn zeroize_string(value: &mut String) {
-    let byte_len = value.len();
-    value.clear();
-    value.extend(core::iter::repeat_n('\0', byte_len));
-    value.clear();
 }
 
 #[cfg(test)]
