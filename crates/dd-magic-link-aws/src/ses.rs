@@ -9,12 +9,18 @@ use dd_magic_link_service::{DependencyError, MagicLinkEmail, MagicLinkOutbox};
 use crate::error::AwsAdapterError;
 
 /// App-rendered SES message content.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RenderedMagicLinkEmail {
     pub to: String,
     pub subject: String,
     pub text: String,
     pub html: Option<String>,
+}
+
+impl fmt::Debug for RenderedMagicLinkEmail {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("RenderedMagicLinkEmail(..)")
+    }
 }
 
 /// App-provided renderer for magic-link emails. This keeps domain names, URLs,

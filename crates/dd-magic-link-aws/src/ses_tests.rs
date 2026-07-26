@@ -17,6 +17,37 @@ fn email() -> MagicLinkEmail {
     }
 }
 
+#[test]
+fn rendered_email_debug_redacts_every_field() {
+    const RECIPIENT: &str = "recipient-sentinel@example.invalid";
+    const SUBJECT: &str = "subject-sentinel";
+    const TEXT: &str = "text-sentinel";
+    const HTML: &str = "<p>html-sentinel</p>";
+    const TOKEN: &str = "mlv1.token-shaped-sentinel.verifier-sentinel";
+    const EMAIL: &str = "message-sentinel@example.invalid";
+
+    let rendered = RenderedMagicLinkEmail {
+        to: RECIPIENT.to_owned(),
+        subject: SUBJECT.to_owned(),
+        text: format!("{TEXT} {TOKEN} {EMAIL}"),
+        html: Some(format!("{HTML} {TOKEN} {EMAIL}")),
+    };
+
+    let debug = format!("{rendered:?}");
+
+    assert_eq!(debug, "RenderedMagicLinkEmail(..)");
+    for sentinel in [RECIPIENT, SUBJECT, TEXT, HTML, TOKEN, EMAIL] {
+        assert!(
+            !debug.contains(sentinel),
+            "Debug leaked sentinel: {sentinel}"
+        );
+    }
+    assert!(!debug.contains(&rendered.to));
+    assert!(!debug.contains(&rendered.subject));
+    assert!(!debug.contains(&rendered.text));
+    assert!(!debug.contains(rendered.html.as_deref().expect("HTML body")));
+}
+
 #[tokio::test]
 async fn fake_outbox_records_email_and_redacts_debug() {
     let outbox = FakeMagicLinkOutbox::default();
