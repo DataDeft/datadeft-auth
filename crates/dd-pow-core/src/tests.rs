@@ -3,7 +3,7 @@
 
 use crate::challenge::Solution;
 use crate::error::PowError;
-use crate::ops::{has_leading_zero_prefix, hmac_tag_hex, tag_message};
+use crate::ops::{has_leading_zero_prefix, hmac_tag_hex as hmac_tag_hex_result, tag_message};
 use crate::secret::PowSecret;
 use crate::{
     MAX_DIFFICULTY, MAX_FUTURE_SKEW_SECS, RECOMMENDED_PRODUCTION_MIN_DIFFICULTY, mint_challenge,
@@ -16,6 +16,10 @@ const TIM: &str = "2026-07-09T12:00:00Z";
 /// Unix timestamp of TIM (2026-07-09T12:00:00Z).
 const TIM_UNIX: u64 = 1_783_598_400;
 const MAX_AGE: u64 = 300;
+
+fn hmac_tag_hex(secret: &PowSecret, message: &[u8]) -> String {
+    hmac_tag_hex_result(secret, message).expect("test HMAC should be computable")
+}
 
 fn secret() -> PowSecret {
     let mut bytes = [0u8; 32];
@@ -164,6 +168,7 @@ fn secret_debug_redacts_and_error_display_is_stable() {
             PowError::MaxAgeTooLarge,
             "maximum challenge age is too large",
         ),
+        (PowError::Internal, "internal proof-of-work error"),
     ];
     for (err, msg) in cases {
         assert_eq!(err.to_string(), msg);
@@ -757,6 +762,7 @@ impl CorpusEntry {
             Some("InvalidSolution") => PowError::InvalidSolution,
             Some("DifficultyTooHigh") => PowError::DifficultyTooHigh,
             Some("MaxAgeTooLarge") => PowError::MaxAgeTooLarge,
+            Some("Internal") => PowError::Internal,
             other => panic!("corpus fixture has unknown err kind {other:?}"),
         }
     }
