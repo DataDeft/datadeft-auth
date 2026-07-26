@@ -88,109 +88,81 @@ fn flow_ring(root_byte: u8, kid_value: &str) -> KeyRing<MagicLinkFlowCookie> {
     KeyRing::new(kid(kid_value), vec![KeySlot::active(kid(kid_value), key)]).expect("flow ring")
 }
 
-fn bindings(client: bool, expires_at_unix: u32) -> MagicLinkFlowBindings {
+fn bindings(expires_at_unix: u32) -> MagicLinkFlowBindings {
     MagicLinkFlowBindings::new(
         FlowSelectorBinding::new([0x11; MAGIC_LINK_FLOW_BINDING_BYTES]),
         FlowVerifierBinding::new([0x22; MAGIC_LINK_FLOW_BINDING_BYTES]),
         FlowAccountBinding::new([0x33; MAGIC_LINK_FLOW_BINDING_BYTES]),
-        client.then(|| FlowClientBinding::new([0x44; MAGIC_LINK_FLOW_BINDING_BYTES])),
         expires_at_unix,
     )
 }
 
 fn mint_flow(
     ring: &KeyRing<MagicLinkFlowCookie>,
-    client: bool,
     now_unix: u64,
     expires_at_unix: u32,
 ) -> MintedMagicLinkFlow {
     let mut rng = PatternRng::new();
-    mint_magic_link_flow(bindings(client, expires_at_unix), ring, &mut rng, now_unix)
-        .expect("flow mints")
+    mint_magic_link_flow(bindings(expires_at_unix), ring, &mut rng, now_unix).expect("flow mints")
 }
 
 #[test]
-fn canonical_flow_body_vectors_are_pinned() {
+fn canonical_flow_body_vector_is_pinned() {
     let confirmation = MagicLinkFlowNonce([0xaa; MAGIC_LINK_FLOW_NONCE_BYTES]);
 
-    let without_client = encode_flow_body(&bindings(false, 1_000), &confirmation);
-    let expected_without = hex::decode(concat!(
+    let body = encode_flow_body(&bindings(1_000), &confirmation);
+    let expected = hex::decode(concat!(
         "01",
         "1111111111111111111111111111111111111111111111111111111111111111",
         "2222222222222222222222222222222222222222222222222222222222222222",
         "3333333333333333333333333333333333333333333333333333333333333333",
-        "00",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "000003e8"
     ))
     .expect("vector hex");
-    assert_eq!(without_client, expected_without);
-    assert_eq!(without_client.len(), BODY_WITHOUT_CLIENT_BYTES);
-
-    let with_client = encode_flow_body(&bindings(true, 1_000), &confirmation);
-    let expected_with = hex::decode(concat!(
-        "01",
-        "1111111111111111111111111111111111111111111111111111111111111111",
-        "2222222222222222222222222222222222222222222222222222222222222222",
-        "3333333333333333333333333333333333333333333333333333333333333333",
-        "01",
-        "4444444444444444444444444444444444444444444444444444444444444444",
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "000003e8"
-    ))
-    .expect("vector hex");
-    assert_eq!(with_client, expected_with);
-    assert_eq!(with_client.len(), BODY_WITH_CLIENT_BYTES);
+    assert_eq!(body, expected);
+    assert_eq!(body.len(), FLOW_BODY_BYTES);
 }
 
 #[test]
-fn flow_round_trips_with_and_without_client_binding() {
+fn flow_round_trips() {
     let ring = flow_ring(0x71, "flow-active");
+    let minted = mint_flow(&ring, 1_000, 1_300);
+    assert_eq!(
+        minted.confirmation().as_value(),
+        "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"
+    );
+    let verified = verify_magic_link_flow(
+        minted.cookie().as_secret_value(),
+        minted.confirmation().as_value(),
+        &ring,
+        1_000,
+        MAGIC_LINK_FLOW_MAX_AGE_SECS,
+    )
+    .expect("flow verifies");
 
-    for has_client in [false, true] {
-        let minted = mint_flow(&ring, has_client, 1_000, 1_300);
-        assert_eq!(
-            minted.confirmation().as_value(),
-            "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"
-        );
-        let verified = verify_magic_link_flow(
-            minted.cookie().as_secret_value(),
-            minted.confirmation().as_value(),
-            &ring,
-            1_000,
-            MAGIC_LINK_FLOW_MAX_AGE_SECS,
-        )
-        .expect("flow verifies");
-
-        assert!(
-            verified
-                .selector()
-                .matches_constant_time(&FlowSelectorBinding::new(
-                    [0x11; MAGIC_LINK_FLOW_BINDING_BYTES]
-                ))
-        );
-        assert!(
-            verified
-                .verifier()
-                .matches_constant_time(&FlowVerifierBinding::new(
-                    [0x22; MAGIC_LINK_FLOW_BINDING_BYTES]
-                ))
-        );
-        assert!(
-            verified
-                .account()
-                .matches_constant_time(&FlowAccountBinding::new(
-                    [0x33; MAGIC_LINK_FLOW_BINDING_BYTES]
-                ))
-        );
-        assert_eq!(verified.client().is_some(), has_client);
-        if let Some(client) = verified.client() {
-            assert!(client.matches_constant_time(&FlowClientBinding::new(
-                [0x44; MAGIC_LINK_FLOW_BINDING_BYTES]
-            )));
-        }
-        assert_eq!(verified.expires_at_unix(), 1_300);
-    }
+    assert!(
+        verified
+            .selector()
+            .matches_constant_time(&FlowSelectorBinding::new(
+                [0x11; MAGIC_LINK_FLOW_BINDING_BYTES]
+            ))
+    );
+    assert!(
+        verified
+            .verifier()
+            .matches_constant_time(&FlowVerifierBinding::new(
+                [0x22; MAGIC_LINK_FLOW_BINDING_BYTES]
+            ))
+    );
+    assert!(
+        verified
+            .account()
+            .matches_constant_time(&FlowAccountBinding::new(
+                [0x33; MAGIC_LINK_FLOW_BINDING_BYTES]
+            ))
+    );
+    assert_eq!(verified.expires_at_unix(), 1_300);
 }
 
 #[test]
@@ -215,7 +187,7 @@ fn binding_comparisons_are_explicit_and_constant_time() {
 #[test]
 fn confirmation_is_canonical_and_must_match() {
     let ring = flow_ring(0x72, "flow-active");
-    let minted = mint_flow(&ring, true, 1_000, 1_300);
+    let minted = mint_flow(&ring, 1_000, 1_300);
     let cookie = minted.cookie().as_secret_value();
     let confirmation = minted.confirmation().as_value();
 
@@ -251,7 +223,7 @@ fn confirmation_is_canonical_and_must_match() {
 #[test]
 fn flow_enforces_explicit_and_caller_freshness_boundaries() {
     let ring = flow_ring(0x73, "flow-active");
-    let minted = mint_flow(&ring, false, 1_000, 1_300);
+    let minted = mint_flow(&ring, 1_000, 1_300);
     let cookie = minted.cookie().as_secret_value();
     let confirmation = minted.confirmation().as_value();
 
@@ -280,25 +252,20 @@ fn mint_enforces_explicit_expiry_and_u32_time_bounds() {
 
     let mut rng = PatternRng::new();
     assert_eq!(
-        mint_magic_link_flow(bindings(false, 999), &ring, &mut rng, 1_000).unwrap_err(),
+        mint_magic_link_flow(bindings(999), &ring, &mut rng, 1_000).unwrap_err(),
         TokenError::InvalidTimestamp
     );
     let mut rng = PatternRng::new();
     assert_eq!(
-        mint_magic_link_flow(bindings(false, 1_301), &ring, &mut rng, 1_000).unwrap_err(),
+        mint_magic_link_flow(bindings(1_301), &ring, &mut rng, 1_000).unwrap_err(),
         TokenError::InvalidTimestamp
     );
     let mut rng = PatternRng::new();
-    assert!(mint_magic_link_flow(bindings(false, 1_000), &ring, &mut rng, 1_000).is_ok());
+    assert!(mint_magic_link_flow(bindings(1_000), &ring, &mut rng, 1_000).is_ok());
     let mut rng = PatternRng::new();
     assert_eq!(
-        mint_magic_link_flow(
-            bindings(false, u32::MAX),
-            &ring,
-            &mut rng,
-            u64::from(u32::MAX) + 1,
-        )
-        .unwrap_err(),
+        mint_magic_link_flow(bindings(u32::MAX), &ring, &mut rng, u64::from(u32::MAX) + 1,)
+            .unwrap_err(),
         TokenError::InvalidTimestamp
     );
 }
@@ -307,7 +274,7 @@ fn mint_enforces_explicit_expiry_and_u32_time_bounds() {
 fn future_dated_flow_cookie_beyond_skew_fails_generically() {
     let ring = flow_ring(0x7a, "flow-active");
     let confirmation_nonce = MagicLinkFlowNonce([0xa0; MAGIC_LINK_FLOW_NONCE_BYTES]);
-    let mut body = encode_flow_body(&bindings(false, 1_100), &confirmation_nonce);
+    let mut body = encode_flow_body(&bindings(1_100), &confirmation_nonce);
     let mut rng = PatternRng::new();
     let cookie =
         mint_bound_cookie::<MagicLinkFlowCookie, _>(&body, &ring, &mut rng, 1_100, 1_100, 1_100)
@@ -324,7 +291,7 @@ fn future_dated_flow_cookie_beyond_skew_fails_generically() {
 #[test]
 fn tampered_cookie_and_unknown_key_fail_generically() {
     let ring = flow_ring(0x75, "flow-active");
-    let minted = mint_flow(&ring, true, 1_000, 1_300);
+    let minted = mint_flow(&ring, 1_000, 1_300);
     let confirmation = minted.confirmation().as_value();
     let mut tampered = minted.cookie().as_secret_value().as_bytes().to_vec();
     let last = tampered.len() - 1;
@@ -346,19 +313,34 @@ fn tampered_cookie_and_unknown_key_fail_generically() {
 }
 
 #[test]
-fn malformed_flow_bodies_are_rejected_without_trailing_data() {
+fn malformed_and_old_flow_bodies_are_rejected() {
     let confirmation = MagicLinkFlowNonce([0xaa; MAGIC_LINK_FLOW_NONCE_BYTES]);
-    let valid = encode_flow_body(&bindings(false, 1_300), &confirmation);
+    let valid = encode_flow_body(&bindings(1_300), &confirmation);
 
     let mut bad_version = valid.clone();
     bad_version[0] = 2;
-    let mut bad_flag = valid.clone();
-    bad_flag[CLIENT_FLAG_OFFSET] = 2;
     let mut trailing = valid.clone();
     trailing.push(0);
     let truncated = &valid[..valid.len() - 1];
 
-    for malformed in [&bad_version[..], &bad_flag[..], &trailing[..], truncated] {
+    let binding_end = 1 + (3 * MAGIC_LINK_FLOW_BINDING_BYTES);
+    let mut old_134_body = valid[..binding_end].to_vec();
+    old_134_body.push(0);
+    old_134_body.extend_from_slice(&valid[binding_end..]);
+    let mut old_166_body = valid[..binding_end].to_vec();
+    old_166_body.push(1);
+    old_166_body.extend_from_slice(&[0x44; MAGIC_LINK_FLOW_BINDING_BYTES]);
+    old_166_body.extend_from_slice(&valid[binding_end..]);
+    assert_eq!(old_134_body.len(), 134);
+    assert_eq!(old_166_body.len(), 166);
+
+    for malformed in [
+        &bad_version[..],
+        &trailing[..],
+        truncated,
+        &old_134_body,
+        &old_166_body,
+    ] {
         assert!(matches!(
             decode_flow_body(malformed),
             Err(TokenError::InvalidToken)
@@ -367,20 +349,32 @@ fn malformed_flow_bodies_are_rejected_without_trailing_data() {
 }
 
 #[test]
-fn malformed_authenticated_body_is_a_generic_verification_failure() {
+fn old_authenticated_body_shapes_fail_generically() {
     let ring = flow_ring(0x76, "flow-active");
-    let mut rng = PatternRng::new();
-    let malformed = vec![FLOW_BODY_V1; BODY_WITHOUT_CLIENT_BYTES - 1];
-    let cookie = mint_bound_cookie::<MagicLinkFlowCookie, _>(
-        &malformed, &ring, &mut rng, 1_000, 1_000, 1_000,
-    )
-    .expect("low-level cookie mints");
-    let confirmation = "a0".repeat(MAGIC_LINK_FLOW_NONCE_BYTES);
+    let confirmation_nonce = MagicLinkFlowNonce([0xaa; MAGIC_LINK_FLOW_NONCE_BYTES]);
+    let valid = encode_flow_body(&bindings(1_300), &confirmation_nonce);
+    let binding_end = 1 + (3 * MAGIC_LINK_FLOW_BINDING_BYTES);
 
-    assert_eq!(
-        verify_magic_link_flow(&cookie, &confirmation, &ring, 1_000, 300).unwrap_err(),
-        TokenError::InvalidToken
-    );
+    let mut old_134_body = valid[..binding_end].to_vec();
+    old_134_body.push(0);
+    old_134_body.extend_from_slice(&valid[binding_end..]);
+    let mut old_166_body = valid[..binding_end].to_vec();
+    old_166_body.push(1);
+    old_166_body.extend_from_slice(&[0x44; MAGIC_LINK_FLOW_BINDING_BYTES]);
+    old_166_body.extend_from_slice(&valid[binding_end..]);
+    let confirmation = "aa".repeat(MAGIC_LINK_FLOW_NONCE_BYTES);
+
+    for old_body in [&old_134_body, &old_166_body] {
+        let mut rng = PatternRng::new();
+        let cookie = mint_bound_cookie::<MagicLinkFlowCookie, _>(
+            old_body, &ring, &mut rng, 1_000, 1_000, 1_000,
+        )
+        .expect("low-level cookie mints");
+        assert_eq!(
+            verify_magic_link_flow(&cookie, &confirmation, &ring, 1_000, 300).unwrap_err(),
+            TokenError::InvalidToken
+        );
+    }
 }
 
 #[test]
@@ -412,7 +406,7 @@ fn flow_purpose_rejects_session_cookie_and_has_tight_size_cap() {
     );
 
     let maximum_kid = kid(&"k".repeat(64));
-    assert!(max_body_bytes::<MagicLinkFlowCookie>(&maximum_kid) >= BODY_WITH_CLIENT_BYTES);
+    assert!(max_body_bytes::<MagicLinkFlowCookie>(&maximum_kid) >= FLOW_BODY_BYTES);
     assert_eq!(MagicLinkFlowCookie::MAX_BODY_BYTES, 256);
 }
 
@@ -432,7 +426,7 @@ fn flow_cookie_verifies_across_active_to_verify_only_rotation() {
         )],
     )
     .expect("old ring");
-    let minted = mint_flow(&old_ring, false, 1_000, 1_300);
+    let minted = mint_flow(&old_ring, 1_000, 1_300);
 
     let new_root = RootSecret::new([0x82; crate::keyring::KEY_BYTES]);
     let new_key = new_root
@@ -482,13 +476,8 @@ fn entropy_failures_propagate_from_both_nonce_draws() {
         fail_on: 0,
     };
     assert_eq!(
-        mint_magic_link_flow(
-            bindings(false, 1_300),
-            &ring,
-            &mut confirmation_failure,
-            1_000,
-        )
-        .unwrap_err(),
+        mint_magic_link_flow(bindings(1_300), &ring, &mut confirmation_failure, 1_000,)
+            .unwrap_err(),
         TokenError::EntropyUnavailable
     );
 
@@ -497,8 +486,7 @@ fn entropy_failures_propagate_from_both_nonce_draws() {
         fail_on: 1,
     };
     assert_eq!(
-        mint_magic_link_flow(bindings(false, 1_300), &ring, &mut branca_failure, 1_000,)
-            .unwrap_err(),
+        mint_magic_link_flow(bindings(1_300), &ring, &mut branca_failure, 1_000,).unwrap_err(),
         TokenError::EntropyUnavailable
     );
 }
@@ -506,7 +494,7 @@ fn entropy_failures_propagate_from_both_nonce_draws() {
 #[test]
 fn sensitive_debug_output_is_fully_redacted() {
     let ring = flow_ring(0x79, "flow-active");
-    let input = bindings(true, 1_300);
+    let input = bindings(1_300);
     assert_eq!(format!("{input:?}"), "MagicLinkFlowBindings(..)");
     let minted = {
         let mut rng = PatternRng::new();
@@ -539,10 +527,6 @@ fn sensitive_debug_output_is_fully_redacted() {
         format!("{:?}", verified.account()),
         "FlowAccountBinding(..)"
     );
-    assert_eq!(
-        format!("{:?}", verified.client().expect("client exists")),
-        "FlowClientBinding(..)"
-    );
 }
 
 #[test]
@@ -552,6 +536,6 @@ fn cookie_token_size_is_bounded_by_flow_body_cap() {
     let maximum_token = branca::max_token_chars_for_payload(
         1 + 4 + 1 + MagicLinkFlowCookie::TOKEN_TYPE.len() + 1 + 64 + maximum_body,
     );
-    assert!(maximum_body >= BODY_WITH_CLIENT_BYTES);
+    assert!(maximum_body >= FLOW_BODY_BYTES);
     assert!(maximum_token < branca::MAX_TOKEN_BYTES);
 }

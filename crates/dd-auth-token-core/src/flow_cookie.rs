@@ -1,7 +1,7 @@
 //! Purpose-separated encrypted state for scanner-safe magic-link confirmation.
 //!
 //! This module carries only fixed-size, keyed bindings. It never carries a raw
-//! magic-link token, selector, verifier, account identifier, or client key. The
+//! magic-link token, selector, verifier, or account identifier. The
 //! caller derives the bindings, supplies the current time and an injected CSPRNG,
 //! and caps the explicit expiry by the remaining magic-link lifetime.
 
@@ -17,16 +17,14 @@ use crate::keyring::{KeyPurpose, KeyRing, MagicLinkFlowCookie};
 
 /// Hard maximum age for a magic-link flow cookie: five minutes.
 pub const MAGIC_LINK_FLOW_MAX_AGE_SECS: u64 = MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS;
-/// Size of each keyed selector, verifier, account, and client binding.
+/// Size of each keyed selector, verifier, and account binding.
 pub const MAGIC_LINK_FLOW_BINDING_BYTES: usize = 32;
 /// Entropy bytes in the confirmation nonce submitted separately from the cookie.
 const MAGIC_LINK_FLOW_NONCE_BYTES: usize = 32;
 
 const FLOW_BODY_V1: u8 = 1;
 const CONFIRMATION_HEX_BYTES: usize = MAGIC_LINK_FLOW_NONCE_BYTES * 2;
-const BODY_WITHOUT_CLIENT_BYTES: usize = 134;
-const BODY_WITH_CLIENT_BYTES: usize = 166;
-const CLIENT_FLAG_OFFSET: usize = 1 + (3 * MAGIC_LINK_FLOW_BINDING_BYTES);
+const FLOW_BODY_BYTES: usize = 133;
 const LOWER_HEX: &[u8; 16] = b"0123456789abcdef";
 
 /// Keyed selector identity bound into a magic-link confirmation flow.
@@ -130,41 +128,11 @@ impl fmt::Debug for FlowAccountBinding {
     }
 }
 
-/// Keyed trusted-client identity bound into a magic-link confirmation flow.
-pub struct FlowClientBinding([u8; MAGIC_LINK_FLOW_BINDING_BYTES]);
-
-impl FlowClientBinding {
-    /// Wrap a purpose-separated 256-bit client binding.
-    #[must_use]
-    pub fn new(bytes: [u8; MAGIC_LINK_FLOW_BINDING_BYTES]) -> Self {
-        Self(bytes)
-    }
-
-    /// Compare two keyed client bindings in constant time.
-    #[must_use]
-    pub fn matches_constant_time(&self, other: &Self) -> bool {
-        self.0.ct_eq(&other.0).unwrap_u8() == 1
-    }
-}
-
-impl Drop for FlowClientBinding {
-    fn drop(&mut self) {
-        self.0.zeroize();
-    }
-}
-
-impl fmt::Debug for FlowClientBinding {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("FlowClientBinding(..)")
-    }
-}
-
 /// Bindings and explicit expiry used to mint one confirmation flow.
 pub struct MagicLinkFlowBindings {
     selector: FlowSelectorBinding,
     verifier: FlowVerifierBinding,
     account: FlowAccountBinding,
-    client: Option<FlowClientBinding>,
     expires_at_unix: u32,
 }
 
@@ -175,14 +143,12 @@ impl MagicLinkFlowBindings {
         selector: FlowSelectorBinding,
         verifier: FlowVerifierBinding,
         account: FlowAccountBinding,
-        client: Option<FlowClientBinding>,
         expires_at_unix: u32,
     ) -> Self {
         Self {
             selector,
             verifier,
             account,
-            client,
             expires_at_unix,
         }
     }
@@ -271,7 +237,6 @@ pub struct VerifiedMagicLinkFlow {
     selector: FlowSelectorBinding,
     verifier: FlowVerifierBinding,
     account: FlowAccountBinding,
-    client: Option<FlowClientBinding>,
     expires_at_unix: u32,
 }
 
@@ -292,12 +257,6 @@ impl VerifiedMagicLinkFlow {
     #[must_use]
     pub fn account(&self) -> &FlowAccountBinding {
         &self.account
-    }
-
-    /// Authenticated keyed client binding, if the landing request supplied one.
-    #[must_use]
-    pub fn client(&self) -> Option<&FlowClientBinding> {
-        self.client.as_ref()
     }
 
     /// Authenticated explicit expiry. The verification call has already enforced it.
@@ -403,7 +362,6 @@ pub fn verify_magic_link_flow(
         selector: decoded.selector,
         verifier: decoded.verifier,
         account: decoded.account,
-        client: decoded.client,
         expires_at_unix: decoded.expires_at_unix,
     })
 }
@@ -432,7 +390,6 @@ struct DecodedFlowBody {
     selector: FlowSelectorBinding,
     verifier: FlowVerifierBinding,
     account: FlowAccountBinding,
-    client: Option<FlowClientBinding>,
     confirmation: MagicLinkFlowNonce,
     expires_at_unix: u32,
 }
@@ -441,38 +398,18 @@ fn encode_flow_body(
     bindings: &MagicLinkFlowBindings,
     confirmation: &MagicLinkFlowNonce,
 ) -> Vec<u8> {
-    let capacity = if bindings.client.is_some() {
-        BODY_WITH_CLIENT_BYTES
-    } else {
-        BODY_WITHOUT_CLIENT_BYTES
-    };
-    let mut out = Vec::with_capacity(capacity);
+    let mut out = Vec::with_capacity(FLOW_BODY_BYTES);
     out.push(FLOW_BODY_V1);
     out.extend_from_slice(&bindings.selector.0);
     out.extend_from_slice(&bindings.verifier.0);
     out.extend_from_slice(&bindings.account.0);
-    if let Some(client) = bindings.client.as_ref() {
-        out.push(1);
-        out.extend_from_slice(&client.0);
-    } else {
-        out.push(0);
-    }
     out.extend_from_slice(&confirmation.0);
     out.extend_from_slice(&bindings.expires_at_unix.to_be_bytes());
     out
 }
 
 fn decode_flow_body(body: &[u8]) -> Result<DecodedFlowBody, TokenError> {
-    if body.len() < CLIENT_FLAG_OFFSET + 1 || body[0] != FLOW_BODY_V1 {
-        return Err(TokenError::InvalidToken);
-    }
-    let client_present = body[CLIENT_FLAG_OFFSET];
-    let expected_len = match client_present {
-        0 => BODY_WITHOUT_CLIENT_BYTES,
-        1 => BODY_WITH_CLIENT_BYTES,
-        _ => return Err(TokenError::InvalidToken),
-    };
-    if body.len() != expected_len {
+    if body.len() != FLOW_BODY_BYTES || body[0] != FLOW_BODY_V1 {
         return Err(TokenError::InvalidToken);
     }
 
@@ -480,12 +417,6 @@ fn decode_flow_body(body: &[u8]) -> Result<DecodedFlowBody, TokenError> {
     let selector = FlowSelectorBinding::new(take_array(body, &mut offset)?);
     let verifier = FlowVerifierBinding::new(take_array(body, &mut offset)?);
     let account = FlowAccountBinding::new(take_array(body, &mut offset)?);
-    offset += 1;
-    let client = if client_present == 1 {
-        Some(FlowClientBinding::new(take_array(body, &mut offset)?))
-    } else {
-        None
-    };
     let confirmation = MagicLinkFlowNonce(take_array(body, &mut offset)?);
     let expiry_bytes: [u8; 4] = body
         .get(offset..offset + 4)
@@ -501,7 +432,6 @@ fn decode_flow_body(body: &[u8]) -> Result<DecodedFlowBody, TokenError> {
         selector,
         verifier,
         account,
-        client,
         confirmation,
         expires_at_unix: u32::from_be_bytes(expiry_bytes),
     })
