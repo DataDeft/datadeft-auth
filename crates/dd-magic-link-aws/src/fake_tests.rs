@@ -9,9 +9,9 @@ use dd_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkToken, NormalizedEmail, selector_lookup_hmac, verifier_hash,
 };
 use dd_magic_link_service::{
-    AuthenticationAttemptId, BeginMagicLinkLandingCommand, ClientKey, Clock,
-    CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, ConfirmMagicLinkFlowCommand,
-    ConfirmMagicLinkFlowOutcome, DependencyError, EmailLocale, MagicLinkAuthenticationCandidate,
+    AuthenticationAttemptId, BeginMagicLinkLandingCommand, Clock, CommitMagicLinkAuthentication,
+    CommitMagicLinkAuthenticationError, ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome,
+    DependencyError, EmailLocale, MagicLinkAuthenticationCandidate,
     MagicLinkAuthenticationExpectation, MagicLinkAuthenticationRepository,
     MagicLinkAuthenticationUser, MagicLinkFlowError, MagicLinkFlowService,
     MagicLinkFlowServiceInputs, MagicLinkRecord, MagicLinkRepository, MagicLinkRequestService,
@@ -175,7 +175,7 @@ where
         config,
     });
     let landing = service
-        .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(raw_token, None))
+        .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(raw_token))
         .await?;
     Ok(TestFlowState {
         cookie: landing.flow_cookie_value().to_owned(),
@@ -210,7 +210,7 @@ where
         session_keyring: &session_keyring,
         config,
     });
-    let command = ConfirmMagicLinkFlowCommand::new(flow.cookie, flow.confirmation, None, None)?;
+    let command = ConfirmMagicLinkFlowCommand::new(flow.cookie, flow.confirmation, None)?;
     service.confirm_magic_link_flow(command).await
 }
 
@@ -220,7 +220,6 @@ fn command() -> RequestMagicLinkCommand {
         EmailLocale::En,
         true,
         true,
-        Some(ClientKey::parse("client-1").expect("client key")),
     )
 }
 
