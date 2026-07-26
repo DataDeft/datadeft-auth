@@ -295,7 +295,7 @@ async fn request_flow_stores_hmac_material_and_enqueues_redacted_token() {
     assert_eq!(emails.len(), 1);
     let token = emails[0].token.as_secret_value();
     assert!(token.starts_with("mlv1."));
-    assert!(!format!("{:?}", emails[0]).contains(&token));
+    assert!(!format!("{:?}", emails[0]).contains(token.as_str()));
 
     let records = repo.magic_links.borrow();
     assert_eq!(records.len(), 1);

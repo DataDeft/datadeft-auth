@@ -3,6 +3,7 @@
 use core::fmt;
 
 use dd_magic_link_core::{LookupHmac, MagicLinkToken, NormalizedEmail, VerifierHash};
+use zeroize::Zeroize;
 
 use crate::error::MagicLinkServiceError;
 
@@ -400,6 +401,12 @@ impl fmt::Debug for ConsumeMagicLinkOutcome {
             .field("user_created", &self.user_created)
             .field("country", &self.country)
             .finish()
+    }
+}
+
+impl Drop for ConsumeMagicLinkOutcome {
+    fn drop(&mut self) {
+        self.session_cookie.zeroize();
     }
 }
 

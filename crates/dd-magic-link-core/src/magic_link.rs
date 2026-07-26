@@ -15,7 +15,7 @@
 use core::fmt;
 
 use rand_core::{CryptoRng, RngCore};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::MagicLinkError;
 
@@ -99,6 +99,12 @@ impl MagicLinkVerifier {
     }
 }
 
+impl Drop for MagicLinkVerifier {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
 impl fmt::Debug for MagicLinkVerifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("MagicLinkVerifier(..)")
@@ -154,12 +160,12 @@ impl MagicLinkToken {
 
     /// Render the bearer token for an email URL. Never log this value.
     #[must_use]
-    pub fn as_secret_value(&self) -> String {
-        format!(
+    pub fn as_secret_value(&self) -> Zeroizing<String> {
+        Zeroizing::new(format!(
             "{MAGIC_LINK_TOKEN_VERSION_PREFIX}.{}.{}",
             self.selector.as_lookup_value(),
             self.verifier.as_secret_value()
-        )
+        ))
     }
 }
 

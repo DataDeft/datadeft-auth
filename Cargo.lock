@@ -540,6 +540,7 @@ dependencies = [
  "hex",
  "rand_core 0.6.4",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]

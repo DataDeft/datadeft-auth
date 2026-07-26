@@ -46,7 +46,7 @@ fn generated_token_uses_selector_and_verifier_entropy_sizes() {
     assert_eq!(token.selector().as_lookup_value().len(), SELECTOR_HEX_LEN);
     assert_eq!(token.verifier().as_secret_value().len(), VERIFIER_HEX_LEN);
     assert_eq!(
-        token.as_secret_value(),
+        token.as_secret_value().as_str(),
         "mlv1.000102030405060708090a0b0c0d0e0f.101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
     );
 }
@@ -56,7 +56,7 @@ fn parses_current_token_shape() {
     let raw = "mlv1.000102030405060708090a0b0c0d0e0f.101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f";
     let token = MagicLinkToken::parse(raw).expect("token parses");
 
-    assert_eq!(token.as_secret_value(), raw);
+    assert_eq!(token.as_secret_value().as_str(), raw);
     assert_eq!(
         token.selector().as_lookup_value(),
         &raw[5..5 + SELECTOR_HEX_LEN]
