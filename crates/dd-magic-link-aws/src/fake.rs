@@ -9,12 +9,12 @@ use core::fmt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use dd_magic_link_core::{LookupHmac, NormalizedEmail};
 use dd_magic_link_service::{
-    CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, DependencyError,
+    CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, DependencyError, LookupHmac,
     MagicLinkAuthenticationCandidate, MagicLinkAuthenticationRepository,
-    MagicLinkAuthenticationUser, MagicLinkRecord, MagicLinkRepository, RateLimitDecision,
-    RateLimitKey, RateLimiter, SessionId, SessionRecord, SessionRepository, UserId, UserRecord,
+    MagicLinkAuthenticationUser, MagicLinkRecord, MagicLinkRepository, NormalizedEmail,
+    RateLimitDecision, RateLimitKey, RateLimiter, SessionId, SessionRecord, SessionRepository,
+    UserId, UserRecord,
 };
 
 use crate::error::AwsAdapterError;

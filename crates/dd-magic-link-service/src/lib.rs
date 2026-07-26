@@ -18,7 +18,7 @@ pub mod traits;
 pub mod types;
 
 pub use config::{MagicLinkConfigError, MagicLinkServiceConfig, RateLimitConfig};
-pub use dd_magic_link_core::NormalizedEmail;
+pub use dd_magic_link_core::{LookupHmac, NormalizedEmail, VerifierHash};
 pub use error::{
     CommitMagicLinkAuthenticationError, DependencyError, MagicLinkFlowError, MagicLinkServiceError,
     TemporaryAuthStateAction,

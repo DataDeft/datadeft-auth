@@ -10,12 +10,12 @@ use aws_sdk_dynamodb::operation::transact_write_items::builders::TransactWriteIt
 use aws_sdk_dynamodb::types::{
     AttributeValue, ConditionCheck, Put, ReturnValue, TransactWriteItem, Update,
 };
-use dd_magic_link_core::{LookupHmac, NormalizedEmail, VerifierHash};
 use dd_magic_link_service::{
-    CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, DependencyError,
+    CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, DependencyError, LookupHmac,
     MagicLinkAuthenticationCandidate, MagicLinkAuthenticationRepository,
-    MagicLinkAuthenticationUser, MagicLinkRecord, MagicLinkRepository, RateLimitDecision,
-    RateLimitKey, RateLimiter, SessionId, SessionRecord, SessionRepository, UserId, UserRecord,
+    MagicLinkAuthenticationUser, MagicLinkRecord, MagicLinkRepository, NormalizedEmail,
+    RateLimitDecision, RateLimitKey, RateLimiter, SessionId, SessionRecord, SessionRepository,
+    UserId, UserRecord, VerifierHash,
 };
 
 use crate::error::{

@@ -21,7 +21,6 @@ aws = [
 ]
 
 [dependencies]
-dd-magic-link-core = { path = "../dd-magic-link-core" }
 dd-magic-link-service = { path = "../dd-magic-link-service" }
 aws-sdk-dynamodb = { version = "1", optional = true, default-features = false, features = ["rt-tokio"] }
 aws-sdk-sesv2 = { version = "1", optional = true, default-features = false, features = ["rt-tokio"] }
@@ -33,5 +32,6 @@ zeroize = { version = "1", default-features = false }
 
 [dev-dependencies]
 dd-auth-token-core = { path = "../dd-auth-token-core" }
+dd-magic-link-core = { path = "../dd-magic-link-core" }
 rand_core = "0.6"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
