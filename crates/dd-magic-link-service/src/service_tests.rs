@@ -196,6 +196,7 @@ impl RateLimiter for FakeLimiter {
         key: &RateLimitKey,
         _limit: u32,
         _window_secs: u64,
+        _now_unix: u64,
     ) -> Result<RateLimitDecision, DependencyError> {
         self.checked.borrow_mut().push(key.as_str().to_owned());
         if self

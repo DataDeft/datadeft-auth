@@ -98,10 +98,16 @@ where
             &self.config,
             email_lookup.as_storage_value(),
             command.client_key(),
+            now_unix,
         )? {
             return Ok(RequestMagicLinkOutcome);
         }
-        if outbox_limits_deny(self.limiter, &self.config, email_lookup.as_storage_value())? {
+        if outbox_limits_deny(
+            self.limiter,
+            &self.config,
+            email_lookup.as_storage_value(),
+            now_unix,
+        )? {
             return Ok(RequestMagicLinkOutcome);
         }
 
@@ -218,11 +224,17 @@ where
         client_key: Option<ClientKey>,
         request_country: Option<String>,
     ) -> Result<ConsumeMagicLinkOutcome, MagicLinkServiceError> {
+        let now_unix = self.clock.now_unix()?;
         let parsed = match MagicLinkToken::parse(token) {
             Ok(token) => token,
             Err(_) => {
                 if let Some(client_key) = client_key.as_ref() {
-                    let _ = malformed_consume_limit_denied(self.limiter, &self.config, client_key)?;
+                    let _ = malformed_consume_limit_denied(
+                        self.limiter,
+                        &self.config,
+                        client_key,
+                        now_unix,
+                    )?;
                 }
                 return Err(MagicLinkServiceError::MagicLinkUnavailable);
             }
@@ -250,6 +262,7 @@ where
             &self.config,
             selector_lookup.as_storage_value(),
             command.client_key(),
+            now_unix,
         )? {
             return Err(MagicLinkServiceError::MagicLinkUnavailable);
         }
@@ -295,6 +308,7 @@ fn request_limits_deny<Limiter: RateLimiter>(
     config: &MagicLinkServiceConfig,
     email_lookup: &str,
     client_key: Option<&ClientKey>,
+    now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
     let limits = &config.rate_limits;
     let email_short = format!("magic-link:request:email:short:{email_lookup}");
@@ -303,6 +317,7 @@ fn request_limits_deny<Limiter: RateLimiter>(
         &email_short,
         limits.request_email_short_limit,
         limits.request_email_short_window_secs,
+        now_unix,
     )? {
         return Ok(true);
     }
@@ -312,6 +327,7 @@ fn request_limits_deny<Limiter: RateLimiter>(
         &email_daily,
         limits.request_email_daily_limit,
         limits.request_email_daily_window_secs,
+        now_unix,
     )? {
         return Ok(true);
     }
@@ -322,6 +338,7 @@ fn request_limits_deny<Limiter: RateLimiter>(
             &client_short,
             limits.request_client_short_limit,
             limits.request_client_short_window_secs,
+            now_unix,
         )? {
             return Ok(true);
         }
@@ -331,6 +348,7 @@ fn request_limits_deny<Limiter: RateLimiter>(
             &client_hourly,
             limits.request_client_hourly_limit,
             limits.request_client_hourly_window_secs,
+            now_unix,
         )? {
             return Ok(true);
         }
@@ -342,6 +360,7 @@ fn outbox_limits_deny<Limiter: RateLimiter>(
     limiter: &Limiter,
     config: &MagicLinkServiceConfig,
     email_lookup: &str,
+    now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
     let limits = &config.rate_limits;
     let hourly = format!("magic-link:outbox:email:hourly:{email_lookup}");
@@ -350,6 +369,7 @@ fn outbox_limits_deny<Limiter: RateLimiter>(
         &hourly,
         limits.outbox_email_hourly_limit,
         limits.outbox_email_hourly_window_secs,
+        now_unix,
     )? {
         return Ok(true);
     }
@@ -359,6 +379,7 @@ fn outbox_limits_deny<Limiter: RateLimiter>(
         &daily,
         limits.outbox_email_daily_limit,
         limits.outbox_email_daily_window_secs,
+        now_unix,
     )
 }
 
@@ -367,6 +388,7 @@ fn consume_limits_deny<Limiter: RateLimiter>(
     config: &MagicLinkServiceConfig,
     selector_lookup: &str,
     client_key: Option<&ClientKey>,
+    now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
     let limits = &config.rate_limits;
     let selector_key = format!("magic-link:consume:selector:{selector_lookup}");
@@ -375,6 +397,7 @@ fn consume_limits_deny<Limiter: RateLimiter>(
         &selector_key,
         limits.consume_selector_limit,
         config.magic_link_ttl_secs,
+        now_unix,
     )? {
         return Ok(true);
     }
@@ -385,6 +408,7 @@ fn consume_limits_deny<Limiter: RateLimiter>(
             &client_short,
             limits.consume_client_short_limit,
             limits.consume_client_short_window_secs,
+            now_unix,
         )? {
             return Ok(true);
         }
@@ -394,6 +418,7 @@ fn consume_limits_deny<Limiter: RateLimiter>(
             &client_hourly,
             limits.consume_client_hourly_limit,
             limits.consume_client_hourly_window_secs,
+            now_unix,
         )? {
             return Ok(true);
         }
@@ -405,6 +430,7 @@ fn malformed_consume_limit_denied<Limiter: RateLimiter>(
     limiter: &Limiter,
     config: &MagicLinkServiceConfig,
     client_key: &ClientKey,
+    now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
     let key = format!("magic-link:consume:malformed:{}", client_key.as_str());
     limit_denied(
@@ -412,6 +438,7 @@ fn malformed_consume_limit_denied<Limiter: RateLimiter>(
         &key,
         config.rate_limits.malformed_consume_client_limit,
         config.rate_limits.malformed_consume_client_window_secs,
+        now_unix,
     )
 }
 
@@ -420,10 +447,11 @@ fn limit_denied<Limiter: RateLimiter>(
     key: &str,
     limit: u32,
     window_secs: u64,
+    now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
     let key = RateLimitKey::parse(key)?;
     let decision = limiter
-        .check_rate_limit(&key, limit, window_secs)
+        .check_rate_limit(&key, limit, window_secs, now_unix)
         .map_err(map_dependency_error)?;
     Ok(decision == RateLimitDecision::Denied)
 }

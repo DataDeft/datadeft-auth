@@ -70,6 +70,7 @@ pub trait RateLimiter {
         key: &RateLimitKey,
         limit: u32,
         window_secs: u64,
+        now_unix: u64,
     ) -> Result<RateLimitDecision, DependencyError>;
 }
 

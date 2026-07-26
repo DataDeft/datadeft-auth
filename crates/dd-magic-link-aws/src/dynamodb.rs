@@ -76,8 +76,15 @@ impl DynamoDbAuthStore {
         format!("USERID#{}", user_id.as_str())
     }
 
-    fn pk_rate(&self, key: &RateLimitKey) -> Result<String, AwsAdapterError> {
-        Ok(format!("RL#{}", self.hmac("rlh", key.as_str())?))
+    fn pk_rate(
+        &self,
+        key: &RateLimitKey,
+        window_secs: u64,
+        now_unix: u64,
+    ) -> Result<String, AwsAdapterError> {
+        let window_index = fixed_window_index(now_unix, window_secs);
+        let storage_key = format!("{}:{window_index}", key.as_str());
+        Ok(format!("RL#{}", self.hmac("rlh", &storage_key)?))
     }
 
     fn item_to_user(item: &HashMap<String, AttributeValue>) -> Result<UserRecord, AwsAdapterError> {
@@ -384,9 +391,14 @@ impl RateLimiter for DynamoDbAuthStore {
         key: &RateLimitKey,
         limit: u32,
         window_secs: u64,
+        now_unix: u64,
     ) -> Result<RateLimitDecision, DependencyError> {
-        let pk = self.pk_rate(key).map_err(DependencyError::from)?;
-        let ttl = unix_now_secs().saturating_add(window_secs);
+        let pk = self
+            .pk_rate(key, window_secs, now_unix)
+            .map_err(DependencyError::from)?;
+        let window_start_unix = fixed_window_start(now_unix, window_secs);
+        let window_expires_unix = window_start_unix.saturating_add(window_secs);
+        let ttl = window_expires_unix.saturating_add(24 * 60 * 60);
         self.block_on(async {
             let result = self
                 .client
@@ -394,12 +406,16 @@ impl RateLimiter for DynamoDbAuthStore {
                 .table_name(&self.table_name)
                 .key("pk", av_s(pk))
                 .key("sk", av_s("COUNTER"))
-                .update_expression("SET #entity_type = if_not_exists(#entity_type, :entity), #ttl = :ttl ADD #count :one")
+                .update_expression("SET #entity_type = if_not_exists(#entity_type, :entity), #window_start = if_not_exists(#window_start, :window_start), #window_expires = if_not_exists(#window_expires, :window_expires), #ttl = if_not_exists(#ttl, :ttl) ADD #count :one")
                 .condition_expression("attribute_not_exists(#count) OR #count < :limit")
                 .expression_attribute_names("#entity_type", "entity_type")
+                .expression_attribute_names("#window_start", "window_start_unix")
+                .expression_attribute_names("#window_expires", "window_expires_unix")
                 .expression_attribute_names("#ttl", "ttl")
                 .expression_attribute_names("#count", "count")
                 .expression_attribute_values(":entity", av_s("rate_counter"))
+                .expression_attribute_values(":window_start", av_n(window_start_unix))
+                .expression_attribute_values(":window_expires", av_n(window_expires_unix))
                 .expression_attribute_values(":ttl", av_n(ttl))
                 .expression_attribute_values(":one", av_n(1))
                 .expression_attribute_values(":limit", av_n(limit))
@@ -418,11 +434,16 @@ impl RateLimiter for DynamoDbAuthStore {
     }
 }
 
-fn unix_now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
+fn fixed_window_index(now_unix: u64, window_secs: u64) -> u64 {
+    if window_secs == 0 {
+        0
+    } else {
+        now_unix / window_secs
+    }
+}
+
+fn fixed_window_start(now_unix: u64, window_secs: u64) -> u64 {
+    fixed_window_index(now_unix, window_secs).saturating_mul(window_secs)
 }
 
 fn av_s(value: impl Into<String>) -> AttributeValue {

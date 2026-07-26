@@ -5,7 +5,8 @@ use dd_magic_link_core::{LookupHmacKey, NormalizedEmail, selector_lookup_hmac};
 use dd_magic_link_service::{
     ClientKey, Clock, ConsumeMagicLinkError, DependencyError, EmailLocale, MagicLinkConsumeService,
     MagicLinkConsumeServiceInputs, MagicLinkRequestService, MagicLinkRequestServiceInputs,
-    MagicLinkServiceConfig, RequestMagicLinkCommand, SessionRepository,
+    MagicLinkServiceConfig, RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkCommand,
+    SessionRepository,
 };
 use rand_core::{CryptoRng, RngCore};
 
@@ -207,5 +208,28 @@ fn fake_store_maps_next_error_to_consume_dependency_failure() {
             .consume_magic_link(&selector_lookup, &verifier_hash, 1_000)
             .unwrap_err(),
         ConsumeMagicLinkError::DependencyUnavailable
+    );
+}
+
+#[test]
+fn fake_limiter_uses_fixed_windows_from_service_clock() {
+    let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
+    let key = RateLimitKey::parse("magic-link:test:bucket").expect("rate key");
+
+    assert_eq!(
+        store.check_rate_limit(&key, 1, 60, 119).expect("first hit"),
+        RateLimitDecision::Allowed
+    );
+    assert_eq!(
+        store
+            .check_rate_limit(&key, 1, 60, 119)
+            .expect("second same window"),
+        RateLimitDecision::Denied
+    );
+    assert_eq!(
+        store
+            .check_rate_limit(&key, 1, 60, 120)
+            .expect("new window"),
+        RateLimitDecision::Allowed
     );
 }

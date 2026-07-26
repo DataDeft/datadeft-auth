@@ -283,9 +283,12 @@ impl RateLimiter for FakeDynamoDbAuthStore {
         &self,
         key: &RateLimitKey,
         limit: u32,
-        _window_secs: u64,
+        window_secs: u64,
+        now_unix: u64,
     ) -> Result<RateLimitDecision, DependencyError> {
+        let window_index = fixed_window_index(now_unix, window_secs);
         let rate_hmac = self.rate_hmac(key)?;
+        let rate_hmac = format!("{rate_hmac}:{window_index}");
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
         let counter = inner.rate_counters.entry(rate_hmac).or_default();
@@ -294,6 +297,13 @@ impl RateLimiter for FakeDynamoDbAuthStore {
         }
         *counter += 1;
         Ok(RateLimitDecision::Allowed)
+    }
+}
+fn fixed_window_index(now_unix: u64, window_secs: u64) -> u64 {
+    if window_secs == 0 {
+        0
+    } else {
+        now_unix / window_secs
     }
 }
 
