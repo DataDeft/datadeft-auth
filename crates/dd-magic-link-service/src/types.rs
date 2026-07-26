@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+use dd_auth_token_core::keyring::{KeyPurpose, SessionCookie};
 use dd_magic_link_core::{LookupHmac, MagicLinkToken, NormalizedEmail, VerifierHash};
 use zeroize::Zeroize;
 
@@ -11,8 +12,8 @@ use crate::error::MagicLinkServiceError;
 pub const DEFAULT_MAGIC_LINK_TTL_SECS: u64 = 10 * 60;
 /// Default session idle lifetime: 24 hours.
 pub const DEFAULT_SESSION_IDLE_SECS: u64 = 24 * 60 * 60;
-/// Default session absolute lifetime: 30 days.
-pub const DEFAULT_SESSION_ABSOLUTE_SECS: u64 = 30 * 24 * 60 * 60;
+/// Default session absolute lifetime, owned by the session-cookie purpose.
+pub const DEFAULT_SESSION_ABSOLUTE_SECS: u64 = SessionCookie::MAX_ABSOLUTE_AGE_SECS;
 
 /// Magic-link email locale. Adapters decide the rendered template and URL.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

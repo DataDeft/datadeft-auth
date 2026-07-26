@@ -265,6 +265,132 @@ fn request_command() -> RequestMagicLinkCommand {
 }
 
 #[tokio::test]
+async fn request_rejects_invalid_config_before_command_or_dependencies() {
+    let repo = FakeRepo::default();
+    let limiter = FakeLimiter::default();
+    let outbox = FakeOutbox::default();
+    let clock = FixedClock { now: 1_000 };
+    let lookup_key = lookup_key();
+    let mut rng = CounterRng::new();
+    let mut invalid_config = config();
+    invalid_config.magic_link_ttl_secs = 0;
+    let command = RequestMagicLinkCommand::new(
+        NormalizedEmail::parse("user@example.com").expect("email"),
+        EmailLocale::En,
+        false,
+        false,
+        Some(ClientKey::parse("client-1").expect("client")),
+    );
+
+    let mut service = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
+        magic_links: &repo,
+        limiter: &limiter,
+        outbox: &outbox,
+        clock: &clock,
+        rng: &mut rng,
+        lookup_hmac_key: &lookup_key,
+        config: invalid_config,
+    });
+
+    assert_eq!(
+        service.request_magic_link(command).await.unwrap_err(),
+        MagicLinkServiceError::Internal
+    );
+    assert!(repo.magic_links.borrow().is_empty());
+    assert!(limiter.checked.borrow().is_empty());
+    assert!(outbox.emails.borrow().is_empty());
+}
+
+#[tokio::test]
+async fn consume_entrypoints_reject_invalid_config_before_token_or_country_work() {
+    let repo = FakeRepo::default();
+    let limiter = FakeLimiter::default();
+    let clock = FixedClock { now: 1_000 };
+    let lookup_key = lookup_key();
+    let session_keyring = session_keyring();
+    let mut rng = CounterRng::new();
+    let token = MagicLinkToken::generate(&mut rng).expect("token");
+    let command = ConsumeMagicLinkCommand::new(token, None, None).expect("command");
+    let mut invalid_config = config();
+    invalid_config.magic_link_ttl_secs = 0;
+    invalid_config.enforce_country = true;
+
+    let mut service = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
+        magic_links: &repo,
+        users: &repo,
+        sessions: &repo,
+        limiter: &limiter,
+        clock: &clock,
+        rng: &mut rng,
+        lookup_hmac_key: &lookup_key,
+        session_keyring: &session_keyring,
+        config: invalid_config.clone(),
+    });
+    assert_eq!(
+        service.consume_magic_link(command).await.unwrap_err(),
+        MagicLinkServiceError::Internal
+    );
+    assert!(limiter.checked.borrow().is_empty());
+    assert!(repo.magic_links.borrow().is_empty());
+
+    let mut service = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
+        magic_links: &repo,
+        users: &repo,
+        sessions: &repo,
+        limiter: &limiter,
+        clock: &clock,
+        rng: &mut rng,
+        lookup_hmac_key: &lookup_key,
+        session_keyring: &session_keyring,
+        config: invalid_config,
+    });
+    assert_eq!(
+        service
+            .consume_magic_link_token("not-a-token", None, None)
+            .await
+            .unwrap_err(),
+        MagicLinkServiceError::Internal
+    );
+    assert!(limiter.checked.borrow().is_empty());
+}
+
+#[tokio::test]
+async fn revocation_is_not_blocked_by_unrelated_invalid_config() {
+    let repo = FakeRepo::default();
+    let limiter = FakeLimiter::default();
+    let clock = FixedClock { now: 1_000 };
+    let lookup_key = lookup_key();
+    let session_keyring = session_keyring();
+    let mut rng = CounterRng::new();
+    let mut invalid_config = config();
+    invalid_config.magic_link_ttl_secs = 0;
+    let session_id =
+        SessionId::parse("sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+            .expect("session id");
+
+    let service = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
+        magic_links: &repo,
+        users: &repo,
+        sessions: &repo,
+        limiter: &limiter,
+        clock: &clock,
+        rng: &mut rng,
+        lookup_hmac_key: &lookup_key,
+        session_keyring: &session_keyring,
+        config: invalid_config,
+    });
+
+    service
+        .revoke_session(&session_id)
+        .await
+        .expect("revocation remains available");
+    assert_eq!(
+        repo.revoked_sessions.borrow().as_slice(),
+        &[session_id.as_str()]
+    );
+}
+
+#[tokio::test]
 async fn request_flow_stores_hmac_material_and_enqueues_redacted_token() {
     let repo = FakeRepo::default();
     let limiter = FakeLimiter::default();

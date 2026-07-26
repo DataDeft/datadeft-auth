@@ -83,6 +83,7 @@ where
         &mut self,
         command: RequestMagicLinkCommand,
     ) -> Result<RequestMagicLinkOutcome, MagicLinkServiceError> {
+        validate_config(&self.config)?;
         if !command.terms_accepted() || !command.privacy_accepted() {
             return Err(MagicLinkServiceError::BadRequest);
         }
@@ -230,6 +231,7 @@ where
         client_key: Option<ClientKey>,
         request_country: Option<String>,
     ) -> Result<ConsumeMagicLinkOutcome, MagicLinkServiceError> {
+        validate_config(&self.config)?;
         let now_unix = self.clock.now_unix()?;
         let parsed = match MagicLinkToken::parse(token) {
             Ok(token) => token,
@@ -259,6 +261,7 @@ where
         &mut self,
         command: ConsumeMagicLinkCommand,
     ) -> Result<ConsumeMagicLinkOutcome, MagicLinkServiceError> {
+        validate_config(&self.config)?;
         let country = mint_country(&self.config, command.request_country())?;
         let now_unix = self.clock.now_unix()?;
         let selector_lookup =
@@ -315,6 +318,12 @@ where
             .await
             .map_err(map_dependency_error)
     }
+}
+
+fn validate_config(config: &MagicLinkServiceConfig) -> Result<(), MagicLinkServiceError> {
+    config
+        .validate()
+        .map_err(|_| MagicLinkServiceError::Internal)
 }
 
 async fn request_limits_deny<Limiter: RateLimiter>(
