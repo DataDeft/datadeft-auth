@@ -42,6 +42,9 @@ fn root_secret_derives_deterministic_kid_and_purpose_separated_keys() {
     let pow = root
         .derive_key::<PowCookie>(&kid("k1"))
         .expect("derive pow");
+    let flow = root
+        .derive_key::<MagicLinkFlowCookie>(&kid("k1"))
+        .expect("derive flow");
 
     assert_eq!(
         session_a.as_bytes(),
@@ -60,6 +63,16 @@ fn root_secret_derives_deterministic_kid_and_purpose_separated_keys() {
     );
     assert_ne!(
         session_a.as_bytes(),
+        flow.as_bytes(),
+        "flow and session purposes must use independent keys"
+    );
+    assert_ne!(
+        pow.as_bytes(),
+        flow.as_bytes(),
+        "flow and PoW purposes must use independent keys"
+    );
+    assert_ne!(
+        session_a.as_bytes(),
         root.as_bytes(),
         "derived key is not raw root material"
     );
@@ -69,16 +82,31 @@ fn root_secret_derives_deterministic_kid_and_purpose_separated_keys() {
 fn hkdf_info_strings_are_versioned_constants() {
     assert_eq!(HKDF_INFO_SESSION_COOKIE_V1, b"auth/session-v1");
     assert_eq!(HKDF_INFO_POW_COOKIE_V1, b"auth/pow-v1");
+    assert_eq!(
+        HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1,
+        b"auth/magic-link-flow-v1"
+    );
     assert_eq!(SessionCookie::HKDF_INFO, HKDF_INFO_SESSION_COOKIE_V1);
     assert_eq!(PowCookie::HKDF_INFO, HKDF_INFO_POW_COOKIE_V1);
+    assert_eq!(
+        MagicLinkFlowCookie::HKDF_INFO,
+        HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1
+    );
     assert_eq!(TOKEN_TYPE_SESSION_COOKIE_V1, "session-v1");
     assert_eq!(TOKEN_TYPE_POW_COOKIE_V1, "pow-v1");
+    assert_eq!(TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1, "ml-flow-v1");
     assert_eq!(SessionCookie::TOKEN_TYPE, TOKEN_TYPE_SESSION_COOKIE_V1);
     assert_eq!(PowCookie::TOKEN_TYPE, TOKEN_TYPE_POW_COOKIE_V1);
+    assert_eq!(
+        MagicLinkFlowCookie::TOKEN_TYPE,
+        TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1
+    );
     assert_eq!(SessionCookie::MAX_BODY_BYTES, 128);
     assert_eq!(PowCookie::MAX_BODY_BYTES, 128);
+    assert_eq!(MagicLinkFlowCookie::MAX_BODY_BYTES, 256);
     assert_eq!(SessionCookie::MAX_ABSOLUTE_AGE_SECS, 30 * 24 * 60 * 60);
     assert_eq!(PowCookie::MAX_ABSOLUTE_AGE_SECS, 10 * 60);
+    assert_eq!(MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS, 5 * 60);
 }
 
 #[test]
@@ -94,6 +122,9 @@ fn hkdf_vectors_are_pinned() {
     let pow = root
         .derive_key::<PowCookie>(&kid("pow-active"))
         .expect("derive pow");
+    let flow = root
+        .derive_key::<MagicLinkFlowCookie>(&kid("flow-active"))
+        .expect("derive flow");
 
     assert_eq!(
         hex::encode(session.as_bytes()),
@@ -102,6 +133,10 @@ fn hkdf_vectors_are_pinned() {
     assert_eq!(
         hex::encode(pow.as_bytes()),
         "4aa0804a52c9437f12e0087883a0f0aa8ef319bea122d3402399f0b3d60d96f6"
+    );
+    assert_eq!(
+        hex::encode(flow.as_bytes()),
+        "beb04add958a76123ba0d68f4a0294fae6afaaa918652871e78c45db00ab4746"
     );
 }
 

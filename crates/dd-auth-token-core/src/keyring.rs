@@ -53,10 +53,14 @@ pub const KEY_BYTES: usize = 32;
 pub const HKDF_INFO_SESSION_COOKIE_V1: &[u8] = b"auth/session-v1";
 /// HKDF-SHA256 info string for PoW proof-cookie Branca keys.
 pub const HKDF_INFO_POW_COOKIE_V1: &[u8] = b"auth/pow-v1";
+/// HKDF-SHA256 info string for magic-link flow-cookie Branca keys.
+pub const HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1: &[u8] = b"auth/magic-link-flow-v1";
 /// Encrypted payload `typ` for session cookies.
 pub const TOKEN_TYPE_SESSION_COOKIE_V1: &str = "session-v1";
 /// Encrypted payload `typ` for PoW proof cookies.
 pub const TOKEN_TYPE_POW_COOKIE_V1: &str = "pow-v1";
+/// Encrypted payload `typ` for magic-link flow cookies.
+pub const TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1: &str = "ml-flow-v1";
 
 /// HKDF purpose marker for keys derived from a [`RootSecret`].
 pub trait KeyPurpose {
@@ -94,6 +98,17 @@ impl KeyPurpose for PowCookie {
     const TOKEN_TYPE: &'static str = TOKEN_TYPE_POW_COOKIE_V1;
     const MAX_BODY_BYTES: usize = 128;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 10 * 60;
+}
+
+/// Short-lived magic-link confirmation flow-cookie key purpose.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum MagicLinkFlowCookie {}
+
+impl KeyPurpose for MagicLinkFlowCookie {
+    const HKDF_INFO: &'static [u8] = HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1;
+    const TOKEN_TYPE: &'static str = TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1;
+    const MAX_BODY_BYTES: usize = 256;
+    const MAX_ABSOLUTE_AGE_SECS: u64 = 5 * 60;
 }
 
 /// Loaded root secret material.
