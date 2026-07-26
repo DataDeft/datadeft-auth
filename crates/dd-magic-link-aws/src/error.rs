@@ -2,6 +2,8 @@
 
 use core::fmt;
 
+#[cfg(feature = "aws")]
+use dd_magic_link_service::CommitMagicLinkAuthenticationError;
 use dd_magic_link_service::{ConsumeMagicLinkError, DependencyError};
 
 /// Scrubbed adapter error for fake controls and AWS error classification.
@@ -96,6 +98,63 @@ pub(crate) fn map_update_item_error(error: SdkError<UpdateItemError>) -> AwsAdap
 }
 
 #[cfg(feature = "aws")]
+pub(crate) fn map_authentication_transact_write_items_error<R>(
+    error: SdkError<TransactWriteItemsError, R>,
+) -> CommitMagicLinkAuthenticationError {
+    if let Some(TransactWriteItemsError::TransactionCanceledException(exception)) =
+        error.as_service_error()
+    {
+        let codes = exception
+            .cancellation_reasons()
+            .iter()
+            .map(|reason| reason.code())
+            .collect::<Vec<_>>();
+        return classify_authentication_cancellation_codes(&codes);
+    }
+    match error.code() {
+        Some("IdempotentParameterMismatchException") | Some("ValidationException") => {
+            CommitMagicLinkAuthenticationError::Internal
+        }
+        Some(_) | None => CommitMagicLinkAuthenticationError::DependencyUnavailable,
+    }
+}
+
+#[cfg(feature = "aws")]
+fn classify_authentication_cancellation_codes(
+    codes: &[Option<&str>],
+) -> CommitMagicLinkAuthenticationError {
+    if codes.len() != 5 {
+        return CommitMagicLinkAuthenticationError::Internal;
+    }
+    let mut challenge_conflict = false;
+    let mut user_conflict = false;
+    let mut session_conflict = false;
+    for (index, code) in codes.iter().enumerate() {
+        match code {
+            Some("ConditionalCheckFailed") if index == 0 => challenge_conflict = true,
+            Some("ConditionalCheckFailed") if index == 1 || index == 2 => user_conflict = true,
+            Some("ConditionalCheckFailed") if index == 3 || index == 4 => session_conflict = true,
+            Some("None") | None => {}
+            Some("TransactionConflict")
+            | Some("ProvisionedThroughputExceeded")
+            | Some("ThrottlingError") => {
+                return CommitMagicLinkAuthenticationError::DependencyUnavailable;
+            }
+            Some(_) => return CommitMagicLinkAuthenticationError::DependencyUnavailable,
+        }
+    }
+    if challenge_conflict {
+        CommitMagicLinkAuthenticationError::Rejected
+    } else if user_conflict {
+        CommitMagicLinkAuthenticationError::UserConflict
+    } else if session_conflict {
+        CommitMagicLinkAuthenticationError::SessionConflict
+    } else {
+        CommitMagicLinkAuthenticationError::Internal
+    }
+}
+
+#[cfg(feature = "aws")]
 pub(crate) fn map_transact_write_items_error(
     error: SdkError<TransactWriteItemsError>,
 ) -> AwsAdapterError {
@@ -170,3 +229,7 @@ fn fallback_debug_classification(debug: &str) -> AwsAdapterError {
         AwsAdapterError::DependencyUnavailable
     }
 }
+
+#[cfg(all(test, feature = "aws"))]
+#[path = "error_tests.rs"]
+mod tests;
