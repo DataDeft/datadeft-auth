@@ -154,6 +154,13 @@ fn authentication_read_builders_are_strongly_consistent() {
 }
 
 #[test]
+fn session_read_builder_is_strongly_consistent() {
+    let request = store().session_get_item("SESSION#test".to_owned());
+
+    assert_eq!(request.as_input().get_consistent_read(), &Some(true));
+}
+
+#[test]
 fn authentication_request_uses_attempt_id_as_client_request_token() {
     let store = store();
     let command = command(MagicLinkAuthenticationUser::Create { user_id: user_id() });

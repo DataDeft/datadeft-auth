@@ -139,6 +139,15 @@ impl DynamoDbAuthStore {
             .consistent_read(true)
     }
 
+    fn session_get_item(&self, pk: String) -> GetItemFluentBuilder {
+        self.client
+            .get_item()
+            .table_name(&self.table_name)
+            .key("pk", av_s(pk))
+            .key("sk", av_s("SESSION"))
+            .consistent_read(true)
+    }
+
     fn build_authentication_transaction(
         &self,
         command: &CommitMagicLinkAuthentication,
@@ -431,11 +440,7 @@ impl SessionRepository for DynamoDbAuthStore {
         let pk = self.pk_session(session_id).map_err(DependencyError::from)?;
         async {
             let output = self
-                .client
-                .get_item()
-                .table_name(&self.table_name)
-                .key("pk", av_s(pk))
-                .key("sk", av_s("SESSION"))
+                .session_get_item(pk)
                 .send()
                 .await
                 .map_err(map_get_item_error)?;
