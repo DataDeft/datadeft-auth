@@ -17,10 +17,10 @@ fn email() -> MagicLinkEmail {
     }
 }
 
-#[test]
-fn fake_outbox_records_email_and_redacts_debug() {
+#[tokio::test]
+async fn fake_outbox_records_email_and_redacts_debug() {
     let outbox = FakeMagicLinkOutbox::default();
-    outbox.enqueue_magic_link(email()).expect("enqueue");
+    outbox.enqueue_magic_link(email()).await.expect("enqueue");
 
     let recorded = outbox.recorded().expect("recorded");
     assert_eq!(recorded.len(), 1);
@@ -28,15 +28,15 @@ fn fake_outbox_records_email_and_redacts_debug() {
     assert!(!format!("{:?}", recorded[0]).contains(recorded[0].token.verifier().as_secret_value()));
 }
 
-#[test]
-fn fake_outbox_can_inject_dependency_errors() {
+#[tokio::test]
+async fn fake_outbox_can_inject_dependency_errors() {
     let outbox = FakeMagicLinkOutbox::default();
     outbox
         .set_next_error(DependencyError::Unavailable)
         .expect("set error");
 
     assert_eq!(
-        outbox.enqueue_magic_link(email()).unwrap_err(),
+        outbox.enqueue_magic_link(email()).await.unwrap_err(),
         DependencyError::Unavailable
     );
     assert!(outbox.recorded().expect("recorded").is_empty());

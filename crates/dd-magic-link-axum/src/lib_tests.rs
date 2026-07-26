@@ -260,7 +260,7 @@ async fn request_handler_returns_generic_success() {
             r#"{"email":"user@example.com","locale":"en","terms_accepted":true,"privacy_accepted":true}"#,
         ),
         None,
-        |command| {
+        |command| async move {
             assert_eq!(command.email().as_str(), "user@example.com");
             Ok(RequestMagicLinkOutcome)
         },
@@ -279,10 +279,13 @@ async fn consume_handler_delegates_invalid_token_to_service() {
         Some(ClientKey::parse("client-1").expect("client")),
         &config,
         |token, client_key, country| {
-            assert_eq!(token, "bad-token");
-            assert_eq!(client_key.expect("client").as_str(), "client-1");
-            assert_eq!(country, None);
-            Err(MagicLinkServiceError::MagicLinkUnavailable)
+            let token = token.to_owned();
+            async move {
+                assert_eq!(token, "bad-token");
+                assert_eq!(client_key.expect("client").as_str(), "client-1");
+                assert_eq!(country, None);
+                Err(MagicLinkServiceError::MagicLinkUnavailable)
+            }
         },
     )
     .await;

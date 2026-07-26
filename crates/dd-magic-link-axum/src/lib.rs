@@ -5,6 +5,7 @@
 //! not force an application router shape.
 
 #![forbid(unsafe_code)]
+use core::future::Future;
 
 use axum::Json;
 use axum::body::{Body, Bytes, to_bytes};
@@ -476,13 +477,14 @@ pub fn consume_success_response(
 
 /// Handle a JSON magic-link request by parsing/guarding HTTP input, delegating
 /// to the provided service closure, and returning the generic public response.
-pub async fn handle_magic_link_request_json<F>(
+pub async fn handle_magic_link_request_json<F, Fut>(
     request: Request,
     fallback_client_key: Option<ClientKey>,
     handle: F,
 ) -> Response
 where
-    F: FnOnce(RequestMagicLinkCommand) -> Result<RequestMagicLinkOutcome, MagicLinkServiceError>,
+    F: FnOnce(RequestMagicLinkCommand) -> Fut,
+    Fut: Future<Output = Result<RequestMagicLinkOutcome, MagicLinkServiceError>>,
 {
     match handle_magic_link_request_json_inner(request, fallback_client_key, handle).await {
         Ok(response) => response,
@@ -490,34 +492,32 @@ where
     }
 }
 
-async fn handle_magic_link_request_json_inner<F>(
+async fn handle_magic_link_request_json_inner<F, Fut>(
     request: Request,
     fallback_client_key: Option<ClientKey>,
     handle: F,
 ) -> Result<Response, MagicLinkHttpError>
 where
-    F: FnOnce(RequestMagicLinkCommand) -> Result<RequestMagicLinkOutcome, MagicLinkServiceError>,
+    F: FnOnce(RequestMagicLinkCommand) -> Fut,
+    Fut: Future<Output = Result<RequestMagicLinkOutcome, MagicLinkServiceError>>,
 {
     let guarded = guarded_body(request, &[APPLICATION_JSON], MAX_MAGIC_LINK_BODY_BYTES).await?;
     let command = parse_magic_link_request_json(&guarded.bytes, fallback_client_key)?;
-    handle(command).map_err(MagicLinkHttpError::from)?;
+    handle(command).await.map_err(MagicLinkHttpError::from)?;
     Ok(generic_accepted_response())
 }
 
 /// Handle a JSON or form magic-link consume request. Invalid token syntax is
 /// delegated to the service closure for limiter-aware handling.
-pub async fn handle_magic_link_consume<F>(
+pub async fn handle_magic_link_consume<F, Fut>(
     request: Request,
     fallback_client_key: Option<ClientKey>,
     config: &ConsumeSuccessConfig,
     handle: F,
 ) -> Response
 where
-    F: FnOnce(
-        &str,
-        Option<ClientKey>,
-        Option<String>,
-    ) -> Result<ConsumeMagicLinkOutcome, MagicLinkServiceError>,
+    F: FnOnce(&str, Option<ClientKey>, Option<String>) -> Fut,
+    Fut: Future<Output = Result<ConsumeMagicLinkOutcome, MagicLinkServiceError>>,
 {
     match handle_magic_link_consume_inner(request, fallback_client_key, config, handle).await {
         Ok(response) => response,
@@ -525,18 +525,15 @@ where
     }
 }
 
-async fn handle_magic_link_consume_inner<F>(
+async fn handle_magic_link_consume_inner<F, Fut>(
     request: Request,
     fallback_client_key: Option<ClientKey>,
     config: &ConsumeSuccessConfig,
     handle: F,
 ) -> Result<Response, MagicLinkHttpError>
 where
-    F: FnOnce(
-        &str,
-        Option<ClientKey>,
-        Option<String>,
-    ) -> Result<ConsumeMagicLinkOutcome, MagicLinkServiceError>,
+    F: FnOnce(&str, Option<ClientKey>, Option<String>) -> Fut,
+    Fut: Future<Output = Result<ConsumeMagicLinkOutcome, MagicLinkServiceError>>,
 {
     let guarded = guarded_body(
         request,
@@ -548,7 +545,9 @@ where
     let body = parse_magic_link_consume_body(&guarded.bytes, guarded.is_json)?;
     let client_key = body.client_key(fallback_client_key)?;
     let country = body.country(fallback_country);
-    let outcome = handle(body.token(), client_key, country).map_err(MagicLinkHttpError::from)?;
+    let outcome = handle(body.token(), client_key, country)
+        .await
+        .map_err(MagicLinkHttpError::from)?;
     consume_success_response(&outcome, config)
 }
 

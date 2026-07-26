@@ -12,7 +12,6 @@ use dd_magic_link_service::{
     MagicLinkRepository, RateLimitDecision, RateLimitKey, RateLimiter, SessionId, SessionRecord,
     SessionRepository, UserId, UserRecord, UserRepository,
 };
-use tokio::runtime::Handle;
 
 use crate::error::{
     AwsAdapterError, map_get_item_error, map_put_item_error, map_transact_write_items_error,
@@ -39,13 +38,6 @@ impl DynamoDbAuthStore {
             table_name,
             storage_hmac_key: Arc::new(storage_hmac_key),
         }
-    }
-
-    fn block_on<T, F>(&self, future: F) -> Result<T, AwsAdapterError>
-    where
-        F: core::future::Future<Output = Result<T, AwsAdapterError>>,
-    {
-        tokio::task::block_in_place(|| Handle::current().block_on(future))
     }
 
     fn hmac(&self, prefix: &str, value: &str) -> Result<String, AwsAdapterError> {
@@ -138,10 +130,13 @@ impl fmt::Debug for DynamoDbAuthStore {
 }
 
 impl MagicLinkRepository for DynamoDbAuthStore {
-    fn put_magic_link_if_absent(&self, record: MagicLinkRecord) -> Result<(), DependencyError> {
+    async fn put_magic_link_if_absent(
+        &self,
+        record: MagicLinkRecord,
+    ) -> Result<(), DependencyError> {
         let pk = Self::pk_magic_link(&record.selector_lookup_hmac);
         let ttl = record.expires_at_unix.saturating_add(24 * 60 * 60);
-        self.block_on(async {
+        async {
             let mut request = self
                 .client
                 .put_item()
@@ -164,19 +159,20 @@ impl MagicLinkRepository for DynamoDbAuthStore {
                 request = request.item("user_id", av_s(user_id.as_str()));
             }
             request.send().await.map_err(map_put_item_error)?;
-            Ok(())
-        })
+            Ok::<(), AwsAdapterError>(())
+        }
+        .await
         .map_err(DependencyError::from)
     }
 
-    fn consume_magic_link(
+    async fn consume_magic_link(
         &self,
         selector_lookup_hmac: &LookupHmac,
         verifier_hash: &VerifierHash,
         now_unix: u64,
     ) -> Result<ConsumedMagicLink, ConsumeMagicLinkError> {
         let pk = Self::pk_magic_link(selector_lookup_hmac);
-        self.block_on(async {
+        async {
             let output = self
                 .client
                 .update_item()
@@ -193,18 +189,19 @@ impl MagicLinkRepository for DynamoDbAuthStore {
                 .map_err(map_update_item_error)?;
             let item = output.attributes().ok_or(AwsAdapterError::Internal)?;
             Self::item_to_consumed(item)
-        })
+        }
+        .await
         .map_err(ConsumeMagicLinkError::from)
     }
 }
 
 impl UserRepository for DynamoDbAuthStore {
-    fn find_user_by_email(
+    async fn find_user_by_email(
         &self,
         email: &NormalizedEmail,
     ) -> Result<Option<UserRecord>, DependencyError> {
         let pk = self.pk_user_email(email).map_err(DependencyError::from)?;
-        self.block_on(async {
+        async {
             let output = self
                 .client
                 .get_item()
@@ -232,16 +229,17 @@ impl UserRepository for DynamoDbAuthStore {
                 .await
                 .map_err(map_get_item_error)?;
             user_output.item().map(Self::item_to_user).transpose()
-        })
+        }
+        .await
         .map_err(DependencyError::from)
     }
 
-    fn put_user_if_absent(&self, user: UserRecord) -> Result<(), DependencyError> {
+    async fn put_user_if_absent(&self, user: UserRecord) -> Result<(), DependencyError> {
         let email_pk = self
             .pk_user_email(&user.email)
             .map_err(DependencyError::from)?;
         let user_pk = Self::pk_user_id(&user.user_id);
-        self.block_on(async {
+        async {
             let mut profile_put = Put::builder()
                 .table_name(&self.table_name)
                 .item("pk", av_s(user_pk))
@@ -280,21 +278,22 @@ impl UserRepository for DynamoDbAuthStore {
                 .send()
                 .await
                 .map_err(map_transact_write_items_error)?;
-            Ok(())
-        })
+            Ok::<(), AwsAdapterError>(())
+        }
+        .await
         .map_err(DependencyError::from)
     }
 }
 
 impl SessionRepository for DynamoDbAuthStore {
-    fn put_session_if_absent(&self, session: SessionRecord) -> Result<(), DependencyError> {
+    async fn put_session_if_absent(&self, session: SessionRecord) -> Result<(), DependencyError> {
         let session_hmac = self
             .session_hmac(&session.session_id)
             .map_err(DependencyError::from)?;
         let pk = Self::pk_session_from_hmac(&session_hmac);
         let user_pk = format!("USER#{}", session.user_id.as_str());
         let expires_at_unix = session.created_at_unix.saturating_add(30 * 24 * 60 * 60);
-        self.block_on(async {
+        async {
             let session_put = Put::builder()
                 .table_name(&self.table_name)
                 .item("pk", av_s(pk))
@@ -331,17 +330,18 @@ impl SessionRepository for DynamoDbAuthStore {
                 .send()
                 .await
                 .map_err(map_transact_write_items_error)?;
-            Ok(())
-        })
+            Ok::<(), AwsAdapterError>(())
+        }
+        .await
         .map_err(DependencyError::from)
     }
 
-    fn find_session(
+    async fn find_session(
         &self,
         session_id: &SessionId,
     ) -> Result<Option<SessionRecord>, DependencyError> {
         let pk = self.pk_session(session_id).map_err(DependencyError::from)?;
-        self.block_on(async {
+        async {
             let output = self
                 .client
                 .get_item()
@@ -355,17 +355,18 @@ impl SessionRepository for DynamoDbAuthStore {
                 .item()
                 .map(|item| Self::item_to_session(session_id, item))
                 .transpose()
-        })
+        }
+        .await
         .map_err(DependencyError::from)
     }
 
-    fn revoke_session(
+    async fn revoke_session(
         &self,
         session_id: &SessionId,
         revoked_at_unix: u64,
     ) -> Result<(), DependencyError> {
         let pk = self.pk_session(session_id).map_err(DependencyError::from)?;
-        self.block_on(async {
+        async {
             self.client
                 .update_item()
                 .table_name(&self.table_name)
@@ -379,14 +380,15 @@ impl SessionRepository for DynamoDbAuthStore {
                 .send()
                 .await
                 .map_err(map_update_item_error)?;
-            Ok(())
-        })
+            Ok::<(), AwsAdapterError>(())
+        }
+        .await
         .map_err(DependencyError::from)
     }
 }
 
 impl RateLimiter for DynamoDbAuthStore {
-    fn check_rate_limit(
+    async fn check_rate_limit(
         &self,
         key: &RateLimitKey,
         limit: u32,
@@ -399,7 +401,7 @@ impl RateLimiter for DynamoDbAuthStore {
         let window_start_unix = fixed_window_start(now_unix, window_secs);
         let window_expires_unix = window_start_unix.saturating_add(window_secs);
         let ttl = window_expires_unix.saturating_add(24 * 60 * 60);
-        self.block_on(async {
+        async {
             let result = self
                 .client
                 .update_item()
@@ -429,7 +431,8 @@ impl RateLimiter for DynamoDbAuthStore {
                     other => Err(other),
                 },
             }
-        })
+        }
+        .await
         .map_err(DependencyError::from)
     }
 }

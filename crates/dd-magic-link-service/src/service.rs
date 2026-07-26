@@ -79,7 +79,7 @@ where
     /// Request a magic link. Throttled request/outbox paths return the same
     /// generic accepted outcome as a send so callers cannot enumerate accounts
     /// or throttling policy from the public response.
-    pub fn request_magic_link(
+    pub async fn request_magic_link(
         &mut self,
         command: RequestMagicLinkCommand,
     ) -> Result<RequestMagicLinkOutcome, MagicLinkServiceError> {
@@ -99,7 +99,9 @@ where
             email_lookup.as_storage_value(),
             command.client_key(),
             now_unix,
-        )? {
+        )
+        .await?
+        {
             return Ok(RequestMagicLinkOutcome);
         }
         if outbox_limits_deny(
@@ -107,7 +109,9 @@ where
             &self.config,
             email_lookup.as_storage_value(),
             now_unix,
-        )? {
+        )
+        .await?
+        {
             return Ok(RequestMagicLinkOutcome);
         }
 
@@ -129,6 +133,7 @@ where
 
         self.magic_links
             .put_magic_link_if_absent(record)
+            .await
             .map_err(map_dependency_error)?;
         self.outbox
             .enqueue_magic_link(MagicLinkEmail {
@@ -137,6 +142,7 @@ where
                 locale: command.locale(),
                 expires_at_unix,
             })
+            .await
             .map_err(map_dependency_error)?;
 
         Ok(RequestMagicLinkOutcome)
@@ -218,7 +224,7 @@ where
 {
     /// Parse and consume a raw token. Malformed tokens are rate-limited by client
     /// key when supplied, then collapsed into `MagicLinkUnavailable`.
-    pub fn consume_magic_link_token(
+    pub async fn consume_magic_link_token(
         &mut self,
         token: &str,
         client_key: Option<ClientKey>,
@@ -234,13 +240,14 @@ where
                         &self.config,
                         client_key,
                         now_unix,
-                    )?;
+                    )
+                    .await?;
                 }
                 return Err(MagicLinkServiceError::MagicLinkUnavailable);
             }
         };
         let command = ConsumeMagicLinkCommand::new(parsed, client_key, request_country)?;
-        self.consume_magic_link(command)
+        self.consume_magic_link(command).await
     }
 
     /// Consume a parsed magic-link token, atomically burning the stored challenge
@@ -248,7 +255,7 @@ where
     /// not part of the consume transition; if session creation fails after a
     /// successful consume, the bearer link remains burned. Adapters with
     /// transactional storage may make the consume+session transition stronger.
-    pub fn consume_magic_link(
+    pub async fn consume_magic_link(
         &mut self,
         command: ConsumeMagicLinkCommand,
     ) -> Result<ConsumeMagicLinkOutcome, MagicLinkServiceError> {
@@ -263,7 +270,9 @@ where
             selector_lookup.as_storage_value(),
             command.client_key(),
             now_unix,
-        )? {
+        )
+        .await?
+        {
             return Err(MagicLinkServiceError::MagicLinkUnavailable);
         }
 
@@ -271,12 +280,13 @@ where
         let consumed = self
             .magic_links
             .consume_magic_link(&selector_lookup, &verifier_hash, now_unix)
+            .await
             .map_err(map_consume_error)?;
 
         validate_consumed_magic_link(&self.config, &consumed)?;
-        let (user_id, user_created) = ensure_user(self.users, self.rng, &consumed)?;
+        let (user_id, user_created) = ensure_user(self.users, self.rng, &consumed).await?;
         let session_id =
-            create_session(self.sessions, self.rng, &user_id, &consumed.email, now_unix)?;
+            create_session(self.sessions, self.rng, &user_id, &consumed.email, now_unix).await?;
         let session_cookie = mint_session_cookie(
             self.session_keyring,
             self.rng,
@@ -295,15 +305,19 @@ where
     }
 
     /// Revoke a server-side session by id.
-    pub fn revoke_session(&self, session_id: &SessionId) -> Result<(), MagicLinkServiceError> {
+    pub async fn revoke_session(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<(), MagicLinkServiceError> {
         let now_unix = self.clock.now_unix()?;
         self.sessions
             .revoke_session(session_id, now_unix)
+            .await
             .map_err(map_dependency_error)
     }
 }
 
-fn request_limits_deny<Limiter: RateLimiter>(
+async fn request_limits_deny<Limiter: RateLimiter>(
     limiter: &Limiter,
     config: &MagicLinkServiceConfig,
     email_lookup: &str,
@@ -318,7 +332,9 @@ fn request_limits_deny<Limiter: RateLimiter>(
         limits.request_email_short_limit,
         limits.request_email_short_window_secs,
         now_unix,
-    )? {
+    )
+    .await?
+    {
         return Ok(true);
     }
     let email_daily = format!("magic-link:request:email:daily:{email_lookup}");
@@ -328,7 +344,9 @@ fn request_limits_deny<Limiter: RateLimiter>(
         limits.request_email_daily_limit,
         limits.request_email_daily_window_secs,
         now_unix,
-    )? {
+    )
+    .await?
+    {
         return Ok(true);
     }
     if let Some(client_key) = client_key {
@@ -339,7 +357,9 @@ fn request_limits_deny<Limiter: RateLimiter>(
             limits.request_client_short_limit,
             limits.request_client_short_window_secs,
             now_unix,
-        )? {
+        )
+        .await?
+        {
             return Ok(true);
         }
         let client_hourly = format!("magic-link:request:client:hourly:{}", client_key.as_str());
@@ -349,14 +369,16 @@ fn request_limits_deny<Limiter: RateLimiter>(
             limits.request_client_hourly_limit,
             limits.request_client_hourly_window_secs,
             now_unix,
-        )? {
+        )
+        .await?
+        {
             return Ok(true);
         }
     }
     Ok(false)
 }
 
-fn outbox_limits_deny<Limiter: RateLimiter>(
+async fn outbox_limits_deny<Limiter: RateLimiter>(
     limiter: &Limiter,
     config: &MagicLinkServiceConfig,
     email_lookup: &str,
@@ -370,7 +392,9 @@ fn outbox_limits_deny<Limiter: RateLimiter>(
         limits.outbox_email_hourly_limit,
         limits.outbox_email_hourly_window_secs,
         now_unix,
-    )? {
+    )
+    .await?
+    {
         return Ok(true);
     }
     let daily = format!("magic-link:outbox:email:daily:{email_lookup}");
@@ -381,9 +405,10 @@ fn outbox_limits_deny<Limiter: RateLimiter>(
         limits.outbox_email_daily_window_secs,
         now_unix,
     )
+    .await
 }
 
-fn consume_limits_deny<Limiter: RateLimiter>(
+async fn consume_limits_deny<Limiter: RateLimiter>(
     limiter: &Limiter,
     config: &MagicLinkServiceConfig,
     selector_lookup: &str,
@@ -398,7 +423,9 @@ fn consume_limits_deny<Limiter: RateLimiter>(
         limits.consume_selector_limit,
         config.magic_link_ttl_secs,
         now_unix,
-    )? {
+    )
+    .await?
+    {
         return Ok(true);
     }
     if let Some(client_key) = client_key {
@@ -409,7 +436,9 @@ fn consume_limits_deny<Limiter: RateLimiter>(
             limits.consume_client_short_limit,
             limits.consume_client_short_window_secs,
             now_unix,
-        )? {
+        )
+        .await?
+        {
             return Ok(true);
         }
         let client_hourly = format!("magic-link:consume:client:hourly:{}", client_key.as_str());
@@ -419,14 +448,16 @@ fn consume_limits_deny<Limiter: RateLimiter>(
             limits.consume_client_hourly_limit,
             limits.consume_client_hourly_window_secs,
             now_unix,
-        )? {
+        )
+        .await?
+        {
             return Ok(true);
         }
     }
     Ok(false)
 }
 
-fn malformed_consume_limit_denied<Limiter: RateLimiter>(
+async fn malformed_consume_limit_denied<Limiter: RateLimiter>(
     limiter: &Limiter,
     config: &MagicLinkServiceConfig,
     client_key: &ClientKey,
@@ -440,9 +471,10 @@ fn malformed_consume_limit_denied<Limiter: RateLimiter>(
         config.rate_limits.malformed_consume_client_window_secs,
         now_unix,
     )
+    .await
 }
 
-fn limit_denied<Limiter: RateLimiter>(
+async fn limit_denied<Limiter: RateLimiter>(
     limiter: &Limiter,
     key: &str,
     limit: u32,
@@ -452,6 +484,7 @@ fn limit_denied<Limiter: RateLimiter>(
     let key = RateLimitKey::parse(key)?;
     let decision = limiter
         .check_rate_limit(&key, limit, window_secs, now_unix)
+        .await
         .map_err(map_dependency_error)?;
     Ok(decision == RateLimitDecision::Denied)
 }
@@ -483,7 +516,7 @@ fn validate_consumed_magic_link(
     Ok(())
 }
 
-fn ensure_user<Users, Rng>(
+async fn ensure_user<Users, Rng>(
     users: &Users,
     rng: &mut Rng,
     consumed: &ConsumedMagicLink,
@@ -494,6 +527,7 @@ where
 {
     if let Some(existing) = users
         .find_user_by_email(&consumed.email)
+        .await
         .map_err(map_dependency_error)?
     {
         if existing.disabled {
@@ -512,11 +546,12 @@ where
         consented_at_unix: Some(consumed.consented_at_unix),
     };
 
-    match users.put_user_if_absent(user) {
+    match users.put_user_if_absent(user).await {
         Ok(()) => Ok((user_id, true)),
         Err(DependencyError::ConditionalWriteFailed) => {
             let Some(existing) = users
                 .find_user_by_email(&consumed.email)
+                .await
                 .map_err(map_dependency_error)?
             else {
                 return Err(MagicLinkServiceError::Unavailable);
@@ -530,7 +565,7 @@ where
     }
 }
 
-fn create_session<Sessions, Rng>(
+async fn create_session<Sessions, Rng>(
     sessions: &Sessions,
     rng: &mut Rng,
     user_id: &UserId,
@@ -551,6 +586,7 @@ where
     };
     sessions
         .put_session_if_absent(record)
+        .await
         .map_err(map_dependency_error)?;
     Ok(session_id)
 }

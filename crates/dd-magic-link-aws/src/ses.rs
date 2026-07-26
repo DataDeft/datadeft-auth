@@ -59,7 +59,7 @@ impl fmt::Debug for FakeMagicLinkOutbox {
 }
 
 impl MagicLinkOutbox for FakeMagicLinkOutbox {
-    fn enqueue_magic_link(&self, email: MagicLinkEmail) -> Result<(), DependencyError> {
+    async fn enqueue_magic_link(&self, email: MagicLinkEmail) -> Result<(), DependencyError> {
         let mut inner = self.lock_inner()?;
         if let Some(error) = inner.next_error.take() {
             return Err(error);
@@ -102,51 +102,45 @@ impl<R> MagicLinkOutbox for SesMagicLinkOutbox<R>
 where
     R: MagicLinkEmailRenderer,
 {
-    fn enqueue_magic_link(&self, email: MagicLinkEmail) -> Result<(), DependencyError> {
+    async fn enqueue_magic_link(&self, email: MagicLinkEmail) -> Result<(), DependencyError> {
         use aws_sdk_sesv2::types::{Body, Content, Destination, EmailContent, Message};
-        use tokio::runtime::Handle;
 
         let rendered = self.renderer.render(&email)?;
         let from = self.from_email.clone();
         let client = self.client.clone();
 
-        tokio::task::block_in_place(|| {
-            Handle::current().block_on(async move {
-                let destination = Destination::builder().to_addresses(rendered.to).build();
-                let subject = Content::builder()
-                    .data(rendered.subject)
-                    .charset("UTF-8")
-                    .build()
-                    .map_err(|_| AwsAdapterError::Internal)?;
-                let text = Content::builder()
-                    .data(rendered.text)
-                    .charset("UTF-8")
-                    .build()
-                    .map_err(|_| AwsAdapterError::Internal)?;
-                let mut body_builder = Body::builder().text(text);
-                if let Some(html) = rendered.html {
-                    let html = Content::builder()
-                        .data(html)
-                        .charset("UTF-8")
-                        .build()
-                        .map_err(|_| AwsAdapterError::Internal)?;
-                    body_builder = body_builder.html(html);
-                }
-                let body = body_builder.build();
-                let message = Message::builder().subject(subject).body(body).build();
-                let content = EmailContent::builder().simple(message).build();
-                client
-                    .send_email()
-                    .from_email_address(from)
-                    .destination(destination)
-                    .content(content)
-                    .send()
-                    .await
-                    .map_err(crate::error::map_ses_send_email_error)?;
-                Ok::<(), AwsAdapterError>(())
-            })
-        })
-        .map_err(DependencyError::from)
+        let destination = Destination::builder().to_addresses(rendered.to).build();
+        let subject = Content::builder()
+            .data(rendered.subject)
+            .charset("UTF-8")
+            .build()
+            .map_err(|_| AwsAdapterError::Internal)?;
+        let text = Content::builder()
+            .data(rendered.text)
+            .charset("UTF-8")
+            .build()
+            .map_err(|_| AwsAdapterError::Internal)?;
+        let mut body_builder = Body::builder().text(text);
+        if let Some(html) = rendered.html {
+            let html = Content::builder()
+                .data(html)
+                .charset("UTF-8")
+                .build()
+                .map_err(|_| AwsAdapterError::Internal)?;
+            body_builder = body_builder.html(html);
+        }
+        let body = body_builder.build();
+        let message = Message::builder().subject(subject).body(body).build();
+        let content = EmailContent::builder().simple(message).build();
+        client
+            .send_email()
+            .from_email_address(from)
+            .destination(destination)
+            .content(content)
+            .send()
+            .await
+            .map_err(crate::error::map_ses_send_email_error)?;
+        Ok::<(), AwsAdapterError>(()).map_err(DependencyError::from)
     }
 }
 

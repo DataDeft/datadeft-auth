@@ -74,7 +74,10 @@ struct FakeRepo {
 }
 
 impl MagicLinkRepository for FakeRepo {
-    fn put_magic_link_if_absent(&self, record: MagicLinkRecord) -> Result<(), DependencyError> {
+    async fn put_magic_link_if_absent(
+        &self,
+        record: MagicLinkRecord,
+    ) -> Result<(), DependencyError> {
         let key = record.selector_lookup_hmac.as_storage_value().to_owned();
         let mut records = self.magic_links.borrow_mut();
         if records.contains_key(&key) {
@@ -84,7 +87,7 @@ impl MagicLinkRepository for FakeRepo {
         Ok(())
     }
 
-    fn consume_magic_link(
+    async fn consume_magic_link(
         &self,
         selector_lookup_hmac: &LookupHmac,
         verifier_hash: &VerifierHash,
@@ -116,7 +119,7 @@ impl MagicLinkRepository for FakeRepo {
 }
 
 impl UserRepository for FakeRepo {
-    fn find_user_by_email(
+    async fn find_user_by_email(
         &self,
         email: &NormalizedEmail,
     ) -> Result<Option<UserRecord>, DependencyError> {
@@ -128,7 +131,7 @@ impl UserRepository for FakeRepo {
             .cloned())
     }
 
-    fn put_user_if_absent(&self, user: UserRecord) -> Result<(), DependencyError> {
+    async fn put_user_if_absent(&self, user: UserRecord) -> Result<(), DependencyError> {
         let mut users = self.users.borrow_mut();
         if users.iter().any(|existing| existing.email == user.email) {
             return Err(DependencyError::ConditionalWriteFailed);
@@ -139,7 +142,7 @@ impl UserRepository for FakeRepo {
 }
 
 impl SessionRepository for FakeRepo {
-    fn put_session_if_absent(&self, session: SessionRecord) -> Result<(), DependencyError> {
+    async fn put_session_if_absent(&self, session: SessionRecord) -> Result<(), DependencyError> {
         if self.fail_next_session_write.replace(false) {
             return Err(DependencyError::Unavailable);
         }
@@ -154,7 +157,7 @@ impl SessionRepository for FakeRepo {
         Ok(())
     }
 
-    fn find_session(
+    async fn find_session(
         &self,
         session_id: &SessionId,
     ) -> Result<Option<SessionRecord>, DependencyError> {
@@ -166,7 +169,7 @@ impl SessionRepository for FakeRepo {
             .cloned())
     }
 
-    fn revoke_session(
+    async fn revoke_session(
         &self,
         session_id: &SessionId,
         _revoked_at_unix: u64,
@@ -191,7 +194,7 @@ impl FakeLimiter {
 }
 
 impl RateLimiter for FakeLimiter {
-    fn check_rate_limit(
+    async fn check_rate_limit(
         &self,
         key: &RateLimitKey,
         _limit: u32,
@@ -218,7 +221,7 @@ struct FakeOutbox {
 }
 
 impl MagicLinkOutbox for FakeOutbox {
-    fn enqueue_magic_link(&self, email: MagicLinkEmail) -> Result<(), DependencyError> {
+    async fn enqueue_magic_link(&self, email: MagicLinkEmail) -> Result<(), DependencyError> {
         self.emails.borrow_mut().push(email);
         Ok(())
     }
@@ -260,8 +263,8 @@ fn request_command() -> RequestMagicLinkCommand {
     )
 }
 
-#[test]
-fn request_flow_stores_hmac_material_and_enqueues_redacted_token() {
+#[tokio::test]
+async fn request_flow_stores_hmac_material_and_enqueues_redacted_token() {
     let repo = FakeRepo::default();
     let limiter = FakeLimiter::default();
     let outbox = FakeOutbox::default();
@@ -282,6 +285,7 @@ fn request_flow_stores_hmac_material_and_enqueues_redacted_token() {
     assert_eq!(
         service
             .request_magic_link(request_command())
+            .await
             .expect("request"),
         RequestMagicLinkOutcome
     );
@@ -321,8 +325,8 @@ fn request_flow_stores_hmac_material_and_enqueues_redacted_token() {
     assert!(!format!("{:?}", record.record).contains(emails[0].token.verifier().as_secret_value()));
 }
 
-#[test]
-fn consume_flow_burns_token_creates_user_session_and_cookie() {
+#[tokio::test]
+async fn consume_flow_burns_token_creates_user_session_and_cookie() {
     let repo = FakeRepo::default();
     let limiter = FakeLimiter::default();
     let outbox = FakeOutbox::default();
@@ -344,6 +348,7 @@ fn consume_flow_burns_token_creates_user_session_and_cookie() {
         });
         service
             .request_magic_link(request_command())
+            .await
             .expect("request");
     }
 
@@ -366,6 +371,7 @@ fn consume_flow_burns_token_creates_user_session_and_cookie() {
                 Some(ClientKey::parse("client-1").expect("client")),
                 Some("HU".to_owned()),
             )
+            .await
             .expect("consume")
     };
 
@@ -387,8 +393,8 @@ fn consume_flow_burns_token_creates_user_session_and_cookie() {
     assert_eq!(body.country.as_deref(), Some("HU"));
 }
 
-#[test]
-fn consumed_token_cannot_create_second_session() {
+#[tokio::test]
+async fn consumed_token_cannot_create_second_session() {
     let repo = FakeRepo::default();
     let limiter = FakeLimiter::default();
     let outbox = FakeOutbox::default();
@@ -410,6 +416,7 @@ fn consumed_token_cannot_create_second_session() {
         });
         service
             .request_magic_link(request_command())
+            .await
             .expect("request");
     }
     let token = outbox.emails.borrow()[0].token.as_secret_value();
@@ -428,14 +435,15 @@ fn consumed_token_cannot_create_second_session() {
         });
         let result = service
             .consume_magic_link_token(&token, None, Some("HU".to_owned()))
+            .await
             .map(|_| ());
         assert_eq!(result, expected);
     }
     assert_eq!(repo.sessions.borrow().len(), 1);
 }
 
-#[test]
-fn wrong_verifier_is_generic_and_creates_no_session() {
+#[tokio::test]
+async fn wrong_verifier_is_generic_and_creates_no_session() {
     let repo = FakeRepo::default();
     let limiter = FakeLimiter::default();
     let outbox = FakeOutbox::default();
@@ -457,6 +465,7 @@ fn wrong_verifier_is_generic_and_creates_no_session() {
         });
         service
             .request_magic_link(request_command())
+            .await
             .expect("request");
     }
     let mut token = outbox.emails.borrow()[0].token.as_secret_value();
@@ -477,14 +486,15 @@ fn wrong_verifier_is_generic_and_creates_no_session() {
     assert_eq!(
         service
             .consume_magic_link_token(&token, None, Some("HU".to_owned()))
+            .await
             .unwrap_err(),
         MagicLinkServiceError::MagicLinkUnavailable
     );
     assert_eq!(repo.sessions.borrow().len(), 0);
 }
 
-#[test]
-fn request_rate_limit_is_generic_and_suppresses_storage_and_email() {
+#[tokio::test]
+async fn request_rate_limit_is_generic_and_suppresses_storage_and_email() {
     let repo = FakeRepo::default();
     let limiter = FakeLimiter::default();
     limiter.deny_prefix("magic-link:request:email:short:");
@@ -506,6 +516,7 @@ fn request_rate_limit_is_generic_and_suppresses_storage_and_email() {
     assert_eq!(
         service
             .request_magic_link(request_command())
+            .await
             .expect("generic accepted"),
         RequestMagicLinkOutcome
     );
@@ -513,8 +524,8 @@ fn request_rate_limit_is_generic_and_suppresses_storage_and_email() {
     assert_eq!(outbox.emails.borrow().len(), 0);
 }
 
-#[test]
-fn malformed_consume_is_client_limited_and_generic() {
+#[tokio::test]
+async fn malformed_consume_is_client_limited_and_generic() {
     let repo = FakeRepo::default();
     let limiter = FakeLimiter::default();
     let clock = FixedClock { now: 1_000 };
@@ -541,6 +552,7 @@ fn malformed_consume_is_client_limited_and_generic() {
                 Some(ClientKey::parse("client-1").expect("client")),
                 Some("HU".to_owned()),
             )
+            .await
             .unwrap_err(),
         MagicLinkServiceError::MagicLinkUnavailable
     );
@@ -553,8 +565,8 @@ fn malformed_consume_is_client_limited_and_generic() {
     );
 }
 
-#[test]
-fn expired_token_is_generic_and_creates_no_user_or_session() {
+#[tokio::test]
+async fn expired_token_is_generic_and_creates_no_user_or_session() {
     let repo = FakeRepo::default();
     let limiter = FakeLimiter::default();
     let outbox = FakeOutbox::default();
@@ -576,6 +588,7 @@ fn expired_token_is_generic_and_creates_no_user_or_session() {
         });
         service
             .request_magic_link(request_command())
+            .await
             .expect("request");
     }
     let token = outbox.emails.borrow()[0].token.as_secret_value();
@@ -602,6 +615,7 @@ fn expired_token_is_generic_and_creates_no_user_or_session() {
     assert_eq!(
         service
             .consume_magic_link_token(&token, None, Some("HU".to_owned()))
+            .await
             .unwrap_err(),
         MagicLinkServiceError::MagicLinkUnavailable
     );
@@ -619,8 +633,8 @@ fn expired_token_is_generic_and_creates_no_user_or_session() {
     );
 }
 
-#[test]
-fn disabled_user_is_generic_and_gets_no_session_after_token_burn() {
+#[tokio::test]
+async fn disabled_user_is_generic_and_gets_no_session_after_token_burn() {
     let repo = FakeRepo::default();
     let limiter = FakeLimiter::default();
     let outbox = FakeOutbox::default();
@@ -652,6 +666,7 @@ fn disabled_user_is_generic_and_gets_no_session_after_token_burn() {
         });
         service
             .request_magic_link(request_command())
+            .await
             .expect("request");
     }
     let token = outbox.emails.borrow()[0].token.as_secret_value();
@@ -671,6 +686,7 @@ fn disabled_user_is_generic_and_gets_no_session_after_token_burn() {
     assert_eq!(
         service
             .consume_magic_link_token(&token, None, Some("HU".to_owned()))
+            .await
             .unwrap_err(),
         MagicLinkServiceError::MagicLinkUnavailable
     );
@@ -687,8 +703,8 @@ fn disabled_user_is_generic_and_gets_no_session_after_token_burn() {
     );
 }
 
-#[test]
-fn session_write_failure_after_consume_burns_token() {
+#[tokio::test]
+async fn session_write_failure_after_consume_burns_token() {
     let repo = FakeRepo::default();
     let limiter = FakeLimiter::default();
     let outbox = FakeOutbox::default();
@@ -710,6 +726,7 @@ fn session_write_failure_after_consume_burns_token() {
         });
         service
             .request_magic_link(request_command())
+            .await
             .expect("request");
     }
     let token = outbox.emails.borrow()[0].token.as_secret_value();
@@ -730,6 +747,7 @@ fn session_write_failure_after_consume_burns_token() {
         assert_eq!(
             service
                 .consume_magic_link_token(&token, None, Some("HU".to_owned()))
+                .await
                 .unwrap_err(),
             MagicLinkServiceError::Unavailable
         );
@@ -761,6 +779,7 @@ fn session_write_failure_after_consume_burns_token() {
     assert_eq!(
         service
             .consume_magic_link_token(&token, None, Some("HU".to_owned()))
+            .await
             .unwrap_err(),
         MagicLinkServiceError::MagicLinkUnavailable
     );

@@ -80,8 +80,8 @@ fn command() -> RequestMagicLinkCommand {
     )
 }
 
-#[test]
-fn fake_store_round_trips_request_and_consume_without_raw_session_storage() {
+#[tokio::test]
+async fn fake_store_round_trips_request_and_consume_without_raw_session_storage() {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
     let outbox = crate::FakeMagicLinkOutbox::default();
     let clock = FixedClock;
@@ -100,7 +100,10 @@ fn fake_store_round_trips_request_and_consume_without_raw_session_storage() {
             lookup_hmac_key: &lookup_key,
             config: config.clone(),
         });
-        request.request_magic_link(command()).expect("request");
+        request
+            .request_magic_link(command())
+            .await
+            .expect("request");
     }
 
     let email = outbox.recorded().expect("recorded").remove(0);
@@ -126,6 +129,7 @@ fn fake_store_round_trips_request_and_consume_without_raw_session_storage() {
         });
         consume
             .consume_magic_link_token(&email.token.as_secret_value(), None, None)
+            .await
             .expect("consume")
     };
 
@@ -134,6 +138,7 @@ fn fake_store_round_trips_request_and_consume_without_raw_session_storage() {
     assert!(
         store
             .find_session(&outcome.session_id)
+            .await
             .expect("find")
             .is_some()
     );
@@ -144,8 +149,8 @@ fn fake_store_round_trips_request_and_consume_without_raw_session_storage() {
     assert!(!storage_keys[0].contains(outcome.session_id.as_str()));
 }
 
-#[test]
-fn fake_consume_rejects_second_use() {
+#[tokio::test]
+async fn fake_consume_rejects_second_use() {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
     let outbox = crate::FakeMagicLinkOutbox::default();
     let clock = FixedClock;
@@ -164,7 +169,10 @@ fn fake_consume_rejects_second_use() {
             lookup_hmac_key: &lookup_key,
             config: config.clone(),
         });
-        request.request_magic_link(command()).expect("request");
+        request
+            .request_magic_link(command())
+            .await
+            .expect("request");
     }
     let token = outbox.recorded().expect("recorded")[0]
         .token
@@ -183,16 +191,18 @@ fn fake_consume_rejects_second_use() {
     });
     consume
         .consume_magic_link_token(&token, None, None)
+        .await
         .expect("first consume");
     assert!(
         consume
             .consume_magic_link_token(&token, None, None)
+            .await
             .is_err()
     );
 }
 
-#[test]
-fn fake_store_maps_next_error_to_consume_dependency_failure() {
+#[tokio::test]
+async fn fake_store_maps_next_error_to_consume_dependency_failure() {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
     let lookup = LookupHmacKey::new([0x42; 32]);
     let token =
@@ -206,29 +216,35 @@ fn fake_store_maps_next_error_to_consume_dependency_failure() {
     assert_eq!(
         store
             .consume_magic_link(&selector_lookup, &verifier_hash, 1_000)
+            .await
             .unwrap_err(),
         ConsumeMagicLinkError::DependencyUnavailable
     );
 }
 
-#[test]
-fn fake_limiter_uses_fixed_windows_from_service_clock() {
+#[tokio::test]
+async fn fake_limiter_uses_fixed_windows_from_service_clock() {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
     let key = RateLimitKey::parse("magic-link:test:bucket").expect("rate key");
 
     assert_eq!(
-        store.check_rate_limit(&key, 1, 60, 119).expect("first hit"),
+        store
+            .check_rate_limit(&key, 1, 60, 119)
+            .await
+            .expect("first hit"),
         RateLimitDecision::Allowed
     );
     assert_eq!(
         store
             .check_rate_limit(&key, 1, 60, 119)
+            .await
             .expect("second same window"),
         RateLimitDecision::Denied
     );
     assert_eq!(
         store
             .check_rate_limit(&key, 1, 60, 120)
+            .await
             .expect("new window"),
         RateLimitDecision::Allowed
     );

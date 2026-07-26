@@ -1,5 +1,7 @@
 //! Service dependency traits.
 
+use core::future::Future;
+
 use dd_magic_link_core::{LookupHmac, VerifierHash};
 
 use crate::error::{ConsumeMagicLinkError, DependencyError};
@@ -16,7 +18,10 @@ pub trait Clock {
 /// Magic-link challenge persistence. Implementations must store keyed lookup
 /// material, not raw selectors or verifiers.
 pub trait MagicLinkRepository {
-    fn put_magic_link_if_absent(&self, record: MagicLinkRecord) -> Result<(), DependencyError>;
+    fn put_magic_link_if_absent(
+        &self,
+        record: MagicLinkRecord,
+    ) -> impl Future<Output = Result<(), DependencyError>>;
 
     /// Atomically consume a challenge if and only if it exists, is unconsumed,
     /// unexpired at `now_unix`, and its verifier hash matches.
@@ -25,7 +30,7 @@ pub trait MagicLinkRepository {
         selector_lookup_hmac: &LookupHmac,
         verifier_hash: &VerifierHash,
         now_unix: u64,
-    ) -> Result<ConsumedMagicLink, ConsumeMagicLinkError>;
+    ) -> impl Future<Output = Result<ConsumedMagicLink, ConsumeMagicLinkError>>;
 }
 
 /// User account repository.
@@ -33,26 +38,32 @@ pub trait UserRepository {
     fn find_user_by_email(
         &self,
         email: &dd_magic_link_core::NormalizedEmail,
-    ) -> Result<Option<UserRecord>, DependencyError>;
+    ) -> impl Future<Output = Result<Option<UserRecord>, DependencyError>>;
 
-    fn put_user_if_absent(&self, user: UserRecord) -> Result<(), DependencyError>;
+    fn put_user_if_absent(
+        &self,
+        user: UserRecord,
+    ) -> impl Future<Output = Result<(), DependencyError>>;
 }
 
 /// Server-side session repository. This supports lookup and revocation for
 /// current-session, logout, and compromise-invalidation flows above HTTP.
 pub trait SessionRepository {
-    fn put_session_if_absent(&self, session: SessionRecord) -> Result<(), DependencyError>;
+    fn put_session_if_absent(
+        &self,
+        session: SessionRecord,
+    ) -> impl Future<Output = Result<(), DependencyError>>;
 
     fn find_session(
         &self,
         session_id: &SessionId,
-    ) -> Result<Option<SessionRecord>, DependencyError>;
+    ) -> impl Future<Output = Result<Option<SessionRecord>, DependencyError>>;
 
     fn revoke_session(
         &self,
         session_id: &SessionId,
         revoked_at_unix: u64,
-    ) -> Result<(), DependencyError>;
+    ) -> impl Future<Output = Result<(), DependencyError>>;
 }
 
 /// Rate limiter result.
@@ -71,10 +82,13 @@ pub trait RateLimiter {
         limit: u32,
         window_secs: u64,
         now_unix: u64,
-    ) -> Result<RateLimitDecision, DependencyError>;
+    ) -> impl Future<Output = Result<RateLimitDecision, DependencyError>>;
 }
 
 /// Magic-link email outbox.
 pub trait MagicLinkOutbox {
-    fn enqueue_magic_link(&self, email: MagicLinkEmail) -> Result<(), DependencyError>;
+    fn enqueue_magic_link(
+        &self,
+        email: MagicLinkEmail,
+    ) -> impl Future<Output = Result<(), DependencyError>>;
 }

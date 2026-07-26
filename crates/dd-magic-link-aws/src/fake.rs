@@ -143,7 +143,10 @@ impl fmt::Debug for FakeDynamoDbAuthStore {
 }
 
 impl MagicLinkRepository for FakeDynamoDbAuthStore {
-    fn put_magic_link_if_absent(&self, record: MagicLinkRecord) -> Result<(), DependencyError> {
+    async fn put_magic_link_if_absent(
+        &self,
+        record: MagicLinkRecord,
+    ) -> Result<(), DependencyError> {
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
         let key = record.selector_lookup_hmac.as_storage_value().to_owned();
@@ -154,7 +157,7 @@ impl MagicLinkRepository for FakeDynamoDbAuthStore {
         Ok(())
     }
 
-    fn consume_magic_link(
+    async fn consume_magic_link(
         &self,
         selector_lookup_hmac: &LookupHmac,
         verifier_hash: &VerifierHash,
@@ -192,7 +195,7 @@ impl MagicLinkRepository for FakeDynamoDbAuthStore {
 }
 
 impl UserRepository for FakeDynamoDbAuthStore {
-    fn find_user_by_email(
+    async fn find_user_by_email(
         &self,
         email: &NormalizedEmail,
     ) -> Result<Option<UserRecord>, DependencyError> {
@@ -205,7 +208,7 @@ impl UserRepository for FakeDynamoDbAuthStore {
         Ok(inner.user_profiles_by_id.get(user_id.as_str()).cloned())
     }
 
-    fn put_user_if_absent(&self, user: UserRecord) -> Result<(), DependencyError> {
+    async fn put_user_if_absent(&self, user: UserRecord) -> Result<(), DependencyError> {
         let email_hmac = self.email_hmac(&user.email)?;
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
@@ -227,7 +230,7 @@ impl UserRepository for FakeDynamoDbAuthStore {
 }
 
 impl SessionRepository for FakeDynamoDbAuthStore {
-    fn put_session_if_absent(&self, session: SessionRecord) -> Result<(), DependencyError> {
+    async fn put_session_if_absent(&self, session: SessionRecord) -> Result<(), DependencyError> {
         let session_hmac = self.session_hmac(&session.session_id)?;
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
@@ -248,7 +251,7 @@ impl SessionRepository for FakeDynamoDbAuthStore {
         Ok(())
     }
 
-    fn find_session(
+    async fn find_session(
         &self,
         session_id: &SessionId,
     ) -> Result<Option<SessionRecord>, DependencyError> {
@@ -258,7 +261,7 @@ impl SessionRepository for FakeDynamoDbAuthStore {
         Ok(inner.sessions_by_hmac.get(&session_hmac).cloned())
     }
 
-    fn revoke_session(
+    async fn revoke_session(
         &self,
         session_id: &SessionId,
         revoked_at_unix: u64,
@@ -279,7 +282,7 @@ impl SessionRepository for FakeDynamoDbAuthStore {
 }
 
 impl RateLimiter for FakeDynamoDbAuthStore {
-    fn check_rate_limit(
+    async fn check_rate_limit(
         &self,
         key: &RateLimitKey,
         limit: u32,
