@@ -48,6 +48,7 @@ fn session_lifetime_order_and_cap_boundaries_are_validated() {
     let mut equal = config();
     equal.session_idle_secs = 60;
     equal.session_absolute_secs = 60;
+    assert_eq!(equal.session_max_age(), Ok(MaxAge::new(60, 60)));
     assert_eq!(equal.validate(), Ok(()));
 
     let mut reversed = config();
@@ -67,6 +68,25 @@ fn session_lifetime_order_and_cap_boundaries_are_validated() {
     assert_eq!(
         above_cap.validate(),
         Err(MagicLinkConfigError::SessionAbsoluteExceedsCookieCap)
+    );
+}
+
+#[test]
+fn session_policy_ignores_unrelated_pre_auth_and_limiter_config() {
+    let mut config = config();
+    config.magic_link_ttl_secs = 0;
+    config.rate_limits.request_email_short_limit = 0;
+
+    assert_eq!(
+        config.session_max_age(),
+        Ok(MaxAge::new(
+            DEFAULT_SESSION_IDLE_SECS,
+            SessionCookie::MAX_ABSOLUTE_AGE_SECS,
+        ))
+    );
+    assert_eq!(
+        config.validate(),
+        Err(MagicLinkConfigError::ZeroMagicLinkTtl)
     );
 }
 

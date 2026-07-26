@@ -1,9 +1,26 @@
 //! Encrypted session-cookie body framing owned by the service crate.
 
+use core::fmt;
+
 use crate::error::MagicLinkServiceError;
 use crate::types::{SessionId, validate_country};
 
 const SESSION_BODY_V1: u8 = 1;
+
+/// Invalid authenticated session-cookie body framing.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum SessionBodyError {
+    /// The body was malformed, non-canonical, or contained invalid session data.
+    Invalid,
+}
+
+impl fmt::Display for SessionBodyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid session cookie body")
+    }
+}
+
+impl std::error::Error for SessionBodyError {}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SessionCookieBody {
@@ -33,42 +50,39 @@ pub fn encode_session_cookie_body(
     Ok(body)
 }
 
-pub fn decode_session_cookie_body(body: &[u8]) -> Result<SessionCookieBody, MagicLinkServiceError> {
+pub fn decode_session_cookie_body(body: &[u8]) -> Result<SessionCookieBody, SessionBodyError> {
     let Some((&version, rest)) = body.split_first() else {
-        return Err(MagicLinkServiceError::MagicLinkUnavailable);
+        return Err(SessionBodyError::Invalid);
     };
     if version != SESSION_BODY_V1 {
-        return Err(MagicLinkServiceError::MagicLinkUnavailable);
+        return Err(SessionBodyError::Invalid);
     }
     let Some((&sid_len, rest)) = rest.split_first() else {
-        return Err(MagicLinkServiceError::MagicLinkUnavailable);
+        return Err(SessionBodyError::Invalid);
     };
     let sid_len = usize::from(sid_len);
     if rest.len() < sid_len + 1 {
-        return Err(MagicLinkServiceError::MagicLinkUnavailable);
+        return Err(SessionBodyError::Invalid);
     }
     let (sid_bytes, rest) = rest.split_at(sid_len);
     let Some((&country_len, country_bytes)) = rest.split_first() else {
-        return Err(MagicLinkServiceError::MagicLinkUnavailable);
+        return Err(SessionBodyError::Invalid);
     };
     if country_bytes.len() != usize::from(country_len) {
-        return Err(MagicLinkServiceError::MagicLinkUnavailable);
+        return Err(SessionBodyError::Invalid);
     }
 
-    let sid =
-        core::str::from_utf8(sid_bytes).map_err(|_| MagicLinkServiceError::MagicLinkUnavailable)?;
+    let sid = core::str::from_utf8(sid_bytes).map_err(|_| SessionBodyError::Invalid)?;
     let country = if country_bytes.is_empty() {
         None
     } else {
-        let value = core::str::from_utf8(country_bytes)
-            .map_err(|_| MagicLinkServiceError::MagicLinkUnavailable)?;
-        validate_country(value).map_err(|_| MagicLinkServiceError::MagicLinkUnavailable)?;
+        let value = core::str::from_utf8(country_bytes).map_err(|_| SessionBodyError::Invalid)?;
+        validate_country(value).map_err(|_| SessionBodyError::Invalid)?;
         Some(value.to_owned())
     };
 
     Ok(SessionCookieBody {
-        session_id: SessionId::parse(sid)
-            .map_err(|_| MagicLinkServiceError::MagicLinkUnavailable)?,
+        session_id: SessionId::parse(sid).map_err(|_| SessionBodyError::Invalid)?,
         country,
     })
 }

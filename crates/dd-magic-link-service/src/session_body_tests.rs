@@ -15,12 +15,12 @@ fn session_cookie_body_round_trips() {
 }
 
 #[test]
-fn malformed_session_cookie_body_is_rejected() {
+fn malformed_session_cookie_body_is_rejected_with_session_vocabulary() {
     for body in [b"".as_slice(), &[2, 0, 0], &[1, 4, b's', b'i', b'd']] {
-        assert_eq!(
-            decode_session_cookie_body(body).unwrap_err(),
-            MagicLinkServiceError::MagicLinkUnavailable
-        );
+        let error = decode_session_cookie_body(body).unwrap_err();
+        assert_eq!(error, SessionBodyError::Invalid);
+        assert_eq!(error.to_string(), "invalid session cookie body");
+        assert!(!error.to_string().contains("magic link"));
     }
 }
 
@@ -35,7 +35,7 @@ fn invalid_country_shape_in_session_cookie_body_is_rejected() {
     encoded.extend_from_slice(b"hu");
     assert_eq!(
         decode_session_cookie_body(&encoded).unwrap_err(),
-        MagicLinkServiceError::MagicLinkUnavailable
+        SessionBodyError::Invalid
     );
 }
 

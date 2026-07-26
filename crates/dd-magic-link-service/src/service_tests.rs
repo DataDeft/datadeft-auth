@@ -3,14 +3,13 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
-use dd_auth_token_core::cookie::{MaxAge, parse_bound_cookie};
 use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie};
 use dd_magic_link_core::{LookupHmac, LookupHmacKey, NormalizedEmail, VerifierHash};
 use rand_core::{CryptoRng, RngCore};
 
 use super::*;
 use crate::config::MagicLinkServiceConfig;
-use crate::session_body::decode_session_cookie_body;
+use crate::session::validate_session;
 use crate::traits::{Clock, MagicLinkOutbox, MagicLinkRepository, SessionRepository};
 use crate::traits::{RateLimiter, UserRepository};
 use crate::types::{EmailLocale, RequestMagicLinkCommand, UserRecord};
@@ -490,7 +489,7 @@ async fn consume_flow_burns_token_creates_user_session_and_cookie() {
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
             session_keyring: &session_keyring,
-            config: cfg,
+            config: cfg.clone(),
         });
         service
             .consume_magic_link_token(
@@ -508,16 +507,17 @@ async fn consume_flow_burns_token_creates_user_session_and_cookie() {
     assert_eq!(repo.sessions.borrow()[0].session_id, outcome.session_id);
     assert_eq!(outcome.country.as_deref(), Some("HU"));
 
-    let verified = parse_bound_cookie::<SessionCookie>(
+    let validated = validate_session(
         &outcome.session_cookie,
         &session_keyring,
-        1_000,
-        MaxAge::new(86_400, SessionCookie::MAX_ABSOLUTE_AGE_SECS),
+        &repo,
+        &clock,
+        &cfg,
     )
-    .expect("cookie verifies");
-    let body = decode_session_cookie_body(verified.body()).expect("body decodes");
-    assert_eq!(body.session_id, outcome.session_id);
-    assert_eq!(body.country.as_deref(), Some("HU"));
+    .await
+    .expect("session validates");
+    assert_eq!(validated.session().session_id, outcome.session_id);
+    assert_eq!(validated.country(), Some("HU"));
 }
 
 #[tokio::test]

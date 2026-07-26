@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+use dd_auth_token_core::cookie::MaxAge;
 use dd_auth_token_core::keyring::{KeyPurpose, SessionCookie};
 
 use crate::types::{
@@ -135,6 +136,16 @@ impl MagicLinkServiceConfig {
         if self.magic_link_ttl_secs == 0 {
             return Err(MagicLinkConfigError::ZeroMagicLinkTtl);
         }
+        self.session_max_age()?;
+        self.rate_limits.validate()
+    }
+
+    /// Validate only incoming-session lifetime policy and return its cookie bounds.
+    ///
+    /// Existing-session authentication and HTTP cookie configuration use this
+    /// narrower policy so unrelated pre-auth or limiter configuration cannot
+    /// disable otherwise valid sessions.
+    pub fn session_max_age(&self) -> Result<MaxAge, MagicLinkConfigError> {
         if self.session_idle_secs == 0 {
             return Err(MagicLinkConfigError::ZeroSessionIdleTtl);
         }
@@ -147,7 +158,10 @@ impl MagicLinkServiceConfig {
         if self.session_absolute_secs > SessionCookie::MAX_ABSOLUTE_AGE_SECS {
             return Err(MagicLinkConfigError::SessionAbsoluteExceedsCookieCap);
         }
-        self.rate_limits.validate()
+        Ok(MaxAge::new(
+            self.session_idle_secs,
+            self.session_absolute_secs,
+        ))
     }
 }
 

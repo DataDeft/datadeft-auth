@@ -54,6 +54,11 @@ pub trait SessionRepository {
         session: SessionRecord,
     ) -> impl Future<Output = Result<(), DependencyError>>;
 
+    /// Find the requested live session at `now_unix`.
+    ///
+    /// Implementations must return `None` for missing, revoked, or server-expired
+    /// records. Service validation additionally checks identity, revocation, and
+    /// authenticated lifetime invariants as defense in depth.
     fn find_session(
         &self,
         session_id: &SessionId,

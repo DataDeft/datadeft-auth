@@ -10,6 +10,7 @@
 pub mod config;
 pub mod error;
 pub mod service;
+pub mod session;
 pub mod session_body;
 pub mod traits;
 pub mod types;
@@ -21,7 +22,10 @@ pub use service::{
     MagicLinkConsumeService, MagicLinkConsumeServiceInputs, MagicLinkRequestService,
     MagicLinkRequestServiceInputs,
 };
-pub use session_body::{SessionCookieBody, decode_session_cookie_body, encode_session_cookie_body};
+pub use session::{SessionValidationError, ValidatedSession, validate_session};
+pub use session_body::{
+    SessionBodyError, SessionCookieBody, decode_session_cookie_body, encode_session_cookie_body,
+};
 pub use traits::{
     Clock, MagicLinkOutbox, MagicLinkRepository, RateLimitDecision, RateLimiter, SessionRepository,
     UserRepository,
