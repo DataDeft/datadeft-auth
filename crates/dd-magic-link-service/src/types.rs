@@ -602,67 +602,6 @@ impl Drop for ConfirmMagicLinkFlowCommand {
     }
 }
 
-/// Consume command retained temporarily for staging raw-token callers.
-#[derive(Clone, Eq, PartialEq)]
-pub struct ConsumeMagicLinkCommand {
-    token: MagicLinkToken,
-    client_key: Option<ClientKey>,
-    request_country: Option<String>,
-}
-
-impl ConsumeMagicLinkCommand {
-    pub fn new(
-        token: MagicLinkToken,
-        client_key: Option<ClientKey>,
-        request_country: Option<String>,
-    ) -> Result<Self, MagicLinkServiceError> {
-        if let Some(country) = request_country.as_deref() {
-            validate_country(country)?;
-        }
-        Ok(Self {
-            token,
-            client_key,
-            request_country,
-        })
-    }
-
-    pub fn parse_token(
-        token: &str,
-        client_key: Option<ClientKey>,
-        request_country: Option<String>,
-    ) -> Result<Self, MagicLinkServiceError> {
-        Self::new(MagicLinkToken::parse(token)?, client_key, request_country)
-    }
-
-    #[must_use]
-    pub fn token(&self) -> &MagicLinkToken {
-        &self.token
-    }
-
-    #[must_use]
-    pub fn client_key(&self) -> Option<&ClientKey> {
-        self.client_key.as_ref()
-    }
-
-    #[must_use]
-    pub fn request_country(&self) -> Option<&str> {
-        self.request_country.as_deref()
-    }
-}
-
-impl fmt::Debug for ConsumeMagicLinkCommand {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ConsumeMagicLinkCommand")
-            .field("token", &"MagicLinkToken(..)")
-            .field(
-                "client_key",
-                &self.client_key.as_ref().map(|_| "ClientKey(..)"),
-            )
-            .field("request_country", &self.request_country)
-            .finish()
-    }
-}
-
 /// Email outbox request. The contained token is bearer material; Debug redacts it.
 #[derive(Clone, Eq, PartialEq)]
 pub struct MagicLinkEmail {
@@ -766,34 +705,6 @@ impl ConfirmMagicLinkFlowOutcome {
 impl fmt::Debug for ConfirmMagicLinkFlowOutcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("ConfirmMagicLinkFlowOutcome(..)")
-    }
-}
-
-/// Successful consume response retained temporarily for staging raw-token APIs.
-#[derive(Clone, Eq, PartialEq)]
-pub struct ConsumeMagicLinkOutcome {
-    pub session_cookie: String,
-    pub user_id: UserId,
-    pub session_id: SessionId,
-    pub user_created: bool,
-    pub country: Option<String>,
-}
-
-impl fmt::Debug for ConsumeMagicLinkOutcome {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ConsumeMagicLinkOutcome")
-            .field("session_cookie", &"<redacted>")
-            .field("user_id", &"UserId(..)")
-            .field("session_id", &"SessionId(..)")
-            .field("user_created", &self.user_created)
-            .field("country", &self.country)
-            .finish()
-    }
-}
-
-impl Drop for ConsumeMagicLinkOutcome {
-    fn drop(&mut self) {
-        self.session_cookie.zeroize();
     }
 }
 

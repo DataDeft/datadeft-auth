@@ -1,6 +1,6 @@
 [package]
 name = "dd-magic-link-service"
-description = "Framework-neutral magic-link request/consume orchestration."
+description = "Framework-neutral magic-link request and scanner-safe authentication orchestration."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

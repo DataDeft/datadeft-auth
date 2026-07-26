@@ -1,4 +1,4 @@
-//! Request and consume orchestration.
+//! Request and scanner-safe authentication orchestration.
 //!
 //! Proof-of-work is intentionally outside this service. HTTP adapters or
 //! consuming applications may require and validate a PoW token before calling
@@ -31,8 +31,7 @@ use crate::traits::{
 use crate::types::{
     AuthenticationAttemptId, BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, ClientKey,
     CommitMagicLinkAuthentication, ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome,
-    ConsumeMagicLinkCommand, ConsumeMagicLinkOutcome, MagicLinkAccountIdentity,
-    MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
+    MagicLinkAccountIdentity, MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
     MagicLinkAuthenticationOutcome, MagicLinkAuthenticationUser, MagicLinkEmail, MagicLinkRecord,
     RateLimitKey, RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionId, UserId, UserRecord,
     validate_country,
@@ -410,219 +409,6 @@ where
         .await
         .map_err(MagicLinkFlowError::from_public_error)?;
         Ok(ConfirmMagicLinkFlowOutcome { authentication })
-    }
-
-    /// Revoke a server-side session by id.
-    pub async fn revoke_session(
-        &self,
-        session_id: &SessionId,
-    ) -> Result<(), MagicLinkServiceError> {
-        let now_unix = self.clock.now_unix()?;
-        self.sessions
-            .revoke_session(session_id, now_unix)
-            .await
-            .map_err(map_dependency_error)
-    }
-}
-
-/// Consume-flow-only service retained temporarily for staging raw-token callers.
-/// Authentication reads and the irreversible consume/user/session transition are
-/// owned by one aggregate repository.
-pub struct MagicLinkConsumeService<'a, Authentication, Sessions, Limiter, ServiceClock, Rng> {
-    authentication: &'a Authentication,
-    sessions: &'a Sessions,
-    limiter: &'a Limiter,
-    clock: &'a ServiceClock,
-    rng: &'a mut Rng,
-    lookup_hmac_key: &'a LookupHmacKey,
-    session_keyring: &'a KeyRing<SessionCookie>,
-    config: MagicLinkServiceConfig,
-}
-
-/// Constructor inputs for [`MagicLinkConsumeService`].
-pub struct MagicLinkConsumeServiceInputs<'a, Authentication, Sessions, Limiter, ServiceClock, Rng> {
-    pub authentication: &'a Authentication,
-    pub sessions: &'a Sessions,
-    pub limiter: &'a Limiter,
-    pub clock: &'a ServiceClock,
-    pub rng: &'a mut Rng,
-    pub lookup_hmac_key: &'a LookupHmacKey,
-    pub session_keyring: &'a KeyRing<SessionCookie>,
-    pub config: MagicLinkServiceConfig,
-}
-
-impl<'a, Authentication, Sessions, Limiter, ServiceClock, Rng>
-    MagicLinkConsumeService<'a, Authentication, Sessions, Limiter, ServiceClock, Rng>
-{
-    #[must_use]
-    pub fn new(
-        inputs: MagicLinkConsumeServiceInputs<
-            'a,
-            Authentication,
-            Sessions,
-            Limiter,
-            ServiceClock,
-            Rng,
-        >,
-    ) -> Self {
-        Self {
-            authentication: inputs.authentication,
-            sessions: inputs.sessions,
-            limiter: inputs.limiter,
-            clock: inputs.clock,
-            rng: inputs.rng,
-            lookup_hmac_key: inputs.lookup_hmac_key,
-            session_keyring: inputs.session_keyring,
-            config: inputs.config,
-        }
-    }
-}
-
-impl<Authentication, Sessions, Limiter, ServiceClock, Rng>
-    MagicLinkConsumeService<'_, Authentication, Sessions, Limiter, ServiceClock, Rng>
-where
-    Authentication: MagicLinkAuthenticationRepository,
-    Sessions: SessionRepository,
-    Limiter: RateLimiter,
-    ServiceClock: Clock,
-    Rng: RngCore + CryptoRng,
-{
-    /// Parse and consume a raw token. Malformed tokens are rate-limited by client
-    /// key when supplied, then collapsed into `MagicLinkUnavailable`.
-    pub async fn consume_magic_link_token(
-        &mut self,
-        token: &str,
-        client_key: Option<ClientKey>,
-        request_country: Option<String>,
-    ) -> Result<ConsumeMagicLinkOutcome, MagicLinkServiceError> {
-        validate_config(&self.config)?;
-        let now_unix = self.clock.now_unix()?;
-        let parsed = match MagicLinkToken::parse(token) {
-            Ok(token) => token,
-            Err(_) => {
-                if let Some(client_key) = client_key.as_ref() {
-                    let _ = malformed_consume_limit_denied(
-                        self.limiter,
-                        &self.config,
-                        client_key,
-                        now_unix,
-                    )
-                    .await?;
-                }
-                return Err(MagicLinkServiceError::MagicLinkUnavailable);
-            }
-        };
-        let command = ConsumeMagicLinkCommand::new(parsed, client_key, request_country)?;
-        self.consume_magic_link(command).await
-    }
-
-    /// Authenticate with a parsed magic-link token using one atomic repository
-    /// transaction for challenge consumption, user handling, and session creation.
-    pub async fn consume_magic_link(
-        &mut self,
-        command: ConsumeMagicLinkCommand,
-    ) -> Result<ConsumeMagicLinkOutcome, MagicLinkServiceError> {
-        validate_config(&self.config)?;
-        let country = mint_country(&self.config, command.request_country())?;
-        let now_unix = self.clock.now_unix()?;
-        let selector_lookup =
-            selector_lookup_hmac(self.lookup_hmac_key, command.token().selector())?;
-
-        if consume_limits_deny(
-            self.limiter,
-            &self.config,
-            selector_lookup.as_storage_value(),
-            command.client_key(),
-            now_unix,
-        )
-        .await?
-        {
-            return Err(MagicLinkServiceError::MagicLinkUnavailable);
-        }
-
-        let presented_verifier_hash =
-            verifier_hash(self.lookup_hmac_key, command.token().verifier())?;
-        let (candidate, user) = load_authentication_state(
-            self.authentication,
-            &self.config,
-            &selector_lookup,
-            &presented_verifier_hash,
-            now_unix,
-        )
-        .await?;
-        let (user_branch, mut user_id, mut user_created) =
-            plan_user(user, &candidate.email, self.rng)?;
-        let expectation = authentication_expectation(&selector_lookup, &candidate);
-        let mut plan = build_initial_authentication_plan(
-            self.session_keyring,
-            self.rng,
-            expectation,
-            user_branch,
-            now_unix,
-            self.config.session_absolute_secs,
-            country.as_deref(),
-        )?;
-
-        let mut replans = 0_u8;
-        loop {
-            match commit_with_dependency_retries(self.authentication, &plan.command).await {
-                Ok(()) => {
-                    let session_cookie = core::mem::take(&mut *plan.session_cookie);
-                    return Ok(ConsumeMagicLinkOutcome {
-                        session_cookie,
-                        user_id,
-                        session_id: plan.command.session_id.clone(),
-                        user_created,
-                        country,
-                    });
-                }
-                Err(CommitMagicLinkAuthenticationError::Rejected) => {
-                    return Err(MagicLinkServiceError::MagicLinkUnavailable);
-                }
-                Err(CommitMagicLinkAuthenticationError::Internal) => {
-                    return Err(MagicLinkServiceError::Internal);
-                }
-                Err(CommitMagicLinkAuthenticationError::DependencyUnavailable) => {
-                    return Err(MagicLinkServiceError::Unavailable);
-                }
-                Err(CommitMagicLinkAuthenticationError::UserConflict) => {
-                    if replans >= 2 {
-                        return Err(MagicLinkServiceError::Unavailable);
-                    }
-                    replans += 1;
-                    let (candidate, user) = load_authentication_state(
-                        self.authentication,
-                        &self.config,
-                        &selector_lookup,
-                        &presented_verifier_hash,
-                        now_unix,
-                    )
-                    .await?;
-                    let (user_branch, replanned_user_id, replanned_user_created) =
-                        plan_user(user, &candidate.email, self.rng)?;
-                    plan.command.magic_link =
-                        authentication_expectation(&selector_lookup, &candidate);
-                    plan.command.user = user_branch;
-                    plan.command.attempt_id = generate_authentication_attempt_id(self.rng)?;
-                    user_id = replanned_user_id;
-                    user_created = replanned_user_created;
-                }
-                Err(CommitMagicLinkAuthenticationError::SessionConflict) => {
-                    if replans >= 2 {
-                        return Err(MagicLinkServiceError::Unavailable);
-                    }
-                    replans += 1;
-                    replace_session_plan(
-                        &mut plan,
-                        self.session_keyring,
-                        self.rng,
-                        now_unix,
-                        self.config.session_absolute_secs,
-                        country.as_deref(),
-                    )?;
-                }
-            }
-        }
     }
 
     /// Revoke a server-side session by id.
@@ -1089,26 +875,6 @@ struct AuthenticationPlan {
     session_cookie: Zeroizing<String>,
 }
 
-async fn load_authentication_state<Authentication: MagicLinkAuthenticationRepository>(
-    authentication: &Authentication,
-    config: &MagicLinkServiceConfig,
-    selector_lookup: &LookupHmac,
-    presented_verifier_hash: &VerifierHash,
-    now_unix: u64,
-) -> Result<(MagicLinkAuthenticationCandidate, Option<UserRecord>), MagicLinkServiceError> {
-    let candidate = authentication
-        .find_magic_link_for_authentication(selector_lookup)
-        .await
-        .map_err(map_dependency_error)?;
-    let candidate =
-        validate_authentication_candidate(config, candidate, presented_verifier_hash, now_unix)?;
-    let user = authentication
-        .find_user_for_authentication(&candidate.email)
-        .await
-        .map_err(map_dependency_error)?;
-    Ok((candidate, user))
-}
-
 #[cfg(test)]
 std::thread_local! {
     static VERIFIER_COMPARISON_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -1127,34 +893,6 @@ fn verifier_comparison_count() -> usize {
 fn note_verifier_comparison() {
     #[cfg(test)]
     VERIFIER_COMPARISON_COUNT.with(|count| count.set(count.get() + 1));
-}
-
-fn validate_authentication_candidate(
-    config: &MagicLinkServiceConfig,
-    candidate: Option<MagicLinkAuthenticationCandidate>,
-    presented_verifier_hash: &VerifierHash,
-    now_unix: u64,
-) -> Result<MagicLinkAuthenticationCandidate, MagicLinkServiceError> {
-    let Some(candidate) = candidate else {
-        note_verifier_comparison();
-        perform_dummy_verifier_comparison(presented_verifier_hash);
-        return Err(MagicLinkServiceError::MagicLinkUnavailable);
-    };
-
-    note_verifier_comparison();
-    let verifier_matches = candidate
-        .verifier_hash
-        .matches_hash_constant_time(presented_verifier_hash);
-    if !verifier_matches
-        || candidate.consumed_at_unix.is_some()
-        || candidate.expires_at_unix < now_unix
-        || candidate.terms_version != config.terms_version
-        || candidate.privacy_version != config.privacy_version
-        || candidate.consented_at_unix == 0
-    {
-        return Err(MagicLinkServiceError::MagicLinkUnavailable);
-    }
-    Ok(candidate)
 }
 
 fn perform_dummy_verifier_comparison(presented_verifier_hash: &VerifierHash) {
