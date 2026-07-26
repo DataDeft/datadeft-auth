@@ -83,7 +83,6 @@ fn bad_request_flow_error() -> MagicLinkFlowError {
     ConfirmMagicLinkFlowCommand::new(
         "flow".to_owned(),
         "confirmation".to_owned(),
-        None,
         Some("invalid-country".to_owned()),
     )
     .expect_err("invalid country")
@@ -227,48 +226,36 @@ async fn fixture_flow_error(kind: FixtureFlowError) -> MagicLinkFlowError {
         config: service_config,
     });
     service
-        .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(
-            "malformed".to_owned(),
-            None,
-        ))
+        .begin_magic_link_landing(BeginMagicLinkLandingCommand::new("malformed".to_owned()))
         .await
         .expect_err("fixture flow error")
 }
 
 #[test]
-fn request_json_regression_preserves_email_and_body_client_behavior() {
+fn request_json_regression_preserves_email_and_consent() {
     let body = br#"{
         "email":"User@example.com",
         "locale":"hu",
         "terms_accepted":true,
-        "privacy_accepted":true,
-        "client_key":"client-1"
+        "privacy_accepted":true
     }"#;
-    let command = parse_magic_link_request_json(body, None).expect("command");
+    let command = parse_magic_link_request_json(body).expect("command");
     assert_eq!(command.email().as_str(), "User@example.com");
     assert_eq!(command.locale(), EmailLocale::Hu);
     assert!(command.terms_accepted());
     assert!(command.privacy_accepted());
-    assert_eq!(command.client_key().expect("client").as_str(), "client-1");
-
-    let fallback = ClientKey::parse("server-bucket").expect("client key");
-    let command = parse_magic_link_request_json(body, Some(fallback)).expect("command");
-    assert_eq!(
-        command.client_key().expect("client").as_str(),
-        "server-bucket"
-    );
 }
 
 #[test]
 fn request_negative_regressions_reject_locale_and_forward_false_consent() {
     let bad_locale = br#"{"email":"user@example.com","locale":"de","terms_accepted":true,"privacy_accepted":true}"#;
     assert_eq!(
-        parse_magic_link_request_json(bad_locale, None).unwrap_err(),
+        parse_magic_link_request_json(bad_locale).unwrap_err(),
         MagicLinkHttpError::BadRequest
     );
 
     let false_consent = br#"{"email":"user@example.com","locale":"en","terms_accepted":false,"privacy_accepted":true}"#;
-    let command = parse_magic_link_request_json(false_consent, None).expect("command");
+    let command = parse_magic_link_request_json(false_consent).expect("command");
     assert!(!command.terms_accepted());
     assert!(command.privacy_accepted());
 }
@@ -276,12 +263,11 @@ fn request_negative_regressions_reject_locale_and_forward_false_consent() {
 #[test]
 fn request_and_confirmation_dto_debug_are_redacted() {
     let request: MagicLinkRequestJson = serde_json::from_str(
-        r#"{"email":"sensitive@example.test","locale":"en","terms_accepted":true,"privacy_accepted":true,"client_key":"client-secret"}"#,
+        r#"{"email":"sensitive@example.test","locale":"en","terms_accepted":true,"privacy_accepted":true}"#,
     )
     .expect("request dto");
     let debug = format!("{request:?}");
     assert!(!debug.contains("sensitive@example.test"));
-    assert!(!debug.contains("client-secret"));
 
     let confirmation: MagicLinkConfirmationBody =
         serde_json::from_str(r#"{"confirmation":"confirmation-secret","country":"HU"}"#)
@@ -294,13 +280,6 @@ fn request_and_confirmation_dto_debug_are_redacted() {
         )
         .is_err()
     );
-    assert!(
-        serde_json::from_str::<MagicLinkConfirmationBody>(
-            r#"{"confirmation":"ok","client_key":"forbidden"}"#
-        )
-        .is_err()
-    );
-
     let token = MagicLinkLandingToken::new("candidate-secret".to_owned()).expect("bounded");
     assert_eq!(format!("{token:?}"), "MagicLinkLandingToken(..)");
 }
@@ -720,7 +699,7 @@ async fn request_handler_preserves_generic_success_regression() {
             r#"{"email":"user@example.com","locale":"en","terms_accepted":true,"privacy_accepted":true}"#,
         ))
         .expect("request");
-    let response = handle_magic_link_request_json(request, None, |command| async move {
+    let response = handle_magic_link_request_json(request, |command| async move {
         assert_eq!(command.email().as_str(), "user@example.com");
         Ok(RequestMagicLinkOutcome)
     })
@@ -728,6 +707,33 @@ async fn request_handler_preserves_generic_success_regression() {
     let (status, _, body) = response_parts(response).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, br#"{"status":"ok"}"#);
+}
+
+#[tokio::test]
+async fn legacy_request_field_is_rejected_generically_without_reflection() {
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/auth/magic-link")
+        .header(CONTENT_TYPE, APPLICATION_JSON)
+        .body(Body::from(
+            r#"{"email":"user@example.com","locale":"en","terms_accepted":true,"privacy_accepted":true,"client_key":"legacy-value-sentinel"}"#,
+        ))
+        .expect("request");
+    let response = handle_magic_link_request_json(request, |_| async {
+        unreachable!("unknown request fields must not reach the service")
+    })
+    .await;
+    let (status, _, body) = response_parts(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        body,
+        br#"{"error":"bad_request","message":"Invalid request."}"#
+    );
+    assert!(
+        !body
+            .windows(b"legacy-value-sentinel".len())
+            .any(|window| window == b"legacy-value-sentinel")
+    );
 }
 
 #[tokio::test]
@@ -758,7 +764,6 @@ async fn valid_landing_html_identifies_and_escapes_account_without_raw_token() {
     assert!(!text.contains("name=\"token\""));
     assert!(!text.contains("raw-token-secret"));
     assert!(!text.contains("encrypted-flow-cookie"));
-    assert!(!text.contains("client-secret"));
 }
 
 #[tokio::test]
@@ -771,7 +776,7 @@ async fn request_handler_forwards_false_consent_to_service_behavior() {
             r#"{"email":"user@example.com","locale":"en","terms_accepted":false,"privacy_accepted":true}"#,
         ))
         .expect("request");
-    let response = handle_magic_link_request_json(request, None, |command| async move {
+    let response = handle_magic_link_request_json(request, |command| async move {
         assert!(!command.terms_accepted());
         assert!(command.privacy_accepted());
         Err(MagicLinkServiceError::BadRequest)
@@ -782,7 +787,7 @@ async fn request_handler_forwards_false_consent_to_service_behavior() {
 
 #[tokio::test]
 async fn guarded_body_debug_redacts_all_body_bytes() {
-    let secret_body = r#"{"email":"sensitive@example.test","client_key":"client-secret","confirmation":"confirmation-secret"}"#;
+    let secret_body = r#"{"email":"sensitive@example.test","opaque_secret":"body-secret","confirmation":"confirmation-secret"}"#;
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth")
@@ -796,7 +801,7 @@ async fn guarded_body_debug_redacts_all_body_bytes() {
     assert_eq!(debug, "GuardedBody(..)");
     for sentinel in [
         "sensitive@example.test",
-        "client-secret",
+        "body-secret",
         "confirmation-secret",
     ] {
         assert!(!debug.contains(sentinel));
@@ -830,7 +835,7 @@ async fn invalid_landing_is_non_actionable_and_clears_temporary_state() {
         .uri("/auth/magic-link?token=not-a-token")
         .body(Body::from("body-must-not-be-read"))
         .expect("request");
-    let response = handle_magic_link_landing(request, None, &config, move |_command| {
+    let response = handle_magic_link_landing(request, &config, move |_command| {
         closure_called.set(true);
         async { Err(bad_request_flow_error()) }
     })
@@ -875,7 +880,7 @@ async fn origin_rejection_precedes_cookie_body_and_service_and_does_not_clear() 
                 .headers_mut()
                 .append(ORIGIN, HeaderValue::from_static("https://example.test"));
         }
-        let response = handle_magic_link_confirmation(request, None, &config, move |_command| {
+        let response = handle_magic_link_confirmation(request, &config, move |_command| {
             closure_called.set(true);
             async { Err(bad_request_flow_error()) }
         })
@@ -935,7 +940,6 @@ async fn handler_internal_clears_but_unavailable_preserves_temporary_state() {
     ] {
         let response = handle_magic_link_confirmation(
             post_request(APPLICATION_JSON, Body::from(r#"{"confirmation":"x"}"#)),
-            None,
             &config,
             move |_command| async move { Err(fixture_flow_error(kind).await) },
         )
@@ -973,7 +977,7 @@ async fn terminal_invalid_confirmation_responses_are_byte_identical() {
             .body(Body::from(r#"{"confirmation":"x"}"#))
             .expect("request");
         responses.push(
-            handle_magic_link_confirmation(request, None, &config, |_| async {
+            handle_magic_link_confirmation(request, &config, |_| async {
                 unreachable!("service must not run")
             })
             .await,
@@ -992,12 +996,9 @@ async fn terminal_invalid_confirmation_responses_are_byte_identical() {
         (FORM_URLENCODED, Body::from("country=HU")),
     ] {
         responses.push(
-            handle_magic_link_confirmation(
-                post_request(content_type, body),
-                None,
-                &config,
-                |_| async { unreachable!("service must not run") },
-            )
+            handle_magic_link_confirmation(post_request(content_type, body), &config, |_| async {
+                unreachable!("service must not run")
+            })
             .await,
         );
     }
@@ -1005,7 +1006,6 @@ async fn terminal_invalid_confirmation_responses_are_byte_identical() {
     responses.push(
         handle_magic_link_confirmation(
             post_request(APPLICATION_JSON, Body::from(r#"{"confirmation":"x"}"#)),
-            None,
             &config,
             |_| async { Err(bad_request_flow_error()) },
         )
@@ -1014,7 +1014,6 @@ async fn terminal_invalid_confirmation_responses_are_byte_identical() {
     responses.push(
         handle_magic_link_confirmation(
             post_request(APPLICATION_JSON, Body::from(r#"{"confirmation":"x"}"#)),
-            None,
             &config,
             |_| async { Err(fixture_flow_error(FixtureFlowError::MagicLinkUnavailable).await) },
         )
@@ -1039,13 +1038,11 @@ async fn terminal_invalid_confirmation_responses_are_byte_identical() {
 async fn body_stream_cap_applies_without_content_length() {
     let config = scanner_config();
     let body = Body::from(vec![b'a'; MAX_MAGIC_LINK_BODY_BYTES + 1]);
-    let response = handle_magic_link_confirmation(
-        post_request(APPLICATION_JSON, body),
-        None,
-        &config,
-        |_| async { unreachable!("service must not run") },
-    )
-    .await;
+    let response =
+        handle_magic_link_confirmation(post_request(APPLICATION_JSON, body), &config, |_| async {
+            unreachable!("service must not run")
+        })
+        .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(response.headers().get_all(SET_COOKIE).iter().count(), 2);
 }

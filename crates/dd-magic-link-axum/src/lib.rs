@@ -27,11 +27,11 @@ use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE, COOKIE, LOCATION, ORIGIN,
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use dd_magic_link_service::{
-    BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, ClientKey,
-    ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome, EmailLocale,
-    MAX_RAW_MAGIC_LINK_TOKEN_BYTES, MagicLinkConfigError, MagicLinkFlowError,
-    MagicLinkServiceConfig, MagicLinkServiceError, NormalizedEmail, RequestMagicLinkCommand,
-    RequestMagicLinkOutcome, SessionValidationError, TemporaryAuthStateAction, ValidatedSession,
+    BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, ConfirmMagicLinkFlowCommand,
+    ConfirmMagicLinkFlowOutcome, EmailLocale, MAX_RAW_MAGIC_LINK_TOKEN_BYTES, MagicLinkConfigError,
+    MagicLinkFlowError, MagicLinkServiceConfig, MagicLinkServiceError, NormalizedEmail,
+    RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionValidationError,
+    TemporaryAuthStateAction, ValidatedSession,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
@@ -160,17 +160,13 @@ pub struct GenericAcceptedBody {
 }
 
 /// Request JSON accepted by [`handle_magic_link_request_json`].
-///
-/// The body-derived client key is a retained P1 compatibility residual and is
-/// not used by the scanner begin/confirmation handlers.
 #[derive(Clone, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MagicLinkRequestJson {
     pub email: String,
     pub locale: String,
     pub terms_accepted: bool,
     pub privacy_accepted: bool,
-    #[serde(default)]
-    pub client_key: Option<String>,
 }
 
 impl fmt::Debug for MagicLinkRequestJson {
@@ -180,30 +176,20 @@ impl fmt::Debug for MagicLinkRequestJson {
             .field("locale", &self.locale)
             .field("terms_accepted", &self.terms_accepted)
             .field("privacy_accepted", &self.privacy_accepted)
-            .field(
-                "client_key",
-                &self.client_key.as_ref().map(|_| "<redacted>"),
-            )
             .finish()
     }
 }
 
 impl MagicLinkRequestJson {
-    pub fn into_command(
-        self,
-        fallback_client_key: Option<ClientKey>,
-    ) -> Result<RequestMagicLinkCommand, MagicLinkHttpError> {
+    pub fn into_command(self) -> Result<RequestMagicLinkCommand, MagicLinkHttpError> {
         let email =
             NormalizedEmail::parse(&self.email).map_err(|_| MagicLinkHttpError::BadRequest)?;
         let locale = parse_locale(&self.locale)?;
-        let body_client_key = parse_optional_client_key(self.client_key.as_deref())?;
-        let client_key = fallback_client_key.or(body_client_key);
         Ok(RequestMagicLinkCommand::new(
             email,
             locale,
             self.terms_accepted,
             self.privacy_accepted,
-            client_key,
         ))
     }
 }
@@ -239,7 +225,7 @@ impl Drop for MagicLinkLandingToken {
     }
 }
 
-/// Confirmation JSON/form body. It deliberately has no raw token or client key.
+/// Confirmation JSON/form body carrying only confirmation and optional country context.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MagicLinkConfirmationBody {
@@ -736,31 +722,10 @@ pub fn content_type_matches(headers: &HeaderMap, expected: &str) -> bool {
 /// Parse the supported request JSON body into a service command.
 pub fn parse_magic_link_request_json(
     body: &[u8],
-    client_key: Option<ClientKey>,
 ) -> Result<RequestMagicLinkCommand, MagicLinkHttpError> {
     serde_json::from_slice::<MagicLinkRequestJson>(body)
         .map_err(|_| MagicLinkHttpError::BadRequest)?
-        .into_command(client_key)
-}
-
-/// Extract a bounded service client key from a unique header.
-pub fn client_key_from_header(
-    headers: &HeaderMap,
-    header_name: &str,
-) -> Result<Option<ClientKey>, MagicLinkHttpError> {
-    let name = HeaderName::from_bytes(header_name.as_bytes())
-        .map_err(|_| MagicLinkHttpError::BadRequest)?;
-    let mut values = headers.get_all(name).iter();
-    let Some(value) = values.next() else {
-        return Ok(None);
-    };
-    if values.next().is_some() {
-        return Err(MagicLinkHttpError::BadRequest);
-    }
-    let value = value.to_str().map_err(|_| MagicLinkHttpError::BadRequest)?;
-    ClientKey::parse(value)
-        .map(Some)
-        .map_err(|_| MagicLinkHttpError::BadRequest)
+        .into_command()
 }
 
 /// Extract a unique CloudFront viewer country as ISO 3166-1 alpha-2.
@@ -850,18 +815,13 @@ pub fn clear_temporary_cookie_header(
     )
 }
 
-/// Handle a JSON magic-link request while preserving its existing P1 body-client
-/// behavior and generic public response.
-pub async fn handle_magic_link_request_json<F, Fut>(
-    request: Request,
-    fallback_client_key: Option<ClientKey>,
-    handle: F,
-) -> Response
+/// Handle a JSON magic-link request with a generic public response.
+pub async fn handle_magic_link_request_json<F, Fut>(request: Request, handle: F) -> Response
 where
     F: FnOnce(RequestMagicLinkCommand) -> Fut,
     Fut: Future<Output = Result<RequestMagicLinkOutcome, MagicLinkServiceError>>,
 {
-    match handle_magic_link_request_json_inner(request, fallback_client_key, handle).await {
+    match handle_magic_link_request_json_inner(request, handle).await {
         Ok(response) => response,
         Err(error) => error.into_response(),
     }
@@ -869,7 +829,6 @@ where
 
 async fn handle_magic_link_request_json_inner<F, Fut>(
     request: Request,
-    fallback_client_key: Option<ClientKey>,
     handle: F,
 ) -> Result<Response, MagicLinkHttpError>
 where
@@ -877,7 +836,7 @@ where
     Fut: Future<Output = Result<RequestMagicLinkOutcome, MagicLinkServiceError>>,
 {
     let guarded = guarded_body(request, &[APPLICATION_JSON], MAX_MAGIC_LINK_BODY_BYTES).await?;
-    let command = parse_magic_link_request_json(&guarded.bytes, fallback_client_key)?;
+    let command = parse_magic_link_request_json(&guarded.bytes)?;
     handle(command).await.map_err(MagicLinkHttpError::from)?;
     Ok(generic_accepted_response())
 }
@@ -886,7 +845,6 @@ where
 /// in the crate documentation applies before this handler can be production-ready.
 pub async fn handle_magic_link_landing<F, Fut>(
     request: Request,
-    client_key: Option<ClientKey>,
     config: &MagicLinkScannerFlowConfig,
     begin: F,
 ) -> Response
@@ -898,7 +856,7 @@ where
         Ok(token) => token.into_string(),
         Err(_) => String::new(),
     };
-    let command = BeginMagicLinkLandingCommand::new(raw_token, client_key);
+    let command = BeginMagicLinkLandingCommand::new(raw_token);
     match begin(command).await {
         Ok(outcome) => valid_landing_response(&outcome, config),
         Err(error) => landing_error_response(error, config),
@@ -906,10 +864,9 @@ where
 }
 
 /// Scanner-safe confirmation handler. Origin is enforced before cookie, body, or
-/// service work, and the application client key is supplied separately.
+/// service work.
 pub async fn handle_magic_link_confirmation<F, Fut>(
     request: Request,
-    client_key: Option<ClientKey>,
     config: &MagicLinkScannerFlowConfig,
     confirm: F,
 ) -> Response
@@ -955,11 +912,10 @@ where
     };
     let country = viewer_country(&guarded.headers).or_else(|| body.country.take());
     let confirmation = core::mem::take(&mut body.confirmation);
-    let command =
-        match ConfirmMagicLinkFlowCommand::new(flow_cookie, confirmation, client_key, country) {
-            Ok(command) => command,
-            Err(_) => return terminal_invalid_confirmation(config),
-        };
+    let command = match ConfirmMagicLinkFlowCommand::new(flow_cookie, confirmation, country) {
+        Ok(command) => command,
+        Err(_) => return terminal_invalid_confirmation(config),
+    };
     match confirm(command).await {
         Ok(outcome) => confirmation_success_response(&outcome, config),
         Err(error) => confirmation_error_response(error, config),
@@ -1528,13 +1484,6 @@ fn parse_locale(value: &str) -> Result<EmailLocale, MagicLinkHttpError> {
         "hu" => Ok(EmailLocale::Hu),
         _ => Err(MagicLinkHttpError::BadRequest),
     }
-}
-
-fn parse_optional_client_key(value: Option<&str>) -> Result<Option<ClientKey>, MagicLinkHttpError> {
-    value
-        .map(ClientKey::parse)
-        .transpose()
-        .map_err(|_| MagicLinkHttpError::BadRequest)
 }
 
 fn content_type_matches_value(actual: &str, expected: &str) -> bool {
