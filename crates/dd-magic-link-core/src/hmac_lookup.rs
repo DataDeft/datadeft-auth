@@ -81,6 +81,24 @@ impl fmt::Debug for LookupHmac {
 pub struct VerifierHash(String);
 
 impl VerifierHash {
+    /// Parse the one canonical verifier-hash storage representation.
+    ///
+    /// The accepted form is exactly `mlv_` followed by 64 lowercase
+    /// hexadecimal characters.
+    pub fn parse_storage_value(value: &str) -> Result<Self, MagicLinkError> {
+        let Some(encoded_hash) = value.strip_prefix("mlv_") else {
+            return Err(MagicLinkError::InvalidToken);
+        };
+        if encoded_hash.len() != 64
+            || !encoded_hash
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(MagicLinkError::InvalidToken);
+        }
+        Ok(Self(value.to_owned()))
+    }
+
     #[must_use]
     pub fn as_storage_value(&self) -> &str {
         &self.0
