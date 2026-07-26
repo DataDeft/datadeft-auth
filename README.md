@@ -83,15 +83,16 @@ database access, rate limiting, Axum, AWS, or application copy.
 
 Framework-neutral orchestration for magic-link requests, scanner-safe
 confirmation, and server-revocable sessions. Depends on traits — not concrete
-infrastructure — for storage, rate limiting, the email outbox, clock, and
-randomness. Implements the reusable core of:
+infrastructure — for storage, rate limiting, an email delivery hook (named
+`MagicLinkOutbox`, but not necessarily durable), clock, and randomness.
+Implements the reusable core of:
 
 - **request:** validate caller-decoded input → rate limit → create challenge
-  → ask the app-provided outbox to send the email
+  → ask the app-provided delivery hook to deliver or durably enqueue the email
 - **landing:** validate and rate limit without consuming → identify the exact
   account → mint short-lived, token/account/client-bound confirmation state
 - **confirmation:** verify bound state locally → atomically consume the challenge
-  with user/session creation → return the session cookie payload
+  with user/session creation → return the encrypted session cookie value
 - **session:** validate cookie freshness plus server-side state, and support
   revocation without sliding refresh
 
@@ -148,22 +149,31 @@ consent/terms/privacy versions, locale support, email templates, WAL/audit
 events, and infrastructure wiring. It calls these libraries from its own
 handlers.
 
-Pseudocode for a request handler:
+The request path constructs `MagicLinkRequestService` and calls
+`request_magic_link(...)`. The service applies request and delivery limits,
+stores the challenge, and passes the token only to the application-provided
+`MagicLinkOutbox` implementation; that trait does not itself guarantee durable
+queueing. The public response remains generic.
 
-```text
-1. The API handler decodes the inbound request (JSON/form).
-2. It calls dd_magic_link_service::request(...).
-3. The service rate-limits and creates the challenge via traits.
-4. The service hands back an email request (recipient, token, etc.).
-5. The API renders its OWN email template and stores/sends via its trait adapter.
-6. The API maps the generic service result into its OWN HTTP response.
-7. The router stays in the API; the library never owns a route.
-```
+The only login path is scanner-safe:
 
-Consume is analogous: the API decodes, calls
-`dd_magic_link_service::consume(...)`, gets back a generic session result,
-mints the session cookie, and maps the outcome into its own HTTP response.
+1. A bounded landing handler calls
+   `MagicLinkFlowService::begin_magic_link_landing(...)`. This validates without
+   consuming, identifies the exact account, and returns a short-lived encrypted
+   flow cookie plus a separate confirmation value.
+2. The confirmation page shows the account and submits the confirmation value
+   by same-origin `POST`; it never embeds the raw magic-link token.
+3. The POST handler calls `confirm_magic_link_flow(...)`, which verifies the
+   token/account/client-bound state, mints the encrypted session cookie value, and
+   asks the authentication repository to consume the challenge and create
+   user/session state atomically.
+4. The API applies that value with policy-derived attributes using the Axum
+   helpers and maps only the generic outcome into its own fixed redirect or error
+   response.
 
+The consuming application still owns its router, templates, deployment logging
+policy, infrastructure wiring, and repository implementations. There is no raw
+consume alternative.
 ## Local development
 
 Start with local path dependencies, not git or crates.io.
