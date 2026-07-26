@@ -97,6 +97,7 @@ fn consume_body_parses_json_and_form_without_token_validation() {
     let form = parse_magic_link_consume_body(b"token=not-a-token&country=HU", false).expect("form");
     assert_eq!(form.token(), "not-a-token");
     assert_eq!(form.country(None).as_deref(), Some("HU"));
+    assert_eq!(form.country(Some("US".to_owned())).as_deref(), Some("US"));
 }
 
 #[test]

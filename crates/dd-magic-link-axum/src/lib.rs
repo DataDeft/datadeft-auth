@@ -187,7 +187,7 @@ impl MagicLinkConsumeBody {
     }
 
     pub fn country(&self, fallback_country: Option<String>) -> Option<String> {
-        self.country.clone().or(fallback_country)
+        fallback_country.or_else(|| self.country.clone())
     }
 }
 
