@@ -142,7 +142,7 @@ where
                     .content(content)
                     .send()
                     .await
-                    .map_err(|err| crate::error::map_sdk_error(&format!("{err:?}")))?;
+                    .map_err(crate::error::map_ses_send_email_error)?;
                 Ok::<(), AwsAdapterError>(())
             })
         })

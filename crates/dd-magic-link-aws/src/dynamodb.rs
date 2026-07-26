@@ -14,7 +14,10 @@ use dd_magic_link_service::{
 };
 use tokio::runtime::Handle;
 
-use crate::error::{AwsAdapterError, map_sdk_error};
+use crate::error::{
+    AwsAdapterError, map_get_item_error, map_put_item_error, map_transact_write_items_error,
+    map_update_item_error,
+};
 use crate::hmac_key::{SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey};
 
 /// DynamoDB single-table auth store.
@@ -153,10 +156,7 @@ impl MagicLinkRepository for DynamoDbAuthStore {
             if let Some(user_id) = &record.user_id {
                 request = request.item("user_id", av_s(user_id.as_str()));
             }
-            request
-                .send()
-                .await
-                .map_err(|err| map_sdk_error(&format!("{err:?}")))?;
+            request.send().await.map_err(map_put_item_error)?;
             Ok(())
         })
         .map_err(DependencyError::from)
@@ -183,7 +183,7 @@ impl MagicLinkRepository for DynamoDbAuthStore {
                 .return_values(ReturnValue::AllNew)
                 .send()
                 .await
-                .map_err(|err| map_sdk_error(&format!("{err:?}")))?;
+                .map_err(map_update_item_error)?;
             let item = output.attributes().ok_or(AwsAdapterError::Internal)?;
             Self::item_to_consumed(item)
         })
@@ -206,7 +206,7 @@ impl UserRepository for DynamoDbAuthStore {
                 .key("sk", av_s("PROFILE"))
                 .send()
                 .await
-                .map_err(|err| map_sdk_error(&format!("{err:?}")))?;
+                .map_err(map_get_item_error)?;
             let Some(item) = output.item() else {
                 return Ok(None);
             };
@@ -223,7 +223,7 @@ impl UserRepository for DynamoDbAuthStore {
                 .key("sk", av_s("PROFILE"))
                 .send()
                 .await
-                .map_err(|err| map_sdk_error(&format!("{err:?}")))?;
+                .map_err(map_get_item_error)?;
             user_output.item().map(Self::item_to_user).transpose()
         })
         .map_err(DependencyError::from)
@@ -272,7 +272,7 @@ impl UserRepository for DynamoDbAuthStore {
                 .transact_items(TransactWriteItem::builder().put(email_lookup_put).build())
                 .send()
                 .await
-                .map_err(|err| map_sdk_error(&format!("{err:?}")))?;
+                .map_err(map_transact_write_items_error)?;
             Ok(())
         })
         .map_err(DependencyError::from)
@@ -323,7 +323,7 @@ impl SessionRepository for DynamoDbAuthStore {
                 .transact_items(TransactWriteItem::builder().put(index_put).build())
                 .send()
                 .await
-                .map_err(|err| map_sdk_error(&format!("{err:?}")))?;
+                .map_err(map_transact_write_items_error)?;
             Ok(())
         })
         .map_err(DependencyError::from)
@@ -343,7 +343,7 @@ impl SessionRepository for DynamoDbAuthStore {
                 .key("sk", av_s("SESSION"))
                 .send()
                 .await
-                .map_err(|err| map_sdk_error(&format!("{err:?}")))?;
+                .map_err(map_get_item_error)?;
             output
                 .item()
                 .map(|item| Self::item_to_session(session_id, item))
@@ -371,7 +371,7 @@ impl SessionRepository for DynamoDbAuthStore {
                 .expression_attribute_values(":now", av_n(revoked_at_unix))
                 .send()
                 .await
-                .map_err(|err| map_sdk_error(&format!("{err:?}")))?;
+                .map_err(map_update_item_error)?;
             Ok(())
         })
         .map_err(DependencyError::from)
@@ -408,7 +408,7 @@ impl RateLimiter for DynamoDbAuthStore {
                 .await;
             match result {
                 Ok(_) => Ok(RateLimitDecision::Allowed),
-                Err(error) => match map_sdk_error(&format!("{error:?}")) {
+                Err(error) => match map_update_item_error(error) {
                     AwsAdapterError::ConditionalWriteFailed => Ok(RateLimitDecision::Denied),
                     other => Err(other),
                 },
