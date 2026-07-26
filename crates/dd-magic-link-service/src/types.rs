@@ -230,6 +230,155 @@ impl fmt::Debug for SessionRecord {
     }
 }
 
+/// Strongly read challenge state used to plan an atomic authentication.
+///
+/// The repository returns the stored verifier hash so the service, rather than
+/// an adapter or database expression, owns the single constant-time comparison
+/// with the presented verifier hash. All other fields are security-relevant
+/// optimistic-read state that the service validates before constructing a
+/// [`CommitMagicLinkAuthentication`] command.
+#[derive(Clone, Eq, PartialEq)]
+pub struct MagicLinkAuthenticationCandidate {
+    pub verifier_hash: VerifierHash,
+    pub email: NormalizedEmail,
+    pub expires_at_unix: u64,
+    pub consumed_at_unix: Option<u64>,
+    pub terms_version: String,
+    pub privacy_version: String,
+    pub consented_at_unix: u64,
+}
+
+impl fmt::Debug for MagicLinkAuthenticationCandidate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MagicLinkAuthenticationCandidate")
+            .field("verifier_hash", &"VerifierHash(..)")
+            .field("email", &"NormalizedEmail(..)")
+            .field("expires_at_unix", &self.expires_at_unix)
+            .field("consumed_at_unix", &self.consumed_at_unix)
+            .field("terms_version", &self.terms_version)
+            .field("privacy_version", &self.privacy_version)
+            .field("consented_at_unix", &self.consented_at_unix)
+            .finish()
+    }
+}
+
+/// Immutable challenge fields that an atomic authentication commit must bind.
+///
+/// Challenge writers must keep these fields immutable after creation. The only
+/// supported mutation is the atomic transition from unconsumed to consumed. An
+/// adapter must condition the commit on exact equality for every field here,
+/// require an unconsumed and unexpired challenge with nonzero consent, and must
+/// not place verifier-derived material in transaction expressions or values.
+#[derive(Clone, Eq, PartialEq)]
+pub struct MagicLinkAuthenticationExpectation {
+    pub selector_lookup_hmac: LookupHmac,
+    pub email: NormalizedEmail,
+    pub expires_at_unix: u64,
+    pub terms_version: String,
+    pub privacy_version: String,
+    pub consented_at_unix: u64,
+}
+
+impl fmt::Debug for MagicLinkAuthenticationExpectation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MagicLinkAuthenticationExpectation")
+            .field("selector_lookup_hmac", &"LookupHmac(..)")
+            .field("email", &"NormalizedEmail(..)")
+            .field("expires_at_unix", &self.expires_at_unix)
+            .field("terms_version", &self.terms_version)
+            .field("privacy_version", &self.privacy_version)
+            .field("consented_at_unix", &self.consented_at_unix)
+            .finish()
+    }
+}
+
+/// Planned user identity and account branch for an atomic authentication.
+///
+/// The repository derives all persisted user fields from this id and the
+/// challenge expectation, as specified by
+/// [`MagicLinkAuthenticationRepository`](crate::traits::MagicLinkAuthenticationRepository).
+#[derive(Clone, Eq, PartialEq)]
+pub enum MagicLinkAuthenticationUser {
+    Existing { user_id: UserId },
+    Create { user_id: UserId },
+}
+
+impl fmt::Debug for MagicLinkAuthenticationUser {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Existing { .. } => f.write_str("MagicLinkAuthenticationUser::Existing(..)"),
+            Self::Create { .. } => f.write_str("MagicLinkAuthenticationUser::Create(..)"),
+        }
+    }
+}
+
+/// Transaction-scoped idempotency id for one exact authentication plan.
+///
+/// The canonical representation is `aid_` followed by 32 lowercase hexadecimal
+/// characters encoding an independent 128-bit CSPRNG draw. It is not
+/// authentication state and must not be persisted. See
+/// [`MagicLinkAuthenticationRepository`](crate::traits::MagicLinkAuthenticationRepository)
+/// for retry semantics.
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub struct AuthenticationAttemptId(String);
+
+impl AuthenticationAttemptId {
+    /// Parse the single canonical authentication-attempt id representation.
+    pub fn parse(value: &str) -> Result<Self, MagicLinkServiceError> {
+        if is_prefixed_hex_id(value, "aid_", 32) {
+            Ok(Self(value.to_owned()))
+        } else {
+            Err(MagicLinkServiceError::Internal)
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for AuthenticationAttemptId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AuthenticationAttemptId(..)")
+    }
+}
+
+/// Complete all-or-nothing magic-link authentication transaction.
+///
+/// Before submitting this command, the service owns token parsing, presented
+/// verifier HMAC derivation, constant-time comparison, policy/consent checks,
+/// identity and session-id generation, checked session expiry calculation, and
+/// complete browser-cookie minting. The command contains no raw token, selector,
+/// verifier, presented verifier hash, or redundant persisted record fields.
+/// See [`MagicLinkAuthenticationRepository`](crate::traits::MagicLinkAuthenticationRepository)
+/// for the full atomic commit and retry contract.
+#[derive(Clone, Eq, PartialEq)]
+pub struct CommitMagicLinkAuthentication {
+    pub magic_link: MagicLinkAuthenticationExpectation,
+    pub now_unix: u64,
+    pub attempt_id: AuthenticationAttemptId,
+    pub user: MagicLinkAuthenticationUser,
+    pub session_id: SessionId,
+    /// Authoritative server-side session validity expiry from validated policy.
+    /// Storage may retain the record at or after this time for cleanup, but that
+    /// retention must never extend session validity.
+    pub session_expires_at_unix: u64,
+}
+
+impl fmt::Debug for CommitMagicLinkAuthentication {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CommitMagicLinkAuthentication")
+            .field("magic_link", &self.magic_link)
+            .field("now_unix", &self.now_unix)
+            .field("attempt_id", &"AuthenticationAttemptId(..)")
+            .field("user", &self.user)
+            .field("session_id", &"SessionId(..)")
+            .field("session_expires_at_unix", &self.session_expires_at_unix)
+            .finish()
+    }
+}
+
 /// Request command. Debug redacts the target account.
 #[derive(Clone, Eq, PartialEq)]
 pub struct RequestMagicLinkCommand {

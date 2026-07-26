@@ -2,12 +2,12 @@
 
 use core::future::Future;
 
-use dd_magic_link_core::{LookupHmac, VerifierHash};
+use dd_magic_link_core::{LookupHmac, NormalizedEmail, VerifierHash};
 
-use crate::error::{ConsumeMagicLinkError, DependencyError};
+use crate::error::{CommitMagicLinkAuthenticationError, ConsumeMagicLinkError, DependencyError};
 use crate::types::{
-    ConsumedMagicLink, MagicLinkEmail, MagicLinkRecord, RateLimitKey, SessionId, SessionRecord,
-    UserRecord,
+    CommitMagicLinkAuthentication, ConsumedMagicLink, MagicLinkAuthenticationCandidate,
+    MagicLinkEmail, MagicLinkRecord, RateLimitKey, SessionId, SessionRecord, UserRecord,
 };
 
 /// Deterministic clock boundary.
@@ -31,6 +31,54 @@ pub trait MagicLinkRepository {
         verifier_hash: &VerifierHash,
         now_unix: u64,
     ) -> impl Future<Output = Result<ConsumedMagicLink, ConsumeMagicLinkError>>;
+}
+
+/// Aggregate repository for all-or-nothing magic-link authentication.
+///
+/// Authentication planning uses strongly consistent reads where the backing
+/// store supports them. The service derives and compares the presented verifier
+/// hash locally in constant time; adapters must never receive or compare the raw
+/// token or verifier.
+///
+/// A successful [`commit_magic_link_authentication`](Self::commit_magic_link_authentication)
+/// is one atomic transaction that:
+///
+/// - transitions exactly the expected, unconsumed and unexpired challenge with
+///   nonzero consent to consumed;
+/// - for an existing user, conditions both immutable email linkage and profile
+///   on the planned user id and expected email, requires `disabled == false`, and
+///   preserves stored consent;
+/// - for a created user, derives an enabled profile and immutable email linkage
+///   solely from the planned user id and expected email and consent fields;
+/// - derives an unrevoked session solely from the command's session id, planned
+///   user id, expected email, and `now_unix`, then creates it and its user index.
+///
+/// The command's `session_expires_at_unix` is the authoritative validity expiry.
+/// A storage cleanup TTL may retain records at or after that time, but retention
+/// must never extend validity.
+///
+/// `Rejected`, `UserConflict`, and `SessionConflict` are confirmed transaction
+/// cancellations and must leave every item unchanged. A confirmed conflict may
+/// be replanned, but every changed transaction payload requires a new attempt id.
+/// `DependencyUnavailable` may have an ambiguous outcome; callers may retry only
+/// the byte-equivalent command with the same attempt id and must not read or
+/// replan while its result may be ambiguous. An adapter-reported `Internal`
+/// failure is not an ambiguous commit and must not be retried as one.
+pub trait MagicLinkAuthenticationRepository {
+    fn find_magic_link_for_authentication(
+        &self,
+        selector_lookup_hmac: &LookupHmac,
+    ) -> impl Future<Output = Result<Option<MagicLinkAuthenticationCandidate>, DependencyError>>;
+
+    fn find_user_for_authentication(
+        &self,
+        email: &NormalizedEmail,
+    ) -> impl Future<Output = Result<Option<UserRecord>, DependencyError>>;
+
+    fn commit_magic_link_authentication(
+        &self,
+        command: &CommitMagicLinkAuthentication,
+    ) -> impl Future<Output = Result<(), CommitMagicLinkAuthenticationError>>;
 }
 
 /// User account repository.

@@ -54,6 +54,41 @@ impl fmt::Display for MagicLinkServiceError {
 
 impl std::error::Error for MagicLinkServiceError {}
 
+/// Outcome of the atomic authentication transaction.
+///
+/// See [`MagicLinkAuthenticationRepository`](crate::traits::MagicLinkAuthenticationRepository)
+/// for atomicity and retry requirements.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CommitMagicLinkAuthenticationError {
+    /// The challenge no longer satisfies the expected unconsumed, unexpired,
+    /// consent, or immutable-field conditions.
+    Rejected,
+    /// The planned existing-user conditions or conditional user creation lost
+    /// a race.
+    UserConflict,
+    /// The conditional session or user-session-index creation lost a race.
+    SessionConflict,
+    /// The dependency outcome may be ambiguous.
+    DependencyUnavailable,
+    /// The adapter detected malformed data, an invalid command, or an internal
+    /// invariant failure.
+    Internal,
+}
+
+impl fmt::Display for CommitMagicLinkAuthenticationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Rejected => f.write_str("authentication transaction rejected"),
+            Self::UserConflict => f.write_str("authentication user conflict"),
+            Self::SessionConflict => f.write_str("authentication session conflict"),
+            Self::DependencyUnavailable => f.write_str("authentication dependency unavailable"),
+            Self::Internal => f.write_str("internal authentication transaction error"),
+        }
+    }
+}
+
+impl std::error::Error for CommitMagicLinkAuthenticationError {}
+
 impl From<DependencyError> for MagicLinkServiceError {
     fn from(value: DependencyError) -> Self {
         match value {
