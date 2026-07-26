@@ -151,8 +151,8 @@ impl MagicLinkRequestJson {
         let email =
             NormalizedEmail::parse(&self.email).map_err(|_| MagicLinkHttpError::BadRequest)?;
         let locale = parse_locale(&self.locale)?;
-        let client_key =
-            parse_optional_client_key(self.client_key.as_deref())?.or(fallback_client_key);
+        let body_client_key = parse_optional_client_key(self.client_key.as_deref())?;
+        let client_key = fallback_client_key.or(body_client_key);
         Ok(RequestMagicLinkCommand::new(
             email,
             locale,
@@ -182,7 +182,8 @@ impl MagicLinkConsumeBody {
         &self,
         fallback_client_key: Option<ClientKey>,
     ) -> Result<Option<ClientKey>, MagicLinkHttpError> {
-        Ok(parse_optional_client_key(self.client_key.as_deref())?.or(fallback_client_key))
+        let body_client_key = parse_optional_client_key(self.client_key.as_deref())?;
+        Ok(fallback_client_key.or(body_client_key))
     }
 
     pub fn country(&self, fallback_country: Option<String>) -> Option<String> {

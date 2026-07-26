@@ -46,6 +46,25 @@ fn request_json_parses_to_service_command_without_rewriting_email() {
 }
 
 #[test]
+fn server_derived_client_key_overrides_body_client_key() {
+    let body = br#"{
+        "email":"user@example.com",
+        "locale":"en",
+        "terms_accepted":true,
+        "privacy_accepted":true,
+        "client_key":"attacker-bucket"
+    }"#;
+    let fallback = ClientKey::parse("server-bucket").expect("client key");
+
+    let command = parse_magic_link_request_json(body, Some(fallback)).expect("command");
+
+    assert_eq!(
+        command.client_key().expect("client").as_str(),
+        "server-bucket"
+    );
+}
+
+#[test]
 fn request_json_rejects_bad_locale_and_missing_consent_is_left_to_service() {
     let bad_locale = br#"{"email":"user@example.com","locale":"de","terms_accepted":true,"privacy_accepted":true}"#;
     assert_eq!(
@@ -78,6 +97,24 @@ fn consume_body_parses_json_and_form_without_token_validation() {
     let form = parse_magic_link_consume_body(b"token=not-a-token&country=HU", false).expect("form");
     assert_eq!(form.token(), "not-a-token");
     assert_eq!(form.country(None).as_deref(), Some("HU"));
+}
+
+#[test]
+fn server_derived_client_key_overrides_consume_body_client_key() {
+    let json = parse_magic_link_consume_body(
+        br#"{"token":"not-a-token","client_key":"attacker-bucket"}"#,
+        true,
+    )
+    .expect("json");
+    let fallback = ClientKey::parse("server-bucket").expect("client key");
+
+    assert_eq!(
+        json.client_key(Some(fallback))
+            .expect("client")
+            .expect("some")
+            .as_str(),
+        "server-bucket"
+    );
 }
 
 #[test]
