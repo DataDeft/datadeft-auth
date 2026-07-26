@@ -4,8 +4,7 @@ use super::*;
 use crate::email::NormalizedEmail;
 use crate::magic_link::{MagicLinkSelector, MagicLinkVerifier};
 use dd_auth_token_core::flow_cookie::{
-    FlowAccountBinding, FlowClientBinding, FlowSelectorBinding, FlowVerifierBinding,
-    MAGIC_LINK_FLOW_BINDING_BYTES,
+    FlowAccountBinding, FlowSelectorBinding, FlowVerifierBinding, MAGIC_LINK_FLOW_BINDING_BYTES,
 };
 
 fn key() -> LookupHmacKey {
@@ -168,13 +167,6 @@ fn flow_binding_vectors_are_pinned() {
                 "7330b67f746ac427ff0777354000ca197fd1120ee6cf99371c484b92b8d517c8",
             )))
     );
-    assert!(
-        flow_client_binding(&key(), "trusted-client-1")
-            .expect("client binding")
-            .matches_constant_time(&FlowClientBinding::new(binding_bytes(
-                "eab199caaa07ac3d21d0a6225eb44791534fa5fe29b6d62c8ced6c54d2d63803",
-            )))
-    );
 }
 
 #[test]
@@ -236,23 +228,6 @@ fn flow_binding_conversions_reject_domain_confusion_and_noncanonical_values() {
 }
 
 #[test]
-fn client_flow_binding_is_domain_separated_and_binds_the_exact_client() {
-    let client_one = flow_client_binding(&key(), "trusted-client-1").expect("client one");
-    let client_two = flow_client_binding(&key(), "trusted-client-2").expect("client two");
-    let same_client = flow_client_binding(&key(), "trusted-client-1").expect("same client");
-    let selector_domain_lookup = LookupHmac(
-        hmac_prefixed(&key(), SELECTOR_LOOKUP_PREFIX, "trusted-client-1")
-            .expect("selector-domain HMAC"),
-    );
-    let selector_domain = flow_selector_binding(&selector_domain_lookup).expect("selector domain");
-    let selector_bytes_as_client = FlowClientBinding::new(*selector_domain.as_sensitive_bytes());
-
-    assert!(client_one.matches_constant_time(&same_client));
-    assert!(!client_one.matches_constant_time(&client_two));
-    assert!(!client_one.matches_constant_time(&selector_bytes_as_client));
-}
-
-#[test]
 fn all_flow_binding_types_match_only_in_constant_time_api() {
     let selector = flow_selector_binding(&LookupHmac(
         "mlh_42fb608ee6ce2ac56bac6bb240a98c857a315afbb186159a59133b679d597a21".to_owned(),
@@ -301,10 +276,8 @@ fn flow_binding_debug_output_is_redacted() {
         "emh_7330b67f746ac427ff0777354000ca197fd1120ee6cf99371c484b92b8d517c8".to_owned(),
     ))
     .expect("account");
-    let client = flow_client_binding(&key(), "trusted-client-1").expect("client");
 
     assert_eq!(format!("{selector:?}"), "FlowSelectorBinding(..)");
     assert_eq!(format!("{verifier:?}"), "FlowVerifierBinding(..)");
     assert_eq!(format!("{account:?}"), "FlowAccountBinding(..)");
-    assert_eq!(format!("{client:?}"), "FlowClientBinding(..)");
 }

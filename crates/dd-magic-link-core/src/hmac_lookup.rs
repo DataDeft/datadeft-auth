@@ -6,7 +6,7 @@
 use core::fmt;
 
 use dd_auth_token_core::flow_cookie::{
-    FlowAccountBinding, FlowClientBinding, FlowSelectorBinding, FlowVerifierBinding,
+    FlowAccountBinding, FlowSelectorBinding, FlowVerifierBinding,
 };
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -22,7 +22,6 @@ type HmacSha256 = Hmac<Sha256>;
 /// Required HMAC key/pepper length.
 pub const HMAC_KEY_BYTES: usize = 32;
 const HMAC_DOMAIN: &[u8] = b"magic-link-lookup-v1";
-const FLOW_CLIENT_PREFIX: &str = "mfc";
 const HMAC_BYTES: usize = 32;
 const HMAC_HEX_LEN: usize = HMAC_BYTES * 2;
 
@@ -194,21 +193,6 @@ pub fn flow_account_binding(lookup: &LookupHmac) -> Result<FlowAccountBinding, M
     let binding = FlowAccountBinding::new(decoded);
     decoded.zeroize();
     Ok(binding)
-}
-
-/// Derive the purpose-separated scanner-flow binding for an app-supplied client key.
-pub fn flow_client_binding(
-    key: &LookupHmacKey,
-    client_key: &str,
-) -> Result<FlowClientBinding, MagicLinkError> {
-    let mut mac =
-        HmacSha256::new_from_slice(key.as_bytes()).map_err(|_| MagicLinkError::Internal)?;
-    mac.update(HMAC_DOMAIN);
-    mac.update(&[0]);
-    mac.update(FLOW_CLIENT_PREFIX.as_bytes());
-    mac.update(&[0]);
-    mac.update(client_key.as_bytes());
-    Ok(FlowClientBinding::new(mac.finalize().into_bytes().into()))
 }
 
 fn decode_canonical_hmac(
