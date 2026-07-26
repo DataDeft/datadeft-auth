@@ -467,7 +467,6 @@ async fn begin_flow(
     clock: &FixedClock,
     rng: &mut TestRng,
     raw_token: String,
-    client_key: Option<ClientKey>,
     config: MagicLinkServiceConfig,
 ) -> Result<BeginMagicLinkLandingOutcome, MagicLinkFlowError> {
     let key = lookup_key();
@@ -485,7 +484,7 @@ async fn begin_flow(
         config,
     });
     service
-        .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(raw_token, client_key))
+        .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(raw_token))
         .await
 }
 
@@ -497,7 +496,6 @@ async fn confirm_flow(
     rng: &mut TestRng,
     flow_cookie: String,
     confirmation: String,
-    client_key: Option<ClientKey>,
     country: Option<String>,
     config: MagicLinkServiceConfig,
 ) -> Result<ConfirmMagicLinkFlowOutcome, MagicLinkFlowError> {
@@ -515,7 +513,7 @@ async fn confirm_flow(
         session_keyring: &session_keyring,
         config,
     });
-    let command = ConfirmMagicLinkFlowCommand::new(flow_cookie, confirmation, client_key, country)?;
+    let command = ConfirmMagicLinkFlowCommand::new(flow_cookie, confirmation, country)?;
     service.confirm_magic_link_flow(command).await
 }
 
@@ -543,7 +541,6 @@ async fn request(
             EmailLocale::En,
             true,
             true,
-            Some(ClientKey::parse("client-1").expect("client key")),
         ))
         .await
 }
@@ -562,7 +559,6 @@ async fn valid_landing_is_bounded_non_mutating_and_caps_expiry_to_record() {
         &clock,
         &mut rng,
         token(VERIFIER).as_secret_value().to_string(),
-        Some(ClientKey::parse("client-1").expect("client key")),
         config(),
     )
     .await
@@ -574,9 +570,8 @@ async fn valid_landing_is_bounded_non_mutating_and_caps_expiry_to_record() {
     assert!(repository.commands.borrow().is_empty());
     assert!(repository.sessions.borrow().is_empty());
     assert_eq!(verifier_comparison_count(), 1);
-    assert_eq!(limiter.calls.get(), 2);
-    assert!(limiter.checked.borrow()[0].starts_with("magic-link:landing:client:"));
-    assert!(limiter.checked.borrow()[1].starts_with("magic-link:landing:selector:"));
+    assert_eq!(limiter.calls.get(), 1);
+    assert!(limiter.checked.borrow()[0].starts_with("magic-link:landing:selector:"));
     assert_eq!(rng.calls, 2);
     assert_eq!(outcome.cookie_max_age_secs(), 100);
     assert_eq!(outcome.account_identity().as_str(), "account@example.test");
@@ -599,7 +594,6 @@ async fn landing_selector_miss_does_one_dummy_read_and_creates_no_flow_state() {
         &clock,
         &mut rng,
         token(VERIFIER).as_secret_value().to_string(),
-        None,
         config(),
     )
     .await
@@ -641,7 +635,6 @@ async fn landing_uses_configured_expiry_cap_and_rejects_expiry_at_now() {
         &clock,
         &mut rng,
         token(VERIFIER).as_secret_value().to_string(),
-        None,
         policy,
     )
     .await
@@ -658,7 +651,6 @@ async fn landing_uses_configured_expiry_cap_and_rejects_expiry_at_now() {
         &FixedClock::at(NOW),
         &mut TestRng::working(),
         token(VERIFIER).as_secret_value().to_string(),
-        None,
         config(),
     )
     .await
@@ -689,7 +681,6 @@ async fn confirmation_accepts_authenticated_expiry_then_rejects_post_expiry() {
             &FixedClock::at(NOW),
             &mut rng,
             token(VERIFIER).as_secret_value().to_string(),
-            None,
             policy.clone(),
         )
         .await
@@ -703,7 +694,6 @@ async fn confirmation_accepts_authenticated_expiry_then_rejects_post_expiry() {
             &mut rng,
             landing.flow_cookie_value().to_owned(),
             landing.confirmation_value().to_owned(),
-            None,
             Some("HU".to_owned()),
             policy,
         )
@@ -749,7 +739,6 @@ async fn confirmation_accepts_authenticated_expiry_then_rejects_post_expiry() {
         &FixedClock::at(NOW),
         &mut rng,
         token(VERIFIER).as_secret_value().to_string(),
-        None,
         config(),
     )
     .await
@@ -762,7 +751,6 @@ async fn confirmation_accepts_authenticated_expiry_then_rejects_post_expiry() {
         &mut rng,
         landing.flow_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
-        None,
         Some("HU".to_owned()),
         config(),
     )
@@ -788,7 +776,7 @@ async fn confirmation_accepts_authenticated_expiry_then_rejects_post_expiry() {
 }
 
 #[tokio::test]
-async fn malformed_and_oversized_landing_have_identical_client_only_work() {
+async fn malformed_and_oversized_landing_are_generic_and_do_no_limiter_or_repository_work() {
     for raw_token in [
         "malformed".to_owned(),
         "x".repeat(MAX_RAW_MAGIC_LINK_TOKEN_BYTES + 1),
@@ -796,20 +784,11 @@ async fn malformed_and_oversized_landing_have_identical_client_only_work() {
         let repository = FakeRepository::default();
         *repository.candidate.borrow_mut() = Some(candidate());
         let limiter = AllowLimiter::default();
-        limiter.deny_prefix("magic-link:landing:client:");
         let clock = FixedClock::at(NOW);
         let mut rng = TestRng::working();
-        let error = begin_flow(
-            &repository,
-            &limiter,
-            &clock,
-            &mut rng,
-            raw_token,
-            Some(ClientKey::parse("client-1").expect("client key")),
-            config(),
-        )
-        .await
-        .expect_err("invalid landing");
+        let error = begin_flow(&repository, &limiter, &clock, &mut rng, raw_token, config())
+            .await
+            .expect_err("invalid landing");
         assert_eq!(
             error.public_error(),
             MagicLinkServiceError::MagicLinkUnavailable
@@ -819,42 +798,25 @@ async fn malformed_and_oversized_landing_have_identical_client_only_work() {
             TemporaryAuthStateAction::Clear
         );
         assert_eq!(clock.calls.get(), 1);
-        assert_eq!(limiter.calls.get(), 1);
-        assert!(limiter.checked.borrow()[0].starts_with("magic-link:landing:client:"));
+        assert_eq!(limiter.calls.get(), 0);
+        assert!(limiter.checked.borrow().is_empty());
         assert_eq!(repository.candidate_reads.get(), 0);
         assert_eq!(rng.calls, 0);
     }
-
-    let error = begin_flow(
-        &FakeRepository::default(),
-        &AllowLimiter::default(),
-        &FixedClock::at(NOW),
-        &mut TestRng::working(),
-        "malformed".to_owned(),
-        None,
-        config(),
-    )
-    .await
-    .expect_err("malformed without client");
-    assert_eq!(
-        error.public_error(),
-        MagicLinkServiceError::MagicLinkUnavailable
-    );
 }
 
 #[tokio::test]
-async fn landing_runs_both_buckets_even_when_the_first_denies() {
+async fn landing_selector_limit_is_generic_and_precedes_repository_work() {
     let repository = FakeRepository::default();
     *repository.candidate.borrow_mut() = Some(candidate());
     let limiter = AllowLimiter::default();
-    limiter.deny_prefix("magic-link:landing:client:");
+    limiter.deny_prefix("magic-link:landing:selector:");
     let error = begin_flow(
         &repository,
         &limiter,
         &FixedClock::at(NOW),
         &mut TestRng::working(),
         token(VERIFIER).as_secret_value().to_string(),
-        Some(ClientKey::parse("client-1").expect("client key")),
         config(),
     )
     .await
@@ -863,7 +825,7 @@ async fn landing_runs_both_buckets_even_when_the_first_denies() {
         error.public_error(),
         MagicLinkServiceError::MagicLinkUnavailable
     );
-    assert_eq!(limiter.calls.get(), 2);
+    assert_eq!(limiter.calls.get(), 1);
     assert_eq!(repository.candidate_reads.get(), 0);
 }
 
@@ -882,7 +844,6 @@ async fn landing_invalid_config_precedes_clock_limiter_repository_and_entropy() 
         &clock,
         &mut rng,
         token(VERIFIER).as_secret_value().to_string(),
-        Some(ClientKey::parse("client-1").expect("client key")),
         policy,
     )
     .await
@@ -909,8 +870,7 @@ async fn landing_dependency_and_entropy_failures_preserve_temporary_state() {
         &limiter,
         &FixedClock::at(NOW),
         &mut TestRng::working(),
-        "malformed".to_owned(),
-        Some(ClientKey::parse("client-1").expect("client key")),
+        token(VERIFIER).as_secret_value().to_string(),
         config(),
     )
     .await
@@ -930,7 +890,6 @@ async fn landing_dependency_and_entropy_failures_preserve_temporary_state() {
             &FixedClock::at(NOW),
             &mut TestRng::failing_at(fail_at),
             token(VERIFIER).as_secret_value().to_string(),
-            None,
             config(),
         )
         .await
@@ -949,14 +908,12 @@ async fn scanner_confirmation_atomically_authenticates_and_replay_clears() {
     let repository = FakeRepository::default();
     *repository.candidate.borrow_mut() = Some(candidate());
     let mut rng = TestRng::working();
-    let client = ClientKey::parse("client-1").expect("client key");
     let landing = begin_flow(
         &repository,
         &AllowLimiter::default(),
         &FixedClock::at(NOW),
         &mut rng,
         token(VERIFIER).as_secret_value().to_string(),
-        Some(client.clone()),
         config(),
     )
     .await
@@ -971,7 +928,6 @@ async fn scanner_confirmation_atomically_authenticates_and_replay_clears() {
         &mut rng,
         cookie.clone(),
         confirmation.clone(),
-        Some(client.clone()),
         Some("HU".to_owned()),
         config(),
     )
@@ -1006,7 +962,6 @@ async fn scanner_confirmation_atomically_authenticates_and_replay_clears() {
         &mut rng,
         cookie,
         confirmation,
-        Some(client),
         Some("HU".to_owned()),
         config(),
     )
@@ -1024,44 +979,37 @@ async fn scanner_confirmation_atomically_authenticates_and_replay_clears() {
 }
 
 #[tokio::test]
-async fn confirmation_rejects_cookie_nonce_client_verifier_account_and_stale_mismatches() {
-    for case in 0..10 {
+async fn confirmation_rejects_cookie_nonce_verifier_account_and_stale_mismatches() {
+    for case in 0..8 {
         reset_verifier_comparison_count();
         let repository = FakeRepository::default();
         *repository.candidate.borrow_mut() = Some(candidate());
         let mut rng = TestRng::working();
-        let client = ClientKey::parse("client-1").expect("client key");
         let landing = begin_flow(
             &repository,
             &AllowLimiter::default(),
             &FixedClock::at(NOW),
             &mut rng,
             token(VERIFIER).as_secret_value().to_string(),
-            Some(client.clone()),
             config(),
         )
         .await
         .expect("landing");
         let mut cookie = landing.flow_cookie_value().to_owned();
         let mut confirmation = landing.confirmation_value().to_owned();
-        let mut submitted_client = Some(client);
         let mut confirm_now = NOW;
         match case {
             0 => cookie.push('x'),
             1 => confirmation.replace_range(0..1, "f"),
-            2 => submitted_client = None,
+            2 => confirm_now = NOW + 101,
             3 => {
-                submitted_client = Some(ClientKey::parse("client-2").expect("client key"));
-            }
-            4 => confirm_now = NOW + 101,
-            5 => {
                 let mut value = repository.candidate.borrow().clone().expect("candidate");
                 value.verifier_hash =
                     verifier_hash(&lookup_key(), token(OTHER_VERIFIER).verifier())
                         .expect("other verifier");
                 *repository.candidate.borrow_mut() = Some(value);
             }
-            6 => {
+            4 => {
                 repository
                     .candidate
                     .borrow_mut()
@@ -1069,7 +1017,7 @@ async fn confirmation_rejects_cookie_nonce_client_verifier_account_and_stale_mis
                     .expect("candidate")
                     .email = NormalizedEmail::parse("other@example.test").expect("email");
             }
-            7 => {
+            5 => {
                 repository
                     .candidate
                     .borrow_mut()
@@ -1077,7 +1025,7 @@ async fn confirmation_rejects_cookie_nonce_client_verifier_account_and_stale_mis
                     .expect("candidate")
                     .terms_version = "stale".to_owned();
             }
-            8 => {
+            6 => {
                 repository
                     .candidate
                     .borrow_mut()
@@ -1101,7 +1049,6 @@ async fn confirmation_rejects_cookie_nonce_client_verifier_account_and_stale_mis
             &mut rng,
             cookie,
             confirmation,
-            submitted_client,
             Some("HU".to_owned()),
             config(),
         )
@@ -1118,7 +1065,7 @@ async fn confirmation_rejects_cookie_nonce_client_verifier_account_and_stale_mis
         );
         assert!(repository.commands.borrow().is_empty());
         assert!(repository.sessions.borrow().is_empty());
-        if matches!(case, 5..=9) {
+        if matches!(case, 3..=7) {
             assert_eq!(
                 verifier_comparison_count(),
                 2,
@@ -1141,7 +1088,6 @@ async fn scanner_confirmation_disabled_user_is_generic_and_does_not_burn_link() 
         &FixedClock::at(NOW),
         &mut rng,
         token(VERIFIER).as_secret_value().to_string(),
-        None,
         config(),
     )
     .await
@@ -1153,7 +1099,6 @@ async fn scanner_confirmation_disabled_user_is_generic_and_does_not_burn_link() 
         &mut rng,
         landing.flow_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
-        None,
         Some("HU".to_owned()),
         config(),
     )
@@ -1211,7 +1156,6 @@ async fn scanner_confirmation_dependency_preserves_and_internal_clears() {
             &FixedClock::at(NOW),
             &mut rng,
             token(VERIFIER).as_secret_value().to_string(),
-            None,
             config(),
         )
         .await
@@ -1223,7 +1167,6 @@ async fn scanner_confirmation_dependency_preserves_and_internal_clears() {
             &mut rng,
             landing.flow_cookie_value().to_owned(),
             landing.confirmation_value().to_owned(),
-            None,
             Some("HU".to_owned()),
             config(),
         )
@@ -1256,7 +1199,6 @@ async fn confirmation_selector_miss_performs_one_dummy_comparison() {
         &FixedClock::at(NOW),
         &mut rng,
         token(VERIFIER).as_secret_value().to_string(),
-        None,
         config(),
     )
     .await
@@ -1269,7 +1211,6 @@ async fn confirmation_selector_miss_performs_one_dummy_comparison() {
         &mut rng,
         landing.flow_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
-        None,
         Some("HU".to_owned()),
         config(),
     )
@@ -1302,7 +1243,6 @@ async fn scanner_confirmation_preserves_exact_retry_and_replan_behavior() {
         &FixedClock::at(NOW),
         &mut rng,
         token(VERIFIER).as_secret_value().to_string(),
-        None,
         config(),
     )
     .await
@@ -1314,7 +1254,6 @@ async fn scanner_confirmation_preserves_exact_retry_and_replan_behavior() {
         &mut rng,
         landing.flow_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
-        None,
         Some("HU".to_owned()),
         config(),
     )
@@ -1342,7 +1281,6 @@ async fn scanner_confirmation_retries_ambiguous_commit_without_replanning() {
         &FixedClock::at(NOW),
         &mut rng,
         token(VERIFIER).as_secret_value().to_string(),
-        None,
         config(),
     )
     .await
@@ -1354,7 +1292,6 @@ async fn scanner_confirmation_retries_ambiguous_commit_without_replanning() {
         &mut rng,
         landing.flow_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
-        None,
         Some("HU".to_owned()),
         config(),
     )
@@ -1387,7 +1324,6 @@ async fn scanner_confirmation_replans_session_conflict_with_fresh_cookie_and_att
         &FixedClock::at(NOW),
         &mut rng,
         token(VERIFIER).as_secret_value().to_string(),
-        None,
         config(),
     )
     .await
@@ -1399,7 +1335,6 @@ async fn scanner_confirmation_replans_session_conflict_with_fresh_cookie_and_att
         &mut rng,
         landing.flow_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
-        None,
         Some("HU".to_owned()),
         config(),
     )
@@ -1511,7 +1446,6 @@ async fn request_side_repository_remains_put_only_and_stores_no_user_id() {
             EmailLocale::En,
             true,
             true,
-            None,
         ))
         .await
         .expect("request");
@@ -1583,7 +1517,6 @@ async fn scanner_confirmation_malformed_and_selector_limits_are_generic_and_non_
     let repository = FakeRepository::default();
     *repository.candidate.borrow_mut() = Some(candidate());
     let malformed_limiter = AllowLimiter::default();
-    malformed_limiter.deny_prefix("magic-link:consume:malformed:");
     let malformed = confirm_flow(
         &repository,
         &malformed_limiter,
@@ -1591,7 +1524,6 @@ async fn scanner_confirmation_malformed_and_selector_limits_are_generic_and_non_
         &mut TestRng::working(),
         "malformed-flow-cookie".to_owned(),
         "malformed-confirmation".to_owned(),
-        Some(ClientKey::parse("client-1").expect("client key")),
         Some("HU".to_owned()),
         config(),
     )
@@ -1601,8 +1533,8 @@ async fn scanner_confirmation_malformed_and_selector_limits_are_generic_and_non_
         malformed.public_error(),
         MagicLinkServiceError::MagicLinkUnavailable
     );
-    assert_eq!(malformed_limiter.calls.get(), 1);
-    assert!(malformed_limiter.checked.borrow()[0].starts_with("magic-link:consume:malformed:"));
+    assert_eq!(malformed_limiter.calls.get(), 0);
+    assert!(malformed_limiter.checked.borrow().is_empty());
     assert_eq!(repository.candidate_reads.get(), 0);
 
     let mut rng = TestRng::working();
@@ -1612,7 +1544,6 @@ async fn scanner_confirmation_malformed_and_selector_limits_are_generic_and_non_
         &FixedClock::at(NOW),
         &mut rng,
         token(VERIFIER).as_secret_value().to_string(),
-        None,
         config(),
     )
     .await
@@ -1626,7 +1557,6 @@ async fn scanner_confirmation_malformed_and_selector_limits_are_generic_and_non_
         &mut rng,
         landing.flow_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
-        None,
         Some("HU".to_owned()),
         config(),
     )

@@ -12,9 +12,8 @@ use dd_auth_token_core::flow_cookie::{
 use dd_auth_token_core::keyring::{KeyRing, MagicLinkFlowCookie, SessionCookie};
 use dd_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkToken, VerifierHash, email_lookup_hmac,
-    flow_account_binding, flow_client_binding, flow_selector_binding, flow_verifier_binding,
-    selector_lookup_hmac, selector_lookup_hmac_from_flow_binding, verifier_hash,
-    verifier_hash_from_flow_binding,
+    flow_account_binding, flow_selector_binding, flow_verifier_binding, selector_lookup_hmac,
+    selector_lookup_hmac_from_flow_binding, verifier_hash, verifier_hash_from_flow_binding,
 };
 use rand_core::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
@@ -29,7 +28,7 @@ use crate::traits::{
     RateLimitDecision, RateLimiter, SessionRepository,
 };
 use crate::types::{
-    AuthenticationAttemptId, BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, ClientKey,
+    AuthenticationAttemptId, BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome,
     CommitMagicLinkAuthentication, ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome,
     MagicLinkAccountIdentity, MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
     MagicLinkAuthenticationOutcome, MagicLinkAuthenticationUser, MagicLinkEmail, MagicLinkRecord,
@@ -110,7 +109,6 @@ where
             self.limiter,
             &self.config,
             email_lookup.as_storage_value(),
-            command.client_key(),
             now_unix,
         )
         .await?
@@ -238,31 +236,11 @@ where
 
         let raw_token = match command.raw_token() {
             Some(raw_token) => raw_token,
-            None => {
-                apply_malformed_landing_limit(
-                    self.limiter,
-                    &self.config,
-                    command.client_key(),
-                    now_unix,
-                )
-                .await
-                .map_err(MagicLinkFlowError::from_public_error)?;
-                return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
-            }
+            None => return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable)),
         };
         let token = match MagicLinkToken::parse(raw_token) {
             Ok(token) => token,
-            Err(_) => {
-                apply_malformed_landing_limit(
-                    self.limiter,
-                    &self.config,
-                    command.client_key(),
-                    now_unix,
-                )
-                .await
-                .map_err(MagicLinkFlowError::from_public_error)?;
-                return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
-            }
+            Err(_) => return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable)),
         };
 
         let selector_lookup = selector_lookup_hmac(self.lookup_hmac_key, token.selector())
@@ -271,7 +249,6 @@ where
             self.limiter,
             &self.config,
             selector_lookup.as_storage_value(),
-            command.client_key(),
             now_unix,
         )
         .await
@@ -300,11 +277,6 @@ where
             .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
         let account_binding = flow_account_binding(&email_lookup)
             .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
-        let client_binding = command
-            .client_key()
-            .map(|client| flow_client_binding(self.lookup_hmac_key, client.as_str()))
-            .transpose()
-            .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
 
         let configured_expiry = now_unix
             .checked_add(self.config.magic_link_flow_ttl_secs)
@@ -324,7 +296,6 @@ where
                 selector_binding,
                 verifier_binding,
                 account_binding,
-                client_binding,
                 flow_expiry_u32,
             ),
             self.flow_keyring,
@@ -355,29 +326,14 @@ where
         let country = mint_country(&self.config, command.request_country())
             .map_err(MagicLinkFlowError::from_public_error)?;
 
-        let verified = match verify_magic_link_flow(
+        let verified = verify_magic_link_flow(
             command.flow_cookie(),
             command.confirmation(),
             self.flow_keyring,
             now_unix,
             self.config.magic_link_flow_ttl_secs,
-        ) {
-            Ok(verified) => verified,
-            Err(_) => {
-                if let Some(client_key) = command.client_key() {
-                    let _ = malformed_consume_limit_denied(
-                        self.limiter,
-                        &self.config,
-                        client_key,
-                        now_unix,
-                    )
-                    .await
-                    .map_err(MagicLinkFlowError::from_public_error)?;
-                }
-                return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
-            }
-        };
-        validate_flow_client_binding(self.lookup_hmac_key, &verified, command.client_key())?;
+        )
+        .map_err(|_| flow_error(MagicLinkServiceError::MagicLinkUnavailable))?;
 
         let selector_lookup = selector_lookup_hmac_from_flow_binding(verified.selector());
         let presented_verifier_hash = verifier_hash_from_flow_binding(verified.verifier());
@@ -385,7 +341,6 @@ where
             self.limiter,
             &self.config,
             selector_lookup.as_storage_value(),
-            command.client_key(),
             now_unix,
         )
         .await
@@ -434,47 +389,14 @@ const fn flow_error(public_error: MagicLinkServiceError) -> MagicLinkFlowError {
     MagicLinkFlowError::from_public_error(public_error)
 }
 
-async fn apply_malformed_landing_limit<Limiter: RateLimiter>(
-    limiter: &Limiter,
-    config: &MagicLinkServiceConfig,
-    client_key: Option<&ClientKey>,
-    now_unix: u64,
-) -> Result<(), MagicLinkServiceError> {
-    if let Some(client_key) = client_key {
-        let key = format!("magic-link:landing:client:{}", client_key.as_str());
-        let _ = limit_denied(
-            limiter,
-            &key,
-            config.rate_limits.landing_client_limit,
-            config.rate_limits.landing_client_window_secs,
-            now_unix,
-        )
-        .await?;
-    }
-    Ok(())
-}
-
 async fn landing_limits_deny<Limiter: RateLimiter>(
     limiter: &Limiter,
     config: &MagicLinkServiceConfig,
     selector_lookup: &str,
-    client_key: Option<&ClientKey>,
     now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
-    let mut denied = false;
-    if let Some(client_key) = client_key {
-        let key = format!("magic-link:landing:client:{}", client_key.as_str());
-        denied |= limit_denied(
-            limiter,
-            &key,
-            config.rate_limits.landing_client_limit,
-            config.rate_limits.landing_client_window_secs,
-            now_unix,
-        )
-        .await?;
-    }
     let selector_key = format!("magic-link:landing:selector:{selector_lookup}");
-    denied |= limit_denied(
+    let denied = limit_denied(
         limiter,
         &selector_key,
         config.rate_limits.landing_selector_limit,
@@ -483,27 +405,6 @@ async fn landing_limits_deny<Limiter: RateLimiter>(
     )
     .await?;
     Ok(denied)
-}
-
-fn validate_flow_client_binding(
-    lookup_hmac_key: &LookupHmacKey,
-    verified: &VerifiedMagicLinkFlow,
-    client_key: Option<&ClientKey>,
-) -> Result<(), MagicLinkFlowError> {
-    let matches = match (verified.client(), client_key) {
-        (None, None) => true,
-        (Some(expected), Some(client_key)) => {
-            let presented = flow_client_binding(lookup_hmac_key, client_key.as_str())
-                .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
-            expected.matches_constant_time(&presented)
-        }
-        (None, Some(_)) | (Some(_), None) => false,
-    };
-    if matches {
-        Ok(())
-    } else {
-        Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable))
-    }
 }
 
 fn validate_scanner_candidate(
@@ -688,7 +589,6 @@ async fn request_limits_deny<Limiter: RateLimiter>(
     limiter: &Limiter,
     config: &MagicLinkServiceConfig,
     email_lookup: &str,
-    client_key: Option<&ClientKey>,
     now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
     let limits = &config.rate_limits;
@@ -715,32 +615,6 @@ async fn request_limits_deny<Limiter: RateLimiter>(
     .await?
     {
         return Ok(true);
-    }
-    if let Some(client_key) = client_key {
-        let client_short = format!("magic-link:request:client:short:{}", client_key.as_str());
-        if limit_denied(
-            limiter,
-            &client_short,
-            limits.request_client_short_limit,
-            limits.request_client_short_window_secs,
-            now_unix,
-        )
-        .await?
-        {
-            return Ok(true);
-        }
-        let client_hourly = format!("magic-link:request:client:hourly:{}", client_key.as_str());
-        if limit_denied(
-            limiter,
-            &client_hourly,
-            limits.request_client_hourly_limit,
-            limits.request_client_hourly_window_secs,
-            now_unix,
-        )
-        .await?
-        {
-            return Ok(true);
-        }
     }
     Ok(false)
 }
@@ -779,7 +653,6 @@ async fn consume_limits_deny<Limiter: RateLimiter>(
     limiter: &Limiter,
     config: &MagicLinkServiceConfig,
     selector_lookup: &str,
-    client_key: Option<&ClientKey>,
     now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
     let limits = &config.rate_limits;
@@ -795,50 +668,7 @@ async fn consume_limits_deny<Limiter: RateLimiter>(
     {
         return Ok(true);
     }
-    if let Some(client_key) = client_key {
-        let client_short = format!("magic-link:consume:client:short:{}", client_key.as_str());
-        if limit_denied(
-            limiter,
-            &client_short,
-            limits.consume_client_short_limit,
-            limits.consume_client_short_window_secs,
-            now_unix,
-        )
-        .await?
-        {
-            return Ok(true);
-        }
-        let client_hourly = format!("magic-link:consume:client:hourly:{}", client_key.as_str());
-        if limit_denied(
-            limiter,
-            &client_hourly,
-            limits.consume_client_hourly_limit,
-            limits.consume_client_hourly_window_secs,
-            now_unix,
-        )
-        .await?
-        {
-            return Ok(true);
-        }
-    }
     Ok(false)
-}
-
-async fn malformed_consume_limit_denied<Limiter: RateLimiter>(
-    limiter: &Limiter,
-    config: &MagicLinkServiceConfig,
-    client_key: &ClientKey,
-    now_unix: u64,
-) -> Result<bool, MagicLinkServiceError> {
-    let key = format!("magic-link:consume:malformed:{}", client_key.as_str());
-    limit_denied(
-        limiter,
-        &key,
-        config.rate_limits.malformed_consume_client_limit,
-        config.rate_limits.malformed_consume_client_window_secs,
-        now_unix,
-    )
-    .await
 }
 
 async fn limit_denied<Limiter: RateLimiter>(

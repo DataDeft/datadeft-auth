@@ -25,34 +25,8 @@ pub enum EmailLocale {
     Hu,
 }
 
-/// App-supplied client key used for limiter buckets.
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub struct ClientKey(String);
-
-impl ClientKey {
-    /// Parse a bounded, log-safe limiter key component.
-    pub fn parse(value: &str) -> Result<Self, MagicLinkServiceError> {
-        if is_valid_key_component(value, 128) {
-            Ok(Self(value.to_owned()))
-        } else {
-            Err(MagicLinkServiceError::BadRequest)
-        }
-    }
-
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for ClientKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ClientKey(..)")
-    }
-}
-
-/// Rate-limit bucket key. It is derived from keyed material or app-supplied
-/// client keys and is redacted in `Debug`.
+/// Rate-limit bucket key derived from keyed email or selector material and
+/// redacted in `Debug`.
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct RateLimitKey(String);
 
@@ -365,7 +339,6 @@ pub struct RequestMagicLinkCommand {
     locale: EmailLocale,
     terms_accepted: bool,
     privacy_accepted: bool,
-    client_key: Option<ClientKey>,
 }
 
 impl RequestMagicLinkCommand {
@@ -374,14 +347,12 @@ impl RequestMagicLinkCommand {
         locale: EmailLocale,
         terms_accepted: bool,
         privacy_accepted: bool,
-        client_key: Option<ClientKey>,
     ) -> Self {
         Self {
             email,
             locale,
             terms_accepted,
             privacy_accepted,
-            client_key,
         }
     }
 
@@ -404,11 +375,6 @@ impl RequestMagicLinkCommand {
     pub fn privacy_accepted(&self) -> bool {
         self.privacy_accepted
     }
-
-    #[must_use]
-    pub fn client_key(&self) -> Option<&ClientKey> {
-        self.client_key.as_ref()
-    }
 }
 
 impl fmt::Debug for RequestMagicLinkCommand {
@@ -418,10 +384,6 @@ impl fmt::Debug for RequestMagicLinkCommand {
             .field("locale", &self.locale)
             .field("terms_accepted", &self.terms_accepted)
             .field("privacy_accepted", &self.privacy_accepted)
-            .field(
-                "client_key",
-                &self.client_key.as_ref().map(|_| "ClientKey(..)"),
-            )
             .finish()
     }
 }
@@ -434,25 +396,21 @@ enum RawMagicLinkCandidate {
 /// Scanner-safe landing command containing a bounded raw token candidate.
 ///
 /// Construction immediately destroys oversized attacker input. `Debug` never
-/// exposes the candidate or separately supplied client key.
+/// exposes the candidate.
 pub struct BeginMagicLinkLandingCommand {
     raw_token: RawMagicLinkCandidate,
-    client_key: Option<ClientKey>,
 }
 
 impl BeginMagicLinkLandingCommand {
     #[must_use]
-    pub fn new(mut raw_token: String, client_key: Option<ClientKey>) -> Self {
+    pub fn new(mut raw_token: String) -> Self {
         let raw_token = if raw_token.len() > MAX_RAW_MAGIC_LINK_TOKEN_BYTES {
             raw_token.zeroize();
             RawMagicLinkCandidate::Oversized
         } else {
             RawMagicLinkCandidate::Bounded(raw_token)
         };
-        Self {
-            raw_token,
-            client_key,
-        }
+        Self { raw_token }
     }
 
     pub(crate) fn raw_token(&self) -> Option<&str> {
@@ -460,10 +418,6 @@ impl BeginMagicLinkLandingCommand {
             RawMagicLinkCandidate::Bounded(value) => Some(value),
             RawMagicLinkCandidate::Oversized => None,
         }
-    }
-
-    pub(crate) fn client_key(&self) -> Option<&ClientKey> {
-        self.client_key.as_ref()
     }
 }
 
@@ -546,7 +500,6 @@ impl fmt::Debug for BeginMagicLinkLandingOutcome {
 pub struct ConfirmMagicLinkFlowCommand {
     flow_cookie: String,
     confirmation: String,
-    client_key: Option<ClientKey>,
     request_country: Option<String>,
 }
 
@@ -554,7 +507,6 @@ impl ConfirmMagicLinkFlowCommand {
     pub fn new(
         mut flow_cookie: String,
         mut confirmation: String,
-        client_key: Option<ClientKey>,
         request_country: Option<String>,
     ) -> Result<Self, MagicLinkFlowError> {
         if let Some(country) = request_country.as_deref()
@@ -567,7 +519,6 @@ impl ConfirmMagicLinkFlowCommand {
         Ok(Self {
             flow_cookie,
             confirmation,
-            client_key,
             request_country,
         })
     }
@@ -578,10 +529,6 @@ impl ConfirmMagicLinkFlowCommand {
 
     pub(crate) fn confirmation(&self) -> &str {
         &self.confirmation
-    }
-
-    pub(crate) fn client_key(&self) -> Option<&ClientKey> {
-        self.client_key.as_ref()
     }
 
     pub(crate) fn request_country(&self) -> Option<&str> {

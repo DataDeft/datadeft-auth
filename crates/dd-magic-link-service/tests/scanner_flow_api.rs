@@ -2,8 +2,9 @@
 
 use dd_magic_link_service::{
     BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, Clock, ConfirmMagicLinkFlowCommand,
-    ConfirmMagicLinkFlowOutcome, MagicLinkAuthenticationOutcome, MagicLinkAuthenticationRepository,
-    MagicLinkFlowError, MagicLinkFlowService, MagicLinkFlowServiceInputs, RateLimiter, SessionId,
+    ConfirmMagicLinkFlowOutcome, EmailLocale, MagicLinkAuthenticationOutcome,
+    MagicLinkAuthenticationRepository, MagicLinkFlowError, MagicLinkFlowService,
+    MagicLinkFlowServiceInputs, NormalizedEmail, RateLimiter, RequestMagicLinkCommand, SessionId,
     SessionRepository, TemporaryAuthStateAction,
 };
 use rand_core::{CryptoRng, RngCore};
@@ -43,6 +44,23 @@ fn final_scanner_flow_surface_is_available() {
     accepts_confirmation_outcome(None);
     accepts_flow_error(None);
     accepts_state_action(None);
+
+    let request = RequestMagicLinkCommand::new(
+        NormalizedEmail::parse("public-api@example.test").expect("normalized email"),
+        EmailLocale::En,
+        true,
+        true,
+    );
+    let landing = BeginMagicLinkLandingCommand::new("opaque-token-candidate".to_owned());
+    let confirmation = ConfirmMagicLinkFlowCommand::new(
+        "opaque-flow-cookie".to_owned(),
+        "opaque-confirmation".to_owned(),
+        Some("HU".to_owned()),
+    )
+    .expect("confirmation command");
+    assert_eq!(request.locale(), EmailLocale::En);
+    accepts_landing_command(Some(landing));
+    accepts_confirmation_command(Some(confirmation));
 
     let _ = core::mem::size_of::<MagicLinkFlowService<'static, (), (), (), (), ()>>();
     let _ = core::mem::size_of::<MagicLinkFlowServiceInputs<'static, (), (), (), (), ()>>();

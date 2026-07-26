@@ -7,20 +7,18 @@ use dd_magic_link_core::{
 use super::*;
 
 #[test]
-fn ids_and_keys_are_validated_and_redacted() {
+fn ids_are_validated_and_redacted() {
     let user = UserId::parse("usr_000102030405060708090a0b0c0d0e0f").expect("user id");
     let session =
         SessionId::parse("sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
             .expect("session id");
-    let client = ClientKey::parse("client-key_123").expect("client key");
 
     assert_eq!(format!("{user:?}"), "UserId(..)");
     assert_eq!(format!("{session:?}"), "SessionId(..)");
-    assert_eq!(format!("{client:?}"), "ClientKey(..)");
 }
 
 #[test]
-fn invalid_ids_and_keys_are_rejected() {
+fn invalid_ids_are_rejected() {
     assert_eq!(
         UserId::parse("user_000102030405060708090a0b0c0d0e0f").unwrap_err(),
         MagicLinkServiceError::Internal
@@ -28,10 +26,6 @@ fn invalid_ids_and_keys_are_rejected() {
     assert_eq!(
         SessionId::parse("sid_short").unwrap_err(),
         MagicLinkServiceError::Internal
-    );
-    assert_eq!(
-        ClientKey::parse("bad key with spaces").unwrap_err(),
-        MagicLinkServiceError::BadRequest
     );
 }
 
@@ -75,35 +69,26 @@ fn authentication_attempt_id_grammar_is_strict_and_debug_is_redacted() {
 #[test]
 fn scanner_commands_are_bounded_and_debug_redacts_all_sensitive_fields() {
     let bounded_value = "malformed-secret-sentinel".to_owned();
-    let bounded = BeginMagicLinkLandingCommand::new(
-        bounded_value.clone(),
-        Some(ClientKey::parse("trusted-client").expect("client key")),
-    );
+    let bounded = BeginMagicLinkLandingCommand::new(bounded_value.clone());
     assert_eq!(bounded.raw_token(), Some(bounded_value.as_str()));
     let bounded_debug = format!("{bounded:?}");
     assert_eq!(bounded_debug, "BeginMagicLinkLandingCommand(..)");
     assert!(!bounded_debug.contains(&bounded_value));
-    assert!(!bounded_debug.contains("trusted-client"));
 
     let oversized_value = "x".repeat(MAX_RAW_MAGIC_LINK_TOKEN_BYTES + 1);
-    let oversized = BeginMagicLinkLandingCommand::new(oversized_value.clone(), None);
+    let oversized = BeginMagicLinkLandingCommand::new(oversized_value.clone());
     assert_eq!(oversized.raw_token(), None);
     assert!(!format!("{oversized:?}").contains(&oversized_value));
 
     let confirm = ConfirmMagicLinkFlowCommand::new(
         "cookie-secret-sentinel".to_owned(),
         "confirmation-secret-sentinel".to_owned(),
-        Some(ClientKey::parse("trusted-client").expect("client key")),
         Some("HU".to_owned()),
     )
     .expect("confirmation command");
     let confirm_debug = format!("{confirm:?}");
     assert_eq!(confirm_debug, "ConfirmMagicLinkFlowCommand(..)");
-    for secret in [
-        "cookie-secret-sentinel",
-        "confirmation-secret-sentinel",
-        "trusted-client",
-    ] {
+    for secret in ["cookie-secret-sentinel", "confirmation-secret-sentinel"] {
         assert!(!confirm_debug.contains(secret));
     }
 }
@@ -142,7 +127,6 @@ fn confirmation_country_validation_maps_to_clear_bad_request() {
     let error = ConfirmMagicLinkFlowCommand::new(
         "cookie".to_owned(),
         "confirmation".to_owned(),
-        None,
         Some("hu".to_owned()),
     )
     .expect_err("invalid country");

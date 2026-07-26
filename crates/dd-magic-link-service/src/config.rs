@@ -67,25 +67,13 @@ pub struct RateLimitConfig {
     pub request_email_short_window_secs: u64,
     pub request_email_daily_limit: u32,
     pub request_email_daily_window_secs: u64,
-    pub request_client_short_limit: u32,
-    pub request_client_short_window_secs: u64,
-    pub request_client_hourly_limit: u32,
-    pub request_client_hourly_window_secs: u64,
     pub outbox_email_hourly_limit: u32,
     pub outbox_email_hourly_window_secs: u64,
     pub outbox_email_daily_limit: u32,
     pub outbox_email_daily_window_secs: u64,
     pub landing_selector_limit: u32,
     pub landing_selector_window_secs: u64,
-    pub landing_client_limit: u32,
-    pub landing_client_window_secs: u64,
     pub consume_selector_limit: u32,
-    pub consume_client_short_limit: u32,
-    pub consume_client_short_window_secs: u64,
-    pub consume_client_hourly_limit: u32,
-    pub consume_client_hourly_window_secs: u64,
-    pub malformed_consume_client_limit: u32,
-    pub malformed_consume_client_window_secs: u64,
 }
 
 impl Default for RateLimitConfig {
@@ -95,25 +83,13 @@ impl Default for RateLimitConfig {
             request_email_short_window_secs: 15 * 60,
             request_email_daily_limit: 10,
             request_email_daily_window_secs: 24 * 60 * 60,
-            request_client_short_limit: 10,
-            request_client_short_window_secs: 10 * 60,
-            request_client_hourly_limit: 50,
-            request_client_hourly_window_secs: 60 * 60,
             outbox_email_hourly_limit: 3,
             outbox_email_hourly_window_secs: 60 * 60,
             outbox_email_daily_limit: 10,
             outbox_email_daily_window_secs: 24 * 60 * 60,
             landing_selector_limit: 30,
             landing_selector_window_secs: 10 * 60,
-            landing_client_limit: 30,
-            landing_client_window_secs: 10 * 60,
             consume_selector_limit: 5,
-            consume_client_short_limit: 20,
-            consume_client_short_window_secs: 10 * 60,
-            consume_client_hourly_limit: 100,
-            consume_client_hourly_window_secs: 60 * 60,
-            malformed_consume_client_limit: 20,
-            malformed_consume_client_window_secs: 10 * 60,
         }
     }
 }
@@ -194,16 +170,10 @@ impl RateLimitConfig {
         let limits = [
             self.request_email_short_limit,
             self.request_email_daily_limit,
-            self.request_client_short_limit,
-            self.request_client_hourly_limit,
             self.outbox_email_hourly_limit,
             self.outbox_email_daily_limit,
             self.landing_selector_limit,
-            self.landing_client_limit,
             self.consume_selector_limit,
-            self.consume_client_short_limit,
-            self.consume_client_hourly_limit,
-            self.malformed_consume_client_limit,
         ];
         if limits.contains(&0) {
             return Err(MagicLinkConfigError::ZeroRateLimit);
@@ -212,15 +182,9 @@ impl RateLimitConfig {
         let windows = [
             self.request_email_short_window_secs,
             self.request_email_daily_window_secs,
-            self.request_client_short_window_secs,
-            self.request_client_hourly_window_secs,
             self.outbox_email_hourly_window_secs,
             self.outbox_email_daily_window_secs,
             self.landing_selector_window_secs,
-            self.landing_client_window_secs,
-            self.consume_client_short_window_secs,
-            self.consume_client_hourly_window_secs,
-            self.malformed_consume_client_window_secs,
         ];
         if windows.contains(&0) {
             return Err(MagicLinkConfigError::ZeroRateLimitWindow);

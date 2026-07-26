@@ -19,8 +19,6 @@ fn default_policy_validates_and_uses_cookie_absolute_cap() {
     assert_eq!(config.magic_link_flow_ttl_secs, 300);
     assert_eq!(config.rate_limits.landing_selector_limit, 30);
     assert_eq!(config.rate_limits.landing_selector_window_secs, 600);
-    assert_eq!(config.rate_limits.landing_client_limit, 30);
-    assert_eq!(config.rate_limits.landing_client_window_secs, 600);
     assert_eq!(config.validate(), Ok(()));
 }
 
@@ -129,12 +127,6 @@ fn every_rate_limit_threshold_rejects_zero() {
         ("request_email_daily_limit", |limits| {
             limits.request_email_daily_limit = 0;
         }),
-        ("request_client_short_limit", |limits| {
-            limits.request_client_short_limit = 0;
-        }),
-        ("request_client_hourly_limit", |limits| {
-            limits.request_client_hourly_limit = 0;
-        }),
         ("outbox_email_hourly_limit", |limits| {
             limits.outbox_email_hourly_limit = 0;
         }),
@@ -144,20 +136,8 @@ fn every_rate_limit_threshold_rejects_zero() {
         ("landing_selector_limit", |limits| {
             limits.landing_selector_limit = 0;
         }),
-        ("landing_client_limit", |limits| {
-            limits.landing_client_limit = 0;
-        }),
         ("consume_selector_limit", |limits| {
             limits.consume_selector_limit = 0;
-        }),
-        ("consume_client_short_limit", |limits| {
-            limits.consume_client_short_limit = 0;
-        }),
-        ("consume_client_hourly_limit", |limits| {
-            limits.consume_client_hourly_limit = 0;
-        }),
-        ("malformed_consume_client_limit", |limits| {
-            limits.malformed_consume_client_limit = 0;
         }),
     ];
 
@@ -181,12 +161,6 @@ fn every_rate_limit_window_rejects_zero() {
         ("request_email_daily_window_secs", |limits| {
             limits.request_email_daily_window_secs = 0;
         }),
-        ("request_client_short_window_secs", |limits| {
-            limits.request_client_short_window_secs = 0;
-        }),
-        ("request_client_hourly_window_secs", |limits| {
-            limits.request_client_hourly_window_secs = 0;
-        }),
         ("outbox_email_hourly_window_secs", |limits| {
             limits.outbox_email_hourly_window_secs = 0;
         }),
@@ -195,18 +169,6 @@ fn every_rate_limit_window_rejects_zero() {
         }),
         ("landing_selector_window_secs", |limits| {
             limits.landing_selector_window_secs = 0;
-        }),
-        ("landing_client_window_secs", |limits| {
-            limits.landing_client_window_secs = 0;
-        }),
-        ("consume_client_short_window_secs", |limits| {
-            limits.consume_client_short_window_secs = 0;
-        }),
-        ("consume_client_hourly_window_secs", |limits| {
-            limits.consume_client_hourly_window_secs = 0;
-        }),
-        ("malformed_consume_client_window_secs", |limits| {
-            limits.malformed_consume_client_window_secs = 0;
         }),
     ];
 

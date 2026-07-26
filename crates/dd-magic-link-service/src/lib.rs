@@ -36,7 +36,7 @@ pub use traits::{
     RateLimitDecision, RateLimiter, SessionRepository,
 };
 pub use types::{
-    AuthenticationAttemptId, BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, ClientKey,
+    AuthenticationAttemptId, BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome,
     CommitMagicLinkAuthentication, ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome,
     EmailLocale, MAX_RAW_MAGIC_LINK_TOKEN_BYTES, MagicLinkAccountIdentity,
     MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
