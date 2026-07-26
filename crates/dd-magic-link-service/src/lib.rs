@@ -15,6 +15,7 @@ pub mod traits;
 pub mod types;
 
 pub use config::{MagicLinkServiceConfig, RateLimitConfig};
+pub use dd_magic_link_core::NormalizedEmail;
 pub use error::{ConsumeMagicLinkError, DependencyError, MagicLinkServiceError};
 pub use service::{
     MagicLinkConsumeService, MagicLinkConsumeServiceInputs, MagicLinkRequestService,
