@@ -137,7 +137,7 @@ async fn fake_store_round_trips_request_and_consume_without_raw_session_storage(
     assert_eq!(store.session_count().expect("session count"), 1);
     assert!(
         store
-            .find_session(&outcome.session_id)
+            .find_session(&outcome.session_id, 1_000)
             .await
             .expect("find")
             .is_some()

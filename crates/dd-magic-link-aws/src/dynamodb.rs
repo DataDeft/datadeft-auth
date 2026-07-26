@@ -7,10 +7,11 @@ use std::sync::Arc;
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_dynamodb::types::{AttributeValue, Put, ReturnValue, TransactWriteItem};
 use dd_magic_link_core::{LookupHmac, NormalizedEmail, VerifierHash};
+use dd_magic_link_service::types::DEFAULT_SESSION_ABSOLUTE_SECS;
 use dd_magic_link_service::{
     ConsumeMagicLinkError, ConsumedMagicLink, DependencyError, MagicLinkRecord,
-    MagicLinkRepository, RateLimitDecision, RateLimitKey, RateLimiter, SessionId, SessionRecord,
-    SessionRepository, UserId, UserRecord, UserRepository,
+    MagicLinkRepository, MagicLinkServiceConfig, RateLimitDecision, RateLimitKey, RateLimiter,
+    SessionId, SessionRecord, SessionRepository, UserId, UserRecord, UserRepository,
 };
 
 use crate::error::{
@@ -19,11 +20,39 @@ use crate::error::{
 };
 use crate::hmac_key::{SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey};
 
+/// DynamoDB adapter TTL configuration. TTL attributes are garbage-collection
+/// hints only; security checks use explicit expiry attributes.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct DynamoDbAuthStoreConfig {
+    pub session_absolute_secs: u64,
+    pub magic_link_cleanup_grace_secs: u64,
+}
+
+impl DynamoDbAuthStoreConfig {
+    #[must_use]
+    pub fn from_service_config(config: &MagicLinkServiceConfig) -> Self {
+        Self {
+            session_absolute_secs: config.session_absolute_secs,
+            magic_link_cleanup_grace_secs: Self::default().magic_link_cleanup_grace_secs,
+        }
+    }
+}
+
+impl Default for DynamoDbAuthStoreConfig {
+    fn default() -> Self {
+        Self {
+            session_absolute_secs: DEFAULT_SESSION_ABSOLUTE_SECS,
+            magic_link_cleanup_grace_secs: 24 * 60 * 60,
+        }
+    }
+}
+
 /// DynamoDB single-table auth store.
 pub struct DynamoDbAuthStore {
     client: DynamoDbClient,
     table_name: String,
     storage_hmac_key: Arc<StorageHmacKey>,
+    config: DynamoDbAuthStoreConfig,
 }
 
 impl DynamoDbAuthStore {
@@ -33,10 +62,26 @@ impl DynamoDbAuthStore {
         table_name: String,
         storage_hmac_key: StorageHmacKey,
     ) -> Self {
+        Self::with_config(
+            client,
+            table_name,
+            storage_hmac_key,
+            DynamoDbAuthStoreConfig::default(),
+        )
+    }
+
+    #[must_use]
+    pub fn with_config(
+        client: DynamoDbClient,
+        table_name: String,
+        storage_hmac_key: StorageHmacKey,
+        config: DynamoDbAuthStoreConfig,
+    ) -> Self {
         Self {
             client,
             table_name,
             storage_hmac_key: Arc::new(storage_hmac_key),
+            config,
         }
     }
 
@@ -135,7 +180,9 @@ impl MagicLinkRepository for DynamoDbAuthStore {
         record: MagicLinkRecord,
     ) -> Result<(), DependencyError> {
         let pk = Self::pk_magic_link(&record.selector_lookup_hmac);
-        let ttl = record.expires_at_unix.saturating_add(24 * 60 * 60);
+        let ttl = record
+            .expires_at_unix
+            .saturating_add(self.config.magic_link_cleanup_grace_secs);
         async {
             let mut request = self
                 .client
@@ -292,7 +339,9 @@ impl SessionRepository for DynamoDbAuthStore {
             .map_err(DependencyError::from)?;
         let pk = Self::pk_session_from_hmac(&session_hmac);
         let user_pk = format!("USER#{}", session.user_id.as_str());
-        let expires_at_unix = session.created_at_unix.saturating_add(30 * 24 * 60 * 60);
+        let expires_at_unix = session
+            .created_at_unix
+            .saturating_add(self.config.session_absolute_secs);
         async {
             let session_put = Put::builder()
                 .table_name(&self.table_name)
@@ -302,6 +351,7 @@ impl SessionRepository for DynamoDbAuthStore {
                 .item("user_id", av_s(session.user_id.as_str()))
                 .item("email_normalized", av_s(session.email.as_str()))
                 .item("created_at_unix", av_n(session.created_at_unix))
+                .item("expires_at_unix", av_n(expires_at_unix))
                 .item("ttl", av_n(expires_at_unix))
                 .condition_expression("attribute_not_exists(pk)")
                 .build()
@@ -339,6 +389,7 @@ impl SessionRepository for DynamoDbAuthStore {
     async fn find_session(
         &self,
         session_id: &SessionId,
+        now_unix: u64,
     ) -> Result<Option<SessionRecord>, DependencyError> {
         let pk = self.pk_session(session_id).map_err(DependencyError::from)?;
         async {
@@ -351,10 +402,16 @@ impl SessionRepository for DynamoDbAuthStore {
                 .send()
                 .await
                 .map_err(map_get_item_error)?;
-            output
-                .item()
-                .map(|item| Self::item_to_session(session_id, item))
-                .transpose()
+            let Some(item) = output.item() else {
+                return Ok(None);
+            };
+            if optional_s(item, "entity_type") != Some("session")
+                || optional_u64(item, "revoked_at_unix")?.is_some()
+                || required_u64(item, "expires_at_unix")? < now_unix
+            {
+                return Ok(None);
+            }
+            Self::item_to_session(session_id, item).map(Some)
         }
         .await
         .map_err(DependencyError::from)

@@ -160,6 +160,7 @@ impl SessionRepository for FakeRepo {
     async fn find_session(
         &self,
         session_id: &SessionId,
+        _now_unix: u64,
     ) -> Result<Option<SessionRecord>, DependencyError> {
         Ok(self
             .sessions

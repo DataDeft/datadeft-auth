@@ -254,11 +254,16 @@ impl SessionRepository for FakeDynamoDbAuthStore {
     async fn find_session(
         &self,
         session_id: &SessionId,
+        _now_unix: u64,
     ) -> Result<Option<SessionRecord>, DependencyError> {
         let session_hmac = self.session_hmac(session_id)?;
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
-        Ok(inner.sessions_by_hmac.get(&session_hmac).cloned())
+        Ok(inner
+            .sessions_by_hmac
+            .get(&session_hmac)
+            .filter(|session| session.revoked_at_unix.is_none())
+            .cloned())
     }
 
     async fn revoke_session(

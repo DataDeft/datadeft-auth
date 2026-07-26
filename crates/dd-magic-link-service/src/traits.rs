@@ -57,6 +57,7 @@ pub trait SessionRepository {
     fn find_session(
         &self,
         session_id: &SessionId,
+        now_unix: u64,
     ) -> impl Future<Output = Result<Option<SessionRecord>, DependencyError>>;
 
     fn revoke_session(
