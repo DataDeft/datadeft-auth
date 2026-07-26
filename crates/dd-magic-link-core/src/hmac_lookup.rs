@@ -5,6 +5,9 @@
 
 use core::fmt;
 
+use dd_auth_token_core::flow_cookie::{
+    FlowAccountBinding, FlowClientBinding, FlowSelectorBinding, FlowVerifierBinding,
+};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
@@ -19,6 +22,9 @@ type HmacSha256 = Hmac<Sha256>;
 /// Required HMAC key/pepper length.
 pub const HMAC_KEY_BYTES: usize = 32;
 const HMAC_DOMAIN: &[u8] = b"magic-link-lookup-v1";
+const FLOW_CLIENT_PREFIX: &str = "mfc";
+const HMAC_BYTES: usize = 32;
+const HMAC_HEX_LEN: usize = HMAC_BYTES * 2;
 
 /// Storage prefix for normalized-email lookup HMACs.
 pub const EMAIL_LOOKUP_PREFIX: &str = "emh";
@@ -146,6 +152,89 @@ pub fn verifier_hash(
     verifier: &MagicLinkVerifier,
 ) -> Result<VerifierHash, MagicLinkError> {
     hmac_prefixed(key, VERIFIER_HASH_PREFIX, verifier.as_secret_value()).map(VerifierHash)
+}
+
+/// Convert a canonical selector lookup HMAC into its scanner-flow binding.
+pub fn flow_selector_binding(lookup: &LookupHmac) -> Result<FlowSelectorBinding, MagicLinkError> {
+    let mut decoded = decode_canonical_hmac(lookup.as_storage_value(), SELECTOR_LOOKUP_PREFIX)?;
+    let binding = FlowSelectorBinding::new(decoded);
+    decoded.zeroize();
+    Ok(binding)
+}
+
+/// Reconstruct the canonical selector lookup HMAC authenticated by a flow cookie.
+#[must_use]
+pub fn selector_lookup_hmac_from_flow_binding(binding: &FlowSelectorBinding) -> LookupHmac {
+    LookupHmac(format!(
+        "{SELECTOR_LOOKUP_PREFIX}_{}",
+        hex::encode(binding.as_sensitive_bytes())
+    ))
+}
+
+/// Convert a canonical verifier hash into its scanner-flow binding.
+pub fn flow_verifier_binding(hash: &VerifierHash) -> Result<FlowVerifierBinding, MagicLinkError> {
+    let mut decoded = decode_canonical_hmac(hash.as_storage_value(), VERIFIER_HASH_PREFIX)?;
+    let binding = FlowVerifierBinding::new(decoded);
+    decoded.zeroize();
+    Ok(binding)
+}
+
+/// Reconstruct the canonical verifier hash authenticated by a flow cookie.
+#[must_use]
+pub fn verifier_hash_from_flow_binding(binding: &FlowVerifierBinding) -> VerifierHash {
+    VerifierHash(format!(
+        "{VERIFIER_HASH_PREFIX}_{}",
+        hex::encode(binding.as_sensitive_bytes())
+    ))
+}
+
+/// Convert a canonical account lookup HMAC into its scanner-flow binding.
+pub fn flow_account_binding(lookup: &LookupHmac) -> Result<FlowAccountBinding, MagicLinkError> {
+    let mut decoded = decode_canonical_hmac(lookup.as_storage_value(), EMAIL_LOOKUP_PREFIX)?;
+    let binding = FlowAccountBinding::new(decoded);
+    decoded.zeroize();
+    Ok(binding)
+}
+
+/// Derive the purpose-separated scanner-flow binding for an app-supplied client key.
+pub fn flow_client_binding(
+    key: &LookupHmacKey,
+    client_key: &str,
+) -> Result<FlowClientBinding, MagicLinkError> {
+    let mut mac =
+        HmacSha256::new_from_slice(key.as_bytes()).map_err(|_| MagicLinkError::Internal)?;
+    mac.update(HMAC_DOMAIN);
+    mac.update(&[0]);
+    mac.update(FLOW_CLIENT_PREFIX.as_bytes());
+    mac.update(&[0]);
+    mac.update(client_key.as_bytes());
+    Ok(FlowClientBinding::new(mac.finalize().into_bytes().into()))
+}
+
+fn decode_canonical_hmac(
+    value: &str,
+    expected_prefix: &str,
+) -> Result<[u8; HMAC_BYTES], MagicLinkError> {
+    let Some(encoded) = value.strip_prefix(expected_prefix) else {
+        return Err(MagicLinkError::InvalidToken);
+    };
+    let Some(encoded) = encoded.strip_prefix('_') else {
+        return Err(MagicLinkError::InvalidToken);
+    };
+    if encoded.len() != HMAC_HEX_LEN
+        || !encoded
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(MagicLinkError::InvalidToken);
+    }
+
+    let mut decoded = [0_u8; HMAC_BYTES];
+    if hex::decode_to_slice(encoded, &mut decoded).is_err() {
+        decoded.zeroize();
+        return Err(MagicLinkError::InvalidToken);
+    }
+    Ok(decoded)
 }
 
 fn hmac_prefixed(key: &LookupHmacKey, prefix: &str, value: &str) -> Result<String, MagicLinkError> {

@@ -17,7 +17,9 @@ pub use email::NormalizedEmail;
 pub use error::MagicLinkError;
 pub use hmac_lookup::{
     EMAIL_LOOKUP_PREFIX, HMAC_KEY_BYTES, LookupHmac, LookupHmacKey, SELECTOR_LOOKUP_PREFIX,
-    VERIFIER_HASH_PREFIX, VerifierHash, email_lookup_hmac, selector_lookup_hmac, verifier_hash,
+    VERIFIER_HASH_PREFIX, VerifierHash, email_lookup_hmac, flow_account_binding,
+    flow_client_binding, flow_selector_binding, flow_verifier_binding, selector_lookup_hmac,
+    selector_lookup_hmac_from_flow_binding, verifier_hash, verifier_hash_from_flow_binding,
 };
 pub use magic_link::{
     MAGIC_LINK_TOKEN_VERSION_PREFIX, MagicLinkSelector, MagicLinkToken, MagicLinkVerifier,
