@@ -28,7 +28,7 @@ pub struct UserSessionIndexEntry {
 }
 
 /// In-memory fake store for service tests/examples.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct FakeDynamoDbAuthStore {
     inner: Arc<Mutex<FakeDynamoDbInner>>,
     storage_hmac_key: Arc<StorageHmacKey>,

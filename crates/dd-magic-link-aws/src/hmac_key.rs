@@ -58,9 +58,3 @@ impl fmt::Debug for StorageHmacKey {
         f.write_str("StorageHmacKey(..)")
     }
 }
-
-impl Default for StorageHmacKey {
-    fn default() -> Self {
-        Self([0x42; STORAGE_HMAC_KEY_BYTES])
-    }
-}
