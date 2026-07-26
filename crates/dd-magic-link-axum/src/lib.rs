@@ -1,46 +1,71 @@
 //! `dd-magic-link-axum` — optional Axum HTTP integration.
 //!
-//! Request guards, body decoding helpers, cookie response helpers, and safe
-//! HTTP error mapping. This crate does not own core token/session logic and does
-//! not force an application router shape.
+//! This crate owns bounded HTTP decoding, scanner-safe magic-link handlers,
+//! cookie response helpers, and generic public errors. It does not own token or
+//! session cryptography and does not force an application router shape.
+//!
+//! # Mandatory deployment gate
+//!
+//! A magic-link token is present in the landing request target before an Axum
+//! handler runs. Production deployments **must** configure proxy/load-balancer
+//! request-line bounds and prove that outer access logs, application middleware,
+//! tracing, metrics, diagnostics, error reporting, and panic capture use route
+//! templates and never retain raw request targets, route captures, query fields,
+//! tokens, confirmations, or cookies. Representative production-like probes must
+//! verify the emitted logs and telemetry. These handlers prove non-reflection only
+//! after handler entry; they cannot make an unreviewed outer HTTP stack safe.
 
 #![forbid(unsafe_code)]
+
+use core::fmt;
 use core::future::Future;
 
 use axum::Json;
 use axum::body::{Body, Bytes, to_bytes};
 use axum::extract::Request;
-use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE, LOCATION, SET_COOKIE};
+use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE, COOKIE, LOCATION, ORIGIN, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use dd_magic_link_service::{
-    ClientKey, ConsumeMagicLinkOutcome, EmailLocale, MagicLinkServiceError, NormalizedEmail,
-    RequestMagicLinkCommand, RequestMagicLinkOutcome,
+    BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, ClientKey,
+    ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome, EmailLocale,
+    MAX_RAW_MAGIC_LINK_TOKEN_BYTES, MagicLinkConfigError, MagicLinkFlowError,
+    MagicLinkServiceConfig, MagicLinkServiceError, NormalizedEmail, RequestMagicLinkCommand,
+    RequestMagicLinkOutcome, SessionValidationError, TemporaryAuthStateAction, ValidatedSession,
 };
 use serde::{Deserialize, Serialize};
 
-/// Default maximum pre-auth body size accepted by the helpers.
-pub const MAX_MAGIC_LINK_BODY_BYTES: usize = 4 * 1024;
-/// JSON content type accepted by the request helper.
+/// Maximum raw query size accepted by the scanner landing helper.
+pub const MAX_MAGIC_LINK_LANDING_QUERY_BYTES: usize = 768;
+/// Maximum pre-auth body size accepted by the helpers.
+pub const MAX_MAGIC_LINK_BODY_BYTES: usize = 4096;
+/// JSON content type accepted by request and confirmation helpers.
 pub const APPLICATION_JSON: &str = "application/json";
-/// Form content type accepted by the consume helper.
+/// Form content type accepted by the confirmation helper.
 pub const FORM_URLENCODED: &str = "application/x-www-form-urlencoded";
 /// Conservative default primary session cookie name.
 pub const DEFAULT_SESSION_COOKIE_NAME: &str = "dd_session";
 /// Primary session cookies are app-wide by default.
 pub const DEFAULT_SESSION_COOKIE_PATH: &str = "/";
-/// Default browser cookie max age matching the 30-day service absolute session baseline.
-pub const DEFAULT_SESSION_COOKIE_MAX_AGE_SECS: u64 = 30 * 24 * 60 * 60;
-/// CloudFront country header commonly used to bind a session country.
+/// CloudFront country header commonly used for session country context.
 pub const CLOUDFRONT_VIEWER_COUNTRY: &str = "cloudfront-viewer-country";
 
+const DEFAULT_FLOW_COOKIE_NAME: &str = "dd_auth_flow";
+const DEFAULT_POW_COOKIE_NAME: &str = "dd_pow_proof";
+const DEFAULT_TEMPORARY_COOKIE_PATH: &str = "/auth";
+const MAX_COOKIE_HEADER_FIELDS: usize = 8;
+const MAX_COOKIE_HEADER_BYTES: usize = 8192;
+const MAX_SELECTED_COOKIE_VALUE_BYTES: usize = 4096;
 const CACHE_CONTROL: HeaderName = HeaderName::from_static("cache-control");
 const CONTENT_SECURITY_POLICY: HeaderName = HeaderName::from_static("content-security-policy");
 const REFERRER_POLICY: HeaderName = HeaderName::from_static("referrer-policy");
+const SEC_FETCH_SITE: HeaderName = HeaderName::from_static("sec-fetch-site");
 const X_FRAME_OPTIONS: HeaderName = HeaderName::from_static("x-frame-options");
+const COOKIE_EPOCH: &str = "Thu, 01 Jan 1970 00:00:00 GMT";
+const TERMINAL_INVALID_BODY: &str = "Invalid confirmation.\n";
 
-/// Public HTTP error variants for the adapter. Variants never carry email,
-/// token, session id, or key material.
+/// Public HTTP error variants for general-purpose request-magic-link helpers.
+/// Variants never carry email, token, session id, or key material.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MagicLinkHttpError {
     BadRequest,
@@ -134,7 +159,10 @@ pub struct GenericAcceptedBody {
 }
 
 /// Request JSON accepted by [`handle_magic_link_request_json`].
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+///
+/// The body-derived client key is a retained P1 compatibility residual and is
+/// not used by the scanner begin/confirmation handlers.
+#[derive(Clone, Eq, PartialEq, Deserialize)]
 pub struct MagicLinkRequestJson {
     pub email: String,
     pub locale: String,
@@ -142,6 +170,21 @@ pub struct MagicLinkRequestJson {
     pub privacy_accepted: bool,
     #[serde(default)]
     pub client_key: Option<String>,
+}
+
+impl fmt::Debug for MagicLinkRequestJson {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MagicLinkRequestJson")
+            .field("email", &"<redacted>")
+            .field("locale", &self.locale)
+            .field("terms_accepted", &self.terms_accepted)
+            .field("privacy_accepted", &self.privacy_accepted)
+            .field(
+                "client_key",
+                &self.client_key.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 impl MagicLinkRequestJson {
@@ -164,31 +207,58 @@ impl MagicLinkRequestJson {
     }
 }
 
-/// Consume JSON/form body accepted by [`handle_magic_link_consume`].
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
-pub struct MagicLinkConsumeBody {
-    pub token: String,
-    #[serde(default)]
-    pub client_key: Option<String>,
-    #[serde(default)]
-    pub country: Option<String>,
+/// Bounded, redacted raw landing candidate. Token grammar remains owned by the
+/// service/core parser.
+pub struct MagicLinkLandingToken(String);
+
+impl MagicLinkLandingToken {
+    /// Accept a candidate only within the service-owned pre-parse resource cap.
+    pub fn new(mut value: String) -> Result<Self, MagicLinkHttpError> {
+        if value.is_empty() || value.len() > MAX_RAW_MAGIC_LINK_TOKEN_BYTES {
+            zeroize_string(&mut value);
+            return Err(MagicLinkHttpError::BadRequest);
+        }
+        Ok(Self(value))
+    }
+
+    fn into_string(mut self) -> String {
+        core::mem::take(&mut self.0)
+    }
 }
 
-impl MagicLinkConsumeBody {
-    pub fn token(&self) -> &str {
-        &self.token
+impl fmt::Debug for MagicLinkLandingToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MagicLinkLandingToken(..)")
     }
+}
 
-    pub fn client_key(
-        &self,
-        fallback_client_key: Option<ClientKey>,
-    ) -> Result<Option<ClientKey>, MagicLinkHttpError> {
-        let body_client_key = parse_optional_client_key(self.client_key.as_deref())?;
-        Ok(fallback_client_key.or(body_client_key))
+impl Drop for MagicLinkLandingToken {
+    fn drop(&mut self) {
+        zeroize_string(&mut self.0);
     }
+}
 
-    pub fn country(&self, fallback_country: Option<String>) -> Option<String> {
-        fallback_country.or_else(|| self.country.clone())
+/// Confirmation JSON/form body. It deliberately has no raw token or client key.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MagicLinkConfirmationBody {
+    confirmation: String,
+    #[serde(default)]
+    country: Option<String>,
+}
+
+impl fmt::Debug for MagicLinkConfirmationBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MagicLinkConfirmationBody")
+            .field("confirmation", &"<redacted>")
+            .field("country", &self.country)
+            .finish()
+    }
+}
+
+impl Drop for MagicLinkConfirmationBody {
+    fn drop(&mut self) {
+        zeroize_string(&mut self.confirmation);
     }
 }
 
@@ -210,121 +280,419 @@ impl SameSite {
     }
 }
 
-/// Configuration for primary session cookie response helpers.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct SessionCookieConfig {
-    pub name: String,
-    pub path: String,
-    pub max_age_secs: u64,
-    pub secure: bool,
-    pub same_site: SameSite,
+/// Typed cookie setup failures.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CookieConfigError {
+    InvalidName,
+    InvalidPath,
+    ZeroMaxAge,
+    MaxAgeExceedsFlowCap,
+    SameSiteNoneRequiresSecure,
+    DuplicateCookieName,
 }
 
-impl SessionCookieConfig {
-    /// Production-safe defaults: lower snake-case name, host-only scope,
-    /// `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, and explicit max age.
-    pub fn production() -> Self {
-        Self {
-            name: DEFAULT_SESSION_COOKIE_NAME.to_owned(),
-            path: DEFAULT_SESSION_COOKIE_PATH.to_owned(),
-            max_age_secs: DEFAULT_SESSION_COOKIE_MAX_AGE_SECS,
-            secure: true,
+impl fmt::Display for CookieConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::InvalidName => "invalid cookie name",
+            Self::InvalidPath => "invalid cookie path",
+            Self::ZeroMaxAge => "cookie max age must be nonzero",
+            Self::MaxAgeExceedsFlowCap => "cookie max age exceeds flow cap",
+            Self::SameSiteNoneRequiresSecure => "SameSite=None requires Secure",
+            Self::DuplicateCookieName => "cookie names must be distinct",
+        })
+    }
+}
+
+impl std::error::Error for CookieConfigError {}
+
+/// Validated host-only temporary auth cookie policy.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TemporaryCookieConfig {
+    name: String,
+    path: String,
+    secure: bool,
+    same_site: SameSite,
+}
+
+impl TemporaryCookieConfig {
+    pub fn production(
+        name: impl Into<String>,
+        path: impl Into<String>,
+    ) -> Result<Self, CookieConfigError> {
+        Self::build(name.into(), path.into(), true)
+    }
+
+    pub fn local_development(
+        name: impl Into<String>,
+        path: impl Into<String>,
+    ) -> Result<Self, CookieConfigError> {
+        Self::build(name.into(), path.into(), false)
+    }
+
+    fn build(name: String, path: String, secure: bool) -> Result<Self, CookieConfigError> {
+        validate_cookie_name(&name)?;
+        validate_cookie_path(&path)?;
+        Ok(Self {
+            name,
+            path,
+            secure,
             same_site: SameSite::Lax,
-        }
+        })
     }
 
-    /// Explicit local-development variant. Production code should prefer
-    /// [`SessionCookieConfig::production`].
-    pub fn local_development() -> Self {
-        Self {
-            secure: false,
-            ..Self::production()
-        }
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
-    pub fn with_name(mut self, name: impl Into<String>) -> Self {
-        self.name = name.into();
-        self
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
     }
 
-    pub fn with_path(mut self, path: impl Into<String>) -> Self {
-        self.path = path.into();
-        self
+    #[must_use]
+    pub fn secure(&self) -> bool {
+        self.secure
     }
 
-    pub fn with_max_age_secs(mut self, max_age_secs: u64) -> Self {
-        self.max_age_secs = max_age_secs;
-        self
+    #[must_use]
+    pub fn same_site(&self) -> SameSite {
+        self.same_site
     }
+}
 
-    pub fn with_same_site(mut self, same_site: SameSite) -> Self {
-        self.same_site = same_site;
-        self
-    }
+/// Validated flow-cookie policy and optional clearing-only PoW-cookie policy.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AuthFlowCookieConfig {
+    flow: TemporaryCookieConfig,
+    pow_proof: Option<TemporaryCookieConfig>,
+}
 
-    pub fn with_secure(mut self, secure: bool) -> Self {
-        self.secure = secure;
-        self
-    }
-
-    fn validate(&self) -> Result<(), MagicLinkHttpError> {
-        if !is_lower_snake_cookie_name(&self.name)
-            || !is_valid_cookie_path(&self.path)
-            || self.max_age_secs == 0
-            || (self.same_site == SameSite::None && !self.secure)
+impl AuthFlowCookieConfig {
+    pub fn new(
+        flow: TemporaryCookieConfig,
+        pow_proof: Option<TemporaryCookieConfig>,
+    ) -> Result<Self, CookieConfigError> {
+        if pow_proof
+            .as_ref()
+            .is_some_and(|pow| pow.name() == flow.name())
         {
-            return Err(MagicLinkHttpError::BadRequest);
+            return Err(CookieConfigError::DuplicateCookieName);
         }
-        Ok(())
+        Ok(Self { flow, pow_proof })
     }
-}
 
-/// Config for a successful magic-link consume HTTP response.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct ConsumeSuccessConfig {
-    pub session_cookie: SessionCookieConfig,
-    pub redirect: SameOriginRedirect,
-}
-
-impl ConsumeSuccessConfig {
-    pub fn new(redirect: SameOriginRedirect) -> Self {
+    #[must_use]
+    pub fn production_defaults() -> Self {
         Self {
-            session_cookie: SessionCookieConfig::production(),
-            redirect,
-        }
-    }
-}
-
-/// Same-origin redirect target. Only clean absolute paths such as `/app` or
-/// `/auth/complete?next=dashboard` are accepted.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct SameOriginRedirect(String);
-
-impl SameOriginRedirect {
-    pub fn parse(value: impl Into<String>) -> Result<Self, MagicLinkHttpError> {
-        let value = value.into();
-        if is_safe_same_origin_path(&value) {
-            Ok(Self(value))
-        } else {
-            Err(MagicLinkHttpError::BadRequest)
+            flow: TemporaryCookieConfig {
+                name: DEFAULT_FLOW_COOKIE_NAME.to_owned(),
+                path: DEFAULT_TEMPORARY_COOKIE_PATH.to_owned(),
+                secure: true,
+                same_site: SameSite::Lax,
+            },
+            pow_proof: Some(TemporaryCookieConfig {
+                name: DEFAULT_POW_COOKIE_NAME.to_owned(),
+                path: DEFAULT_TEMPORARY_COOKIE_PATH.to_owned(),
+                secure: true,
+                same_site: SameSite::Lax,
+            }),
         }
     }
 
     #[must_use]
+    pub fn local_development_defaults() -> Self {
+        let mut defaults = Self::production_defaults();
+        defaults.flow.secure = false;
+        if let Some(pow) = &mut defaults.pow_proof {
+            pow.secure = false;
+        }
+        defaults
+    }
+
+    #[must_use]
+    pub fn flow(&self) -> &TemporaryCookieConfig {
+        &self.flow
+    }
+
+    #[must_use]
+    pub fn pow_proof(&self) -> Option<&TemporaryCookieConfig> {
+        self.pow_proof.as_ref()
+    }
+}
+
+/// Validated host-only primary session cookie configuration.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SessionCookieConfig {
+    name: String,
+    path: String,
+    max_age_secs: u64,
+    secure: bool,
+    same_site: SameSite,
+}
+
+impl SessionCookieConfig {
+    /// Build production cookie policy from validated service session policy.
+    pub fn production(policy: &MagicLinkServiceConfig) -> Result<Self, MagicLinkConfigError> {
+        let max_age = policy.session_max_age()?;
+        Ok(Self {
+            name: DEFAULT_SESSION_COOKIE_NAME.to_owned(),
+            path: DEFAULT_SESSION_COOKIE_PATH.to_owned(),
+            max_age_secs: max_age.idle_secs,
+            secure: true,
+            same_site: SameSite::Lax,
+        })
+    }
+
+    /// Build explicit local-HTTP cookie policy from validated service policy.
+    pub fn local_development(
+        policy: &MagicLinkServiceConfig,
+    ) -> Result<Self, MagicLinkConfigError> {
+        let mut config = Self::production(policy)?;
+        config.secure = false;
+        Ok(config)
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Result<Self, CookieConfigError> {
+        let name = name.into();
+        validate_cookie_name(&name)?;
+        self.name = name;
+        Ok(self)
+    }
+
+    pub fn with_path(mut self, path: impl Into<String>) -> Result<Self, CookieConfigError> {
+        let path = path.into();
+        validate_cookie_path(&path)?;
+        self.path = path;
+        Ok(self)
+    }
+
+    pub fn with_same_site(mut self, same_site: SameSite) -> Result<Self, CookieConfigError> {
+        if same_site == SameSite::None && !self.secure {
+            return Err(CookieConfigError::SameSiteNoneRequiresSecure);
+        }
+        self.same_site = same_site;
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    #[must_use]
+    pub fn max_age_secs(&self) -> u64 {
+        self.max_age_secs
+    }
+
+    #[must_use]
+    pub fn secure(&self) -> bool {
+        self.secure
+    }
+
+    #[must_use]
+    pub fn same_site(&self) -> SameSite {
+        self.same_site
+    }
+}
+
+/// Setup-validated same-origin redirect target.
+///
+/// Only canonical ASCII relative request targets with an absolute path are
+/// accepted. The `Location` header is constructed during setup, before any
+/// authentication transaction can commit.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SameOriginRedirect {
+    value: String,
+    location: HeaderValue,
+}
+
+impl SameOriginRedirect {
+    pub fn parse(value: impl Into<String>) -> Result<Self, MagicLinkHttpError> {
+        let value = value.into();
+        if !is_safe_same_origin_path(&value) {
+            return Err(MagicLinkHttpError::BadRequest);
+        }
+        let uri = value
+            .parse::<axum::http::Uri>()
+            .map_err(|_| MagicLinkHttpError::BadRequest)?;
+        if uri.scheme().is_some()
+            || uri.authority().is_some()
+            || uri
+                .path_and_query()
+                .is_none_or(|path_and_query| path_and_query.as_str() != value)
+        {
+            return Err(MagicLinkHttpError::BadRequest);
+        }
+        let location = HeaderValue::from_str(&value).map_err(|_| MagicLinkHttpError::BadRequest)?;
+        Ok(Self { value, location })
+    }
+
+    #[must_use]
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.value
+    }
+
+    fn location_header(&self) -> HeaderValue {
+        self.location.clone()
+    }
+}
+
+/// Typed setup failures for the deliberately narrow Origin grammar.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum OriginConfigError {
+    InvalidScheme,
+    InvalidAuthority,
+    InvalidHost,
+    InvalidPort,
+    NonCanonical,
+    InvalidHeaderValue,
+}
+
+impl fmt::Display for OriginConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::InvalidScheme => "invalid origin scheme",
+            Self::InvalidAuthority => "invalid origin authority",
+            Self::InvalidHost => "invalid origin host",
+            Self::InvalidPort => "invalid origin port",
+            Self::NonCanonical => "origin is not canonical",
+            Self::InvalidHeaderValue => "origin is not a valid header value",
+        })
+    }
+}
+
+impl std::error::Error for OriginConfigError {}
+
+/// Exact same-origin POST policy using a deliberately narrow canonical grammar.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SameOriginPostConfig {
+    expected_origin: HeaderValue,
+}
+
+impl SameOriginPostConfig {
+    pub fn parse(value: &str) -> Result<Self, OriginConfigError> {
+        validate_origin(value)?;
+        let expected_origin =
+            HeaderValue::from_str(value).map_err(|_| OriginConfigError::InvalidHeaderValue)?;
+        Ok(Self { expected_origin })
+    }
+
+    #[must_use]
+    pub fn expected_origin(&self) -> &HeaderValue {
+        &self.expected_origin
+    }
+}
+
+/// Typed scanner-flow setup failures.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum MagicLinkScannerFlowConfigError {
+    DuplicateCookieName,
+    FlowCookiePathDoesNotCoverPostAction,
+}
+
+impl fmt::Display for MagicLinkScannerFlowConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::DuplicateCookieName => "scanner cookie names must be pairwise distinct",
+            Self::FlowCookiePathDoesNotCoverPostAction => {
+                "flow cookie path does not cover confirmation action"
+            }
+        })
+    }
+}
+
+impl std::error::Error for MagicLinkScannerFlowConfigError {}
+
+/// Fully validated scanner-safe HTTP configuration.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MagicLinkScannerFlowConfig {
+    post_action: SameOriginRedirect,
+    success_redirect: SameOriginRedirect,
+    same_origin_post: SameOriginPostConfig,
+    session_cookie: SessionCookieConfig,
+    temporary_cookies: AuthFlowCookieConfig,
+}
+
+impl MagicLinkScannerFlowConfig {
+    pub fn new(
+        post_action: SameOriginRedirect,
+        success_redirect: SameOriginRedirect,
+        same_origin_post: SameOriginPostConfig,
+        session_cookie: SessionCookieConfig,
+        temporary_cookies: AuthFlowCookieConfig,
+    ) -> Result<Self, MagicLinkScannerFlowConfigError> {
+        let flow_name = temporary_cookies.flow().name();
+        if session_cookie.name() == flow_name
+            || temporary_cookies
+                .pow_proof()
+                .is_some_and(|pow| pow.name() == session_cookie.name() || pow.name() == flow_name)
+        {
+            return Err(MagicLinkScannerFlowConfigError::DuplicateCookieName);
+        }
+        let request_path = post_action
+            .as_str()
+            .split_once('?')
+            .map_or(post_action.as_str(), |(path, _)| path);
+        if !cookie_path_covers(temporary_cookies.flow().path(), request_path) {
+            return Err(MagicLinkScannerFlowConfigError::FlowCookiePathDoesNotCoverPostAction);
+        }
+        Ok(Self {
+            post_action,
+            success_redirect,
+            same_origin_post,
+            session_cookie,
+            temporary_cookies,
+        })
+    }
+
+    #[must_use]
+    pub fn post_action(&self) -> &SameOriginRedirect {
+        &self.post_action
+    }
+
+    #[must_use]
+    pub fn success_redirect(&self) -> &SameOriginRedirect {
+        &self.success_redirect
+    }
+
+    #[must_use]
+    pub fn same_origin_post(&self) -> &SameOriginPostConfig {
+        &self.same_origin_post
+    }
+
+    #[must_use]
+    pub fn session_cookie(&self) -> &SessionCookieConfig {
+        &self.session_cookie
+    }
+
+    #[must_use]
+    pub fn temporary_cookies(&self) -> &AuthFlowCookieConfig {
+        &self.temporary_cookies
     }
 }
 
 /// Body and headers returned by [`guarded_body`].
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GuardedBody {
     pub headers: HeaderMap,
     pub bytes: Bytes,
     pub is_json: bool,
 }
 
-/// Read a bounded request body after checking content type.
+impl fmt::Debug for GuardedBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("GuardedBody(..)")
+    }
+}
+
+/// Read a bounded request body after checking content type and declared length.
 pub async fn guarded_body(
     request: Request,
     allowed_content_types: &[&str],
@@ -332,9 +700,7 @@ pub async fn guarded_body(
 ) -> Result<GuardedBody, MagicLinkHttpError> {
     let (parts, body) = request.into_parts();
     let headers = parts.headers;
-    let content_type = headers
-        .get(CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
+    let content_type = unique_header_str(&headers, CONTENT_TYPE)
         .ok_or(MagicLinkHttpError::UnsupportedMediaType)?;
     if !allowed_content_types
         .iter()
@@ -348,6 +714,9 @@ pub async fn guarded_body(
     let bytes = to_bytes(body, max_body_bytes)
         .await
         .map_err(|_| MagicLinkHttpError::PayloadTooLarge)?;
+    if bytes.is_empty() {
+        return Err(MagicLinkHttpError::BadRequest);
+    }
     let is_json = content_type_matches_value(content_type, APPLICATION_JSON);
     Ok(GuardedBody {
         headers,
@@ -356,13 +725,10 @@ pub async fn guarded_body(
     })
 }
 
-/// Case-insensitive content-type comparison that ignores parameters such as
-/// `charset=utf-8`.
+/// Case-insensitive content-type comparison that ignores parameters.
 #[must_use]
 pub fn content_type_matches(headers: &HeaderMap, expected: &str) -> bool {
-    headers
-        .get(CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
+    unique_header_str(headers, CONTENT_TYPE)
         .is_some_and(|actual| content_type_matches_value(actual, expected))
 }
 
@@ -376,41 +742,31 @@ pub fn parse_magic_link_request_json(
         .into_command(client_key)
 }
 
-/// Parse a supported consume JSON or form body. The token is intentionally not
-/// parsed here; invalid bearer syntax is delegated to the service so its
-/// malformed-consume limiter can run with the supplied client key.
-pub fn parse_magic_link_consume_body(
-    body: &[u8],
-    is_json: bool,
-) -> Result<MagicLinkConsumeBody, MagicLinkHttpError> {
-    if is_json {
-        serde_json::from_slice(body).map_err(|_| MagicLinkHttpError::BadRequest)
-    } else {
-        serde_urlencoded::from_bytes(body).map_err(|_| MagicLinkHttpError::BadRequest)
-    }
-}
-
-/// Extract a bounded service client key from a header such as `x-client-key`.
+/// Extract a bounded service client key from a unique header.
 pub fn client_key_from_header(
     headers: &HeaderMap,
     header_name: &str,
 ) -> Result<Option<ClientKey>, MagicLinkHttpError> {
     let name = HeaderName::from_bytes(header_name.as_bytes())
         .map_err(|_| MagicLinkHttpError::BadRequest)?;
-    let Some(value) = headers.get(name) else {
+    let mut values = headers.get_all(name).iter();
+    let Some(value) = values.next() else {
         return Ok(None);
     };
+    if values.next().is_some() {
+        return Err(MagicLinkHttpError::BadRequest);
+    }
     let value = value.to_str().map_err(|_| MagicLinkHttpError::BadRequest)?;
     ClientKey::parse(value)
         .map(Some)
         .map_err(|_| MagicLinkHttpError::BadRequest)
 }
 
-/// Extract a CloudFront viewer country header as an ISO 3166-1 alpha-2 code.
+/// Extract a unique CloudFront viewer country as ISO 3166-1 alpha-2.
 #[must_use]
 pub fn viewer_country(headers: &HeaderMap) -> Option<String> {
     let name = HeaderName::from_static(CLOUDFRONT_VIEWER_COUNTRY);
-    let value = headers.get(name)?.to_str().ok()?;
+    let value = unique_header_str(headers, name)?;
     if value.len() == 2 && value.bytes().all(|byte| byte.is_ascii_uppercase()) {
         Some(value.to_owned())
     } else {
@@ -424,59 +780,77 @@ pub fn generic_accepted_response() -> Response {
     (StatusCode::OK, Json(GenericAcceptedBody { status: "ok" })).into_response()
 }
 
-/// Create a `Set-Cookie` header value for a freshly minted session cookie.
+/// Create a host-only session `Set-Cookie` value.
 pub fn session_set_cookie_header(
     config: &SessionCookieConfig,
     token: &str,
 ) -> Result<HeaderValue, MagicLinkHttpError> {
-    config.validate()?;
     if !is_valid_cookie_value(token) {
         return Err(MagicLinkHttpError::Internal);
     }
-    let secure = if config.secure { "; Secure" } else { "" };
-    let header = format!(
-        "{}={token}; Path={}; HttpOnly{secure}; SameSite={}; Max-Age={}",
-        config.name,
-        config.path,
-        config.same_site.as_cookie_value(),
-        config.max_age_secs
-    );
-    HeaderValue::from_str(&header).map_err(|_| MagicLinkHttpError::Internal)
+    cookie_header(
+        config.name(),
+        token,
+        config.path(),
+        config.secure(),
+        config.same_site(),
+        Some(config.max_age_secs()),
+        false,
+    )
 }
 
-/// Create a `Set-Cookie` header value that clears the primary session cookie.
+/// Create a byte-for-byte attribute-parity session clear header.
 pub fn clear_session_cookie_header(
     config: &SessionCookieConfig,
 ) -> Result<HeaderValue, MagicLinkHttpError> {
-    config.validate()?;
-    let secure = if config.secure { "; Secure" } else { "" };
-    let header = format!(
-        "{}=; Path={}; HttpOnly{secure}; SameSite={}; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT",
-        config.name,
-        config.path,
-        config.same_site.as_cookie_value()
-    );
-    HeaderValue::from_str(&header).map_err(|_| MagicLinkHttpError::Internal)
+    cookie_header(
+        config.name(),
+        "",
+        config.path(),
+        config.secure(),
+        config.same_site(),
+        Some(0),
+        true,
+    )
 }
 
-/// Create a successful consume response: `303 See Other`, clean same-origin
-/// `Location`, and a host-only primary session cookie.
-pub fn consume_success_response(
-    outcome: &ConsumeMagicLinkOutcome,
-    config: &ConsumeSuccessConfig,
-) -> Result<Response, MagicLinkHttpError> {
-    let mut response = Response::new(Body::empty());
-    *response.status_mut() = StatusCode::SEE_OTHER;
-    let location = HeaderValue::from_str(config.redirect.as_str())
-        .map_err(|_| MagicLinkHttpError::Internal)?;
-    response.headers_mut().insert(LOCATION, location);
-    let set_cookie = session_set_cookie_header(&config.session_cookie, &outcome.session_cookie)?;
-    response.headers_mut().append(SET_COOKIE, set_cookie);
-    Ok(response)
+/// Create a temporary auth-cookie set header with a lifetime in `1..=300`.
+pub fn set_temporary_cookie_header(
+    config: &TemporaryCookieConfig,
+    value: &str,
+    max_age_secs: u64,
+) -> Result<HeaderValue, MagicLinkHttpError> {
+    if max_age_secs == 0 || max_age_secs > 300 || !is_valid_cookie_value(value) {
+        return Err(MagicLinkHttpError::Internal);
+    }
+    cookie_header(
+        config.name(),
+        value,
+        config.path(),
+        config.secure(),
+        config.same_site(),
+        Some(max_age_secs),
+        false,
+    )
 }
 
-/// Handle a JSON magic-link request by parsing/guarding HTTP input, delegating
-/// to the provided service closure, and returning the generic public response.
+/// Create a byte-for-byte attribute-parity temporary auth-cookie clear header.
+pub fn clear_temporary_cookie_header(
+    config: &TemporaryCookieConfig,
+) -> Result<HeaderValue, MagicLinkHttpError> {
+    cookie_header(
+        config.name(),
+        "",
+        config.path(),
+        config.secure(),
+        config.same_site(),
+        Some(0),
+        true,
+    )
+}
+
+/// Handle a JSON magic-link request while preserving its existing P1 body-client
+/// behavior and generic public response.
 pub async fn handle_magic_link_request_json<F, Fut>(
     request: Request,
     fallback_client_key: Option<ClientKey>,
@@ -507,88 +881,183 @@ where
     Ok(generic_accepted_response())
 }
 
-/// Handle a JSON or form magic-link consume request. Invalid token syntax is
-/// delegated to the service closure for limiter-aware handling.
-pub async fn handle_magic_link_consume<F, Fut>(
+/// Scanner-safe landing handler. The mandatory deployment logging gate described
+/// in the crate documentation applies before this handler can be production-ready.
+pub async fn handle_magic_link_landing<F, Fut>(
     request: Request,
-    fallback_client_key: Option<ClientKey>,
-    config: &ConsumeSuccessConfig,
-    handle: F,
+    client_key: Option<ClientKey>,
+    config: &MagicLinkScannerFlowConfig,
+    begin: F,
 ) -> Response
 where
-    F: FnOnce(&str, Option<ClientKey>, Option<String>) -> Fut,
-    Fut: Future<Output = Result<ConsumeMagicLinkOutcome, MagicLinkServiceError>>,
+    F: FnOnce(BeginMagicLinkLandingCommand) -> Fut,
+    Fut: Future<Output = Result<BeginMagicLinkLandingOutcome, MagicLinkFlowError>>,
 {
-    match handle_magic_link_consume_inner(request, fallback_client_key, config, handle).await {
-        Ok(response) => response,
-        Err(error) => error.into_response(),
+    let raw_token = match extract_landing_token(request.uri().query()) {
+        Ok(token) => token.into_string(),
+        Err(_) => String::new(),
+    };
+    let command = BeginMagicLinkLandingCommand::new(raw_token, client_key);
+    match begin(command).await {
+        Ok(outcome) => valid_landing_response(&outcome, config),
+        Err(error) => landing_error_response(error, config),
     }
 }
 
-async fn handle_magic_link_consume_inner<F, Fut>(
+/// Scanner-safe confirmation handler. Origin is enforced before cookie, body, or
+/// service work, and the application client key is supplied separately.
+pub async fn handle_magic_link_confirmation<F, Fut>(
     request: Request,
-    fallback_client_key: Option<ClientKey>,
-    config: &ConsumeSuccessConfig,
-    handle: F,
-) -> Result<Response, MagicLinkHttpError>
+    client_key: Option<ClientKey>,
+    config: &MagicLinkScannerFlowConfig,
+    confirm: F,
+) -> Response
 where
-    F: FnOnce(&str, Option<ClientKey>, Option<String>) -> Fut,
-    Fut: Future<Output = Result<ConsumeMagicLinkOutcome, MagicLinkServiceError>>,
+    F: FnOnce(ConfirmMagicLinkFlowCommand) -> Fut,
+    Fut: Future<Output = Result<ConfirmMagicLinkFlowOutcome, MagicLinkFlowError>>,
 {
-    let guarded = guarded_body(
+    if !request_is_same_origin(request.headers(), config.same_origin_post()) {
+        return scanner_plain_response(
+            StatusCode::FORBIDDEN,
+            "Forbidden.\n",
+            config,
+            ClearMode::None,
+        );
+    }
+
+    let flow_cookie =
+        match extract_target_cookie(request.headers(), config.temporary_cookies().flow().name()) {
+            Ok(value) => value,
+            Err(_) => return terminal_invalid_confirmation(config),
+        };
+
+    let guarded = match guarded_body(
         request,
         &[APPLICATION_JSON, FORM_URLENCODED],
         MAX_MAGIC_LINK_BODY_BYTES,
     )
-    .await?;
-    let fallback_country = viewer_country(&guarded.headers);
-    let body = parse_magic_link_consume_body(&guarded.bytes, guarded.is_json)?;
-    let client_key = body.client_key(fallback_client_key)?;
-    let country = body.country(fallback_country);
-    let outcome = handle(body.token(), client_key, country)
-        .await
-        .map_err(MagicLinkHttpError::from)?;
-    consume_success_response(&outcome, config)
-}
-
-/// Minimal scanner-safe landing page: `GET` renders only a confirmation form;
-/// only the same-origin `POST` target should call the consume helper.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct MagicLinkLandingPage {
-    pub token: String,
-    pub post_action: SameOriginRedirect,
-    pub account_label: Option<String>,
-}
-
-/// Render a no-store, no-referrer, frame-denied confirmation page that posts the
-/// bearer token in the request body rather than consuming it on `GET`.
-pub fn magic_link_landing_response(
-    page: &MagicLinkLandingPage,
-) -> Result<Response, MagicLinkHttpError> {
-    if !is_safe_hidden_value(&page.token) {
-        return Err(MagicLinkHttpError::BadRequest);
+    .await
+    {
+        Ok(guarded) => guarded,
+        Err(_) => return terminal_invalid_confirmation(config),
+    };
+    let mut body: MagicLinkConfirmationBody = if guarded.is_json {
+        match serde_json::from_slice(&guarded.bytes) {
+            Ok(body) => body,
+            Err(_) => return terminal_invalid_confirmation(config),
+        }
+    } else {
+        match serde_urlencoded::from_bytes(&guarded.bytes) {
+            Ok(body) => body,
+            Err(_) => return terminal_invalid_confirmation(config),
+        }
+    };
+    let country = viewer_country(&guarded.headers).or_else(|| body.country.take());
+    let confirmation = core::mem::take(&mut body.confirmation);
+    let command =
+        match ConfirmMagicLinkFlowCommand::new(flow_cookie, confirmation, client_key, country) {
+            Ok(command) => command,
+            Err(_) => return terminal_invalid_confirmation(config),
+        };
+    match confirm(command).await {
+        Ok(outcome) => confirmation_success_response(&outcome, config),
+        Err(error) => confirmation_error_response(error, config),
     }
-    let account = page
-        .account_label
-        .as_deref()
-        .map(|label| format!("<p>Sign in as <strong>{}</strong>.</p>", escape_html(label)))
-        .unwrap_or_else(|| "<p>Confirm sign in for this magic link.</p>".to_owned());
-    let body = format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Confirm sign in</title></head><body><main><h1>Confirm sign in</h1>{account}<form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"token\" value=\"{}\"><button type=\"submit\">Continue</button></form></main></body></html>",
-        escape_html(page.post_action.as_str()),
-        escape_html(&page.token)
-    );
-    let mut response = Response::new(Body::from(body));
-    *response.status_mut() = StatusCode::OK;
-    apply_magic_link_security_headers(response.headers_mut());
-    response.headers_mut().insert(
-        CONTENT_TYPE,
-        HeaderValue::from_static("text/html; charset=utf-8"),
-    );
-    Ok(response)
 }
 
-/// Apply security headers suitable for magic-link landing and consume responses.
+/// Redacted, best-effort-zeroized incoming primary session cookie.
+pub struct SessionCookieValue(String);
+
+impl SessionCookieValue {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for SessionCookieValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SessionCookieValue(..)")
+    }
+}
+
+impl Drop for SessionCookieValue {
+    fn drop(&mut self) {
+        zeroize_string(&mut self.0);
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum SessionHttpError {
+    Unauthorized,
+    Unavailable,
+    Internal,
+}
+
+/// Opaque redacted rejection returned by [`authenticate_session`].
+pub struct SessionAuthRejection {
+    disposition: SessionHttpError,
+    clear_cookie: Option<HeaderValue>,
+}
+
+impl fmt::Debug for SessionAuthRejection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SessionAuthRejection(..)")
+    }
+}
+
+impl IntoResponse for SessionAuthRejection {
+    fn into_response(self) -> Response {
+        let error = match self.disposition {
+            SessionHttpError::Unauthorized => MagicLinkHttpError::Forbidden,
+            SessionHttpError::Unavailable => MagicLinkHttpError::Unavailable,
+            SessionHttpError::Internal => MagicLinkHttpError::Internal,
+        };
+        let status = match self.disposition {
+            SessionHttpError::Unauthorized => StatusCode::UNAUTHORIZED,
+            SessionHttpError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+            SessionHttpError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        let mut response = (status, Json(ErrorBody::from(error))).into_response();
+        if let Some(clear) = self.clear_cookie {
+            response.headers_mut().append(SET_COOKIE, clear);
+        }
+        response
+    }
+}
+
+/// Authenticate a unique, strictly parsed incoming session cookie.
+///
+/// Missing, empty, malformed, quoted, oversized, or duplicate cookies return the
+/// same `401` response and do not invoke `validate`.
+pub async fn authenticate_session<F, Fut>(
+    headers: &HeaderMap,
+    cookie_config: &SessionCookieConfig,
+    validate: F,
+) -> Result<ValidatedSession, SessionAuthRejection>
+where
+    F: FnOnce(SessionCookieValue) -> Fut,
+    Fut: Future<Output = Result<ValidatedSession, SessionValidationError>>,
+{
+    let value = match extract_target_cookie(headers, cookie_config.name()) {
+        Ok(value) => value,
+        Err(_) => return Err(session_unauthorized(cookie_config)),
+    };
+    match validate(SessionCookieValue(value)).await {
+        Ok(session) => Ok(session),
+        Err(SessionValidationError::InvalidSession) => Err(session_unauthorized(cookie_config)),
+        Err(SessionValidationError::Unavailable) => Err(SessionAuthRejection {
+            disposition: SessionHttpError::Unavailable,
+            clear_cookie: None,
+        }),
+        Err(SessionValidationError::Internal) => Err(SessionAuthRejection {
+            disposition: SessionHttpError::Internal,
+            clear_cookie: None,
+        }),
+    }
+}
+
+/// Apply no-store, no-referrer, CSP, and frame-denial headers to scanner results.
 pub fn apply_magic_link_security_headers(headers: &mut HeaderMap) {
     headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     headers.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
@@ -599,6 +1068,457 @@ pub fn apply_magic_link_security_headers(headers: &mut HeaderMap) {
             "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
         ),
     );
+}
+
+fn valid_landing_response(
+    outcome: &BeginMagicLinkLandingOutcome,
+    config: &MagicLinkScannerFlowConfig,
+) -> Response {
+    build_valid_landing_response(
+        outcome.account_identity().as_str(),
+        outcome.confirmation_value(),
+        outcome.flow_cookie_value(),
+        outcome.cookie_max_age_secs(),
+        config,
+    )
+}
+
+fn build_valid_landing_response(
+    account_identity: &str,
+    confirmation: &str,
+    flow_cookie: &str,
+    cookie_max_age_secs: u64,
+    config: &MagicLinkScannerFlowConfig,
+) -> Response {
+    let set_cookie = match set_temporary_cookie_header(
+        config.temporary_cookies().flow(),
+        flow_cookie,
+        cookie_max_age_secs,
+    ) {
+        Ok(header) => header,
+        Err(_) => {
+            return scanner_plain_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error.\n",
+                config,
+                ClearMode::Temporary,
+            );
+        }
+    };
+    let body = format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Confirm sign in</title></head><body><main><h1>Confirm sign in</h1><p>Sign in as <strong>{}</strong>.</p><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"confirmation\" value=\"{}\"><button type=\"submit\">Continue sign in</button></form></main></body></html>",
+        escape_html(account_identity),
+        escape_html(config.post_action().as_str()),
+        escape_html(confirmation),
+    );
+    let mut response = Response::new(Body::from(body));
+    *response.status_mut() = StatusCode::OK;
+    response.headers_mut().insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    response.headers_mut().append(SET_COOKIE, set_cookie);
+    apply_magic_link_security_headers(response.headers_mut());
+    response
+}
+
+fn landing_error_response(
+    error: MagicLinkFlowError,
+    config: &MagicLinkScannerFlowConfig,
+) -> Response {
+    match error.public_error() {
+        MagicLinkServiceError::BadRequest | MagicLinkServiceError::MagicLinkUnavailable => {
+            scanner_plain_response(
+                StatusCode::OK,
+                "Unable to continue sign in.\n",
+                config,
+                ClearMode::Temporary,
+            )
+        }
+        MagicLinkServiceError::Unavailable => scanner_plain_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Service temporarily unavailable.\n",
+            config,
+            ClearMode::None,
+        ),
+        MagicLinkServiceError::Internal => scanner_plain_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error.\n",
+            config,
+            ClearMode::Temporary,
+        ),
+    }
+}
+
+fn confirmation_success_response(
+    outcome: &ConfirmMagicLinkFlowOutcome,
+    config: &MagicLinkScannerFlowConfig,
+) -> Response {
+    build_confirmation_success_response(outcome.authentication().session_cookie_value(), config)
+}
+
+fn build_confirmation_success_response(
+    session_cookie: &str,
+    config: &MagicLinkScannerFlowConfig,
+) -> Response {
+    let session = match session_set_cookie_header(config.session_cookie(), session_cookie) {
+        Ok(header) => header,
+        Err(_) => {
+            return scanner_plain_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error.\n",
+                config,
+                ClearMode::Temporary,
+            );
+        }
+    };
+    let mut response = Response::new(Body::empty());
+    *response.status_mut() = StatusCode::SEE_OTHER;
+    response
+        .headers_mut()
+        .insert(LOCATION, config.success_redirect().location_header());
+    response.headers_mut().append(SET_COOKIE, session);
+    append_temporary_clears(response.headers_mut(), config.temporary_cookies());
+    apply_magic_link_security_headers(response.headers_mut());
+    response
+}
+
+fn confirmation_error_response(
+    error: MagicLinkFlowError,
+    config: &MagicLinkScannerFlowConfig,
+) -> Response {
+    match (error.public_error(), error.temporary_state_action()) {
+        (
+            MagicLinkServiceError::BadRequest | MagicLinkServiceError::MagicLinkUnavailable,
+            TemporaryAuthStateAction::Clear,
+        ) => terminal_invalid_confirmation(config),
+        (MagicLinkServiceError::Unavailable, TemporaryAuthStateAction::Preserve) => {
+            scanner_plain_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Service temporarily unavailable.\n",
+                config,
+                ClearMode::None,
+            )
+        }
+        _ => scanner_plain_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error.\n",
+            config,
+            ClearMode::Temporary,
+        ),
+    }
+}
+
+fn terminal_invalid_confirmation(config: &MagicLinkScannerFlowConfig) -> Response {
+    scanner_plain_response(
+        StatusCode::BAD_REQUEST,
+        TERMINAL_INVALID_BODY,
+        config,
+        ClearMode::Temporary,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum ClearMode {
+    None,
+    Temporary,
+}
+
+fn scanner_plain_response(
+    status: StatusCode,
+    body: &'static str,
+    config: &MagicLinkScannerFlowConfig,
+    clear_mode: ClearMode,
+) -> Response {
+    let mut response = Response::new(Body::from(body));
+    *response.status_mut() = status;
+    response.headers_mut().insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    apply_magic_link_security_headers(response.headers_mut());
+    if matches!(clear_mode, ClearMode::Temporary) {
+        append_temporary_clears(response.headers_mut(), config.temporary_cookies());
+    }
+    response
+}
+
+fn append_temporary_clears(headers: &mut HeaderMap, config: &AuthFlowCookieConfig) {
+    if let Ok(clear) = clear_temporary_cookie_header(config.flow()) {
+        headers.append(SET_COOKIE, clear);
+    }
+    if let Some(pow) = config.pow_proof()
+        && let Ok(clear) = clear_temporary_cookie_header(pow)
+    {
+        headers.append(SET_COOKIE, clear);
+    }
+}
+
+fn session_unauthorized(config: &SessionCookieConfig) -> SessionAuthRejection {
+    match clear_session_cookie_header(config) {
+        Ok(clear_cookie) => SessionAuthRejection {
+            disposition: SessionHttpError::Unauthorized,
+            clear_cookie: Some(clear_cookie),
+        },
+        Err(_) => SessionAuthRejection {
+            disposition: SessionHttpError::Internal,
+            clear_cookie: None,
+        },
+    }
+}
+
+fn extract_landing_token(query: Option<&str>) -> Result<MagicLinkLandingToken, MagicLinkHttpError> {
+    let query = query.ok_or(MagicLinkHttpError::BadRequest)?;
+    if query.is_empty()
+        || query.len() > MAX_MAGIC_LINK_LANDING_QUERY_BYTES
+        || !query.is_ascii()
+        || query.contains('&')
+        || query.contains('%')
+    {
+        return Err(MagicLinkHttpError::BadRequest);
+    }
+    let value = query
+        .strip_prefix("token=")
+        .ok_or(MagicLinkHttpError::BadRequest)?;
+    if value.len() > MAX_RAW_MAGIC_LINK_TOKEN_BYTES || value.contains('=') {
+        return Err(MagicLinkHttpError::BadRequest);
+    }
+    MagicLinkLandingToken::new(value.to_owned())
+}
+
+fn request_is_same_origin(headers: &HeaderMap, config: &SameOriginPostConfig) -> bool {
+    let mut origins = headers.get_all(ORIGIN).iter();
+    let Some(origin) = origins.next() else {
+        return false;
+    };
+    if origins.next().is_some() || origin != config.expected_origin() {
+        return false;
+    }
+    let mut fetch_values = headers.get_all(SEC_FETCH_SITE).iter();
+    let Some(fetch) = fetch_values.next() else {
+        return true;
+    };
+    fetch_values.next().is_none() && fetch.as_bytes() == b"same-origin"
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum CookieParseError {
+    Missing,
+    Malformed,
+    Duplicate,
+    Oversized,
+}
+
+fn extract_target_cookie(
+    headers: &HeaderMap,
+    target_name: &str,
+) -> Result<String, CookieParseError> {
+    let mut field_count = 0usize;
+    let mut aggregate = 0usize;
+    let mut selected: Option<String> = None;
+    for field in headers.get_all(COOKIE).iter() {
+        field_count = field_count
+            .checked_add(1)
+            .ok_or(CookieParseError::Oversized)?;
+        if field_count > MAX_COOKIE_HEADER_FIELDS {
+            return Err(CookieParseError::Oversized);
+        }
+        let bytes = field.as_bytes();
+        aggregate = aggregate
+            .checked_add(bytes.len())
+            .ok_or(CookieParseError::Oversized)?;
+        if aggregate > MAX_COOKIE_HEADER_BYTES || !bytes.is_ascii() {
+            return Err(CookieParseError::Oversized);
+        }
+        for raw_pair in bytes.split(|byte| *byte == b';') {
+            let pair = trim_cookie_pair(raw_pair);
+            if pair.is_empty() {
+                return Err(CookieParseError::Malformed);
+            }
+            let Some(equals) = pair.iter().position(|byte| *byte == b'=') else {
+                return Err(CookieParseError::Malformed);
+            };
+            let name = &pair[..equals];
+            let value = &pair[equals + 1..];
+            if !is_cookie_pair_name(name) || !value.iter().copied().all(is_cookie_octet) {
+                return Err(CookieParseError::Malformed);
+            }
+            if name == target_name.as_bytes() {
+                if selected.is_some() {
+                    return Err(CookieParseError::Duplicate);
+                }
+                if value.is_empty()
+                    || value.len() > MAX_SELECTED_COOKIE_VALUE_BYTES
+                    || value.first() == Some(&b'"')
+                {
+                    return Err(if value.len() > MAX_SELECTED_COOKIE_VALUE_BYTES {
+                        CookieParseError::Oversized
+                    } else {
+                        CookieParseError::Malformed
+                    });
+                }
+                let value = core::str::from_utf8(value)
+                    .map_err(|_| CookieParseError::Malformed)?
+                    .to_owned();
+                selected = Some(value);
+            }
+        }
+    }
+    selected.ok_or(CookieParseError::Missing)
+}
+
+fn trim_cookie_pair(mut value: &[u8]) -> &[u8] {
+    while value
+        .first()
+        .is_some_and(|byte| matches!(byte, b' ' | b'\t'))
+    {
+        value = &value[1..];
+    }
+    while value
+        .last()
+        .is_some_and(|byte| matches!(byte, b' ' | b'\t'))
+    {
+        value = &value[..value.len() - 1];
+    }
+    value
+}
+
+fn is_cookie_pair_name(value: &[u8]) -> bool {
+    !value.is_empty()
+        && value.iter().copied().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
+                )
+        })
+}
+
+fn is_cookie_octet(byte: u8) -> bool {
+    matches!(byte, 0x21 | 0x23..=0x2B | 0x2D..=0x3A | 0x3C..=0x5B | 0x5D..=0x7E)
+}
+
+fn validate_origin(value: &str) -> Result<(), OriginConfigError> {
+    if value.is_empty()
+        || !value.is_ascii()
+        || value
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+    {
+        return Err(OriginConfigError::InvalidAuthority);
+    }
+    let (scheme, authority) = value
+        .split_once("://")
+        .ok_or(OriginConfigError::InvalidScheme)?;
+    if scheme != "http" && scheme != "https" {
+        return Err(OriginConfigError::InvalidScheme);
+    }
+    if authority.is_empty()
+        || authority.bytes().any(|byte| {
+            byte.is_ascii_control()
+                || byte.is_ascii_whitespace()
+                || matches!(
+                    byte,
+                    b'/' | b'?' | b'#' | b',' | b'%' | b'@' | b'[' | b']' | b'\\'
+                )
+        })
+    {
+        return Err(OriginConfigError::InvalidAuthority);
+    }
+    let colon_count = authority.bytes().filter(|byte| *byte == b':').count();
+    if colon_count > 1 {
+        return Err(OriginConfigError::InvalidAuthority);
+    }
+    let (host, port) = match authority.split_once(':') {
+        Some((host, port)) => (host, Some(port)),
+        None => (authority, None),
+    };
+    validate_origin_host(host)?;
+    if let Some(port) = port {
+        validate_origin_port(scheme, port)?;
+    }
+    Ok(())
+}
+
+fn validate_origin_host(host: &str) -> Result<(), OriginConfigError> {
+    if host.is_empty() || host.len() > 253 || host.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        return Err(OriginConfigError::InvalidHost);
+    }
+    if host
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || byte == b'.')
+    {
+        let octets: Vec<&str> = host.split('.').collect();
+        if octets.len() != 4 {
+            return Err(OriginConfigError::InvalidHost);
+        }
+        for octet in octets {
+            if octet.is_empty()
+                || (octet.len() > 1 && octet.starts_with('0'))
+                || octet.parse::<u8>().is_err()
+            {
+                return Err(OriginConfigError::NonCanonical);
+            }
+        }
+        return Ok(());
+    }
+    if host.ends_with('.') {
+        return Err(OriginConfigError::NonCanonical);
+    }
+    for label in host.split('.') {
+        if label.is_empty()
+            || label.len() > 63
+            || !label
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+            || !label
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric)
+            || !label
+                .as_bytes()
+                .last()
+                .is_some_and(u8::is_ascii_alphanumeric)
+        {
+            return Err(OriginConfigError::InvalidHost);
+        }
+    }
+    Ok(())
+}
+
+fn validate_origin_port(scheme: &str, port: &str) -> Result<(), OriginConfigError> {
+    if port.is_empty()
+        || !port.bytes().all(|byte| byte.is_ascii_digit())
+        || (port.len() > 1 && port.starts_with('0'))
+    {
+        return Err(OriginConfigError::InvalidPort);
+    }
+    let parsed = port
+        .parse::<u16>()
+        .map_err(|_| OriginConfigError::InvalidPort)?;
+    if parsed == 0 {
+        return Err(OriginConfigError::InvalidPort);
+    }
+    if (scheme == "http" && parsed == 80) || (scheme == "https" && parsed == 443) {
+        return Err(OriginConfigError::NonCanonical);
+    }
+    if parsed.to_string() != port {
+        return Err(OriginConfigError::NonCanonical);
+    }
+    Ok(())
 }
 
 fn parse_locale(value: &str) -> Result<EmailLocale, MagicLinkHttpError> {
@@ -623,18 +1543,47 @@ fn content_type_matches_value(actual: &str, expected: &str) -> bool {
         .is_some_and(|media_type| media_type.trim().eq_ignore_ascii_case(expected))
 }
 
+fn unique_header_str(headers: &HeaderMap, name: HeaderName) -> Option<&str> {
+    let mut values = headers.get_all(name).iter();
+    let value = values.next()?;
+    if values.next().is_some() {
+        return None;
+    }
+    value.to_str().ok()
+}
+
 fn content_length_exceeds(
     headers: &HeaderMap,
     max_body_bytes: usize,
 ) -> Result<bool, MagicLinkHttpError> {
-    let Some(value) = headers.get(CONTENT_LENGTH) else {
+    let mut values = headers.get_all(CONTENT_LENGTH).iter();
+    let Some(value) = values.next() else {
         return Ok(false);
     };
+    if values.next().is_some() {
+        return Err(MagicLinkHttpError::BadRequest);
+    }
     let value = value.to_str().map_err(|_| MagicLinkHttpError::BadRequest)?;
     let length = value
         .parse::<usize>()
         .map_err(|_| MagicLinkHttpError::BadRequest)?;
     Ok(length > max_body_bytes)
+}
+
+fn validate_cookie_name(value: &str) -> Result<(), CookieConfigError> {
+    if is_lower_snake_cookie_name(value) {
+        Ok(())
+    } else {
+        Err(CookieConfigError::InvalidName)
+    }
+}
+
+fn validate_cookie_path(value: &str) -> Result<(), CookieConfigError> {
+    if is_valid_cookie_path(value) {
+        Ok(())
+    } else {
+        Err(CookieConfigError::InvalidPath)
+    }
 }
 
 fn is_lower_snake_cookie_name(value: &str) -> bool {
@@ -651,32 +1600,86 @@ fn is_lower_snake_cookie_name(value: &str) -> bool {
 
 fn is_valid_cookie_path(value: &str) -> bool {
     value.starts_with('/')
-        && !value.is_empty()
         && value.len() <= 128
+        && !value.contains(['?', '#', '%', '\\', ',', ';'])
         && value
             .bytes()
-            .all(|byte| !byte.is_ascii_control() && byte != b';')
+            .all(|byte| byte.is_ascii() && !byte.is_ascii_control() && !byte.is_ascii_whitespace())
 }
 
 fn is_valid_cookie_value(value: &str) -> bool {
     !value.is_empty()
-        && value.len() <= 4096
-        && value
-            .bytes()
-            .all(|byte| !byte.is_ascii_control() && !matches!(byte, b';' | b',' | b' ' | b'\t'))
+        && value.len() <= MAX_SELECTED_COOKIE_VALUE_BYTES
+        && value.bytes().all(is_cookie_octet)
+        && !value.starts_with('"')
+}
+
+fn cookie_header(
+    name: &str,
+    value: &str,
+    path: &str,
+    secure: bool,
+    same_site: SameSite,
+    max_age: Option<u64>,
+    clear: bool,
+) -> Result<HeaderValue, MagicLinkHttpError> {
+    let secure = if secure { "; Secure" } else { "" };
+    let max_age = max_age.map_or_else(String::new, |age| format!("; Max-Age={age}"));
+    let expires = if clear {
+        format!("; Expires={COOKIE_EPOCH}")
+    } else {
+        String::new()
+    };
+    let header = format!(
+        "{name}={value}; Path={path}; HttpOnly{secure}; SameSite={}{max_age}{expires}",
+        same_site.as_cookie_value(),
+    );
+    HeaderValue::from_str(&header).map_err(|_| MagicLinkHttpError::Internal)
+}
+
+fn cookie_path_covers(cookie_path: &str, request_path: &str) -> bool {
+    if cookie_path == request_path {
+        return true;
+    }
+    let Some(remainder) = request_path.strip_prefix(cookie_path) else {
+        return false;
+    };
+    cookie_path.ends_with('/') || remainder.starts_with('/')
 }
 
 fn is_safe_same_origin_path(value: &str) -> bool {
     value.starts_with('/')
         && !value.starts_with("//")
         && value.len() <= 2048
+        && value.is_ascii()
         && !value.contains('\\')
         && !value.contains("mlv1.")
-        && value.bytes().all(|byte| !byte.is_ascii_control())
+        && !value
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+        && has_well_formed_percent_encoding(value)
 }
 
-fn is_safe_hidden_value(value: &str) -> bool {
-    !value.is_empty() && value.len() <= 2048 && value.bytes().all(|byte| !byte.is_ascii_control())
+fn has_well_formed_percent_encoding(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let Some(first) = bytes.get(index + 1) else {
+                return false;
+            };
+            let Some(second) = bytes.get(index + 2) else {
+                return false;
+            };
+            if !first.is_ascii_hexdigit() || !second.is_ascii_hexdigit() {
+                return false;
+            }
+            index += 3;
+        } else {
+            index += 1;
+        }
+    }
+    true
 }
 
 fn escape_html(value: &str) -> String {
@@ -692,6 +1695,13 @@ fn escape_html(value: &str) -> String {
         }
     }
     escaped
+}
+
+fn zeroize_string(value: &mut String) {
+    let byte_len = value.len();
+    value.clear();
+    value.extend(core::iter::repeat_n('\0', byte_len));
+    value.clear();
 }
 
 #[cfg(test)]
