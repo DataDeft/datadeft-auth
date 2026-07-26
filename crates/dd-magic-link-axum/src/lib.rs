@@ -671,6 +671,7 @@ fn is_safe_same_origin_path(value: &str) -> bool {
     value.starts_with('/')
         && !value.starts_with("//")
         && value.len() <= 2048
+        && !value.contains('\\')
         && !value.contains("mlv1.")
         && value.bytes().all(|byte| !byte.is_ascii_control())
 }

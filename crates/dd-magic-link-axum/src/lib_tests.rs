@@ -164,6 +164,14 @@ fn redirect_target_is_same_origin_and_scrubbed() {
         MagicLinkHttpError::BadRequest
     );
     assert_eq!(
+        SameOriginRedirect::parse(r"/\evil.com").unwrap_err(),
+        MagicLinkHttpError::BadRequest
+    );
+    assert_eq!(
+        SameOriginRedirect::parse(r"/\\evil.com").unwrap_err(),
+        MagicLinkHttpError::BadRequest
+    );
+    assert_eq!(
         SameOriginRedirect::parse("/app?token=mlv1.selector.verifier").unwrap_err(),
         MagicLinkHttpError::BadRequest
     );
