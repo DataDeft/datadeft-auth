@@ -17,10 +17,7 @@ pub mod types;
 
 pub use config::{MagicLinkConfigError, MagicLinkServiceConfig, RateLimitConfig};
 pub use dd_magic_link_core::NormalizedEmail;
-pub use error::{
-    CommitMagicLinkAuthenticationError, ConsumeMagicLinkError, DependencyError,
-    MagicLinkServiceError,
-};
+pub use error::{CommitMagicLinkAuthenticationError, DependencyError, MagicLinkServiceError};
 pub use service::{
     MagicLinkConsumeService, MagicLinkConsumeServiceInputs, MagicLinkRequestService,
     MagicLinkRequestServiceInputs,
@@ -31,11 +28,11 @@ pub use session_body::{
 };
 pub use traits::{
     Clock, MagicLinkAuthenticationRepository, MagicLinkOutbox, MagicLinkRepository,
-    RateLimitDecision, RateLimiter, SessionRepository, UserRepository,
+    RateLimitDecision, RateLimiter, SessionRepository,
 };
 pub use types::{
     AuthenticationAttemptId, ClientKey, CommitMagicLinkAuthentication, ConsumeMagicLinkCommand,
-    ConsumeMagicLinkOutcome, ConsumedMagicLink, EmailLocale, MagicLinkAuthenticationCandidate,
+    ConsumeMagicLinkOutcome, EmailLocale, MagicLinkAuthenticationCandidate,
     MagicLinkAuthenticationExpectation, MagicLinkAuthenticationUser, MagicLinkEmail,
     MagicLinkRecord, RateLimitKey, RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionId,
     SessionRecord, UserId, UserRecord,

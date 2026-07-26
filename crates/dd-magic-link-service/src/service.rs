@@ -8,21 +8,25 @@
 use dd_auth_token_core::cookie::mint_bound_cookie;
 use dd_auth_token_core::keyring::{KeyRing, SessionCookie};
 use dd_magic_link_core::{
-    LookupHmacKey, MagicLinkToken, email_lookup_hmac, selector_lookup_hmac, verifier_hash,
+    LookupHmac, LookupHmacKey, MagicLinkToken, VerifierHash, email_lookup_hmac,
+    selector_lookup_hmac, verifier_hash,
 };
 use rand_core::{CryptoRng, RngCore};
+use zeroize::Zeroizing;
 
 use crate::config::MagicLinkServiceConfig;
-use crate::error::{ConsumeMagicLinkError, DependencyError, MagicLinkServiceError};
+use crate::error::{CommitMagicLinkAuthenticationError, DependencyError, MagicLinkServiceError};
 use crate::session_body::encode_session_cookie_body;
 use crate::traits::{
-    Clock, MagicLinkOutbox, MagicLinkRepository, RateLimitDecision, RateLimiter, SessionRepository,
-    UserRepository,
+    Clock, MagicLinkAuthenticationRepository, MagicLinkOutbox, MagicLinkRepository,
+    RateLimitDecision, RateLimiter, SessionRepository,
 };
 use crate::types::{
-    ClientKey, ConsumeMagicLinkCommand, ConsumeMagicLinkOutcome, ConsumedMagicLink, MagicLinkEmail,
-    MagicLinkRecord, RateLimitKey, RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionId,
-    SessionRecord, UserId, validate_country,
+    AuthenticationAttemptId, ClientKey, CommitMagicLinkAuthentication, ConsumeMagicLinkCommand,
+    ConsumeMagicLinkOutcome, MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
+    MagicLinkAuthenticationUser, MagicLinkEmail, MagicLinkRecord, RateLimitKey,
+    RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionId, UserId, UserRecord,
+    validate_country,
 };
 
 /// Request-flow-only service. It does not require user/session repositories or a
@@ -123,7 +127,6 @@ where
         let record = MagicLinkRecord {
             selector_lookup_hmac: selector_lookup,
             email: command.email().clone(),
-            user_id: None,
             verifier_hash,
             expires_at_unix,
             consumed_at_unix: None,
@@ -150,10 +153,10 @@ where
     }
 }
 
-/// Consume-flow-only service. It does not require an outbox.
-pub struct MagicLinkConsumeService<'a, MagicLinks, Users, Sessions, Limiter, ServiceClock, Rng> {
-    magic_links: &'a MagicLinks,
-    users: &'a Users,
+/// Consume-flow-only service. Authentication reads and the irreversible
+/// consume/user/session transition are owned by one aggregate repository.
+pub struct MagicLinkConsumeService<'a, Authentication, Sessions, Limiter, ServiceClock, Rng> {
+    authentication: &'a Authentication,
     sessions: &'a Sessions,
     limiter: &'a Limiter,
     clock: &'a ServiceClock,
@@ -164,17 +167,8 @@ pub struct MagicLinkConsumeService<'a, MagicLinks, Users, Sessions, Limiter, Ser
 }
 
 /// Constructor inputs for [`MagicLinkConsumeService`].
-pub struct MagicLinkConsumeServiceInputs<
-    'a,
-    MagicLinks,
-    Users,
-    Sessions,
-    Limiter,
-    ServiceClock,
-    Rng,
-> {
-    pub magic_links: &'a MagicLinks,
-    pub users: &'a Users,
+pub struct MagicLinkConsumeServiceInputs<'a, Authentication, Sessions, Limiter, ServiceClock, Rng> {
+    pub authentication: &'a Authentication,
     pub sessions: &'a Sessions,
     pub limiter: &'a Limiter,
     pub clock: &'a ServiceClock,
@@ -184,15 +178,14 @@ pub struct MagicLinkConsumeServiceInputs<
     pub config: MagicLinkServiceConfig,
 }
 
-impl<'a, MagicLinks, Users, Sessions, Limiter, ServiceClock, Rng>
-    MagicLinkConsumeService<'a, MagicLinks, Users, Sessions, Limiter, ServiceClock, Rng>
+impl<'a, Authentication, Sessions, Limiter, ServiceClock, Rng>
+    MagicLinkConsumeService<'a, Authentication, Sessions, Limiter, ServiceClock, Rng>
 {
     #[must_use]
     pub fn new(
         inputs: MagicLinkConsumeServiceInputs<
             'a,
-            MagicLinks,
-            Users,
+            Authentication,
             Sessions,
             Limiter,
             ServiceClock,
@@ -200,8 +193,7 @@ impl<'a, MagicLinks, Users, Sessions, Limiter, ServiceClock, Rng>
         >,
     ) -> Self {
         Self {
-            magic_links: inputs.magic_links,
-            users: inputs.users,
+            authentication: inputs.authentication,
             sessions: inputs.sessions,
             limiter: inputs.limiter,
             clock: inputs.clock,
@@ -213,11 +205,10 @@ impl<'a, MagicLinks, Users, Sessions, Limiter, ServiceClock, Rng>
     }
 }
 
-impl<MagicLinks, Users, Sessions, Limiter, ServiceClock, Rng>
-    MagicLinkConsumeService<'_, MagicLinks, Users, Sessions, Limiter, ServiceClock, Rng>
+impl<Authentication, Sessions, Limiter, ServiceClock, Rng>
+    MagicLinkConsumeService<'_, Authentication, Sessions, Limiter, ServiceClock, Rng>
 where
-    MagicLinks: MagicLinkRepository,
-    Users: UserRepository,
+    Authentication: MagicLinkAuthenticationRepository,
     Sessions: SessionRepository,
     Limiter: RateLimiter,
     ServiceClock: Clock,
@@ -252,11 +243,8 @@ where
         self.consume_magic_link(command).await
     }
 
-    /// Consume a parsed magic-link token, atomically burning the stored challenge
-    /// before creating a session. With generic repositories the session write is
-    /// not part of the consume transition; if session creation fails after a
-    /// successful consume, the bearer link remains burned. Adapters with
-    /// transactional storage may make the consume+session transition stronger.
+    /// Authenticate with a parsed magic-link token using one atomic repository
+    /// transaction for challenge consumption, user handling, and session creation.
     pub async fn consume_magic_link(
         &mut self,
         command: ConsumeMagicLinkCommand,
@@ -279,32 +267,89 @@ where
             return Err(MagicLinkServiceError::MagicLinkUnavailable);
         }
 
-        let verifier_hash = verifier_hash(self.lookup_hmac_key, command.token().verifier())?;
-        let consumed = self
-            .magic_links
-            .consume_magic_link(&selector_lookup, &verifier_hash, now_unix)
-            .await
-            .map_err(map_consume_error)?;
-
-        validate_consumed_magic_link(&self.config, &consumed)?;
-        let (user_id, user_created) = ensure_user(self.users, self.rng, &consumed).await?;
-        let session_id =
-            create_session(self.sessions, self.rng, &user_id, &consumed.email, now_unix).await?;
-        let session_cookie = mint_session_cookie(
+        let presented_verifier_hash =
+            verifier_hash(self.lookup_hmac_key, command.token().verifier())?;
+        let (candidate, user) = load_authentication_state(
+            self.authentication,
+            &self.config,
+            &selector_lookup,
+            &presented_verifier_hash,
+            now_unix,
+        )
+        .await?;
+        let (user_branch, mut user_id, mut user_created) =
+            plan_user(user, &candidate.email, self.rng)?;
+        let expectation = authentication_expectation(&selector_lookup, &candidate);
+        let mut plan = build_initial_authentication_plan(
             self.session_keyring,
             self.rng,
-            &session_id,
+            expectation,
+            user_branch,
             now_unix,
+            self.config.session_absolute_secs,
             country.as_deref(),
         )?;
 
-        Ok(ConsumeMagicLinkOutcome {
-            session_cookie,
-            user_id,
-            session_id,
-            user_created,
-            country,
-        })
+        let mut replans = 0_u8;
+        loop {
+            match commit_with_dependency_retries(self.authentication, &plan.command).await {
+                Ok(()) => {
+                    let session_cookie = core::mem::take(&mut *plan.session_cookie);
+                    return Ok(ConsumeMagicLinkOutcome {
+                        session_cookie,
+                        user_id,
+                        session_id: plan.command.session_id.clone(),
+                        user_created,
+                        country,
+                    });
+                }
+                Err(CommitMagicLinkAuthenticationError::Rejected) => {
+                    return Err(MagicLinkServiceError::MagicLinkUnavailable);
+                }
+                Err(CommitMagicLinkAuthenticationError::Internal) => {
+                    return Err(MagicLinkServiceError::Internal);
+                }
+                Err(CommitMagicLinkAuthenticationError::DependencyUnavailable) => {
+                    return Err(MagicLinkServiceError::Unavailable);
+                }
+                Err(CommitMagicLinkAuthenticationError::UserConflict) => {
+                    if replans >= 2 {
+                        return Err(MagicLinkServiceError::Unavailable);
+                    }
+                    replans += 1;
+                    let (candidate, user) = load_authentication_state(
+                        self.authentication,
+                        &self.config,
+                        &selector_lookup,
+                        &presented_verifier_hash,
+                        now_unix,
+                    )
+                    .await?;
+                    let (user_branch, replanned_user_id, replanned_user_created) =
+                        plan_user(user, &candidate.email, self.rng)?;
+                    plan.command.magic_link =
+                        authentication_expectation(&selector_lookup, &candidate);
+                    plan.command.user = user_branch;
+                    plan.command.attempt_id = generate_authentication_attempt_id(self.rng)?;
+                    user_id = replanned_user_id;
+                    user_created = replanned_user_created;
+                }
+                Err(CommitMagicLinkAuthenticationError::SessionConflict) => {
+                    if replans >= 2 {
+                        return Err(MagicLinkServiceError::Unavailable);
+                    }
+                    replans += 1;
+                    replace_session_plan(
+                        &mut plan,
+                        self.session_keyring,
+                        self.rng,
+                        now_unix,
+                        self.config.session_absolute_secs,
+                        country.as_deref(),
+                    )?;
+                }
+            }
+        }
     }
 
     /// Revoke a server-side session by id.
@@ -512,92 +557,204 @@ fn mint_country(
     Ok(Some(country.to_owned()))
 }
 
-fn validate_consumed_magic_link(
+struct AuthenticationPlan {
+    command: CommitMagicLinkAuthentication,
+    session_cookie: Zeroizing<String>,
+}
+
+async fn load_authentication_state<Authentication: MagicLinkAuthenticationRepository>(
+    authentication: &Authentication,
     config: &MagicLinkServiceConfig,
-    consumed: &ConsumedMagicLink,
-) -> Result<(), MagicLinkServiceError> {
-    if consumed.terms_version != config.terms_version
-        || consumed.privacy_version != config.privacy_version
-        || consumed.consented_at_unix == 0
+    selector_lookup: &LookupHmac,
+    presented_verifier_hash: &VerifierHash,
+    now_unix: u64,
+) -> Result<(MagicLinkAuthenticationCandidate, Option<UserRecord>), MagicLinkServiceError> {
+    let candidate = authentication
+        .find_magic_link_for_authentication(selector_lookup)
+        .await
+        .map_err(map_dependency_error)?;
+    let candidate =
+        validate_authentication_candidate(config, candidate, presented_verifier_hash, now_unix)?;
+    let user = authentication
+        .find_user_for_authentication(&candidate.email)
+        .await
+        .map_err(map_dependency_error)?;
+    Ok((candidate, user))
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static VERIFIER_COMPARISON_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn reset_verifier_comparison_count() {
+    VERIFIER_COMPARISON_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+fn verifier_comparison_count() -> usize {
+    VERIFIER_COMPARISON_COUNT.with(std::cell::Cell::get)
+}
+
+fn note_verifier_comparison() {
+    #[cfg(test)]
+    VERIFIER_COMPARISON_COUNT.with(|count| count.set(count.get() + 1));
+}
+
+fn validate_authentication_candidate(
+    config: &MagicLinkServiceConfig,
+    candidate: Option<MagicLinkAuthenticationCandidate>,
+    presented_verifier_hash: &VerifierHash,
+    now_unix: u64,
+) -> Result<MagicLinkAuthenticationCandidate, MagicLinkServiceError> {
+    let Some(candidate) = candidate else {
+        note_verifier_comparison();
+        perform_dummy_verifier_comparison(presented_verifier_hash);
+        return Err(MagicLinkServiceError::MagicLinkUnavailable);
+    };
+
+    note_verifier_comparison();
+    let verifier_matches = candidate
+        .verifier_hash
+        .matches_hash_constant_time(presented_verifier_hash);
+    if !verifier_matches
+        || candidate.consumed_at_unix.is_some()
+        || candidate.expires_at_unix < now_unix
+        || candidate.terms_version != config.terms_version
+        || candidate.privacy_version != config.privacy_version
+        || candidate.consented_at_unix == 0
     {
         return Err(MagicLinkServiceError::MagicLinkUnavailable);
     }
-    Ok(())
+    Ok(candidate)
 }
 
-async fn ensure_user<Users, Rng>(
-    users: &Users,
+fn perform_dummy_verifier_comparison(presented_verifier_hash: &VerifierHash) {
+    let opaque = core::hint::black_box(presented_verifier_hash);
+    let result = opaque.matches_hash_constant_time(presented_verifier_hash);
+    let _ = core::hint::black_box(result);
+}
+
+fn plan_user<Rng: RngCore + CryptoRng + ?Sized>(
+    user: Option<UserRecord>,
+    expected_email: &dd_magic_link_core::NormalizedEmail,
     rng: &mut Rng,
-    consumed: &ConsumedMagicLink,
-) -> Result<(UserId, bool), MagicLinkServiceError>
-where
-    Users: UserRepository,
-    Rng: RngCore + CryptoRng,
-{
-    if let Some(existing) = users
-        .find_user_by_email(&consumed.email)
-        .await
-        .map_err(map_dependency_error)?
-    {
-        if existing.disabled {
+) -> Result<(MagicLinkAuthenticationUser, UserId, bool), MagicLinkServiceError> {
+    if let Some(user) = user {
+        if user.email != *expected_email || user.disabled {
             return Err(MagicLinkServiceError::MagicLinkUnavailable);
         }
-        return Ok((existing.user_id, false));
+        let user_id = user.user_id;
+        return Ok((
+            MagicLinkAuthenticationUser::Existing {
+                user_id: user_id.clone(),
+            },
+            user_id,
+            false,
+        ));
     }
 
     let user_id = generate_user_id(rng)?;
-    let user = crate::types::UserRecord {
-        user_id: user_id.clone(),
-        email: consumed.email.clone(),
-        disabled: false,
-        terms_version: Some(consumed.terms_version.clone()),
-        privacy_version: Some(consumed.privacy_version.clone()),
-        consented_at_unix: Some(consumed.consented_at_unix),
-    };
+    Ok((
+        MagicLinkAuthenticationUser::Create {
+            user_id: user_id.clone(),
+        },
+        user_id,
+        true,
+    ))
+}
 
-    match users.put_user_if_absent(user).await {
-        Ok(()) => Ok((user_id, true)),
-        Err(DependencyError::ConditionalWriteFailed) => {
-            let Some(existing) = users
-                .find_user_by_email(&consumed.email)
-                .await
-                .map_err(map_dependency_error)?
-            else {
-                return Err(MagicLinkServiceError::Unavailable);
-            };
-            if existing.disabled {
-                return Err(MagicLinkServiceError::MagicLinkUnavailable);
-            }
-            Ok((existing.user_id, false))
-        }
-        Err(error) => Err(map_dependency_error(error)),
+fn authentication_expectation(
+    selector_lookup: &LookupHmac,
+    candidate: &MagicLinkAuthenticationCandidate,
+) -> MagicLinkAuthenticationExpectation {
+    MagicLinkAuthenticationExpectation {
+        selector_lookup_hmac: selector_lookup.clone(),
+        email: candidate.email.clone(),
+        expires_at_unix: candidate.expires_at_unix,
+        terms_version: candidate.terms_version.clone(),
+        privacy_version: candidate.privacy_version.clone(),
+        consented_at_unix: candidate.consented_at_unix,
     }
 }
 
-async fn create_session<Sessions, Rng>(
-    sessions: &Sessions,
+fn build_initial_authentication_plan<Rng: RngCore + CryptoRng>(
+    session_keyring: &KeyRing<SessionCookie>,
     rng: &mut Rng,
-    user_id: &UserId,
-    email: &dd_magic_link_core::NormalizedEmail,
+    magic_link: MagicLinkAuthenticationExpectation,
+    user: MagicLinkAuthenticationUser,
     now_unix: u64,
-) -> Result<SessionId, MagicLinkServiceError>
-where
-    Sessions: SessionRepository,
-    Rng: RngCore + CryptoRng,
-{
+    session_absolute_secs: u64,
+    country: Option<&str>,
+) -> Result<AuthenticationPlan, MagicLinkServiceError> {
     let session_id = generate_session_id(rng)?;
-    let record = SessionRecord {
-        session_id: session_id.clone(),
-        user_id: user_id.clone(),
-        email: email.clone(),
-        created_at_unix: now_unix,
-        revoked_at_unix: None,
-    };
-    sessions
-        .put_session_if_absent(record)
-        .await
-        .map_err(map_dependency_error)?;
-    Ok(session_id)
+    let session_expires_at_unix = now_unix
+        .checked_add(session_absolute_secs)
+        .ok_or(MagicLinkServiceError::Internal)?;
+    let session_cookie = Zeroizing::new(mint_session_cookie(
+        session_keyring,
+        rng,
+        &session_id,
+        now_unix,
+        country,
+    )?);
+    let attempt_id = generate_authentication_attempt_id(rng)?;
+    Ok(AuthenticationPlan {
+        command: CommitMagicLinkAuthentication {
+            magic_link,
+            now_unix,
+            attempt_id,
+            user,
+            session_id,
+            session_expires_at_unix,
+        },
+        session_cookie,
+    })
+}
+
+fn replace_session_plan<Rng: RngCore + CryptoRng>(
+    plan: &mut AuthenticationPlan,
+    session_keyring: &KeyRing<SessionCookie>,
+    rng: &mut Rng,
+    now_unix: u64,
+    session_absolute_secs: u64,
+    country: Option<&str>,
+) -> Result<(), MagicLinkServiceError> {
+    let session_id = generate_session_id(rng)?;
+    let session_expires_at_unix = now_unix
+        .checked_add(session_absolute_secs)
+        .ok_or(MagicLinkServiceError::Internal)?;
+    let session_cookie = Zeroizing::new(mint_session_cookie(
+        session_keyring,
+        rng,
+        &session_id,
+        now_unix,
+        country,
+    )?);
+    let attempt_id = generate_authentication_attempt_id(rng)?;
+
+    plan.command.session_id = session_id;
+    plan.command.session_expires_at_unix = session_expires_at_unix;
+    plan.command.attempt_id = attempt_id;
+    plan.session_cookie = session_cookie;
+    Ok(())
+}
+
+async fn commit_with_dependency_retries<Authentication: MagicLinkAuthenticationRepository>(
+    authentication: &Authentication,
+    command: &CommitMagicLinkAuthentication,
+) -> Result<(), CommitMagicLinkAuthenticationError> {
+    for retry in 0..3 {
+        match authentication
+            .commit_magic_link_authentication(command)
+            .await
+        {
+            Err(CommitMagicLinkAuthenticationError::DependencyUnavailable) if retry < 2 => {}
+            result => return result,
+        }
+    }
+    Err(CommitMagicLinkAuthenticationError::DependencyUnavailable)
 }
 
 fn mint_session_cookie<Rng>(
@@ -641,16 +798,17 @@ fn generate_session_id<R: RngCore + CryptoRng + ?Sized>(
     SessionId::parse(&format!("sid_{}", hex::encode(bytes)))
 }
 
-fn map_dependency_error(error: DependencyError) -> MagicLinkServiceError {
-    MagicLinkServiceError::from(error)
+fn generate_authentication_attempt_id<R: RngCore + CryptoRng + ?Sized>(
+    rng: &mut R,
+) -> Result<AuthenticationAttemptId, MagicLinkServiceError> {
+    let mut bytes = [0u8; 16];
+    rng.try_fill_bytes(&mut bytes)
+        .map_err(|_| MagicLinkServiceError::Unavailable)?;
+    AuthenticationAttemptId::parse(&format!("aid_{}", hex::encode(bytes)))
 }
 
-fn map_consume_error(error: ConsumeMagicLinkError) -> MagicLinkServiceError {
-    match error {
-        ConsumeMagicLinkError::Unavailable => MagicLinkServiceError::MagicLinkUnavailable,
-        ConsumeMagicLinkError::DependencyUnavailable => MagicLinkServiceError::Unavailable,
-        ConsumeMagicLinkError::Internal => MagicLinkServiceError::Internal,
-    }
+fn map_dependency_error(error: DependencyError) -> MagicLinkServiceError {
+    MagicLinkServiceError::from(error)
 }
 
 #[cfg(test)]

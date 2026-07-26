@@ -15,17 +15,6 @@ pub enum DependencyError {
     Internal,
 }
 
-/// Atomic magic-link consume failures from storage.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum ConsumeMagicLinkError {
-    /// Missing, expired, consumed, or verifier-mismatched record.
-    Unavailable,
-    /// Backend dependency is temporarily unavailable.
-    DependencyUnavailable,
-    /// Backend reported an internal invariant or serialization failure.
-    Internal,
-}
-
 /// Public service errors. Variants never carry tokens, emails, session IDs, or
 /// key material.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

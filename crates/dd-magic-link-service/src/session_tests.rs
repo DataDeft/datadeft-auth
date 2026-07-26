@@ -70,7 +70,6 @@ struct TestSessions {
     next_error: Cell<Option<DependencyError>>,
     return_mismatched_record: Cell<bool>,
     find_calls: Cell<usize>,
-    put_calls: Cell<usize>,
     revoke_calls: Cell<usize>,
 }
 
@@ -84,11 +83,6 @@ impl TestSessions {
 }
 
 impl SessionRepository for TestSessions {
-    async fn put_session_if_absent(&self, _session: SessionRecord) -> Result<(), DependencyError> {
-        self.put_calls.set(self.put_calls.get() + 1);
-        Ok(())
-    }
-
     async fn find_session(
         &self,
         session_id: &SessionId,
@@ -209,7 +203,6 @@ async fn valid_session_resolves_once_without_writes_or_refresh() {
     assert_eq!(validated.country(), Some("HU"));
     assert_eq!(clock.calls.get(), 1);
     assert_eq!(sessions.find_calls.get(), 1);
-    assert_eq!(sessions.put_calls.get(), 0);
     assert_eq!(sessions.revoke_calls.get(), 0);
 }
 

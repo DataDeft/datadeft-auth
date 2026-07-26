@@ -2,12 +2,12 @@
 
 use core::future::Future;
 
-use dd_magic_link_core::{LookupHmac, NormalizedEmail, VerifierHash};
+use dd_magic_link_core::{LookupHmac, NormalizedEmail};
 
-use crate::error::{CommitMagicLinkAuthenticationError, ConsumeMagicLinkError, DependencyError};
+use crate::error::{CommitMagicLinkAuthenticationError, DependencyError};
 use crate::types::{
-    CommitMagicLinkAuthentication, ConsumedMagicLink, MagicLinkAuthenticationCandidate,
-    MagicLinkEmail, MagicLinkRecord, RateLimitKey, SessionId, SessionRecord, UserRecord,
+    CommitMagicLinkAuthentication, MagicLinkAuthenticationCandidate, MagicLinkEmail,
+    MagicLinkRecord, RateLimitKey, SessionId, SessionRecord, UserRecord,
 };
 
 /// Deterministic clock boundary.
@@ -22,15 +22,6 @@ pub trait MagicLinkRepository {
         &self,
         record: MagicLinkRecord,
     ) -> impl Future<Output = Result<(), DependencyError>>;
-
-    /// Atomically consume a challenge if and only if it exists, is unconsumed,
-    /// unexpired at `now_unix`, and its verifier hash matches.
-    fn consume_magic_link(
-        &self,
-        selector_lookup_hmac: &LookupHmac,
-        verifier_hash: &VerifierHash,
-        now_unix: u64,
-    ) -> impl Future<Output = Result<ConsumedMagicLink, ConsumeMagicLinkError>>;
 }
 
 /// Aggregate repository for all-or-nothing magic-link authentication.
@@ -61,8 +52,12 @@ pub trait MagicLinkRepository {
 /// cancellations and must leave every item unchanged. A confirmed conflict may
 /// be replanned, but every changed transaction payload requires a new attempt id.
 /// `DependencyUnavailable` may have an ambiguous outcome; callers may retry only
-/// the byte-equivalent command with the same attempt id and must not read or
-/// replan while its result may be ambiguous. An adapter-reported `Internal`
+/// the identical command with the same attempt id and must not read, generate
+/// entropy, or replan while its result may be ambiguous. If the original attempt
+/// committed, an immediate exact-command retry with that attempt id must return
+/// success without applying a second mutation. Reusing an attempt id with any
+/// changed command field must be rejected as `Internal` (or an equivalent invalid
+/// command result) and must not mutate storage. An adapter-reported `Internal`
 /// failure is not an ambiguous commit and must not be retried as one.
 pub trait MagicLinkAuthenticationRepository {
     fn find_magic_link_for_authentication(
@@ -81,27 +76,9 @@ pub trait MagicLinkAuthenticationRepository {
     ) -> impl Future<Output = Result<(), CommitMagicLinkAuthenticationError>>;
 }
 
-/// User account repository.
-pub trait UserRepository {
-    fn find_user_by_email(
-        &self,
-        email: &dd_magic_link_core::NormalizedEmail,
-    ) -> impl Future<Output = Result<Option<UserRecord>, DependencyError>>;
-
-    fn put_user_if_absent(
-        &self,
-        user: UserRecord,
-    ) -> impl Future<Output = Result<(), DependencyError>>;
-}
-
 /// Server-side session repository. This supports lookup and revocation for
 /// current-session, logout, and compromise-invalidation flows above HTTP.
 pub trait SessionRepository {
-    fn put_session_if_absent(
-        &self,
-        session: SessionRecord,
-    ) -> impl Future<Output = Result<(), DependencyError>>;
-
     /// Find the requested live session at `now_unix`.
     ///
     /// Implementations must return `None` for missing, revoked, or server-expired

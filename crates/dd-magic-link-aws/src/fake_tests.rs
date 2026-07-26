@@ -1,19 +1,23 @@
 //! Fake store integration tests.
 
+use std::sync::Arc;
+
 use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie};
 use dd_magic_link_core::{
-    LookupHmacKey, MagicLinkToken, NormalizedEmail, selector_lookup_hmac, verifier_hash,
+    LookupHmac, LookupHmacKey, MagicLinkToken, NormalizedEmail, selector_lookup_hmac, verifier_hash,
 };
 use dd_magic_link_service::{
     AuthenticationAttemptId, ClientKey, Clock, CommitMagicLinkAuthentication,
-    CommitMagicLinkAuthenticationError, ConsumeMagicLinkError, DependencyError, EmailLocale,
-    MagicLinkAuthenticationExpectation, MagicLinkAuthenticationRepository,
-    MagicLinkAuthenticationUser, MagicLinkConsumeService, MagicLinkConsumeServiceInputs,
-    MagicLinkRecord, MagicLinkRepository, MagicLinkRequestService, MagicLinkRequestServiceInputs,
-    MagicLinkServiceConfig, RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkCommand,
-    SessionId, SessionRecord, SessionRepository, UserId, UserRecord, UserRepository,
+    CommitMagicLinkAuthenticationError, DependencyError, EmailLocale,
+    MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
+    MagicLinkAuthenticationRepository, MagicLinkAuthenticationUser, MagicLinkConsumeService,
+    MagicLinkConsumeServiceInputs, MagicLinkRecord, MagicLinkRepository, MagicLinkRequestService,
+    MagicLinkRequestServiceInputs, MagicLinkServiceConfig, MagicLinkServiceError,
+    RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkCommand, SessionId,
+    SessionRecord, SessionRepository, UserId, UserRecord,
 };
 use rand_core::{CryptoRng, RngCore};
+use tokio::sync::Barrier;
 
 use super::*;
 
@@ -58,6 +62,52 @@ impl RngCore for CounterRng {
 }
 
 impl CryptoRng for CounterRng {}
+
+#[derive(Clone)]
+struct CommitBarrierAuthenticationRepository {
+    store: FakeDynamoDbAuthStore,
+    barrier: Arc<Barrier>,
+}
+
+impl MagicLinkAuthenticationRepository for CommitBarrierAuthenticationRepository {
+    async fn find_magic_link_for_authentication(
+        &self,
+        selector_lookup_hmac: &LookupHmac,
+    ) -> Result<Option<MagicLinkAuthenticationCandidate>, DependencyError> {
+        self.store
+            .find_magic_link_for_authentication(selector_lookup_hmac)
+            .await
+    }
+
+    async fn find_user_for_authentication(
+        &self,
+        email: &NormalizedEmail,
+    ) -> Result<Option<UserRecord>, DependencyError> {
+        self.store.find_user_for_authentication(email).await
+    }
+
+    async fn commit_magic_link_authentication(
+        &self,
+        command: &CommitMagicLinkAuthentication,
+    ) -> Result<(), CommitMagicLinkAuthenticationError> {
+        self.barrier.wait().await;
+        self.store.commit_magic_link_authentication(command).await
+    }
+}
+
+struct AllowAllLimiter;
+
+impl RateLimiter for AllowAllLimiter {
+    async fn check_rate_limit(
+        &self,
+        _key: &RateLimitKey,
+        _limit: u32,
+        _window_secs: u64,
+        _now_unix: u64,
+    ) -> Result<RateLimitDecision, DependencyError> {
+        Ok(RateLimitDecision::Allowed)
+    }
+}
 
 fn session_keyring() -> KeyRing<SessionCookie> {
     let kid = KeyId::parse("active").expect("kid");
@@ -122,8 +172,7 @@ async fn fake_store_round_trips_request_and_consume_without_raw_session_storage(
 
     let outcome = {
         let mut consume = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
-            magic_links: &store,
-            users: &store,
+            authentication: &store,
             sessions: &store,
             limiter: &store,
             clock: &clock,
@@ -184,8 +233,7 @@ async fn fake_consume_rejects_second_use() {
         .as_secret_value();
 
     let mut consume = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
-        magic_links: &store,
-        users: &store,
+        authentication: &store,
         sessions: &store,
         limiter: &store,
         clock: &clock,
@@ -207,23 +255,152 @@ async fn fake_consume_rejects_second_use() {
 }
 
 #[tokio::test]
-async fn fake_store_maps_next_error_to_consume_dependency_failure() {
+async fn shared_fake_end_to_end_consume_race_has_one_session_and_generic_losers() {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
-    let lookup = LookupHmacKey::new([0x42; 32]);
-    let token =
-        dd_magic_link_core::MagicLinkToken::generate(&mut CounterRng::new()).expect("token");
-    let selector_lookup = selector_lookup_hmac(&lookup, token.selector()).expect("selector hmac");
-    let verifier_hash = dd_magic_link_core::verifier_hash(&lookup, token.verifier()).expect("vh");
+    let outbox = crate::FakeMagicLinkOutbox::default();
+    let clock = FixedClock;
+    let lookup_key = LookupHmacKey::new([0x42; 32]);
+    let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
+    let mut request_rng = CounterRng::new();
+    {
+        let mut request = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
+            magic_links: &store,
+            limiter: &store,
+            outbox: &outbox,
+            clock: &clock,
+            rng: &mut request_rng,
+            lookup_hmac_key: &lookup_key,
+            config: config.clone(),
+        });
+        request
+            .request_magic_link(command())
+            .await
+            .expect("request");
+    }
+    let token = outbox.recorded().expect("recorded")[0]
+        .token
+        .as_secret_value();
 
+    let commit_barrier = Arc::new(Barrier::new(16));
+    let mut tasks = Vec::new();
+    for start in 1_u8..=16 {
+        let task_store = store.clone();
+        let task_authentication = CommitBarrierAuthenticationRepository {
+            store: task_store.clone(),
+            barrier: Arc::clone(&commit_barrier),
+        };
+        let task_token = token.clone();
+        let task_config = config.clone();
+        tasks.push(tokio::spawn(async move {
+            let clock = FixedClock;
+            let lookup_key = LookupHmacKey::new([0x42; 32]);
+            let session_keyring = session_keyring();
+            let mut rng = CounterRng { next: start };
+            let limiter = AllowAllLimiter;
+            let mut consume = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
+                authentication: &task_authentication,
+                sessions: &task_store,
+                limiter: &limiter,
+                clock: &clock,
+                rng: &mut rng,
+                lookup_hmac_key: &lookup_key,
+                session_keyring: &session_keyring,
+                config: task_config,
+            });
+            consume
+                .consume_magic_link_token(&task_token, None, None)
+                .await
+        }));
+    }
+
+    let mut successes = 0;
+    let mut generic_losers = 0;
+    for task in tasks {
+        match task.await.expect("consume task") {
+            Ok(_) => successes += 1,
+            Err(MagicLinkServiceError::MagicLinkUnavailable) => generic_losers += 1,
+            Err(other) => panic!("unexpected scrubbed consume error: {other}"),
+        }
+    }
+    assert_eq!(successes, 1);
+    assert_eq!(generic_losers, 15);
+    assert_eq!(store.user_count().expect("users"), 1);
+    assert_eq!(store.session_count().expect("sessions"), 1);
+}
+
+#[tokio::test]
+async fn concurrent_disable_between_read_and_commit_does_not_burn_link() {
+    let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
+    let outbox = crate::FakeMagicLinkOutbox::default();
+    let clock = FixedClock;
+    let lookup_key = LookupHmacKey::new([0x42; 32]);
+    let session_keyring = session_keyring();
+    let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
+    let mut rng = CounterRng::new();
+    {
+        let mut request = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
+            magic_links: &store,
+            limiter: &store,
+            outbox: &outbox,
+            clock: &clock,
+            rng: &mut rng,
+            lookup_hmac_key: &lookup_key,
+            config: config.clone(),
+        });
+        request
+            .request_magic_link(command())
+            .await
+            .expect("request");
+    }
+    let token = outbox.recorded().expect("recorded")[0]
+        .token
+        .as_secret_value();
+    let selector_lookup = selector_lookup_hmac(
+        &lookup_key,
+        outbox.recorded().expect("recorded")[0].token.selector(),
+    )
+    .expect("selector hmac");
+    let user_id = UserId::parse(USER_ID).expect("user id");
     store
-        .set_next_error(crate::AwsAdapterError::DependencyUnavailable)
-        .expect("set error");
+        .seed_user(UserRecord {
+            user_id: user_id.clone(),
+            email: NormalizedEmail::parse("user@example.com").expect("email"),
+            disabled: false,
+            terms_version: Some("old-terms".to_owned()),
+            privacy_version: Some("old-privacy".to_owned()),
+            consented_at_unix: Some(100),
+        })
+        .expect("seed user");
+    store
+        .disable_user_before_next_commit(&user_id)
+        .expect("install disable hook");
+
+    let mut consume = MagicLinkConsumeService::new(MagicLinkConsumeServiceInputs {
+        authentication: &store,
+        sessions: &store,
+        limiter: &store,
+        clock: &clock,
+        rng: &mut rng,
+        lookup_hmac_key: &lookup_key,
+        session_keyring: &session_keyring,
+        config,
+    });
     assert_eq!(
-        store
-            .consume_magic_link(&selector_lookup, &verifier_hash, 1_000)
+        consume
+            .consume_magic_link_token(&token, None, None)
             .await
             .unwrap_err(),
-        ConsumeMagicLinkError::DependencyUnavailable
+        MagicLinkServiceError::MagicLinkUnavailable
+    );
+    assert_eq!(store.session_count().expect("sessions"), 0);
+    assert_eq!(store.user_count().expect("users"), 1);
+    assert_eq!(
+        store
+            .magic_link_record(&selector_lookup)
+            .expect("challenge")
+            .expect("stored challenge")
+            .consumed_at_unix,
+        None
     );
 }
 
@@ -279,7 +456,6 @@ fn authentication_fixture(
     let record = MagicLinkRecord {
         selector_lookup_hmac: selector_lookup_hmac.clone(),
         email: NormalizedEmail::parse("atomic@example.test").expect("email"),
-        user_id: None,
         verifier_hash: verifier_hash(&lookup_key, token.verifier()).expect("verifier hash"),
         expires_at_unix: 2_000,
         consumed_at_unix: None,
@@ -334,10 +510,7 @@ async fn aggregate_existing_user_commit_is_atomic_and_preserves_consent() {
         SESSION_ID,
     );
     seed_challenge(&store, record).await;
-    store
-        .put_user_if_absent(user_record(false))
-        .await
-        .expect("seed user");
+    store.seed_user(user_record(false)).expect("seed user");
 
     store
         .commit_magic_link_authentication(&command)
@@ -469,10 +642,7 @@ async fn aggregate_disabled_user_and_user_conflicts_do_not_burn_link() {
             SESSION_ID,
         );
         seed_challenge(&store, record).await;
-        store
-            .put_user_if_absent(user_record(disabled))
-            .await
-            .expect("seed user");
+        store.seed_user(user_record(disabled)).expect("seed user");
         assert_eq!(
             store.commit_magic_link_authentication(&command).await,
             Err(CommitMagicLinkAuthenticationError::UserConflict)
@@ -501,14 +671,16 @@ async fn aggregate_session_conflict_is_atomic() {
     );
     seed_challenge(&store, record).await;
     store
-        .put_session_if_absent(SessionRecord {
-            session_id: command.session_id.clone(),
-            user_id,
-            email: command.magic_link.email.clone(),
-            created_at_unix: 500,
-            revoked_at_unix: None,
-        })
-        .await
+        .seed_session(
+            SessionRecord {
+                session_id: command.session_id.clone(),
+                user_id,
+                email: command.magic_link.email.clone(),
+                created_at_unix: 500,
+                revoked_at_unix: None,
+            },
+            command.session_expires_at_unix,
+        )
         .expect("seed session collision");
     assert_eq!(
         store.commit_magic_link_authentication(&command).await,
@@ -523,6 +695,53 @@ async fn aggregate_session_conflict_is_atomic() {
             .consumed_at_unix,
         None
     );
+}
+
+#[tokio::test]
+async fn aggregate_next_error_mapping_is_scrubbed_and_has_no_partial_mutation() {
+    for (adapter_error, expected) in [
+        (
+            AwsAdapterError::ConditionalWriteFailed,
+            CommitMagicLinkAuthenticationError::DependencyUnavailable,
+        ),
+        (
+            AwsAdapterError::RateLimited,
+            CommitMagicLinkAuthenticationError::DependencyUnavailable,
+        ),
+        (
+            AwsAdapterError::DependencyUnavailable,
+            CommitMagicLinkAuthenticationError::DependencyUnavailable,
+        ),
+        (
+            AwsAdapterError::Internal,
+            CommitMagicLinkAuthenticationError::Internal,
+        ),
+    ] {
+        let (store, record, command) = authentication_fixture(
+            MagicLinkAuthenticationUser::Create {
+                user_id: UserId::parse(USER_ID).expect("user id"),
+            },
+            ATTEMPT_ID,
+            SESSION_ID,
+        );
+        seed_challenge(&store, record).await;
+        store.set_next_error(adapter_error).expect("inject error");
+
+        assert_eq!(
+            store.commit_magic_link_authentication(&command).await,
+            Err(expected)
+        );
+        assert_eq!(store.user_count().expect("users"), 0);
+        assert_eq!(store.session_count().expect("sessions"), 0);
+        assert_eq!(
+            store
+                .magic_link_record(&command.magic_link.selector_lookup_hmac)
+                .expect("challenge")
+                .expect("stored challenge")
+                .consumed_at_unix,
+            None
+        );
+    }
 }
 
 #[tokio::test]

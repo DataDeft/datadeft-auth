@@ -131,7 +131,6 @@ impl fmt::Debug for SessionId {
 pub struct MagicLinkRecord {
     pub selector_lookup_hmac: LookupHmac,
     pub email: NormalizedEmail,
-    pub user_id: Option<UserId>,
     pub verifier_hash: VerifierHash,
     pub expires_at_unix: u64,
     pub consumed_at_unix: Option<u64>,
@@ -145,32 +144,9 @@ impl fmt::Debug for MagicLinkRecord {
         f.debug_struct("MagicLinkRecord")
             .field("selector_lookup_hmac", &"LookupHmac(..)")
             .field("email", &"NormalizedEmail(..)")
-            .field("user_id", &self.user_id.as_ref().map(|_| "UserId(..)"))
             .field("verifier_hash", &"VerifierHash(..)")
             .field("expires_at_unix", &self.expires_at_unix)
             .field("consumed_at_unix", &self.consumed_at_unix)
-            .field("terms_version", &self.terms_version)
-            .field("privacy_version", &self.privacy_version)
-            .field("consented_at_unix", &self.consented_at_unix)
-            .finish()
-    }
-}
-
-/// Consumed magic-link data returned after the atomic consume transition.
-#[derive(Clone, Eq, PartialEq)]
-pub struct ConsumedMagicLink {
-    pub email: NormalizedEmail,
-    pub user_id: Option<UserId>,
-    pub terms_version: String,
-    pub privacy_version: String,
-    pub consented_at_unix: u64,
-}
-
-impl fmt::Debug for ConsumedMagicLink {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ConsumedMagicLink")
-            .field("email", &"NormalizedEmail(..)")
-            .field("user_id", &self.user_id.as_ref().map(|_| "UserId(..)"))
             .field("terms_version", &self.terms_version)
             .field("privacy_version", &self.privacy_version)
             .field("consented_at_unix", &self.consented_at_unix)

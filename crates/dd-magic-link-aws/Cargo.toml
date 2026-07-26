@@ -34,4 +34,4 @@ zeroize = { version = "1", default-features = false }
 [dev-dependencies]
 dd-auth-token-core = { path = "../dd-auth-token-core" }
 rand_core = "0.6"
-tokio = { version = "1", features = ["macros", "rt"] }
+tokio = { version = "1", features = ["macros", "rt", "sync"] }

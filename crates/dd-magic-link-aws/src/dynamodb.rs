@@ -11,54 +11,26 @@ use aws_sdk_dynamodb::types::{
     AttributeValue, ConditionCheck, Put, ReturnValue, TransactWriteItem, Update,
 };
 use dd_magic_link_core::{LookupHmac, NormalizedEmail, VerifierHash};
-use dd_magic_link_service::types::DEFAULT_SESSION_ABSOLUTE_SECS;
 use dd_magic_link_service::{
-    CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, ConsumeMagicLinkError,
-    ConsumedMagicLink, DependencyError, MagicLinkAuthenticationCandidate,
-    MagicLinkAuthenticationRepository, MagicLinkAuthenticationUser, MagicLinkRecord,
-    MagicLinkRepository, MagicLinkServiceConfig, RateLimitDecision, RateLimitKey, RateLimiter,
-    SessionId, SessionRecord, SessionRepository, UserId, UserRecord, UserRepository,
+    CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, DependencyError,
+    MagicLinkAuthenticationCandidate, MagicLinkAuthenticationRepository,
+    MagicLinkAuthenticationUser, MagicLinkRecord, MagicLinkRepository, RateLimitDecision,
+    RateLimitKey, RateLimiter, SessionId, SessionRecord, SessionRepository, UserId, UserRecord,
 };
 
 use crate::error::{
     AwsAdapterError, map_authentication_transact_write_items_error, map_get_item_error,
-    map_put_item_error, map_transact_write_items_error, map_update_item_error,
+    map_put_item_error, map_update_item_error,
 };
 use crate::hmac_key::{SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey};
 
-/// DynamoDB adapter TTL configuration. TTL attributes are garbage-collection
-/// hints only; security checks use explicit expiry attributes.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct DynamoDbAuthStoreConfig {
-    pub session_absolute_secs: u64,
-    pub magic_link_cleanup_grace_secs: u64,
-}
-
-impl DynamoDbAuthStoreConfig {
-    #[must_use]
-    pub fn from_service_config(config: &MagicLinkServiceConfig) -> Self {
-        Self {
-            session_absolute_secs: config.session_absolute_secs,
-            magic_link_cleanup_grace_secs: Self::default().magic_link_cleanup_grace_secs,
-        }
-    }
-}
-
-impl Default for DynamoDbAuthStoreConfig {
-    fn default() -> Self {
-        Self {
-            session_absolute_secs: DEFAULT_SESSION_ABSOLUTE_SECS,
-            magic_link_cleanup_grace_secs: 24 * 60 * 60,
-        }
-    }
-}
+const MAGIC_LINK_CLEANUP_GRACE_SECS: u64 = 24 * 60 * 60;
 
 /// DynamoDB single-table auth store.
 pub struct DynamoDbAuthStore {
     client: DynamoDbClient,
     table_name: String,
     storage_hmac_key: Arc<StorageHmacKey>,
-    config: DynamoDbAuthStoreConfig,
 }
 
 impl DynamoDbAuthStore {
@@ -68,26 +40,10 @@ impl DynamoDbAuthStore {
         table_name: String,
         storage_hmac_key: StorageHmacKey,
     ) -> Self {
-        Self::with_config(
-            client,
-            table_name,
-            storage_hmac_key,
-            DynamoDbAuthStoreConfig::default(),
-        )
-    }
-
-    #[must_use]
-    pub fn with_config(
-        client: DynamoDbClient,
-        table_name: String,
-        storage_hmac_key: StorageHmacKey,
-        config: DynamoDbAuthStoreConfig,
-    ) -> Self {
         Self {
             client,
             table_name,
             storage_hmac_key: Arc::new(storage_hmac_key),
-            config,
         }
     }
 
@@ -338,34 +294,6 @@ impl DynamoDbAuthStore {
             .client_request_token(command.attempt_id.as_str()))
     }
 
-    fn item_to_user(item: &HashMap<String, AttributeValue>) -> Result<UserRecord, AwsAdapterError> {
-        Ok(UserRecord {
-            user_id: UserId::parse(required_s(item, "user_id")?)
-                .map_err(|_| AwsAdapterError::Internal)?,
-            email: NormalizedEmail::parse(required_s(item, "email_normalized")?)
-                .map_err(|_| AwsAdapterError::Internal)?,
-            disabled: optional_bool(item, "disabled").unwrap_or(false),
-            terms_version: optional_s(item, "terms_version").map(str::to_owned),
-            privacy_version: optional_s(item, "privacy_version").map(str::to_owned),
-            consented_at_unix: optional_u64(item, "consented_at_unix")?,
-        })
-    }
-
-    fn item_to_consumed(
-        item: &HashMap<String, AttributeValue>,
-    ) -> Result<ConsumedMagicLink, AwsAdapterError> {
-        Ok(ConsumedMagicLink {
-            email: NormalizedEmail::parse(required_s(item, "email_normalized")?)
-                .map_err(|_| AwsAdapterError::Internal)?,
-            user_id: optional_s(item, "user_id")
-                .map(|value| UserId::parse(value).map_err(|_| AwsAdapterError::Internal))
-                .transpose()?,
-            terms_version: required_s(item, "terms_version")?.to_owned(),
-            privacy_version: required_s(item, "privacy_version")?.to_owned(),
-            consented_at_unix: required_u64(item, "consented_at_unix")?,
-        })
-    }
-
     fn item_to_session(
         session_id: &SessionId,
         item: &HashMap<String, AttributeValue>,
@@ -396,10 +324,9 @@ impl MagicLinkRepository for DynamoDbAuthStore {
         let pk = Self::pk_magic_link(&record.selector_lookup_hmac);
         let ttl = record
             .expires_at_unix
-            .saturating_add(self.config.magic_link_cleanup_grace_secs);
+            .saturating_add(MAGIC_LINK_CLEANUP_GRACE_SECS);
         async {
-            let mut request = self
-                .client
+            self.client
                 .put_item()
                 .table_name(&self.table_name)
                 .item("pk", av_s(pk))
@@ -415,44 +342,14 @@ impl MagicLinkRepository for DynamoDbAuthStore {
                 .item("privacy_version", av_s(record.privacy_version.clone()))
                 .item("consented_at_unix", av_n(record.consented_at_unix))
                 .item("ttl", av_n(ttl))
-                .condition_expression("attribute_not_exists(pk)");
-            if let Some(user_id) = &record.user_id {
-                request = request.item("user_id", av_s(user_id.as_str()));
-            }
-            request.send().await.map_err(map_put_item_error)?;
+                .condition_expression("attribute_not_exists(pk)")
+                .send()
+                .await
+                .map_err(map_put_item_error)?;
             Ok::<(), AwsAdapterError>(())
         }
         .await
         .map_err(DependencyError::from)
-    }
-
-    async fn consume_magic_link(
-        &self,
-        selector_lookup_hmac: &LookupHmac,
-        verifier_hash: &VerifierHash,
-        now_unix: u64,
-    ) -> Result<ConsumedMagicLink, ConsumeMagicLinkError> {
-        let pk = Self::pk_magic_link(selector_lookup_hmac);
-        async {
-            let output = self
-                .client
-                .update_item()
-                .table_name(&self.table_name)
-                .key("pk", av_s(pk))
-                .key("sk", av_s("CHALLENGE"))
-                .update_expression("SET consumed_at_unix = :now")
-                .condition_expression("attribute_exists(pk) AND attribute_not_exists(consumed_at_unix) AND expires_at_unix >= :now AND verifier_hash = :vh AND attribute_exists(terms_version) AND attribute_exists(privacy_version) AND attribute_exists(consented_at_unix)")
-                .expression_attribute_values(":now", av_n(now_unix))
-                .expression_attribute_values(":vh", av_s(verifier_hash.as_storage_value()))
-                .return_values(ReturnValue::AllNew)
-                .send()
-                .await
-                .map_err(map_update_item_error)?;
-            let item = output.attributes().ok_or(AwsAdapterError::Internal)?;
-            Self::item_to_consumed(item)
-        }
-        .await
-        .map_err(ConsumeMagicLinkError::from)
     }
 }
 
@@ -525,150 +422,7 @@ impl MagicLinkAuthenticationRepository for DynamoDbAuthStore {
     }
 }
 
-impl UserRepository for DynamoDbAuthStore {
-    async fn find_user_by_email(
-        &self,
-        email: &NormalizedEmail,
-    ) -> Result<Option<UserRecord>, DependencyError> {
-        let pk = self.pk_user_email(email).map_err(DependencyError::from)?;
-        async {
-            let output = self
-                .client
-                .get_item()
-                .table_name(&self.table_name)
-                .key("pk", av_s(pk))
-                .key("sk", av_s("PROFILE"))
-                .send()
-                .await
-                .map_err(map_get_item_error)?;
-            let Some(item) = output.item() else {
-                return Ok(None);
-            };
-            if optional_s(item, "entity_type") != Some("user_email_lookup") {
-                return Err(AwsAdapterError::Internal);
-            }
-            let user_id = UserId::parse(required_s(item, "user_id")?)
-                .map_err(|_| AwsAdapterError::Internal)?;
-            let user_output = self
-                .client
-                .get_item()
-                .table_name(&self.table_name)
-                .key("pk", av_s(Self::pk_user_id(&user_id)))
-                .key("sk", av_s("PROFILE"))
-                .send()
-                .await
-                .map_err(map_get_item_error)?;
-            user_output.item().map(Self::item_to_user).transpose()
-        }
-        .await
-        .map_err(DependencyError::from)
-    }
-
-    async fn put_user_if_absent(&self, user: UserRecord) -> Result<(), DependencyError> {
-        let email_pk = self
-            .pk_user_email(&user.email)
-            .map_err(DependencyError::from)?;
-        let user_pk = Self::pk_user_id(&user.user_id);
-        async {
-            let mut profile_put = Put::builder()
-                .table_name(&self.table_name)
-                .item("pk", av_s(user_pk))
-                .item("sk", av_s("PROFILE"))
-                .item("entity_type", av_s("user_profile"))
-                .item("user_id", av_s(user.user_id.as_str()))
-                .item("email_normalized", av_s(user.email.as_str()))
-                .item("disabled", av_bool(user.disabled));
-            if let Some(terms_version) = &user.terms_version {
-                profile_put = profile_put.item("terms_version", av_s(terms_version.clone()));
-            }
-            if let Some(privacy_version) = &user.privacy_version {
-                profile_put = profile_put.item("privacy_version", av_s(privacy_version.clone()));
-            }
-            if let Some(consented_at_unix) = user.consented_at_unix {
-                profile_put = profile_put.item("consented_at_unix", av_n(consented_at_unix));
-            }
-            let profile_put = profile_put
-                .condition_expression("attribute_not_exists(pk)")
-                .build()
-                .map_err(|_| AwsAdapterError::Internal)?;
-            let email_lookup_put = Put::builder()
-                .table_name(&self.table_name)
-                .item("pk", av_s(email_pk))
-                .item("sk", av_s("PROFILE"))
-                .item("entity_type", av_s("user_email_lookup"))
-                .item("user_id", av_s(user.user_id.as_str()))
-                .item("email_normalized", av_s(user.email.as_str()))
-                .condition_expression("attribute_not_exists(pk)")
-                .build()
-                .map_err(|_| AwsAdapterError::Internal)?;
-            self.client
-                .transact_write_items()
-                .transact_items(TransactWriteItem::builder().put(profile_put).build())
-                .transact_items(TransactWriteItem::builder().put(email_lookup_put).build())
-                .send()
-                .await
-                .map_err(map_transact_write_items_error)?;
-            Ok::<(), AwsAdapterError>(())
-        }
-        .await
-        .map_err(DependencyError::from)
-    }
-}
-
 impl SessionRepository for DynamoDbAuthStore {
-    async fn put_session_if_absent(&self, session: SessionRecord) -> Result<(), DependencyError> {
-        let session_hmac = self
-            .session_hmac(&session.session_id)
-            .map_err(DependencyError::from)?;
-        let pk = Self::pk_session_from_hmac(&session_hmac);
-        let user_pk = format!("USER#{}", session.user_id.as_str());
-        let expires_at_unix = session
-            .created_at_unix
-            .saturating_add(self.config.session_absolute_secs);
-        async {
-            let session_put = Put::builder()
-                .table_name(&self.table_name)
-                .item("pk", av_s(pk))
-                .item("sk", av_s("SESSION"))
-                .item("entity_type", av_s("session"))
-                .item("user_id", av_s(session.user_id.as_str()))
-                .item("email_normalized", av_s(session.email.as_str()))
-                .item("created_at_unix", av_n(session.created_at_unix))
-                .item("expires_at_unix", av_n(expires_at_unix))
-                .item("ttl", av_n(expires_at_unix))
-                .condition_expression("attribute_not_exists(pk)")
-                .build()
-                .map_err(|_| AwsAdapterError::Internal)?;
-            let index_put = Put::builder()
-                .table_name(&self.table_name)
-                .item("pk", av_s(user_pk))
-                .item(
-                    "sk",
-                    av_s(format!(
-                        "SESSION#{}#{session_hmac}",
-                        session.created_at_unix
-                    )),
-                )
-                .item("entity_type", av_s("user_session_index"))
-                .item("created_at_unix", av_n(session.created_at_unix))
-                .item("expires_at_unix", av_n(expires_at_unix))
-                .item("ttl", av_n(expires_at_unix))
-                .condition_expression("attribute_not_exists(pk)")
-                .build()
-                .map_err(|_| AwsAdapterError::Internal)?;
-            self.client
-                .transact_write_items()
-                .transact_items(TransactWriteItem::builder().put(session_put).build())
-                .transact_items(TransactWriteItem::builder().put(index_put).build())
-                .send()
-                .await
-                .map_err(map_transact_write_items_error)?;
-            Ok::<(), AwsAdapterError>(())
-        }
-        .await
-        .map_err(DependencyError::from)
-    }
-
     async fn find_session(
         &self,
         session_id: &SessionId,
@@ -855,11 +609,6 @@ fn required_bool(
         .as_bool()
         .copied()
         .map_err(|_| AwsAdapterError::Internal)
-}
-
-fn optional_bool(item: &HashMap<String, AttributeValue>, key: &str) -> Option<bool> {
-    item.get(key)
-        .and_then(|value| value.as_bool().ok().copied())
 }
 
 #[cfg(test)]

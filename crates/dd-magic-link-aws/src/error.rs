@@ -4,7 +4,7 @@ use core::fmt;
 
 #[cfg(feature = "aws")]
 use dd_magic_link_service::CommitMagicLinkAuthenticationError;
-use dd_magic_link_service::{ConsumeMagicLinkError, DependencyError};
+use dd_magic_link_service::DependencyError;
 
 /// Scrubbed adapter error for fake controls and AWS error classification.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -43,18 +43,6 @@ impl From<AwsAdapterError> for DependencyError {
     }
 }
 
-impl From<AwsAdapterError> for ConsumeMagicLinkError {
-    fn from(value: AwsAdapterError) -> Self {
-        match value {
-            AwsAdapterError::ConditionalWriteFailed | AwsAdapterError::RateLimited => {
-                ConsumeMagicLinkError::Unavailable
-            }
-            AwsAdapterError::DependencyUnavailable => ConsumeMagicLinkError::DependencyUnavailable,
-            AwsAdapterError::Internal => ConsumeMagicLinkError::Internal,
-        }
-    }
-}
-
 #[cfg(feature = "aws")]
 use aws_sdk_dynamodb::error::{ProvideErrorMetadata, SdkError};
 #[cfg(feature = "aws")]
@@ -62,8 +50,6 @@ use aws_sdk_dynamodb::operation::{
     get_item::GetItemError, put_item::PutItemError, transact_write_items::TransactWriteItemsError,
     update_item::UpdateItemError,
 };
-#[cfg(feature = "aws")]
-use aws_sdk_dynamodb::types::error::TransactionCanceledException;
 #[cfg(feature = "aws")]
 use aws_sdk_sesv2::operation::send_email::SendEmailError;
 
@@ -155,19 +141,6 @@ fn classify_authentication_cancellation_codes(
 }
 
 #[cfg(feature = "aws")]
-pub(crate) fn map_transact_write_items_error(
-    error: SdkError<TransactWriteItemsError>,
-) -> AwsAdapterError {
-    if let Some(TransactWriteItemsError::TransactionCanceledException(exception)) =
-        error.as_service_error()
-    {
-        return classify_transaction_canceled(exception);
-    }
-    classify_metadata(&error)
-        .unwrap_or_else(|| fallback_debug_classification(&format!("{error:?}")))
-}
-
-#[cfg(feature = "aws")]
 pub(crate) fn map_ses_send_email_error(
     error: aws_sdk_sesv2::error::SdkError<SendEmailError>,
 ) -> AwsAdapterError {
@@ -187,24 +160,6 @@ pub(crate) fn map_ses_send_email_error(
         return AwsAdapterError::DependencyUnavailable;
     }
     fallback_debug_classification(&format!("{error:?}"))
-}
-
-#[cfg(feature = "aws")]
-fn classify_transaction_canceled(exception: &TransactionCanceledException) -> AwsAdapterError {
-    let mut saw_conditional = false;
-    let mut saw_other_failure = false;
-    for reason in exception.cancellation_reasons() {
-        match reason.code() {
-            Some("ConditionalCheckFailed") => saw_conditional = true,
-            Some("None") | None => {}
-            Some(_) => saw_other_failure = true,
-        }
-    }
-    if saw_conditional && !saw_other_failure {
-        AwsAdapterError::ConditionalWriteFailed
-    } else {
-        AwsAdapterError::DependencyUnavailable
-    }
 }
 
 #[cfg(feature = "aws")]

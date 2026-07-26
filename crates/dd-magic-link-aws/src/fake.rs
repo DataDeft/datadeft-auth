@@ -9,13 +9,12 @@ use core::fmt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use dd_magic_link_core::{LookupHmac, NormalizedEmail, VerifierHash};
+use dd_magic_link_core::{LookupHmac, NormalizedEmail};
 use dd_magic_link_service::{
-    CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, ConsumeMagicLinkError,
-    ConsumedMagicLink, DependencyError, MagicLinkAuthenticationCandidate,
-    MagicLinkAuthenticationRepository, MagicLinkAuthenticationUser, MagicLinkRecord,
-    MagicLinkRepository, RateLimitDecision, RateLimitKey, RateLimiter, SessionId, SessionRecord,
-    SessionRepository, UserId, UserRecord, UserRepository,
+    CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, DependencyError,
+    MagicLinkAuthenticationCandidate, MagicLinkAuthenticationRepository,
+    MagicLinkAuthenticationUser, MagicLinkRecord, MagicLinkRepository, RateLimitDecision,
+    RateLimitKey, RateLimiter, SessionId, SessionRecord, SessionRepository, UserId, UserRecord,
 };
 
 use crate::error::AwsAdapterError;
@@ -49,6 +48,8 @@ struct FakeDynamoDbInner {
     next_error: Option<AwsAdapterError>,
     #[cfg(test)]
     fail_next_authentication_pre_commit: bool,
+    #[cfg(test)]
+    disable_user_before_next_commit: Option<String>,
 }
 
 impl FakeDynamoDbAuthStore {
@@ -147,6 +148,50 @@ impl FakeDynamoDbAuthStore {
         Ok(())
     }
 
+    #[cfg(test)]
+    fn seed_user(&self, user: UserRecord) -> Result<(), DependencyError> {
+        let email_hmac = self.email_hmac(&user.email)?;
+        let mut inner = self.lock_inner()?;
+        if inner.user_id_by_email_hmac.contains_key(&email_hmac)
+            || inner
+                .user_profiles_by_id
+                .contains_key(user.user_id.as_str())
+        {
+            return Err(DependencyError::ConditionalWriteFailed);
+        }
+        inner
+            .user_id_by_email_hmac
+            .insert(email_hmac, user.user_id.clone());
+        inner
+            .user_profiles_by_id
+            .insert(user.user_id.as_str().to_owned(), user);
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn seed_session(
+        &self,
+        session: SessionRecord,
+        expires_at_unix: u64,
+    ) -> Result<(), DependencyError> {
+        let session_hmac = self.session_hmac(&session.session_id)?;
+        let mut inner = self.lock_inner()?;
+        if inner.sessions_by_hmac.contains_key(&session_hmac) {
+            return Err(DependencyError::ConditionalWriteFailed);
+        }
+        inner
+            .session_expiry_by_hmac
+            .insert(session_hmac.clone(), expires_at_unix);
+        inner.sessions_by_hmac.insert(session_hmac, session);
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn disable_user_before_next_commit(&self, user_id: &UserId) -> Result<(), DependencyError> {
+        self.lock_inner()?.disable_user_before_next_commit = Some(user_id.as_str().to_owned());
+        Ok(())
+    }
+
     fn take_next_error(inner: &mut FakeDynamoDbInner) -> Result<(), DependencyError> {
         if let Some(error) = inner.next_error.take() {
             Err(DependencyError::from(error))
@@ -179,42 +224,6 @@ impl MagicLinkRepository for FakeDynamoDbAuthStore {
         }
         inner.magic_links_by_selector_hmac.insert(key, record);
         Ok(())
-    }
-
-    async fn consume_magic_link(
-        &self,
-        selector_lookup_hmac: &LookupHmac,
-        verifier_hash: &VerifierHash,
-        now_unix: u64,
-    ) -> Result<ConsumedMagicLink, ConsumeMagicLinkError> {
-        let mut inner = self
-            .lock_inner()
-            .map_err(|_| ConsumeMagicLinkError::Internal)?;
-        if let Some(error) = inner.next_error.take() {
-            return Err(ConsumeMagicLinkError::from(error));
-        }
-        let Some(record) = inner
-            .magic_links_by_selector_hmac
-            .get_mut(selector_lookup_hmac.as_storage_value())
-        else {
-            return Err(ConsumeMagicLinkError::Unavailable);
-        };
-        if record.consumed_at_unix.is_some()
-            || record.expires_at_unix < now_unix
-            || !record
-                .verifier_hash
-                .matches_hash_constant_time(verifier_hash)
-        {
-            return Err(ConsumeMagicLinkError::Unavailable);
-        }
-        record.consumed_at_unix = Some(now_unix);
-        Ok(ConsumedMagicLink {
-            email: record.email.clone(),
-            user_id: record.user_id.clone(),
-            terms_version: record.terms_version.clone(),
-            privacy_version: record.privacy_version.clone(),
-            consented_at_unix: record.consented_at_unix,
-        })
     }
 }
 
@@ -288,6 +297,15 @@ impl MagicLinkAuthenticationRepository for FakeDynamoDbAuthStore {
         }
         if let Some(error) = inner.next_error.take() {
             return Err(Self::authentication_error(error));
+        }
+
+        #[cfg(test)]
+        if let Some(user_id) = inner.disable_user_before_next_commit.take() {
+            let profile = inner
+                .user_profiles_by_id
+                .get_mut(&user_id)
+                .ok_or(CommitMagicLinkAuthenticationError::Internal)?;
+            profile.disabled = true;
         }
 
         let challenge = inner
@@ -398,66 +416,7 @@ impl MagicLinkAuthenticationRepository for FakeDynamoDbAuthStore {
     }
 }
 
-impl UserRepository for FakeDynamoDbAuthStore {
-    async fn find_user_by_email(
-        &self,
-        email: &NormalizedEmail,
-    ) -> Result<Option<UserRecord>, DependencyError> {
-        let email_hmac = self.email_hmac(email)?;
-        let mut inner = self.lock_inner()?;
-        Self::take_next_error(&mut inner)?;
-        let Some(user_id) = inner.user_id_by_email_hmac.get(&email_hmac) else {
-            return Ok(None);
-        };
-        Ok(inner.user_profiles_by_id.get(user_id.as_str()).cloned())
-    }
-
-    async fn put_user_if_absent(&self, user: UserRecord) -> Result<(), DependencyError> {
-        let email_hmac = self.email_hmac(&user.email)?;
-        let mut inner = self.lock_inner()?;
-        Self::take_next_error(&mut inner)?;
-        if inner.user_id_by_email_hmac.contains_key(&email_hmac)
-            || inner
-                .user_profiles_by_id
-                .contains_key(user.user_id.as_str())
-        {
-            return Err(DependencyError::ConditionalWriteFailed);
-        }
-        inner
-            .user_id_by_email_hmac
-            .insert(email_hmac, user.user_id.clone());
-        inner
-            .user_profiles_by_id
-            .insert(user.user_id.as_str().to_owned(), user);
-        Ok(())
-    }
-}
-
 impl SessionRepository for FakeDynamoDbAuthStore {
-    async fn put_session_if_absent(&self, session: SessionRecord) -> Result<(), DependencyError> {
-        let session_hmac = self.session_hmac(&session.session_id)?;
-        let mut inner = self.lock_inner()?;
-        Self::take_next_error(&mut inner)?;
-        if inner.sessions_by_hmac.contains_key(&session_hmac) {
-            return Err(DependencyError::ConditionalWriteFailed);
-        }
-        let expires_at_unix = session.created_at_unix.saturating_add(30 * 24 * 60 * 60);
-        inner
-            .user_session_index
-            .entry(session.user_id.as_str().to_owned())
-            .or_default()
-            .push(UserSessionIndexEntry {
-                sk: format!("SESSION#{}#{session_hmac}", session.created_at_unix),
-                created_at_unix: session.created_at_unix,
-                expires_at_unix,
-            });
-        inner
-            .session_expiry_by_hmac
-            .insert(session_hmac.clone(), expires_at_unix);
-        inner.sessions_by_hmac.insert(session_hmac, session);
-        Ok(())
-    }
-
     async fn find_session(
         &self,
         session_id: &SessionId,

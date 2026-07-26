@@ -21,6 +21,6 @@ pub use hmac_key::{SESSION_LOOKUP_HMAC_PREFIX, STORAGE_HMAC_KEY_BYTES, StorageHm
 pub use ses::{FakeMagicLinkOutbox, MagicLinkEmailRenderer, RenderedMagicLinkEmail};
 
 #[cfg(feature = "aws")]
-pub use dynamodb::{DynamoDbAuthStore, DynamoDbAuthStoreConfig};
+pub use dynamodb::DynamoDbAuthStore;
 #[cfg(feature = "aws")]
 pub use ses::SesMagicLinkOutbox;
