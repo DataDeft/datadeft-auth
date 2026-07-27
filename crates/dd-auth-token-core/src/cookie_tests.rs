@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::branca::{self, encode_with_nonce};
-use crate::keyring::{KeyId, KeyRing, KeySlot, PowCookie, RootSecret, SessionCookie};
+use crate::keyring::{KeyId, KeyRing, KeySlot, RootSecret, SessionCookie};
 use rand_core::{CryptoRng, RngCore};
 
 struct FixedNonceRng([u8; branca::NONCE_BYTES]);
@@ -291,9 +291,8 @@ fn encrypted_typ_must_match_expected_purpose() {
         .derive_key::<SessionCookie>(&kid("active"))
         .expect("derive key");
     // Craft a payload whose bound typ is a *different* purpose.
-    let payload =
-        encode_bound_payload::<SessionCookie>(PowCookie::TOKEN_TYPE, "active", 1, b"body")
-            .expect("payload");
+    let payload = encode_bound_payload::<SessionCookie>("other-typ-v1", "active", 1, b"body")
+        .expect("payload");
     let token = encode_with_nonce(&payload, key.as_bytes(), &[0x9A; branca::NONCE_BYTES], 1)
         .expect("token");
     let ring =

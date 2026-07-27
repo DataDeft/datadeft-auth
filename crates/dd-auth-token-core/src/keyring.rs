@@ -20,16 +20,32 @@
 //! HKDF-SHA256. The `info` string binds both a versioned purpose constant and
 //! the validated `kid` (`purpose || 0x00 || kid`) so rotation slots are
 //! cryptographically independent keys, not just labels. Keyrings are also typed:
-//! a `KeyRing<SessionCookie>` cannot be passed where a `KeyRing<PowCookie>` is
-//! expected.
+//! a keyring derived for one purpose cannot be passed where another purpose's
+//! keyring is expected.
 //!
 //! ```compile_fail
-//! use dd_auth_token_core::keyring::{KeyRing, PowCookie, SessionCookie};
+//! use dd_auth_token_core::keyring::{KeyPurpose, KeyRing};
 //!
-//! fn requires_pow(_: &KeyRing<PowCookie>) {}
+//! enum CookieA {}
+//! impl KeyPurpose for CookieA {
+//!     const HKDF_INFO: &'static [u8] = b"doc/a-v1";
+//!     const TOKEN_TYPE: &'static str = "a-v1";
+//!     const MAX_BODY_BYTES: usize = 128;
+//!     const MAX_ABSOLUTE_AGE_SECS: u64 = 60;
+//! }
 //!
-//! fn cannot_mix_purposes(session_ring: &KeyRing<SessionCookie>) {
-//!     requires_pow(session_ring);
+//! enum CookieB {}
+//! impl KeyPurpose for CookieB {
+//!     const HKDF_INFO: &'static [u8] = b"doc/b-v1";
+//!     const TOKEN_TYPE: &'static str = "b-v1";
+//!     const MAX_BODY_BYTES: usize = 128;
+//!     const MAX_ABSOLUTE_AGE_SECS: u64 = 60;
+//! }
+//!
+//! fn requires_a(_: &KeyRing<CookieA>) {}
+//!
+//! fn cannot_mix_purposes(ring_b: &KeyRing<CookieB>) {
+//!     requires_a(ring_b);
 //! }
 //! ```
 //!
@@ -51,14 +67,10 @@ use crate::error::TokenError;
 pub const KEY_BYTES: usize = 32;
 /// HKDF-SHA256 info string for session-cookie Branca keys.
 pub const HKDF_INFO_SESSION_COOKIE_V1: &[u8] = b"auth/session-v1";
-/// HKDF-SHA256 info string for PoW proof-cookie Branca keys.
-pub const HKDF_INFO_POW_COOKIE_V1: &[u8] = b"auth/pow-v1";
 /// HKDF-SHA256 info string for magic-link flow-cookie Branca keys.
 pub const HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1: &[u8] = b"auth/magic-link-flow-v1";
 /// Encrypted payload `typ` for session cookies.
 pub const TOKEN_TYPE_SESSION_COOKIE_V1: &str = "session-v1";
-/// Encrypted payload `typ` for PoW proof cookies.
-pub const TOKEN_TYPE_POW_COOKIE_V1: &str = "pow-v1";
 /// Encrypted payload `typ` for magic-link flow cookies.
 pub const TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1: &str = "ml-flow-v1";
 
@@ -87,17 +99,6 @@ impl KeyPurpose for SessionCookie {
     const TOKEN_TYPE: &'static str = TOKEN_TYPE_SESSION_COOKIE_V1;
     const MAX_BODY_BYTES: usize = 128;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
-}
-
-/// PoW proof-cookie key purpose.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum PowCookie {}
-
-impl KeyPurpose for PowCookie {
-    const HKDF_INFO: &'static [u8] = HKDF_INFO_POW_COOKIE_V1;
-    const TOKEN_TYPE: &'static str = TOKEN_TYPE_POW_COOKIE_V1;
-    const MAX_BODY_BYTES: usize = 128;
-    const MAX_ABSOLUTE_AGE_SECS: u64 = 10 * 60;
 }
 
 /// Short-lived magic-link confirmation flow-cookie key purpose.
@@ -337,8 +338,9 @@ impl<P: KeyPurpose> KeySlot<P> {
 
 /// Purpose-typed Branca keyring.
 ///
-/// A `KeyRing<SessionCookie>` cannot be passed where a `KeyRing<PowCookie>` is
-/// expected. Purpose separation is enforced both by HKDF output and Rust type.
+/// A keyring derived for one purpose cannot be passed where another purpose's
+/// keyring is expected. Purpose separation is enforced both by HKDF output and
+/// Rust type.
 #[derive(Debug)]
 pub struct KeyRing<P: KeyPurpose> {
     active_kid: KeyId,

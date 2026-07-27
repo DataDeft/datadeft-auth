@@ -2,6 +2,31 @@
 
 use super::*;
 
+/// Local purposes so machinery tests do not depend on any product key policy.
+#[derive(Debug)]
+enum TestCookieA {}
+
+impl KeyPurpose for TestCookieA {
+    const HKDF_INFO: &'static [u8] = b"auth/test-a-v1";
+    const TOKEN_TYPE: &'static str = "test-a-v1";
+    const MAX_BODY_BYTES: usize = 128;
+    const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
+}
+
+#[derive(Debug)]
+enum TestCookieB {}
+
+impl KeyPurpose for TestCookieB {
+    const HKDF_INFO: &'static [u8] = b"auth/test-b-v1";
+    const TOKEN_TYPE: &'static str = "test-b-v1";
+    const MAX_BODY_BYTES: usize = 128;
+    const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
+}
+
+fn kid(value: &str) -> KeyId {
+    KeyId::parse(value).expect("kid parses")
+}
+
 #[test]
 fn root_secret_debug_does_not_contain_key_bytes() {
     let secret = RootSecret::new([0x2A; KEY_BYTES]);
@@ -30,49 +55,36 @@ fn branca_key_debug_does_not_contain_key_bytes() {
 fn root_secret_derives_deterministic_kid_and_purpose_separated_keys() {
     let root = RootSecret::new([0x11; KEY_BYTES]);
 
-    let session_a = root
-        .derive_key::<SessionCookie>(&kid("k1"))
-        .expect("derive session");
-    let session_a2 = root
-        .derive_key::<SessionCookie>(&kid("k1"))
-        .expect("derive session again");
-    let session_k2 = root
-        .derive_key::<SessionCookie>(&kid("k2"))
-        .expect("derive session kid2");
-    let pow = root
-        .derive_key::<PowCookie>(&kid("k1"))
-        .expect("derive pow");
-    let flow = root
-        .derive_key::<MagicLinkFlowCookie>(&kid("k1"))
-        .expect("derive flow");
+    let a_k1 = root
+        .derive_key::<TestCookieA>(&kid("k1"))
+        .expect("derive purpose A");
+    let a_k1_again = root
+        .derive_key::<TestCookieA>(&kid("k1"))
+        .expect("derive purpose A again");
+    let a_k2 = root
+        .derive_key::<TestCookieA>(&kid("k2"))
+        .expect("derive purpose A kid2");
+    let b_k1 = root
+        .derive_key::<TestCookieB>(&kid("k1"))
+        .expect("derive purpose B");
 
     assert_eq!(
-        session_a.as_bytes(),
-        session_a2.as_bytes(),
+        a_k1.as_bytes(),
+        a_k1_again.as_bytes(),
         "same root+purpose+kid is deterministic"
     );
     assert_ne!(
-        session_a.as_bytes(),
-        session_k2.as_bytes(),
+        a_k1.as_bytes(),
+        a_k2.as_bytes(),
         "different kid separates keys (rotation is cryptographic, not a label)"
     );
     assert_ne!(
-        session_a.as_bytes(),
-        pow.as_bytes(),
+        a_k1.as_bytes(),
+        b_k1.as_bytes(),
         "different purpose info separates keys"
     );
     assert_ne!(
-        session_a.as_bytes(),
-        flow.as_bytes(),
-        "flow and session purposes must use independent keys"
-    );
-    assert_ne!(
-        pow.as_bytes(),
-        flow.as_bytes(),
-        "flow and PoW purposes must use independent keys"
-    );
-    assert_ne!(
-        session_a.as_bytes(),
+        a_k1.as_bytes(),
         root.as_bytes(),
         "derived key is not raw root material"
     );
@@ -81,31 +93,25 @@ fn root_secret_derives_deterministic_kid_and_purpose_separated_keys() {
 #[test]
 fn hkdf_info_strings_are_versioned_constants() {
     assert_eq!(HKDF_INFO_SESSION_COOKIE_V1, b"auth/session-v1");
-    assert_eq!(HKDF_INFO_POW_COOKIE_V1, b"auth/pow-v1");
     assert_eq!(
         HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1,
         b"auth/magic-link-flow-v1"
     );
     assert_eq!(SessionCookie::HKDF_INFO, HKDF_INFO_SESSION_COOKIE_V1);
-    assert_eq!(PowCookie::HKDF_INFO, HKDF_INFO_POW_COOKIE_V1);
     assert_eq!(
         MagicLinkFlowCookie::HKDF_INFO,
         HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1
     );
     assert_eq!(TOKEN_TYPE_SESSION_COOKIE_V1, "session-v1");
-    assert_eq!(TOKEN_TYPE_POW_COOKIE_V1, "pow-v1");
     assert_eq!(TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1, "ml-flow-v1");
     assert_eq!(SessionCookie::TOKEN_TYPE, TOKEN_TYPE_SESSION_COOKIE_V1);
-    assert_eq!(PowCookie::TOKEN_TYPE, TOKEN_TYPE_POW_COOKIE_V1);
     assert_eq!(
         MagicLinkFlowCookie::TOKEN_TYPE,
         TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1
     );
     assert_eq!(SessionCookie::MAX_BODY_BYTES, 128);
-    assert_eq!(PowCookie::MAX_BODY_BYTES, 128);
     assert_eq!(MagicLinkFlowCookie::MAX_BODY_BYTES, 256);
     assert_eq!(SessionCookie::MAX_ABSOLUTE_AGE_SECS, 30 * 24 * 60 * 60);
-    assert_eq!(PowCookie::MAX_ABSOLUTE_AGE_SECS, 10 * 60);
     assert_eq!(MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS, 5 * 60);
 }
 
@@ -119,9 +125,6 @@ fn hkdf_vectors_are_pinned() {
     let session = root
         .derive_key::<SessionCookie>(&kid("session-active"))
         .expect("derive session");
-    let pow = root
-        .derive_key::<PowCookie>(&kid("pow-active"))
-        .expect("derive pow");
     let flow = root
         .derive_key::<MagicLinkFlowCookie>(&kid("flow-active"))
         .expect("derive flow");
@@ -131,39 +134,31 @@ fn hkdf_vectors_are_pinned() {
         "eda74d6ba28134ffe9c380e3a14729aa1fa4474dfbf63014a8b82e0325e4b10b"
     );
     assert_eq!(
-        hex::encode(pow.as_bytes()),
-        "4aa0804a52c9437f12e0087883a0f0aa8ef319bea122d3402399f0b3d60d96f6"
-    );
-    assert_eq!(
         hex::encode(flow.as_bytes()),
         "beb04add958a76123ba0d68f4a0294fae6afaaa918652871e78c45db00ab4746"
     );
-}
-
-fn kid(value: &str) -> KeyId {
-    KeyId::parse(value).expect("kid parses")
 }
 
 #[test]
 fn typed_keyring_mints_with_active_and_verifies_with_previous() {
     let root = RootSecret::new([0x33; KEY_BYTES]);
     let active = root
-        .derive_key::<SessionCookie>(&kid("session-active"))
+        .derive_key::<TestCookieA>(&kid("test-active"))
         .expect("active key");
     let previous = root
-        .derive_key::<SessionCookie>(&kid("session-prev"))
+        .derive_key::<TestCookieA>(&kid("test-prev"))
         .expect("previous key");
 
-    let ring = KeyRing::<SessionCookie>::new(
-        kid("session-active"),
+    let ring = KeyRing::<TestCookieA>::new(
+        kid("test-active"),
         vec![
             KeySlot::active_with_windows(
-                kid("session-active"),
+                kid("test-active"),
                 active,
                 10,
-                10 + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
+                10 + TestCookieA::MAX_ABSOLUTE_AGE_SECS,
             ),
-            KeySlot::verify_only(kid("session-prev"), previous, 100),
+            KeySlot::verify_only(kid("test-prev"), previous, 100),
         ],
     )
     .expect("ring builds");
@@ -173,17 +168,17 @@ fn typed_keyring_mints_with_active_and_verifies_with_previous() {
             .expect("mint at boundary")
             .kid()
             .as_str(),
-        "session-active"
+        "test-active"
     );
     assert_eq!(
-        ring.verification_key_at(&kid("session-prev"), 100)
+        ring.verification_key_at(&kid("test-prev"), 100)
             .expect("previous verifies at boundary")
             .status(),
         KeyStatus::VerifyOnly
     );
     assert_eq!(ring.minting_key_at(11).unwrap_err(), TokenError::KeyExpired);
     assert_eq!(
-        ring.verification_key_at(&kid("session-prev"), 101)
+        ring.verification_key_at(&kid("test-prev"), 101)
             .unwrap_err(),
         TokenError::KeyExpired
     );
@@ -193,29 +188,29 @@ fn typed_keyring_mints_with_active_and_verifies_with_previous() {
 fn keyring_rejects_duplicate_or_missing_active_keys() {
     let root = RootSecret::new([0x44; KEY_BYTES]);
     let active_dup = root
-        .derive_key::<PowCookie>(&kid("pow-active"))
+        .derive_key::<TestCookieA>(&kid("test-active"))
         .expect("active key");
     let previous_dup = root
-        .derive_key::<PowCookie>(&kid("pow-active"))
+        .derive_key::<TestCookieA>(&kid("test-active"))
         .expect("previous key");
     let previous_only = root
-        .derive_key::<PowCookie>(&kid("pow-old"))
+        .derive_key::<TestCookieA>(&kid("test-old"))
         .expect("previous key");
 
-    let dup = KeyRing::<PowCookie>::new(
-        kid("pow-active"),
+    let dup = KeyRing::<TestCookieA>::new(
+        kid("test-active"),
         vec![
-            KeySlot::active(kid("pow-active"), active_dup),
-            KeySlot::verify_only(kid("pow-active"), previous_dup, u64::MAX),
+            KeySlot::active(kid("test-active"), active_dup),
+            KeySlot::verify_only(kid("test-active"), previous_dup, u64::MAX),
         ],
     )
     .unwrap_err();
     assert_eq!(dup, TokenError::KeyringMisconfigured);
 
-    let no_active = KeyRing::<PowCookie>::new(
-        kid("pow-active"),
+    let no_active = KeyRing::<TestCookieA>::new(
+        kid("test-active"),
         vec![KeySlot::verify_only(
-            kid("pow-old"),
+            kid("test-old"),
             previous_only,
             u64::MAX,
         )],
@@ -228,16 +223,16 @@ fn keyring_rejects_duplicate_or_missing_active_keys() {
 fn keyring_rejects_active_verify_window_shorter_than_absolute_lifetime() {
     let root = RootSecret::new([0x46; KEY_BYTES]);
     let key = root
-        .derive_key::<SessionCookie>(&kid("session-active"))
+        .derive_key::<TestCookieA>(&kid("test-active"))
         .expect("active key");
 
-    let err = KeyRing::<SessionCookie>::new(
-        kid("session-active"),
+    let err = KeyRing::<TestCookieA>::new(
+        kid("test-active"),
         vec![KeySlot::active_with_windows(
-            kid("session-active"),
+            kid("test-active"),
             key,
             100,
-            100 + SessionCookie::MAX_ABSOLUTE_AGE_SECS - 1,
+            100 + TestCookieA::MAX_ABSOLUTE_AGE_SECS - 1,
         )],
     )
     .unwrap_err();
@@ -249,13 +244,13 @@ fn keyring_rejects_active_verify_window_shorter_than_absolute_lifetime() {
 fn keyring_rejects_active_mint_window_after_verify_window() {
     let root = RootSecret::new([0x45; KEY_BYTES]);
     let key = root
-        .derive_key::<SessionCookie>(&kid("session-active"))
+        .derive_key::<TestCookieA>(&kid("test-active"))
         .expect("active key");
 
-    let err = KeyRing::<SessionCookie>::new(
-        kid("session-active"),
+    let err = KeyRing::<TestCookieA>::new(
+        kid("test-active"),
         vec![KeySlot::active_with_windows(
-            kid("session-active"),
+            kid("test-active"),
             key,
             100,
             50,
@@ -281,11 +276,11 @@ fn retired_keys_are_absent_and_return_unknown_key() {
     // needless liability.
     let root = RootSecret::new([0x55; KEY_BYTES]);
     let active = root
-        .derive_key::<SessionCookie>(&kid("session-active"))
+        .derive_key::<TestCookieA>(&kid("test-active"))
         .expect("active key");
-    let ring = KeyRing::<SessionCookie>::new(
-        kid("session-active"),
-        vec![KeySlot::active(kid("session-active"), active)],
+    let ring = KeyRing::<TestCookieA>::new(
+        kid("test-active"),
+        vec![KeySlot::active(kid("test-active"), active)],
     )
     .expect("ring builds");
 
