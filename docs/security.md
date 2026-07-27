@@ -97,8 +97,8 @@ Rules:
 - PoW difficulty must be configurable with a documented minimum floor; examples may choose development-only low values but production config must be explicit.
 - Challenge formats must be versioned and domain-separated, for example `pow-v1`.
 - Challenge random/nonces must satisfy the bearer entropy table and be MACed/signed.
-- PoW proof cookies must be bound to the challenge, the auth flow, and an app-supplied client key when one is available.
-- In the request-magic-link flow the proof is solved before the email is known, so it cannot be bound to the target email. Cross-email proof reuse is bounded by the per-email HMAC request limiter (`3/15m`, `10/24h`) by design; document this rather than implying per-target binding.
+- PoW proof cookies must be bound to the challenge and the auth flow.
+- PoW admission and any source-specific replay context are independent concerns owned by the consuming application. The magic-link API neither carries nor interprets that context.
 - PoW proof cookies are short-lived auth-flow continuity values, not general bearer sessions.
 - Prefer single-use proof cookies. If multi-request continuity is needed, enforce a small per-proof use cap and reject replay beyond that cap.
 - PoW proof cookies must be cleared on successful auth-flow completion and on terminal auth-flow failure.
@@ -161,7 +161,7 @@ Enumeration-resistant flows must also avoid obvious timing or work-factor differ
 - Missing selector/token records should still perform dummy verifier/MAC work before returning a generic failure.
 - Unknown-user and throttled request-magic-link paths should avoid observable send-vs-suppress timing differences where practical.
 - Do not promise strict matched latency if it would create a denial-of-service risk; prefer bounded dummy work, background/outbox handoff, and generic responses.
-- The GET landing route's flow-state lookup must perform the same dummy work on a selector miss as on a hit, and must be covered by a limiter, so it is neither a timing/guessing oracle nor an unthrottled DB-read denial-of-service vector.
+- The GET landing route's flow-state lookup must perform the same dummy work on a selector miss as on a hit and apply a keyed-selector limit, so it is neither a timing/guessing oracle nor an unthrottled DB-read denial-of-service vector.
 
 ## Configuration
 
@@ -292,52 +292,46 @@ Scanner-safe magic-link flow:
 
 1. The email link opens a `GET` landing route with the token in the URL.
 2. The `GET` route must not consume the token, create a session, or mark the token as used.
-3. The `GET` route creates or validates short-lived flow state bound to the token selector/lookup material and intended account identifier.
+3. The `GET` route creates or validates short-lived flow state bound to the selector, verifier proof, exact account, explicit expiry, and an independent confirmation nonce.
 4. The `GET` route renders a generic confirmation page requiring an explicit user action, such as a “Continue sign in” button.
 5. The confirmation page must identify the account being signed into using safe, user-recognizable text, for example a masked email, without exposing raw token material.
 6. The confirmation action submits a same-origin `POST` consume request bound to the flow state. Do not auto-submit with JavaScript or redirect automatically from `GET` to consume.
-7. The `POST` consume route validates flow-state binding, atomically consumes the token, clears temporary flow/PoW state, creates the session, and redirects with `303 See Other` to a clean URL without token material.
+7. The `POST` consume route validates flow-state binding, atomically consumes the token, clears temporary magic-link flow state, creates the session, and redirects with `303 See Other` to a clean URL without token material.
 
 Implementation rules:
 
 - Do not log full landing/consume URLs, query strings, route captures, or redirect destinations that contain token material.
 - Scrub token path/query fields before tracing, metrics labels, access logs, error reports, and panic payloads.
 - Prefer a short-lived `HttpOnly` flow cookie or server-side nonce between landing and consume so token material is not embedded in HTML forms.
-- Flow state must be bound to the token selector/lookup material, intended account identifier, expiry, and an app-supplied client key. If no client key is available, the per-selector and per-email limits remain the only per-client bound.
+- Flow state must be AEAD-authenticated and bound to the selector, verifier proof, exact account, explicit expiry, and an independently generated confirmation nonce. It must never carry a generic source identity.
 - If a fallback form value must carry token material, it must be short-lived, single-use, `Cache-Control: no-store`, and never rendered with third-party assets.
 - Do not place token values in `Location` headers, JavaScript, analytics events, downstream callback URLs, or clean post-consume pages.
 - Post-consume redirect targets must be fixed, same-origin relative paths or explicit allowlist entries. Do not accept arbitrary `next=`/return URLs.
 - Landing pages must use `Cache-Control: no-store` and no third-party scripts, pixels, stylesheets, or analytics.
 - Landing/confirmation pages must prevent framing with `Content-Security-Policy: frame-ancestors 'none'`; `X-Frame-Options: DENY` may also be sent for older clients.
 - Set or document `Referrer-Policy: no-referrer` or an equivalent policy for magic-link landing/consume flows.
-- Terminal consume failures must clear temporary flow and PoW cookies where the adapter can do so.
+- Terminal consume failures must clear temporary magic-link flow cookies. Independent PoW middleware owns its own proof-cookie lifecycle.
 - Treat scanner safety as protection against GET-only email scanners; active scanners that submit forms are handled by short TTLs, flow-state binding, one-time atomic consume, and generic failure handling.
 - Login CSRF / cross-account sign-in: the flow cookie is minted on a GET the attacker can trigger, so it cannot prove the victim initiated the flow. The primary mitigation is the confirmation page identifying the account (masked email) and the user recognizing it is not theirs. Offer an optional mode where the user re-enters or explicitly confirms the email at consume. State this UX dependency explicitly in consuming apps.
 
 ## Rate limiting and abuse controls
 
-Magic-link request, consume, and PoW flows must have limiter hooks that support non-enumerating abuse resistance.
+Magic-link owns only limiter hooks based on its concrete secret or PII-derived domains:
 
-Limiter keys:
+- `normalized email HMAC` is derived from the exact-match `NormalizedEmail` value with a rate-limit pepper and domain-separated purpose string. It limits requests and outbox sends.
+- `selector-derived key` is derived from magic-link selector lookup material, never the raw selector. It limits landing and consume attempts.
+- Do not store raw emails, raw selectors, raw verifiers, or raw tokens in limiter storage.
 
-- `normalized email HMAC` is derived from the exact-match `NormalizedEmail` value with a rate-limit pepper and domain-separated purpose string.
-- `selector-derived key` is derived from magic-link selector lookup material, never the raw selector.
-- `client key` is supplied by the consuming app. For Axum helpers, derive it from a trusted reverse-proxy client IP only when the request came through configured trusted proxy infrastructure.
-- Do not store raw emails, raw IP addresses, raw selectors, raw verifiers, or raw tokens in limiter storage.
+IP, network-source, global fanout, malformed-request, and PoW admission controls are independent responsibilities of the consuming application or edge. They are not magic-link command fields, flow-state fields, or magic-link limiter domains.
 
 V1 starting thresholds:
 
 | Flow | Limiter key | Suggested threshold | Public response |
 | --- | --- | ---: | --- |
 | Request magic link | normalized email HMAC | 3 per 15 min, 10 per 24h | Always generic accepted |
-| Request magic link | client key | 10 per 10 min, 50 per 1h | Always generic accepted |
 | Email outbox send | normalized email HMAC | 3 per 1h, 10 per 24h | Suppress send, generic accepted |
+| Magic-link landing route | selector-derived key | 30 per 10 min | Generic landing page; no flow state created |
 | Magic-link consume | selector-derived key | 5 failed attempts per token TTL | Generic invalid/expired |
-| Magic-link consume | client key | 20 per 10 min, 100 per 1h | Generic invalid/expired |
-| Malformed consume attempts | client key | 20 per 10 min | Generic invalid/expired |
-| Magic-link landing route | client key + selector-derived key | 30 per 10 min each | Generic landing page; no flow state created |
-| PoW challenge mint | client key | 30 per 10 min | Generic throttled/try later |
-| PoW verify failures | client key | 30 per 10 min | Generic failure |
 
 Rules:
 
@@ -347,7 +341,6 @@ Rules:
 - Limiter storage failures on abuse-sensitive paths should fail closed with a generic try-later response.
 - Per-email request limits intentionally trade availability for inbox-abuse protection; targeted attackers can spend a victim's quota. Document this tradeoff in consuming apps that surface retry guidance.
 - Public responses for throttled, unknown-user, already-consumed, expired, and invalid-token cases must remain generic unless a consuming app explicitly opts into different UX.
-- "Where available" client-key binding is not optional to implement: apps that cannot supply a client key lose only the client-key limiter rows. The per-email and per-selector limits still apply and remain the minimum guarantee. Document in consuming apps that, without a client key, per-client abuse is bounded only by those email/selector limits.
 
 ## One supported way
 
@@ -396,8 +389,8 @@ Before a phase is accepted, confirm:
 - Cookie helpers default to `HttpOnly`, `Secure` outside local development, conservative `SameSite`, host-only scope, explicit path, and explicit TTL.
 - Session logout and compromise flows invalidate server-side session state before clearing cookies.
 - Key material is purpose-separated and rotation states are tested where keyrings exist, including 90-day session rotation, at least 31-day verify-only retention, verify-only rejection for minting, and retired-key rejection.
-- PoW tests cover minimum difficulty config, CSPRNG challenge entropy, challenge/client/flow binding, replay limits, and proof-cookie clearing.
-- Rate-limit hooks cover request, consume, outbox-send, and PoW flows with generic public responses and configurable v1 thresholds, including the documented targeted-lockout tradeoff.
+- PoW tests independently cover minimum difficulty config, CSPRNG challenge entropy, challenge/auth-flow binding, replay limits, and proof-cookie clearing.
+- Magic-link rate-limit hooks cover keyed-email request/outbox and keyed-selector landing/consume flows with generic public responses and configurable v1 thresholds, including the documented targeted-lockout tradeoff; upstream controls are tested by the consuming application or edge.
 - Magic-link URL handling scrubs token material from logs, redirects, headers, and telemetry.
 - Email input tests reject multiple addresses, display-name forms, CR/LF, NUL, control characters, empty values, and values outside documented length limits before send/storage/HMAC use.
 - Timing tests or review checks cover dummy verifier/MAC work on missing records and non-enumerating request paths where practical.

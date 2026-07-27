@@ -50,9 +50,9 @@ dd-magic-link-aws      (optional)
 Dependency direction (adapters are siblings; neither depends on the other):
 
 ```
-dd-auth-token-core      -> dd-pow-core
-dd-magic-link-core     -> dd-auth-token-core, dd-pow-core
-dd-magic-link-service  -> dd-magic-link-core, dd-auth-token-core, dd-pow-core
+dd-auth-token-core      -> (no workspace crates)
+dd-magic-link-core     -> dd-auth-token-core
+dd-magic-link-service  -> dd-magic-link-core, dd-auth-token-core
 dd-magic-link-axum     -> dd-magic-link-service
 dd-magic-link-aws      -> dd-magic-link-service
 ```
@@ -87,16 +87,21 @@ infrastructure — for storage, rate limiting, an email delivery hook (named
 `MagicLinkOutbox`, but not necessarily durable), clock, and randomness.
 Implements the reusable core of:
 
-- **request:** validate caller-decoded input → rate limit → create challenge
-  → ask the app-provided delivery hook to deliver or durably enqueue the email
-- **landing:** validate and rate limit without consuming → identify the exact
-  account → mint short-lived, token/account/client-bound confirmation state
-- **confirmation:** verify bound state locally → atomically consume the challenge
+- **request:** validate caller-decoded input → apply keyed normalized-email limits
+  → create challenge → ask the app-provided delivery hook to deliver or durably
+  enqueue the email under its keyed normalized-email outbox limit
+- **landing:** validate and apply a keyed-selector limit without consuming →
+  identify the exact account → mint short-lived confirmation state bound to the
+  selector, verifier proof, exact account, expiry, and an independent nonce
+- **confirmation:** verify bound state locally, including its keyed-selector limit
+  → atomically consume the challenge
   with user/session creation → return the encrypted session cookie value
 - **session:** validate cookie freshness plus server-side state, and support
   revocation without sliding refresh
 
-Public errors are generic and non-enumerating. No Axum or AWS dependency.
+Public errors are generic and non-enumerating. IP, global, malformed-request,
+and PoW admission controls belong to the consuming application or edge and are
+not magic-link API inputs. No Axum or AWS dependency.
 
 ### `dd-magic-link-axum`
 
@@ -163,9 +168,10 @@ The only login path is scanner-safe:
    flow cookie plus a separate confirmation value.
 2. The confirmation page shows the account and submits the confirmation value
    by same-origin `POST`; it never embeds the raw magic-link token.
-3. The POST handler calls `confirm_magic_link_flow(...)`, which verifies the
-   token/account/client-bound state, mints the encrypted session cookie value, and
-   asks the authentication repository to consume the challenge and create
+3. The POST handler calls `confirm_magic_link_flow(...)`, which verifies state
+   bound to the selector, verifier proof, exact account, expiry, and independent
+   nonce, mints the encrypted session cookie value, and asks the authentication
+   repository to consume the challenge and create
    user/session state atomically.
 4. The API applies that value with policy-derived attributes using the Axum
    helpers and maps only the generic outcome into its own fixed redirect or error

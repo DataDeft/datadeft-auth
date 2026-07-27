@@ -16,9 +16,9 @@
 Allowed dependency graph:
 
 ```text
-dd-auth-token-core      -> dd-pow-core
-dd-magic-link-core     -> dd-auth-token-core, dd-pow-core
-dd-magic-link-service  -> dd-magic-link-core, dd-auth-token-core, dd-pow-core
+dd-auth-token-core      -> (no workspace crates)
+dd-magic-link-core     -> dd-auth-token-core
+dd-magic-link-service  -> dd-magic-link-core, dd-auth-token-core
 dd-magic-link-axum     -> dd-magic-link-service
 dd-magic-link-aws      -> dd-magic-link-service
 examples/*             -> adapter and service crates as needed

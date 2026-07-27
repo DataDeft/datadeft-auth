@@ -45,13 +45,13 @@ These decisions need owner input. Safe interim defaults are for local extraction
 | Decision | Policy |
 | --- | --- |
 | Email identity and normalization | Use exact match on an app-provided normalized email value. Do not do provider-specific aliasing: no Gmail dot folding, no plus-address/tag stripping, and no hidden provider-specific case rules. The consuming app owns any case normalization before constructing `NormalizedEmail`. Reject multiple addresses, display names, CR/LF, NUL, control characters, empty values, and values outside documented length limits before storage, HMAC, rate limiting, or sending. |
-| Cookie names and scope | Use normal lower `snake_case` cookie names, optionally app-prefixed, for example `dd_session`. Do not require `__Host-` or `__Secure-` prefixes for the first version. Primary session cookies use explicit `Path=/`, host-only scope by default, `HttpOnly`, `Secure` outside local development, `SameSite=Lax`, and explicit TTL. Temporary auth helper cookies use the narrowest practical auth path unless they intentionally need app-wide access. Clear temporary auth/PoW cookies on terminal failures. |
-| Magic-link URL and post-consume redirect | Use a scanner-safe click-to-confirm flow. The email link opens a `GET` landing route with the token in the URL, but `GET` must not consume the token or create a session. The flow state must bind to token selector/lookup material and intended account. The user clicks a same-origin `POST` confirmation. The confirmation page identifies the account being signed into and prevents framing. The `POST` atomically consumes the token, clears temporary flow state, creates the session, and redirects with `303 See Other` to a fixed/same-origin/allowlisted clean URL without token material. Example paths are configurable; docs/examples may use `GET /auth/magic-link`, `POST /auth/magic-link/consume`, and redirect `/auth/complete`. |
+| Cookie names and scope | Use normal lower `snake_case` cookie names, optionally app-prefixed, for example `dd_session`. Do not require `__Host-` or `__Secure-` prefixes for the first version. Primary session cookies use explicit `Path=/`, host-only scope by default, `HttpOnly`, `Secure` outside local development, `SameSite=Lax`, and explicit TTL. Temporary helpers use the narrowest practical path unless they intentionally need app-wide access. Each independent flow owns and clears its own temporary cookies on terminal failures. |
+| Magic-link URL and post-consume redirect | Use a scanner-safe click-to-confirm flow. The email link opens a `GET` landing route with the token in the URL, but `GET` must not consume the token or create a session. AEAD-authenticated flow state binds the selector, verifier proof, exact account, explicit expiry, and an independent confirmation nonce. The user clicks a same-origin `POST` confirmation. The confirmation page identifies the account being signed into and prevents framing. The `POST` atomically consumes the token, clears temporary flow state, creates the session, and redirects with `303 See Other` to a fixed/same-origin/allowlisted clean URL without token material. Example paths are configurable; docs/examples may use `GET /auth/magic-link`, `POST /auth/magic-link/consume`, and redirect `/auth/complete`. |
 | Token and cookie TTL baseline | Use `magic_link_ttl=10m`, `magic_link_flow_ttl=5m`, `pow_challenge_ttl=5m`, `pow_proof_cookie_ttl=10m`, `session_idle_ttl=24h`, `session_absolute_ttl=30d`, and 24h cleanup grace after expiry. Server-side expiry wins; cookies must not outlive the server-side validity they represent. |
 | Bearer entropy baseline | Use CSPRNG entropy: magic-link selectors at least 128 bits, verifiers at least 256 bits, session IDs/tokens at least 256 bits, flow/CSRF nonces at least 128 bits, and PoW challenge nonces at least 128 bits. Deterministic entropy is allowed only in tests. |
-| PoW baseline | Difficulty is configurable with a documented production floor. PoW challenge formats are versioned/domain-separated. PoW proof cookies bind to challenge, auth flow, and app-supplied client key where available; prefer single-use, otherwise enforce a small per-proof use cap. |
+| PoW baseline | Difficulty is configurable with a documented production floor. PoW challenge formats are versioned/domain-separated. PoW proof cookies bind to their challenge and auth flow; prefer single-use, otherwise enforce a small per-proof use cap. PoW admission is independently owned by the consuming application. |
 | Session revocation | Default session model supports server-side invalidation. Logout and compromise response invalidate server-side state/revocation handles before clearing cookies. Stateless-only sessions are not the default and must document shorter TTL/tradeoffs if a consuming app opts into them. |
-| Rate-limit thresholds and client keys | Use configurable v1 starting thresholds: request magic link by email HMAC `3/15m` and `10/24h`; request magic link by client key `10/10m` and `50/1h`; email outbox by email HMAC `3/1h` and `10/24h`; consume by selector `5` failed attempts per token TTL; consume by client key `20/10m` and `100/1h`; malformed consume by client key `20/10m`; PoW challenge mint by client key `30/10m`; PoW verify failures by client key `30/10m`. Client keys are app-supplied; Axum helpers may derive HMACs from trusted reverse-proxy client IPs only when configured. Document targeted per-email throttling as an availability tradeoff. |
+| Abuse-control ownership | Magic-link owns configurable keyed normalized-email limits for requests (`3/15m`, `10/24h`) and outbox sends (`3/1h`, `10/24h`), plus keyed-selector limits for landing (`30/10m`) and consume (`5` failed attempts per token TTL). IP, network-source, global fanout, malformed-request, and PoW controls are independent consuming-application or edge concerns and do not appear in magic-link APIs. Document targeted per-email throttling as an availability tradeoff. |
 | Secret manager abstraction | Production uses AWS Secrets Manager. Use an extremely thin `SupportedSecretManager` enum with `AwsSecretsManager` as the v1 supported variant plus redacted `SecretRef` config. Core crates accept loaded key material/keyrings only; AWS SDK lookup lives in adapter/setup code, not core. |
 | Key rotation cadence | For 30-day session validity, rotate session/cookie keys about every 90 days and retain the previous key verify-only for at least 31 days. Map `AWSCURRENT` to active and `AWSPREVIOUS` to verify-only when rotation is enabled. Magic-link and PoW keys retain previous material only for their short TTL plus 24h cleanup grace. Do not rotate session keys faster than verify-only retention unless explicit older verify-only refs are supported. |
 | AWS adapter timing | Build framework-neutral service traits and fakes first, then extract DynamoDB/SES/AWS Secrets Manager adapters after one-time consume, rate-limit, outbox, and scanner-safe flow contracts pass service tests. AWS code must satisfy the service contract, not define it. |
@@ -89,7 +89,7 @@ Initial mapping:
 | `dd-auth-token-core` | `backends/crypto`, session cookie and PoW cookie code from `backends/domain/src/auth/*`, shared domain `types/errors` as needed |
 | `dd-magic-link-core` | magic-link token grammar, selector/verifier types, redacted debug, verifier HMAC helpers from `backends/domain/src/auth/*` |
 | `dd-magic-link-service` | request/consume orchestration, `auth_store.rs`, repo/limiter/outbox abstractions, domain `types/errors` as needed |
-| `dd-magic-link-axum` | `backends/api/src/api/pow.rs`, `backends/api/src/api/session/*`, Axum handlers/body guards/cookie response helpers |
+| `dd-magic-link-axum` | `backends/api/src/api/session/*`, magic-link Axum handlers/body guards/cookie response helpers |
 | `dd-magic-link-aws` | `backends/adapters/src/dynamodb/{sessions,users,rate_counters,fake}.rs`, `backends/adapters/src/ses.rs` |
 | `dd-protect-client` | `frontends/pow` |
 | `examples/axum-magic-link` | minimal app wiring service + Axum + fake or AWS adapters |
@@ -179,9 +179,9 @@ Must:
 - Use core crates for token/session behavior.
 - Enforce one-time magic-link consumption with an atomic store transition before or in the same transaction as session creation.
 - Enforce expiration and generic public failures for missing, invalid, expired, consumed, throttled, and unknown-user cases.
-- Bind scanner-safe flow state to token selector/lookup material, intended account identifier, expiry, and app-supplied client key where available.
+- Bind AEAD-authenticated scanner-safe flow state to the selector, verifier proof, exact account, explicit expiry, and an independent confirmation nonce.
 - Avoid obvious existence timing leaks with bounded dummy verifier/MAC work on missing records and non-enumerating request paths where practical.
-- Provide limiter hooks for request, consume, and outbox-send flows by normalized-email HMAC, selector-derived key, and app-supplied client key.
+- Provide limiter hooks for request/outbox flows by normalized-email HMAC and landing/consume flows by selector-derived key. Leave IP, global, malformed-request, and PoW controls upstream.
 - Support logout and compromise invalidation through a session repository/revocation handle.
 - Keep public flow errors generic and non-enumerating.
 - Include fake/in-memory test implementations where useful.
@@ -204,7 +204,7 @@ Must:
 - Scrub token material from logs, route captures, query strings, redirects, headers, and telemetry.
 - Implement scanner-safe magic-link flow: `GET` landing renders a click-to-confirm page without consuming; same-origin `POST` validates bound flow state and consumes atomically; success redirects with `303 See Other` to a fixed/same-origin/allowlisted clean URL without token material.
 - Send anti-framing headers on landing/confirmation pages, preferably `Content-Security-Policy: frame-ancestors 'none'` and optionally `X-Frame-Options: DENY`.
-- Clear temporary flow and PoW cookies on successful auth-flow completion and terminal failures.
+- Clear temporary magic-link flow cookies on successful authentication and terminal failures; independent middleware owns unrelated temporary state.
 - Include handler tests with fake service/storage.
 
 Must not:
@@ -276,7 +276,7 @@ Each library agent must:
 | Auth token core | `crates/dd-auth-token-core/` | `backends/crypto`, auth/session code, `dd-pow-core` API | `cargo test -p dd-auth-token-core --all-features` |
 | Magic-link core | `crates/dd-magic-link-core/` | auth magic-link code, `dd-auth-token-core` API | `cargo test -p dd-magic-link-core --all-features` |
 | Magic-link service | `crates/dd-magic-link-service/` | domain auth flows, `auth_store.rs`, core APIs | `cargo test -p dd-magic-link-service --all-features` |
-| Axum adapter | `crates/dd-magic-link-axum/` | API pow/session handlers, service API | `cargo test -p dd-magic-link-axum --all-features` |
+| Axum adapter | `crates/dd-magic-link-axum/` | magic-link/session HTTP handlers, service API | `cargo test -p dd-magic-link-axum --all-features` |
 | AWS adapter | `crates/dd-magic-link-aws/` | DynamoDB/SES adapters, service traits | `cargo test -p dd-magic-link-aws --all-features` |
 | Browser client | `packages/dd-protect-client/` | `frontends/pow`, `dd-pow-core` vectors | package test/build command once chosen |
 | Example/integration | `examples/axum-magic-link/` and consuming-project dependency config | all published local crates | example compile + consuming project tests |
@@ -369,8 +369,8 @@ Tests required:
 - Request/consume flows use traits for all IO.
 - Magic-link consume is one-time and atomic relative to session creation.
 - Replay and concurrent consume/race tests pass against service fakes.
-- Scanner-safe flow tests prove flow-state binding to token/account and generic failure on mismatch.
-- Limiter hooks cover request, consume, outbox-send, and PoW flows by sensitive keyed material and app-supplied client keys, with configurable v1 thresholds and documented targeted-lockout tradeoff.
+- Scanner-safe flow tests prove binding to selector, verifier proof, exact account, expiry, and independent nonce, with generic failure on mismatch.
+- Limiter hooks cover keyed-email request/outbox and keyed-selector landing/consume flows with configurable v1 thresholds and the documented targeted-lockout tradeoff; upstream controls remain outside magic-link service APIs.
 - Bounded dummy work/non-enumerating path tests or review checks cover missing records and send-vs-suppress paths where practical.
 - Fakes cover store, limiter, users, sessions, outbox, clock, rng, and revocation/session invalidation.
 - Public errors are generic, safe, and non-enumerating.
@@ -382,7 +382,7 @@ Tests required:
 - Cookie helpers default to normal lower `snake_case` names, `HttpOnly`, `Secure` outside local development, conservative `SameSite`, host-only scope, explicit `Path=/` for primary session cookies, narrow auth paths for temporary helper cookies where practical, and explicit TTL.
 - Magic-link handlers scrub token material from logs, route/query fields, redirects, headers, and telemetry.
 - Magic-link `GET` landing route does not consume or create a session, requires explicit user click/confirmation, identifies the account being signed into, and prevents framing.
-- Magic-link `POST` consume route validates bound flow state, atomically consumes the token, clears temporary flow/PoW state, creates the session, and redirects with `303 See Other` to a fixed/same-origin/allowlisted clean URL without token material.
+- Magic-link `POST` consume route validates bound flow state, atomically consumes the token, clears temporary magic-link flow state, creates the session, and redirects with `303 See Other` to a fixed/same-origin/allowlisted clean URL without token material.
 
 ### Phase 6 acceptance
 
