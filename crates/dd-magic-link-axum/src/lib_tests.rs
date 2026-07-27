@@ -329,7 +329,6 @@ fn session_cookie_uses_validated_idle_policy_and_clear_parity() {
         .expect("ascii")
         .to_owned();
     let clear = clear_session_cookie_header(&config)
-        .expect("clear")
         .to_str()
         .expect("ascii")
         .to_owned();
@@ -365,6 +364,58 @@ fn invalid_session_policy_and_insecure_samesite_none_are_rejected() {
 }
 
 #[test]
+fn precomputed_clear_headers_match_freshly_built_ones() {
+    // The from_static default constants and every construction path must stay
+    // byte-for-byte in lockstep with cookie_header's wire format.
+    let cases = [
+        (AuthFlowCookieConfig::production_defaults().flow().clone()),
+        (AuthFlowCookieConfig::local_development_defaults()
+            .flow()
+            .clone()),
+        (TemporaryCookieConfig::production("custom_flow", "/custom").expect("custom flow")),
+    ];
+    for flow in cases {
+        let fresh = cookie_header(
+            flow.name(),
+            "",
+            flow.path(),
+            flow.secure(),
+            flow.same_site(),
+            Some(0),
+            true,
+        )
+        .expect("fresh clear header builds");
+        assert_eq!(clear_temporary_cookie_header(&flow), fresh);
+    }
+
+    let sessions = [
+        SessionCookieConfig::production(&policy()).expect("production"),
+        SessionCookieConfig::local_development(&policy()).expect("local"),
+        SessionCookieConfig::production(&policy())
+            .expect("production")
+            .with_name("custom_session")
+            .expect("name")
+            .with_path("/app")
+            .expect("path")
+            .with_same_site(SameSite::Strict)
+            .expect("same-site"),
+    ];
+    for session in sessions {
+        let fresh = cookie_header(
+            session.name(),
+            "",
+            session.path(),
+            session.secure(),
+            session.same_site(),
+            Some(0),
+            true,
+        )
+        .expect("fresh clear header builds");
+        assert_eq!(clear_session_cookie_header(&session), fresh);
+    }
+}
+
+#[test]
 fn temporary_cookie_defaults_lifetime_and_clear_are_strict() {
     let production = AuthFlowCookieConfig::production_defaults();
     let flow = production.flow();
@@ -379,7 +430,6 @@ fn temporary_cookie_defaults_lifetime_and_clear_are_strict() {
         .expect("ascii")
         .to_owned();
     let clear = clear_temporary_cookie_header(flow)
-        .expect("clear")
         .to_str()
         .expect("ascii")
         .to_owned();

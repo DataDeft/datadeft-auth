@@ -349,13 +349,11 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
     response
         .headers_mut()
         .insert(LOCATION, HeaderValue::from_static("/"));
-    match clear_session_cookie_header(state.http_config.session_cookie()) {
-        Ok(clear) => {
-            response.headers_mut().append(SET_COOKIE, clear);
-            response
-        }
-        Err(error) => error.into_response(),
-    }
+    response.headers_mut().append(
+        SET_COOKIE,
+        clear_session_cookie_header(state.http_config.session_cookie()),
+    );
+    response
 }
 
 async fn dev_latest_magic_link(State(state): State<AppState>) -> Response {

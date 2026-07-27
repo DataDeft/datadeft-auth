@@ -62,6 +62,16 @@ const REFERRER_POLICY: HeaderName = HeaderName::from_static("referrer-policy");
 const SEC_FETCH_SITE: HeaderName = HeaderName::from_static("sec-fetch-site");
 const X_FRAME_OPTIONS: HeaderName = HeaderName::from_static("x-frame-options");
 const COOKIE_EPOCH: &str = "Thu, 01 Jan 1970 00:00:00 GMT";
+
+/// Precomputed clear headers for the default cookie shapes, so the infallible
+/// `*_defaults()` constructors need no fallible header build. Each must stay
+/// byte-for-byte in lockstep with [`cookie_header`] output — pinned by the
+/// `precomputed_clear_headers_match_freshly_built_ones` test.
+const DEFAULT_FLOW_CLEAR_HEADER: &str = "dd_auth_flow=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
+const DEFAULT_FLOW_CLEAR_HEADER_INSECURE: &str = "dd_auth_flow=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
+const DEFAULT_SESSION_CLEAR_HEADER: &str = "dd_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
+const DEFAULT_SESSION_CLEAR_HEADER_INSECURE: &str =
+    "dd_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
 const TERMINAL_INVALID_BODY: &str = "Invalid confirmation.\n";
 
 /// Public HTTP error variants for general-purpose request-magic-link helpers.
@@ -291,6 +301,7 @@ pub struct TemporaryCookieConfig {
     path: String,
     secure: bool,
     same_site: SameSite,
+    clear_header: HeaderValue,
 }
 
 impl TemporaryCookieConfig {
@@ -311,11 +322,14 @@ impl TemporaryCookieConfig {
     fn build(name: String, path: String, secure: bool) -> Result<Self, CookieConfigError> {
         validate_cookie_name(&name)?;
         validate_cookie_path(&path)?;
+        let same_site = SameSite::Lax;
+        let clear_header = build_clear_cookie_header(&name, &path, secure, same_site)?;
         Ok(Self {
             name,
             path,
             secure,
-            same_site: SameSite::Lax,
+            same_site,
+            clear_header,
         })
     }
 
@@ -360,6 +374,7 @@ impl AuthFlowCookieConfig {
                 path: DEFAULT_TEMPORARY_COOKIE_PATH.to_owned(),
                 secure: true,
                 same_site: SameSite::Lax,
+                clear_header: HeaderValue::from_static(DEFAULT_FLOW_CLEAR_HEADER),
             },
         }
     }
@@ -368,6 +383,7 @@ impl AuthFlowCookieConfig {
     pub fn local_development_defaults() -> Self {
         let mut defaults = Self::production_defaults();
         defaults.flow.secure = false;
+        defaults.flow.clear_header = HeaderValue::from_static(DEFAULT_FLOW_CLEAR_HEADER_INSECURE);
         defaults
     }
 
@@ -385,6 +401,7 @@ pub struct SessionCookieConfig {
     max_age_secs: u64,
     secure: bool,
     same_site: SameSite,
+    clear_header: HeaderValue,
 }
 
 impl SessionCookieConfig {
@@ -397,6 +414,7 @@ impl SessionCookieConfig {
             max_age_secs: max_age.idle_secs,
             secure: true,
             same_site: SameSite::Lax,
+            clear_header: HeaderValue::from_static(DEFAULT_SESSION_CLEAR_HEADER),
         })
     }
 
@@ -406,6 +424,7 @@ impl SessionCookieConfig {
     ) -> Result<Self, MagicLinkConfigError> {
         let mut config = Self::production(policy)?;
         config.secure = false;
+        config.clear_header = HeaderValue::from_static(DEFAULT_SESSION_CLEAR_HEADER_INSECURE);
         Ok(config)
     }
 
@@ -413,6 +432,7 @@ impl SessionCookieConfig {
         let name = name.into();
         validate_cookie_name(&name)?;
         self.name = name;
+        self.rebuild_clear_header()?;
         Ok(self)
     }
 
@@ -420,6 +440,7 @@ impl SessionCookieConfig {
         let path = path.into();
         validate_cookie_path(&path)?;
         self.path = path;
+        self.rebuild_clear_header()?;
         Ok(self)
     }
 
@@ -428,7 +449,14 @@ impl SessionCookieConfig {
             return Err(CookieConfigError::SameSiteNoneRequiresSecure);
         }
         self.same_site = same_site;
+        self.rebuild_clear_header()?;
         Ok(self)
+    }
+
+    fn rebuild_clear_header(&mut self) -> Result<(), CookieConfigError> {
+        self.clear_header =
+            build_clear_cookie_header(&self.name, &self.path, self.secure, self.same_site)?;
+        Ok(())
     }
 
     #[must_use]
@@ -729,19 +757,13 @@ pub fn session_set_cookie_header(
     )
 }
 
-/// Create a byte-for-byte attribute-parity session clear header.
-pub fn clear_session_cookie_header(
-    config: &SessionCookieConfig,
-) -> Result<HeaderValue, MagicLinkHttpError> {
-    cookie_header(
-        config.name(),
-        "",
-        config.path(),
-        config.secure(),
-        config.same_site(),
-        Some(0),
-        true,
-    )
+/// The byte-for-byte attribute-parity session clear header.
+///
+/// Precomputed when the config is constructed; this is a cheap refcounted
+/// clone, not a per-response format-and-parse.
+#[must_use]
+pub fn clear_session_cookie_header(config: &SessionCookieConfig) -> HeaderValue {
+    config.clear_header.clone()
 }
 
 /// Create a temporary auth-cookie set header with a lifetime in
@@ -769,19 +791,13 @@ pub fn set_temporary_cookie_header(
     )
 }
 
-/// Create a byte-for-byte attribute-parity temporary auth-cookie clear header.
-pub fn clear_temporary_cookie_header(
-    config: &TemporaryCookieConfig,
-) -> Result<HeaderValue, MagicLinkHttpError> {
-    cookie_header(
-        config.name(),
-        "",
-        config.path(),
-        config.secure(),
-        config.same_site(),
-        Some(0),
-        true,
-    )
+/// The byte-for-byte attribute-parity temporary auth-cookie clear header.
+///
+/// Precomputed when the config is constructed; this is a cheap refcounted
+/// clone, not a per-response format-and-parse.
+#[must_use]
+pub fn clear_temporary_cookie_header(config: &TemporaryCookieConfig) -> HeaderValue {
+    config.clear_header.clone()
 }
 
 /// Handle a JSON magic-link request with a generic public response.
@@ -1170,21 +1186,13 @@ fn scanner_plain_response(
 }
 
 fn append_temporary_clears(headers: &mut HeaderMap, config: &AuthFlowCookieConfig) {
-    if let Ok(clear) = clear_temporary_cookie_header(config.flow()) {
-        headers.append(SET_COOKIE, clear);
-    }
+    headers.append(SET_COOKIE, clear_temporary_cookie_header(config.flow()));
 }
 
 fn session_unauthorized(config: &SessionCookieConfig) -> SessionAuthRejection {
-    match clear_session_cookie_header(config) {
-        Ok(clear_cookie) => SessionAuthRejection {
-            disposition: SessionHttpError::Unauthorized,
-            clear_cookie: Some(clear_cookie),
-        },
-        Err(_) => SessionAuthRejection {
-            disposition: SessionHttpError::Internal,
-            clear_cookie: None,
-        },
+    SessionAuthRejection {
+        disposition: SessionHttpError::Unauthorized,
+        clear_cookie: Some(clear_session_cookie_header(config)),
     }
 }
 
@@ -1526,6 +1534,20 @@ fn is_valid_cookie_value(value: &str) -> bool {
         && value.len() <= MAX_SELECTED_COOKIE_VALUE_BYTES
         && value.bytes().all(is_cookie_octet)
         && !value.starts_with('"')
+}
+
+/// Build the byte-for-byte clear header for a validated cookie shape. Runs at
+/// config-construction time only; responses clone the stored value.
+fn build_clear_cookie_header(
+    name: &str,
+    path: &str,
+    secure: bool,
+    same_site: SameSite,
+) -> Result<HeaderValue, CookieConfigError> {
+    // A validated name/path always forms a legal header value, so this error
+    // path is unreachable; it maps to the fallible inputs rather than panicking.
+    cookie_header(name, "", path, secure, same_site, Some(0), true)
+        .map_err(|_| CookieConfigError::InvalidName)
 }
 
 fn cookie_header(
