@@ -392,7 +392,7 @@ async fn landing_limits_deny<Limiter: RateLimiter>(
         config.rate_limits.landing_selector_limit,
         config.rate_limits.landing_selector_window_secs,
     )];
-    any_limit_denied(limiter, &checks, now_unix).await
+    any_limit_denied(limiter, checks, now_unix).await
 }
 
 fn validate_scanner_candidate(
@@ -605,7 +605,7 @@ async fn request_and_outbox_limits_deny<Limiter: RateLimiter>(
             limits.outbox_email_daily_window_secs,
         ),
     ];
-    any_limit_denied(limiter, &checks, now_unix).await
+    any_limit_denied(limiter, checks, now_unix).await
 }
 
 async fn consume_limits_deny<Limiter: RateLimiter>(
@@ -619,7 +619,7 @@ async fn consume_limits_deny<Limiter: RateLimiter>(
         config.rate_limits.consume_selector_limit,
         config.magic_link_ttl_secs,
     )];
-    any_limit_denied(limiter, &checks, now_unix).await
+    any_limit_denied(limiter, checks, now_unix).await
 }
 
 /// Run every `(key, limit, window_secs)` check concurrently; report whether
@@ -633,20 +633,18 @@ async fn consume_limits_deny<Limiter: RateLimiter>(
 /// limiter state is unknown, so the request fails closed as unavailable.
 async fn any_limit_denied<Limiter: RateLimiter>(
     limiter: &Limiter,
-    checks: &[(String, u32, u64)],
+    checks: impl IntoIterator<Item = (String, u32, u64)>,
     now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
-    let keys = checks
-        .iter()
-        .map(|(key, _, _)| RateLimitKey::parse(key))
-        .collect::<Result<Vec<_>, _>>()?;
-    let decisions = join_all(
-        keys.iter()
-            .zip(checks)
-            .map(|(key, (_, limit, window_secs))| {
-                limiter.check_rate_limit(key, *limit, *window_secs, now_unix)
-            }),
-    )
+    let checks: Vec<(RateLimitKey, u32, u64)> = checks
+        .into_iter()
+        .map(|(key, limit, window_secs)| {
+            (RateLimitKey::from_service_built(key), limit, window_secs)
+        })
+        .collect();
+    let decisions = join_all(checks.iter().map(|(key, limit, window_secs)| {
+        limiter.check_rate_limit(key, *limit, *window_secs, now_unix)
+    }))
     .await;
 
     let mut denied = false;
@@ -845,31 +843,41 @@ where
     .map_err(MagicLinkServiceError::from)
 }
 
+/// Draw `BYTES` random bytes and render `{prefix}_{lowercase hex}` — the
+/// canonical id shape the typed wrappers' service-built constructors expect.
+fn generate_prefixed_hex_id<R: RngCore + CryptoRng + ?Sized, const BYTES: usize>(
+    rng: &mut R,
+    prefix: &str,
+) -> Result<String, MagicLinkServiceError> {
+    let mut bytes = [0u8; BYTES];
+    rng.try_fill_bytes(&mut bytes)
+        .map_err(|_| MagicLinkServiceError::Unavailable)?;
+    Ok(format!("{prefix}_{}", hex::encode(bytes)))
+}
+
 fn generate_user_id<R: RngCore + CryptoRng + ?Sized>(
     rng: &mut R,
 ) -> Result<UserId, MagicLinkServiceError> {
-    let mut bytes = [0u8; 16];
-    rng.try_fill_bytes(&mut bytes)
-        .map_err(|_| MagicLinkServiceError::Unavailable)?;
-    UserId::parse(&format!("usr_{}", hex::encode(bytes)))
+    Ok(UserId::from_service_built(
+        generate_prefixed_hex_id::<_, 16>(rng, "usr")?,
+    ))
 }
 
 fn generate_session_id<R: RngCore + CryptoRng + ?Sized>(
     rng: &mut R,
 ) -> Result<SessionId, MagicLinkServiceError> {
-    let mut bytes = [0u8; 32];
-    rng.try_fill_bytes(&mut bytes)
-        .map_err(|_| MagicLinkServiceError::Unavailable)?;
-    SessionId::parse(&format!("sid_{}", hex::encode(bytes)))
+    Ok(SessionId::from_service_built(generate_prefixed_hex_id::<
+        _,
+        32,
+    >(rng, "sid")?))
 }
 
 fn generate_authentication_attempt_id<R: RngCore + CryptoRng + ?Sized>(
     rng: &mut R,
 ) -> Result<AuthenticationAttemptId, MagicLinkServiceError> {
-    let mut bytes = [0u8; 16];
-    rng.try_fill_bytes(&mut bytes)
-        .map_err(|_| MagicLinkServiceError::Unavailable)?;
-    AuthenticationAttemptId::parse(&format!("aid_{}", hex::encode(bytes)))
+    Ok(AuthenticationAttemptId::from_service_built(
+        generate_prefixed_hex_id::<_, 16>(rng, "aid")?,
+    ))
 }
 
 fn map_dependency_error(error: DependencyError) -> MagicLinkServiceError {

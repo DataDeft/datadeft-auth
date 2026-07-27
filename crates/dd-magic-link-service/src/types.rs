@@ -59,6 +59,17 @@ impl RateLimitKey {
         }
     }
 
+    /// Wrap a key the service itself assembled from validated components,
+    /// without re-scanning or re-allocating it. Debug builds re-check the
+    /// canonical form; untrusted input must go through [`Self::parse`].
+    pub(crate) fn from_service_built(value: String) -> Self {
+        debug_assert!(
+            is_valid_key_component(&value, 256),
+            "service-built rate-limit key must be canonical"
+        );
+        Self(value)
+    }
+
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -82,6 +93,17 @@ impl UserId {
         } else {
             Err(MagicLinkServiceError::Internal)
         }
+    }
+
+    /// Wrap an id the service generated itself (`usr_` + 32 lowercase hex),
+    /// without re-scanning or re-allocating it. Debug builds re-check the
+    /// canonical form; untrusted input must go through [`Self::parse`].
+    pub(crate) fn from_service_built(value: String) -> Self {
+        debug_assert!(
+            is_prefixed_hex_id(&value, "usr_", 32),
+            "service-built user id must be canonical"
+        );
+        Self(value)
     }
 
     #[must_use]
@@ -108,6 +130,17 @@ impl SessionId {
         } else {
             Err(MagicLinkServiceError::Internal)
         }
+    }
+
+    /// Wrap an id the service generated itself (`sid_` + 64 lowercase hex),
+    /// without re-scanning or re-allocating it. Debug builds re-check the
+    /// canonical form; untrusted input must go through [`Self::parse`].
+    pub(crate) fn from_service_built(value: String) -> Self {
+        debug_assert!(
+            is_prefixed_hex_id(&value, "sid_", 64),
+            "service-built session id must be canonical"
+        );
+        Self(value)
     }
 
     #[must_use]
@@ -303,6 +336,17 @@ impl AuthenticationAttemptId {
         } else {
             Err(MagicLinkServiceError::Internal)
         }
+    }
+
+    /// Wrap an id the service generated itself (`aid_` + 32 lowercase hex),
+    /// without re-scanning or re-allocating it. Debug builds re-check the
+    /// canonical form; untrusted input must go through [`Self::parse`].
+    pub(crate) fn from_service_built(value: String) -> Self {
+        debug_assert!(
+            is_prefixed_hex_id(&value, "aid_", 32),
+            "service-built attempt id must be canonical"
+        );
+        Self(value)
     }
 
     #[must_use]
