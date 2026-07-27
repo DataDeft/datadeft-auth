@@ -28,10 +28,10 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use dd_magic_link_service::{
     BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, ConfirmMagicLinkFlowCommand,
-    ConfirmMagicLinkFlowOutcome, EmailLocale, MAX_RAW_MAGIC_LINK_TOKEN_BYTES, MagicLinkConfigError,
-    MagicLinkFlowError, MagicLinkServiceConfig, MagicLinkServiceError, NormalizedEmail,
-    RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionValidationError,
-    TemporaryAuthStateAction, ValidatedSession,
+    ConfirmMagicLinkFlowOutcome, EmailLocale, KeyPurpose, MAX_RAW_MAGIC_LINK_TOKEN_BYTES,
+    MagicLinkConfigError, MagicLinkFlowCookie, MagicLinkFlowError, MagicLinkServiceConfig,
+    MagicLinkServiceError, NormalizedEmail, RequestMagicLinkCommand, RequestMagicLinkOutcome,
+    SessionValidationError, TemporaryAuthStateAction, ValidatedSession,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
@@ -269,8 +269,6 @@ impl SameSite {
 pub enum CookieConfigError {
     InvalidName,
     InvalidPath,
-    ZeroMaxAge,
-    MaxAgeExceedsFlowCap,
     SameSiteNoneRequiresSecure,
 }
 
@@ -279,8 +277,6 @@ impl fmt::Display for CookieConfigError {
         f.write_str(match self {
             Self::InvalidName => "invalid cookie name",
             Self::InvalidPath => "invalid cookie path",
-            Self::ZeroMaxAge => "cookie max age must be nonzero",
-            Self::MaxAgeExceedsFlowCap => "cookie max age exceeds flow cap",
             Self::SameSiteNoneRequiresSecure => "SameSite=None requires Secure",
         })
     }
@@ -748,13 +744,18 @@ pub fn clear_session_cookie_header(
     )
 }
 
-/// Create a temporary auth-cookie set header with a lifetime in `1..=300`.
+/// Create a temporary auth-cookie set header with a lifetime in
+/// `1..=`[`MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS`] (the flow-cookie cap
+/// owned by the service layer).
 pub fn set_temporary_cookie_header(
     config: &TemporaryCookieConfig,
     value: &str,
     max_age_secs: u64,
 ) -> Result<HeaderValue, MagicLinkHttpError> {
-    if max_age_secs == 0 || max_age_secs > 300 || !is_valid_cookie_value(value) {
+    if max_age_secs == 0
+        || max_age_secs > MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS
+        || !is_valid_cookie_value(value)
+    {
         return Err(MagicLinkHttpError::Internal);
     }
     cookie_header(
