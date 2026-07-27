@@ -184,10 +184,12 @@ proptest! {
     /// LEADING 0x00 byte carries no digit weight and is dropped on the round
     /// trip. This crate only ever encodes Branca tokens, whose first byte is
     /// the fixed 0xBA version, so that domain restriction matches real usage.
+    /// The size range reaches realistic Branca blob sizes so the chunked
+    /// conversion is exercised across many chunk-boundary lengths.
     #[test]
     fn prop_base62_round_trip(
         first in 1u8..=255,
-        rest in prop::collection::vec(any::<u8>(), 0..64),
+        rest in prop::collection::vec(any::<u8>(), 0..512),
     ) {
         let mut bytes = vec![first];
         bytes.extend_from_slice(&rest);

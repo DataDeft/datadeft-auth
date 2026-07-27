@@ -116,6 +116,13 @@ impl Encoding {
     }
 
     /// Encode `src` to base62 bytes.
+    ///
+    /// Schoolbook radix conversion, chunked: input is consumed in 4-byte
+    /// big-endian limbs, so each pass computes `result * 2^(8*len) + chunk`
+    /// and the pass count is a quarter of byte-at-a-time. Overflow bound: a
+    /// digit is `< 62` and the carry provably stays `<= 2^32` (the fixed
+    /// point of `c -> (c + 61*2^32) / 62`), so the largest intermediate is
+    /// `62 * 2^32 < 2^38`, far inside `u64`.
     #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
@@ -130,15 +137,20 @@ impl Encoding {
         let mut result = vec![0u8; allocated_len];
         let mut significant_digits = 0;
 
-        for &byte in src {
-            let mut digits_this_pass = 0;
-            let mut carry = usize::from(byte);
+        for chunk in src.chunks(4) {
+            let mut chunk_value: u64 = 0;
+            for &byte in chunk {
+                chunk_value = (chunk_value << 8) | u64::from(byte);
+            }
+            let shift_bits = 8 * chunk.len() as u32;
 
+            let mut digits_this_pass = 0;
+            let mut carry = chunk_value;
             for idx in (0..allocated_len).rev() {
                 if carry == 0 && digits_this_pass >= significant_digits {
                     break;
                 }
-                carry += 256 * usize::from(result[idx]);
+                carry += u64::from(result[idx]) << shift_bits;
                 #[allow(clippy::cast_possible_truncation)]
                 let digit = (carry % 62) as u8;
                 result[idx] = digit;
@@ -153,11 +165,9 @@ impl Encoding {
             *digit = self.encode[usize::from(*digit)];
         }
 
-        if allocated_len > significant_digits {
-            result[allocated_len - significant_digits..].to_vec()
-        } else {
-            result
-        }
+        let start_idx = allocated_len.saturating_sub(significant_digits);
+        result.drain(..start_idx);
+        result
     }
 
     /// Encode `src` to a base62 [`String`].
@@ -182,6 +192,14 @@ impl Encoding {
     /// [`Base62Error::InvalidByte`], never skipped. This strictness is what
     /// makes decoding injective for inputs without a leading `'0'` digit —
     /// token layers rely on it for canonical, non-malleable spellings.
+    ///
+    /// Schoolbook radix conversion, chunked: digits are consumed five at a
+    /// time (`62^5 < 2^30` is the largest power of 62 that keeps the math in
+    /// `u64`), so each pass computes `result * 62^len + chunk` and the pass
+    /// count is a fifth of digit-at-a-time. Overflow bound: a result byte is
+    /// `< 256` and the carry provably stays `<= 62^5` (the fixed point of
+    /// `c -> (c + 255 * 62^5) / 256`), so the largest intermediate is
+    /// `256 * 62^5 < 2^38`, far inside `u64`.
     pub fn decode(&self, src: &[u8]) -> Result<Vec<u8>, Base62Error> {
         if src.is_empty() {
             return Ok(Vec::new());
@@ -195,22 +213,28 @@ impl Encoding {
         let allocated_len = ((src.len() as f64) * (62_f64.ln() / 256_f64.ln())).ceil() as usize;
         let mut result = vec![0u8; allocated_len];
         let mut significant_digits = 0;
+        let mut position = 0usize;
 
-        for (position, &byte) in src.iter().enumerate() {
-            let mut digits_this_pass = 0;
-            let decoded_val = self.decode_map[usize::from(byte)];
-
-            if decoded_val == 0xFF {
-                return Err(Base62Error::InvalidByte { byte, position });
+        for chunk in src.chunks(5) {
+            let mut chunk_value: u64 = 0;
+            for &byte in chunk {
+                let decoded_val = self.decode_map[usize::from(byte)];
+                if decoded_val == 0xFF {
+                    return Err(Base62Error::InvalidByte { byte, position });
+                }
+                chunk_value = chunk_value * 62 + u64::from(decoded_val);
+                position += 1;
             }
+            #[allow(clippy::cast_possible_truncation)]
+            let multiplier = 62_u64.pow(chunk.len() as u32);
 
-            let mut carry = usize::from(decoded_val);
-
+            let mut digits_this_pass = 0;
+            let mut carry = chunk_value;
             for idx in (0..allocated_len).rev() {
                 if carry == 0 && digits_this_pass >= significant_digits {
                     break;
                 }
-                carry += 62 * usize::from(result[idx]);
+                carry += u64::from(result[idx]) * multiplier;
                 #[allow(clippy::cast_possible_truncation)]
                 let byte_val = (carry % 256) as u8;
                 result[idx] = byte_val;
