@@ -2,11 +2,10 @@
 
 use std::sync::Arc;
 
-use dd_auth_token_core::keyring::{
-    KeyId, KeyPurpose, KeyRing, KeySlot, MagicLinkFlowCookie, RootSecret, SessionCookie,
-};
+use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie};
 use dd_magic_link_core::{
-    LookupHmac, LookupHmacKey, MagicLinkToken, NormalizedEmail, selector_lookup_hmac, verifier_hash,
+    LookupHmac, LookupHmacKey, MagicLinkFlowCookie, MagicLinkToken, NormalizedEmail,
+    selector_lookup_hmac, verifier_hash,
 };
 use dd_magic_link_service::{
     AuthenticationAttemptId, BeginMagicLinkLandingCommand, Clock, CommitMagicLinkAuthentication,

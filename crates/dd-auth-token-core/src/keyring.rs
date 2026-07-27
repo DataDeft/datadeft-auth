@@ -67,12 +67,8 @@ use crate::error::TokenError;
 pub const KEY_BYTES: usize = 32;
 /// HKDF-SHA256 info string for session-cookie Branca keys.
 pub const HKDF_INFO_SESSION_COOKIE_V1: &[u8] = b"auth/session-v1";
-/// HKDF-SHA256 info string for magic-link flow-cookie Branca keys.
-pub const HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1: &[u8] = b"auth/magic-link-flow-v1";
 /// Encrypted payload `typ` for session cookies.
 pub const TOKEN_TYPE_SESSION_COOKIE_V1: &str = "session-v1";
-/// Encrypted payload `typ` for magic-link flow cookies.
-pub const TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1: &str = "ml-flow-v1";
 
 /// HKDF purpose marker for keys derived from a [`RootSecret`].
 pub trait KeyPurpose {
@@ -99,17 +95,6 @@ impl KeyPurpose for SessionCookie {
     const TOKEN_TYPE: &'static str = TOKEN_TYPE_SESSION_COOKIE_V1;
     const MAX_BODY_BYTES: usize = 128;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
-}
-
-/// Short-lived magic-link confirmation flow-cookie key purpose.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum MagicLinkFlowCookie {}
-
-impl KeyPurpose for MagicLinkFlowCookie {
-    const HKDF_INFO: &'static [u8] = HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1;
-    const TOKEN_TYPE: &'static str = TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1;
-    const MAX_BODY_BYTES: usize = 256;
-    const MAX_ABSOLUTE_AGE_SECS: u64 = 5 * 60;
 }
 
 /// Loaded root secret material.
@@ -192,6 +177,15 @@ impl<P> BrancaKey<P> {
     }
 
     pub(crate) fn as_bytes(&self) -> &[u8; KEY_BYTES] {
+        &self.bytes
+    }
+
+    /// Expose derived key bytes so downstream crates that own a purpose can pin
+    /// HKDF output vectors in their tests. Never available to production
+    /// builds without the explicit `test-support` opt-in.
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn as_test_bytes(&self) -> &[u8; KEY_BYTES] {
         &self.bytes
     }
 }

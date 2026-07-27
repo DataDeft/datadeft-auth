@@ -4,9 +4,7 @@ use core::num::NonZeroU32;
 
 use dd_auth_token_core::branca;
 use dd_auth_token_core::cookie::{max_body_bytes, mint_bound_cookie};
-use dd_auth_token_core::keyring::{
-    KEY_BYTES, KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie,
-};
+use dd_auth_token_core::keyring::{KEY_BYTES, KeyId, KeyRing, KeySlot, RootSecret, SessionCookie};
 use rand_core::{CryptoRng, RngCore};
 use zeroize::Zeroize;
 
@@ -106,6 +104,41 @@ fn mint_flow(
 ) -> MintedMagicLinkFlow {
     let mut rng = PatternRng::new();
     mint_magic_link_flow(bindings(expires_at_unix), ring, &mut rng, now_unix).expect("flow mints")
+}
+
+#[test]
+fn flow_purpose_constants_are_pinned() {
+    assert_eq!(
+        HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1,
+        b"auth/magic-link-flow-v1"
+    );
+    assert_eq!(
+        MagicLinkFlowCookie::HKDF_INFO,
+        HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1
+    );
+    assert_eq!(TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1, "ml-flow-v1");
+    assert_eq!(
+        MagicLinkFlowCookie::TOKEN_TYPE,
+        TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1
+    );
+    assert_eq!(MagicLinkFlowCookie::MAX_BODY_BYTES, 256);
+    assert_eq!(MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS, 5 * 60);
+}
+
+#[test]
+fn flow_hkdf_vector_is_pinned() {
+    // HKDF-SHA256 with salt=None, IKM=[0x11; 32], L=32,
+    // info = HKDF_INFO || 0x00 || kid. This vector pins the exact info framing;
+    // changing it invalidates every flow cookie minted under the previous key.
+    let root = RootSecret::new([0x11; KEY_BYTES]);
+    let flow = root
+        .derive_key::<MagicLinkFlowCookie>(&kid("flow-active"))
+        .expect("derive flow");
+
+    assert_eq!(
+        hex::encode(flow.as_test_bytes()),
+        "beb04add958a76123ba0d68f4a0294fae6afaaa918652871e78c45db00ab4746"
+    );
 }
 
 #[test]

@@ -8,10 +8,8 @@ use axum::extract::Request;
 use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE, COOKIE, LOCATION, ORIGIN, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::IntoResponse;
-use dd_auth_token_core::keyring::{
-    KeyId, KeyPurpose, KeyRing, KeySlot, MagicLinkFlowCookie, RootSecret, SessionCookie,
-};
-use dd_magic_link_core::{LookupHmac, LookupHmacKey, NormalizedEmail};
+use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie};
+use dd_magic_link_core::{LookupHmac, LookupHmacKey, MagicLinkFlowCookie, NormalizedEmail};
 use dd_magic_link_service::{
     BeginMagicLinkLandingCommand, Clock, CommitMagicLinkAuthentication,
     CommitMagicLinkAuthenticationError, ConfirmMagicLinkFlowCommand, DependencyError, EmailLocale,

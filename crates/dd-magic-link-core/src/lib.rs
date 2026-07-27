@@ -20,8 +20,8 @@ pub use error::MagicLinkError;
 pub use flow_cookie::{
     FlowAccountBinding, FlowSelectorBinding, FlowVerifierBinding, MAGIC_LINK_FLOW_BINDING_BYTES,
     MAGIC_LINK_FLOW_MAX_AGE_SECS, MagicLinkFlowBindings, MagicLinkFlowConfirmation,
-    MagicLinkFlowCookieValue, MintedMagicLinkFlow, VerifiedMagicLinkFlow, mint_magic_link_flow,
-    verify_magic_link_flow,
+    MagicLinkFlowCookie, MagicLinkFlowCookieValue, MintedMagicLinkFlow, VerifiedMagicLinkFlow,
+    mint_magic_link_flow, verify_magic_link_flow,
 };
 pub use hmac_lookup::{
     EMAIL_LOOKUP_PREFIX, HMAC_KEY_BYTES, LookupHmac, LookupHmacKey, SELECTOR_LOOKUP_PREFIX,

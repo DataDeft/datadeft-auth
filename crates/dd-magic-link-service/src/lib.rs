@@ -19,9 +19,11 @@ pub mod types;
 
 pub use config::{MagicLinkConfigError, MagicLinkServiceConfig, RateLimitConfig};
 pub use dd_auth_token_core::keyring::{
-    KeyId, KeyPurpose, KeyRing, KeySlot, MagicLinkFlowCookie, RootSecret, SessionCookie,
+    KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie,
 };
-pub use dd_magic_link_core::{LookupHmac, LookupHmacKey, NormalizedEmail, VerifierHash};
+pub use dd_magic_link_core::{
+    LookupHmac, LookupHmacKey, MagicLinkFlowCookie, NormalizedEmail, VerifierHash,
+};
 pub use error::{
     CommitMagicLinkAuthenticationError, DependencyError, MagicLinkFlowError, MagicLinkServiceError,
     TemporaryAuthStateAction,

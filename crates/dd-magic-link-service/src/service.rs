@@ -6,9 +6,10 @@
 //! randomness policy.
 
 use dd_auth_token_core::cookie::mint_bound_cookie;
-use dd_auth_token_core::keyring::{KeyRing, MagicLinkFlowCookie, SessionCookie};
+use dd_auth_token_core::keyring::{KeyRing, SessionCookie};
 use dd_magic_link_core::flow_cookie::{
-    MagicLinkFlowBindings, VerifiedMagicLinkFlow, mint_magic_link_flow, verify_magic_link_flow,
+    MagicLinkFlowBindings, MagicLinkFlowCookie, VerifiedMagicLinkFlow, mint_magic_link_flow,
+    verify_magic_link_flow,
 };
 use dd_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkToken, VerifierHash, email_lookup_hmac,

@@ -19,15 +19,14 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use dd_auth_token_core::keyring::{
-    KeyId, KeyPurpose, KeyRing, KeySlot, MagicLinkFlowCookie, RootSecret, SessionCookie,
-};
+use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie};
 use dd_magic_link_axum::{
     APPLICATION_JSON, AuthFlowCookieConfig, MagicLinkHttpError, MagicLinkRequestJson,
     MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect, SessionCookieConfig,
     authenticate_session, clear_session_cookie_header, generic_accepted_response, guarded_body,
     handle_magic_link_confirmation, handle_magic_link_landing,
 };
+use dd_magic_link_core::MagicLinkFlowCookie;
 use dd_magic_link_core::{LookupHmac, LookupHmacKey, NormalizedEmail};
 use dd_magic_link_service::{
     Clock, CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, DependencyError,

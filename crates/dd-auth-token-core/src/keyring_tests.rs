@@ -93,26 +93,11 @@ fn root_secret_derives_deterministic_kid_and_purpose_separated_keys() {
 #[test]
 fn hkdf_info_strings_are_versioned_constants() {
     assert_eq!(HKDF_INFO_SESSION_COOKIE_V1, b"auth/session-v1");
-    assert_eq!(
-        HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1,
-        b"auth/magic-link-flow-v1"
-    );
     assert_eq!(SessionCookie::HKDF_INFO, HKDF_INFO_SESSION_COOKIE_V1);
-    assert_eq!(
-        MagicLinkFlowCookie::HKDF_INFO,
-        HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1
-    );
     assert_eq!(TOKEN_TYPE_SESSION_COOKIE_V1, "session-v1");
-    assert_eq!(TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1, "ml-flow-v1");
     assert_eq!(SessionCookie::TOKEN_TYPE, TOKEN_TYPE_SESSION_COOKIE_V1);
-    assert_eq!(
-        MagicLinkFlowCookie::TOKEN_TYPE,
-        TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1
-    );
     assert_eq!(SessionCookie::MAX_BODY_BYTES, 128);
-    assert_eq!(MagicLinkFlowCookie::MAX_BODY_BYTES, 256);
     assert_eq!(SessionCookie::MAX_ABSOLUTE_AGE_SECS, 30 * 24 * 60 * 60);
-    assert_eq!(MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS, 5 * 60);
 }
 
 #[test]
@@ -125,17 +110,10 @@ fn hkdf_vectors_are_pinned() {
     let session = root
         .derive_key::<SessionCookie>(&kid("session-active"))
         .expect("derive session");
-    let flow = root
-        .derive_key::<MagicLinkFlowCookie>(&kid("flow-active"))
-        .expect("derive flow");
 
     assert_eq!(
         hex::encode(session.as_bytes()),
         "eda74d6ba28134ffe9c380e3a14729aa1fa4474dfbf63014a8b82e0325e4b10b"
-    );
-    assert_eq!(
-        hex::encode(flow.as_bytes()),
-        "beb04add958a76123ba0d68f4a0294fae6afaaa918652871e78c45db00ab4746"
     );
 }
 

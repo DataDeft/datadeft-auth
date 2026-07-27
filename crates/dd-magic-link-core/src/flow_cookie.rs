@@ -10,12 +10,32 @@ use core::fmt;
 
 use dd_auth_token_core::TokenError;
 use dd_auth_token_core::cookie::{MaxAge, mint_bound_cookie, parse_bound_cookie};
-use dd_auth_token_core::keyring::{KeyPurpose, KeyRing, MagicLinkFlowCookie};
+use dd_auth_token_core::keyring::{KeyPurpose, KeyRing};
 use rand_core::{CryptoRng, RngCore};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 
 use crate::magic_link::is_lower_hex_len;
+
+/// HKDF-SHA256 info string for magic-link flow-cookie Branca keys.
+pub const HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1: &[u8] = b"auth/magic-link-flow-v1";
+/// Encrypted payload `typ` for magic-link flow cookies.
+pub const TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1: &str = "ml-flow-v1";
+
+/// Short-lived magic-link confirmation flow-cookie key purpose.
+///
+/// Owned here — next to the flow that uses it — so the five-minute policy and
+/// the versioned derivation constants live with the feature, not in the
+/// generic token crate.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum MagicLinkFlowCookie {}
+
+impl KeyPurpose for MagicLinkFlowCookie {
+    const HKDF_INFO: &'static [u8] = HKDF_INFO_MAGIC_LINK_FLOW_COOKIE_V1;
+    const TOKEN_TYPE: &'static str = TOKEN_TYPE_MAGIC_LINK_FLOW_COOKIE_V1;
+    const MAX_BODY_BYTES: usize = 256;
+    const MAX_ABSOLUTE_AGE_SECS: u64 = 5 * 60;
+}
 
 /// Hard maximum age for a magic-link flow cookie: five minutes.
 pub const MAGIC_LINK_FLOW_MAX_AGE_SECS: u64 = MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS;
