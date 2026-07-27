@@ -19,6 +19,18 @@ This repo must never contain:
 
 - Magic-link tokens are one-time secret bearer credentials.
 - Store only keyed lookup material, never raw token parts, raw selectors, or raw verifiers.
+- **Storage keying is adapter-owned by decision (2026-07-27).** The repository
+  traits pass raw `SessionId` / `NormalizedEmail` / `RateLimitKey` values, and
+  each storage adapter must key them (via the shared
+  `dd_magic_link_core::domain_separated_lookup_hmac` framing, under its own
+  domain and secret — see `StorageHmacKey` in `dd-magic-link-aws`) before any
+  value reaches storage. The type system does not enforce this: a new
+  repository implementation that stores raw ids would compile. Accepted
+  because every adapter is first-party; any new adapter MUST replicate the
+  keying (the `dd-magic-link-aws` pinned `sih`/`emh`/`rlh` vectors are the
+  reference), and this decision must be revisited before accepting
+  third-party adapters. Moving derivation into the service later changes
+  every stored partition key and requires a data migration.
 - Session cookies must be encrypted/authenticated.
 - Token kinds must be domain-separated so one token type cannot validate as another.
 - Verification must fail closed, including unknown key IDs, expired values, malformed inputs, and storage races.
