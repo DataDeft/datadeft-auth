@@ -32,6 +32,7 @@ use dd_magic_link_service::{
     MagicLinkConfigError, MagicLinkFlowCookie, MagicLinkFlowError, MagicLinkServiceConfig,
     MagicLinkServiceError, NormalizedEmail, RequestMagicLinkCommand, RequestMagicLinkOutcome,
     SessionValidationError, TemporaryAuthStateAction, ValidatedSession,
+    contains_magic_link_token_marker,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
@@ -1589,7 +1590,7 @@ fn is_safe_same_origin_path(value: &str) -> bool {
         && value.len() <= 2048
         && value.is_ascii()
         && !value.contains('\\')
-        && !value.contains("mlv1.")
+        && !contains_magic_link_token_marker(value)
         && !value
             .bytes()
             .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())

@@ -22,6 +22,24 @@ use crate::error::MagicLinkError;
 /// Magic-link token wire-format version prefix.
 pub const MAGIC_LINK_TOKEN_VERSION_PREFIX: &str = "mlv1";
 
+/// True if `value` embeds anything shaped like a magic-link token: the
+/// versioned wire prefix immediately followed by its `.` separator.
+///
+/// Owned here, next to the grammar, so outer-layer guards (for example
+/// redirect-target checks in HTTP adapters) track a token version bump
+/// automatically instead of hard-coding the current spelling.
+#[must_use]
+pub fn contains_magic_link_token_marker(value: &str) -> bool {
+    value
+        .match_indices(MAGIC_LINK_TOKEN_VERSION_PREFIX)
+        .any(|(index, _)| {
+            value
+                .as_bytes()
+                .get(index + MAGIC_LINK_TOKEN_VERSION_PREFIX.len())
+                == Some(&b'.')
+        })
+}
+
 /// Raw selector entropy bytes.
 pub const SELECTOR_BYTES: usize = 16;
 /// Raw verifier entropy bytes.

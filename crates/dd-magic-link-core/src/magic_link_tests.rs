@@ -95,3 +95,25 @@ fn debug_output_redacts_token_parts() {
     assert_eq!(format!("{:?}", token.selector()), "MagicLinkSelector(..)");
     assert_eq!(format!("{:?}", token.verifier()), "MagicLinkVerifier(..)");
 }
+
+#[test]
+fn token_marker_predicate_tracks_the_wire_grammar() {
+    // A rendered token must always trip the marker — this is the property the
+    // redirect-target guard in the HTTP layer depends on across version bumps.
+    let raw = "mlv1.000102030405060708090a0b0c0d0e0f.101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f";
+    let token = MagicLinkToken::parse(raw).expect("token parses");
+    assert!(contains_magic_link_token_marker(
+        token.as_secret_value().as_str()
+    ));
+
+    // Embedded anywhere, including mid-path and after other text.
+    assert!(contains_magic_link_token_marker("/signed-in?t=mlv1.a.b"));
+    assert!(contains_magic_link_token_marker("xmlv1.y"));
+
+    // The bare prefix without its separator is not a token shape, and other
+    // versions/spellings do not match this guard.
+    assert!(!contains_magic_link_token_marker("mlv1"));
+    assert!(!contains_magic_link_token_marker("/mlv1x/path"));
+    assert!(!contains_magic_link_token_marker("/plain/path"));
+    assert!(!contains_magic_link_token_marker(""));
+}

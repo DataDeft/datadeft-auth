@@ -32,4 +32,5 @@ pub use hmac_lookup::{
 pub use magic_link::{
     MAGIC_LINK_TOKEN_VERSION_PREFIX, MagicLinkSelector, MagicLinkToken, MagicLinkVerifier,
     SELECTOR_BYTES, SELECTOR_HEX_LEN, VERIFIER_BYTES, VERIFIER_HEX_LEN,
+    contains_magic_link_token_marker,
 };
