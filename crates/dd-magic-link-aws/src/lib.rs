@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+mod config;
 mod error;
 mod fake;
 mod hmac_key;
@@ -15,6 +16,12 @@ mod ses;
 #[cfg(feature = "aws")]
 mod dynamodb;
 
+#[cfg(feature = "aws")]
+pub use config::resolve_auth_secrets;
+pub use config::{
+    AuthSecretsConfig, AwsAuthConfig, DynamoDbAuthStoreConfig, LoadedAuthSecrets, SecretRef,
+    SecretVersionRef, SesAuthEmailConfig, SupportedSecretManager,
+};
 pub use error::AwsAdapterError;
 pub use fake::{FakeDynamoDbAuthStore, UserSessionIndexEntry};
 pub use hmac_key::{SESSION_LOOKUP_HMAC_PREFIX, STORAGE_HMAC_KEY_BYTES, StorageHmacKey};

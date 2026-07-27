@@ -51,6 +51,8 @@ use aws_sdk_dynamodb::operation::{
     update_item::UpdateItemError,
 };
 #[cfg(feature = "aws")]
+use aws_sdk_secretsmanager::operation::get_secret_value::GetSecretValueError;
+#[cfg(feature = "aws")]
 use aws_sdk_sesv2::operation::send_email::SendEmailError;
 
 #[cfg(feature = "aws")]
@@ -160,6 +162,24 @@ pub(crate) fn map_ses_send_email_error(
         return AwsAdapterError::DependencyUnavailable;
     }
     fallback_debug_classification(&format!("{error:?}"))
+}
+
+#[cfg(feature = "aws")]
+pub(crate) fn map_secretsmanager_get_secret_value_error(
+    error: aws_sdk_secretsmanager::error::SdkError<GetSecretValueError>,
+) -> AwsAdapterError {
+    match error.code() {
+        Some(
+            "AccessDeniedException"
+            | "DecryptionFailure"
+            | "InternalServiceError"
+            | "InvalidParameterException"
+            | "InvalidRequestException"
+            | "ResourceNotFoundException"
+            | "ThrottlingException",
+        ) => AwsAdapterError::DependencyUnavailable,
+        Some(_) | None => fallback_debug_classification(&format!("{error:?}")),
+    }
 }
 
 #[cfg(feature = "aws")]

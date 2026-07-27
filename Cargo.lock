@@ -95,6 +95,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-secretsmanager"
+version = "1.78.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04f96b46a81d4e6e213f6e614dbc22b8babec9c5f7a0f48afed47219d88ec6c0"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 0.2.12",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-sesv2"
 version = "1.85.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -339,6 +361,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "base64-simd"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -521,13 +549,17 @@ name = "dd-magic-link-aws"
 version = "0.1.0"
 dependencies = [
  "aws-sdk-dynamodb",
+ "aws-sdk-secretsmanager",
  "aws-sdk-sesv2",
+ "base64",
  "dd-auth-token-core",
  "dd-magic-link-core",
  "dd-magic-link-service",
  "hex",
  "hmac",
  "rand_core 0.6.4",
+ "serde",
+ "serde_json",
  "sha2",
  "tokio",
  "zeroize",
