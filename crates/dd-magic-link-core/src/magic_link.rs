@@ -175,7 +175,7 @@ impl fmt::Debug for MagicLinkToken {
     }
 }
 
-fn is_lower_hex_len(value: &str, len: usize) -> bool {
+pub(crate) fn is_lower_hex_len(value: &str, len: usize) -> bool {
     value.len() == len
         && value
             .bytes()

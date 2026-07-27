@@ -1,19 +1,21 @@
 //! Purpose-separated encrypted state for scanner-safe magic-link confirmation.
 //!
-//! This module carries only fixed-size, keyed bindings. It never carries a raw
+//! Built on the generic bound-cookie primitives in `dd-auth-token-core`. This
+//! module carries only fixed-size, keyed bindings. It never carries a raw
 //! magic-link token, selector, verifier, or account identifier. The
 //! caller derives the bindings, supplies the current time and an injected CSPRNG,
 //! and caps the explicit expiry by the remaining magic-link lifetime.
 
 use core::fmt;
 
+use dd_auth_token_core::TokenError;
+use dd_auth_token_core::cookie::{MaxAge, mint_bound_cookie, parse_bound_cookie};
+use dd_auth_token_core::keyring::{KeyPurpose, KeyRing, MagicLinkFlowCookie};
 use rand_core::{CryptoRng, RngCore};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 
-use crate::TokenError;
-use crate::cookie::{MaxAge, mint_bound_cookie, parse_bound_cookie};
-use crate::keyring::{KeyPurpose, KeyRing, MagicLinkFlowCookie};
+use crate::magic_link::is_lower_hex_len;
 
 /// Hard maximum age for a magic-link flow cookie: five minutes.
 pub const MAGIC_LINK_FLOW_MAX_AGE_SECS: u64 = MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS;
@@ -25,7 +27,6 @@ const MAGIC_LINK_FLOW_NONCE_BYTES: usize = 32;
 const FLOW_BODY_V1: u8 = 1;
 const CONFIRMATION_HEX_BYTES: usize = MAGIC_LINK_FLOW_NONCE_BYTES * 2;
 const FLOW_BODY_BYTES: usize = 133;
-const LOWER_HEX: &[u8; 16] = b"0123456789abcdef";
 
 /// Keyed selector identity bound into a magic-link confirmation flow.
 pub struct FlowSelectorBinding([u8; MAGIC_LINK_FLOW_BINDING_BYTES]);
@@ -43,10 +44,10 @@ impl FlowSelectorBinding {
         self.0.ct_eq(&other.0).unwrap_u8() == 1
     }
 
-    /// Borrow the sensitive binding bytes for a narrow typed conversion in the
-    /// magic-link core crate. Do not log or compare these bytes directly.
+    /// Borrow the sensitive binding bytes to rebuild the canonical storage
+    /// form. Do not log or compare these bytes directly.
     #[must_use]
-    pub fn as_sensitive_bytes(&self) -> &[u8; MAGIC_LINK_FLOW_BINDING_BYTES] {
+    pub(crate) fn as_sensitive_bytes(&self) -> &[u8; MAGIC_LINK_FLOW_BINDING_BYTES] {
         &self.0
     }
 }
@@ -79,10 +80,10 @@ impl FlowVerifierBinding {
         self.0.ct_eq(&other.0).unwrap_u8() == 1
     }
 
-    /// Borrow the sensitive binding bytes for a narrow typed conversion in the
-    /// magic-link core crate. Do not log or compare these bytes directly.
+    /// Borrow the sensitive binding bytes to rebuild the canonical storage
+    /// form. Do not log or compare these bytes directly.
     #[must_use]
-    pub fn as_sensitive_bytes(&self) -> &[u8; MAGIC_LINK_FLOW_BINDING_BYTES] {
+    pub(crate) fn as_sensitive_bytes(&self) -> &[u8; MAGIC_LINK_FLOW_BINDING_BYTES] {
         &self.0
     }
 }
@@ -313,7 +314,7 @@ where
 
     Ok(MintedMagicLinkFlow {
         cookie: MagicLinkFlowCookieValue(cookie),
-        confirmation: MagicLinkFlowConfirmation(encode_lower_hex(&confirmation_nonce.0)),
+        confirmation: MagicLinkFlowConfirmation(hex::encode(&confirmation_nonce.0)),
     })
 }
 
@@ -448,41 +449,20 @@ fn take_array<const N: usize>(body: &[u8], offset: &mut usize) -> Result<[u8; N]
     Ok(value)
 }
 
-fn encode_lower_hex(bytes: &[u8; MAGIC_LINK_FLOW_NONCE_BYTES]) -> String {
-    let mut encoded = String::with_capacity(CONFIRMATION_HEX_BYTES);
-    for byte in bytes {
-        encoded.push(char::from(LOWER_HEX[usize::from(byte >> 4)]));
-        encoded.push(char::from(LOWER_HEX[usize::from(byte & 0x0f)]));
-    }
-    encoded
-}
-
 fn parse_confirmation(value: &str) -> Result<MagicLinkFlowNonce, TokenError> {
-    if value.len() != CONFIRMATION_HEX_BYTES {
+    // `hex::decode_to_slice` alone would accept uppercase spellings; the
+    // canonical-form check must stay charset-strict.
+    if !is_lower_hex_len(value, CONFIRMATION_HEX_BYTES) {
         return Err(TokenError::InvalidToken);
     }
     let mut decoded = [0u8; MAGIC_LINK_FLOW_NONCE_BYTES];
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
-        let (Some(high), Some(low)) = (
-            decode_lower_hex_nibble(pair[0]),
-            decode_lower_hex_nibble(pair[1]),
-        ) else {
-            decoded.zeroize();
-            return Err(TokenError::InvalidToken);
-        };
-        decoded[index] = (high << 4) | low;
+    if hex::decode_to_slice(value, &mut decoded).is_err() {
+        decoded.zeroize();
+        return Err(TokenError::InvalidToken);
     }
     let nonce = MagicLinkFlowNonce(decoded);
     decoded.zeroize();
     Ok(nonce)
-}
-
-fn decode_lower_hex_nibble(value: u8) -> Option<u8> {
-    match value {
-        b'0'..=b'9' => Some(value - b'0'),
-        b'a'..=b'f' => Some(value - b'a' + 10),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

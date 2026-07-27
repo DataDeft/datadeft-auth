@@ -20,3 +20,6 @@ rand_core = "0.6"
 sha2 = "0.10"
 subtle = "2"
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+dd-auth-token-core = { path = "../dd-auth-token-core", features = ["test-support"] }

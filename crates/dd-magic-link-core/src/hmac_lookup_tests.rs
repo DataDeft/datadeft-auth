@@ -2,10 +2,8 @@
 
 use super::*;
 use crate::email::NormalizedEmail;
+use crate::flow_cookie::MAGIC_LINK_FLOW_BINDING_BYTES;
 use crate::magic_link::{MagicLinkSelector, MagicLinkVerifier};
-use dd_auth_token_core::flow_cookie::{
-    FlowAccountBinding, FlowSelectorBinding, FlowVerifierBinding, MAGIC_LINK_FLOW_BINDING_BYTES,
-};
 
 fn key() -> LookupHmacKey {
     LookupHmacKey::new([0x42; HMAC_KEY_BYTES])

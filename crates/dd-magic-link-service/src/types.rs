@@ -2,8 +2,8 @@
 
 use core::fmt;
 
-use dd_auth_token_core::flow_cookie::MintedMagicLinkFlow;
 use dd_auth_token_core::keyring::{KeyPurpose, SessionCookie};
+use dd_magic_link_core::flow_cookie::MintedMagicLinkFlow;
 use dd_magic_link_core::{LookupHmac, MagicLinkToken, NormalizedEmail, VerifierHash};
 use zeroize::Zeroize;
 

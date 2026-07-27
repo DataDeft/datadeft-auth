@@ -5,9 +5,6 @@
 
 use core::fmt;
 
-use dd_auth_token_core::flow_cookie::{
-    FlowAccountBinding, FlowSelectorBinding, FlowVerifierBinding,
-};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
@@ -15,6 +12,7 @@ use zeroize::Zeroize;
 
 use crate::email::NormalizedEmail;
 use crate::error::MagicLinkError;
+use crate::flow_cookie::{FlowAccountBinding, FlowSelectorBinding, FlowVerifierBinding};
 use crate::magic_link::{MagicLinkSelector, MagicLinkVerifier};
 
 type HmacSha256 = Hmac<Sha256>;

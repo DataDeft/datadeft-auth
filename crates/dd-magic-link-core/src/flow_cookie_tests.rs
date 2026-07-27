@@ -2,13 +2,15 @@
 
 use core::num::NonZeroU32;
 
+use dd_auth_token_core::branca;
+use dd_auth_token_core::cookie::{max_body_bytes, mint_bound_cookie};
+use dd_auth_token_core::keyring::{
+    KEY_BYTES, KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie,
+};
 use rand_core::{CryptoRng, RngCore};
 use zeroize::Zeroize;
 
 use super::*;
-use crate::branca;
-use crate::cookie::{max_body_bytes, mint_bound_cookie};
-use crate::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie};
 
 struct PatternRng {
     calls: u8,
@@ -81,7 +83,7 @@ fn kid(value: &str) -> KeyId {
 }
 
 fn flow_ring(root_byte: u8, kid_value: &str) -> KeyRing<MagicLinkFlowCookie> {
-    let root = RootSecret::new([root_byte; crate::keyring::KEY_BYTES]);
+    let root = RootSecret::new([root_byte; KEY_BYTES]);
     let key = root
         .derive_key::<MagicLinkFlowCookie>(&kid(kid_value))
         .expect("derive flow key");
@@ -380,7 +382,7 @@ fn old_authenticated_body_shapes_fail_generically() {
 #[test]
 fn flow_purpose_rejects_session_cookie_and_has_tight_size_cap() {
     let flow_ring = flow_ring(0x77, "flow-active");
-    let session_root = RootSecret::new([0x77; crate::keyring::KEY_BYTES]);
+    let session_root = RootSecret::new([0x77; KEY_BYTES]);
     let session_key = session_root
         .derive_key::<SessionCookie>(&kid("session-active"))
         .expect("derive session key");
@@ -412,7 +414,7 @@ fn flow_purpose_rejects_session_cookie_and_has_tight_size_cap() {
 
 #[test]
 fn flow_cookie_verifies_across_active_to_verify_only_rotation() {
-    let old_root = RootSecret::new([0x81; crate::keyring::KEY_BYTES]);
+    let old_root = RootSecret::new([0x81; KEY_BYTES]);
     let old_key = old_root
         .derive_key::<MagicLinkFlowCookie>(&kid("flow-old"))
         .expect("derive old active");
@@ -428,7 +430,7 @@ fn flow_cookie_verifies_across_active_to_verify_only_rotation() {
     .expect("old ring");
     let minted = mint_flow(&old_ring, 1_000, 1_300);
 
-    let new_root = RootSecret::new([0x82; crate::keyring::KEY_BYTES]);
+    let new_root = RootSecret::new([0x82; KEY_BYTES]);
     let new_key = new_root
         .derive_key::<MagicLinkFlowCookie>(&kid("flow-new"))
         .expect("derive new active");

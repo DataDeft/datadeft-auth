@@ -1,20 +1,28 @@
 //! `dd-magic-link-core` — IO-free magic-link primitives.
 //!
 //! Owns the token grammar, selector/verifier types, parsing, generation,
-//! normalized-email boundary, keyed lookup/verifier HMAC helpers, and redacted
-//! `Debug`. Stores only keyed lookup material, never raw token parts or raw
-//! emails. Core APIs receive entropy/key material as inputs and never read the
-//! clock, environment, filesystem, network, or OS RNG directly.
+//! normalized-email boundary, keyed lookup/verifier HMAC helpers, the
+//! scanner-safe confirmation flow cookie, and redacted `Debug`. Stores only
+//! keyed lookup material, never raw token parts or raw emails. Core APIs
+//! receive entropy/key material as inputs and never read the clock,
+//! environment, filesystem, network, or OS RNG directly.
 
 #![forbid(unsafe_code)]
 
 pub mod email;
 pub mod error;
+pub mod flow_cookie;
 pub mod hmac_lookup;
 pub mod magic_link;
 
 pub use email::NormalizedEmail;
 pub use error::MagicLinkError;
+pub use flow_cookie::{
+    FlowAccountBinding, FlowSelectorBinding, FlowVerifierBinding, MAGIC_LINK_FLOW_BINDING_BYTES,
+    MAGIC_LINK_FLOW_MAX_AGE_SECS, MagicLinkFlowBindings, MagicLinkFlowConfirmation,
+    MagicLinkFlowCookieValue, MintedMagicLinkFlow, VerifiedMagicLinkFlow, mint_magic_link_flow,
+    verify_magic_link_flow,
+};
 pub use hmac_lookup::{
     EMAIL_LOOKUP_PREFIX, HMAC_KEY_BYTES, LookupHmac, LookupHmacKey, SELECTOR_LOOKUP_PREFIX,
     VERIFIER_HASH_PREFIX, VerifierHash, email_lookup_hmac, flow_account_binding,

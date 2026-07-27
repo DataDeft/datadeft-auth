@@ -6,10 +6,10 @@
 //! randomness policy.
 
 use dd_auth_token_core::cookie::mint_bound_cookie;
-use dd_auth_token_core::flow_cookie::{
+use dd_auth_token_core::keyring::{KeyRing, MagicLinkFlowCookie, SessionCookie};
+use dd_magic_link_core::flow_cookie::{
     MagicLinkFlowBindings, VerifiedMagicLinkFlow, mint_magic_link_flow, verify_magic_link_flow,
 };
-use dd_auth_token_core::keyring::{KeyRing, MagicLinkFlowCookie, SessionCookie};
 use dd_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkToken, VerifierHash, email_lookup_hmac,
     flow_account_binding, flow_selector_binding, flow_verifier_binding, selector_lookup_hmac,
@@ -460,7 +460,7 @@ async fn load_scanner_authentication_state<Authentication: MagicLinkAuthenticati
     config: &MagicLinkServiceConfig,
     selector_lookup: &LookupHmac,
     presented_verifier_hash: &VerifierHash,
-    expected_account: &dd_auth_token_core::flow_cookie::FlowAccountBinding,
+    expected_account: &dd_magic_link_core::flow_cookie::FlowAccountBinding,
     now_unix: u64,
 ) -> Result<(MagicLinkAuthenticationCandidate, Option<UserRecord>), MagicLinkServiceError> {
     let candidate = authentication

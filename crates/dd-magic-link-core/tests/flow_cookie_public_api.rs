@@ -1,4 +1,4 @@
-use dd_auth_token_core::flow_cookie::{
+use dd_magic_link_core::flow_cookie::{
     FlowAccountBinding, FlowSelectorBinding, FlowVerifierBinding, MAGIC_LINK_FLOW_BINDING_BYTES,
     MagicLinkFlowBindings,
 };
