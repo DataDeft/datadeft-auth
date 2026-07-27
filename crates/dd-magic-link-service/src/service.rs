@@ -1,9 +1,9 @@
 //! Request and scanner-safe authentication orchestration.
 //!
-//! Proof-of-work is intentionally outside this service. HTTP adapters or
-//! consuming applications may require and validate a PoW token before calling
-//! these methods, but the magic-link service owns only magic-link, user,
-//! session, limiter, outbox, clock, and randomness policy.
+//! Request-source, network, global, malformed-input, and external-proof admission
+//! controls are intentionally outside this service. Magic-link owns only its
+//! email/selector limiter domains, user/session transaction, outbox, clock, and
+//! randomness policy.
 
 use dd_auth_token_core::cookie::mint_bound_cookie;
 use dd_auth_token_core::flow_cookie::{

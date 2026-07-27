@@ -43,7 +43,7 @@ impl fmt::Display for MagicLinkServiceError {
 
 impl std::error::Error for MagicLinkServiceError {}
 
-/// Browser disposition for temporary scanner-flow and PoW state.
+/// Browser disposition for temporary scanner-flow state.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TemporaryAuthStateAction {
     Preserve,
