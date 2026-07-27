@@ -16,6 +16,7 @@ use dd_magic_link_core::{
     flow_account_binding, flow_selector_binding, flow_verifier_binding, selector_lookup_hmac,
     selector_lookup_hmac_from_flow_binding, verifier_hash, verifier_hash_from_flow_binding,
 };
+use futures_util::future::join_all;
 use rand_core::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
@@ -106,17 +107,7 @@ where
             .ok_or(MagicLinkServiceError::Internal)?;
         let email_lookup = email_lookup_hmac(self.lookup_hmac_key, command.email())?;
 
-        if request_limits_deny(
-            self.limiter,
-            &self.config,
-            email_lookup.as_storage_value(),
-            now_unix,
-        )
-        .await?
-        {
-            return Ok(RequestMagicLinkOutcome);
-        }
-        if outbox_limits_deny(
+        if request_and_outbox_limits_deny(
             self.limiter,
             &self.config,
             email_lookup.as_storage_value(),
@@ -396,16 +387,12 @@ async fn landing_limits_deny<Limiter: RateLimiter>(
     selector_lookup: &str,
     now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
-    let selector_key = format!("magic-link:landing:selector:{selector_lookup}");
-    let denied = limit_denied(
-        limiter,
-        &selector_key,
+    let checks = [(
+        format!("magic-link:landing:selector:{selector_lookup}"),
         config.rate_limits.landing_selector_limit,
         config.rate_limits.landing_selector_window_secs,
-        now_unix,
-    )
-    .await?;
-    Ok(denied)
+    )];
+    any_limit_denied(limiter, &checks, now_unix).await
 }
 
 fn validate_scanner_candidate(
@@ -586,68 +573,39 @@ where
     }
 }
 
-async fn request_limits_deny<Limiter: RateLimiter>(
+/// Request-path limits: the request and outbox email buckets, checked as one
+/// concurrent batch — with a network-backed limiter each check is a round
+/// trip, so sequential awaits would serialize four of them per request.
+async fn request_and_outbox_limits_deny<Limiter: RateLimiter>(
     limiter: &Limiter,
     config: &MagicLinkServiceConfig,
     email_lookup: &str,
     now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
     let limits = &config.rate_limits;
-    let email_short = format!("magic-link:request:email:short:{email_lookup}");
-    if limit_denied(
-        limiter,
-        &email_short,
-        limits.request_email_short_limit,
-        limits.request_email_short_window_secs,
-        now_unix,
-    )
-    .await?
-    {
-        return Ok(true);
-    }
-    let email_daily = format!("magic-link:request:email:daily:{email_lookup}");
-    if limit_denied(
-        limiter,
-        &email_daily,
-        limits.request_email_daily_limit,
-        limits.request_email_daily_window_secs,
-        now_unix,
-    )
-    .await?
-    {
-        return Ok(true);
-    }
-    Ok(false)
-}
-
-async fn outbox_limits_deny<Limiter: RateLimiter>(
-    limiter: &Limiter,
-    config: &MagicLinkServiceConfig,
-    email_lookup: &str,
-    now_unix: u64,
-) -> Result<bool, MagicLinkServiceError> {
-    let limits = &config.rate_limits;
-    let hourly = format!("magic-link:outbox:email:hourly:{email_lookup}");
-    if limit_denied(
-        limiter,
-        &hourly,
-        limits.outbox_email_hourly_limit,
-        limits.outbox_email_hourly_window_secs,
-        now_unix,
-    )
-    .await?
-    {
-        return Ok(true);
-    }
-    let daily = format!("magic-link:outbox:email:daily:{email_lookup}");
-    limit_denied(
-        limiter,
-        &daily,
-        limits.outbox_email_daily_limit,
-        limits.outbox_email_daily_window_secs,
-        now_unix,
-    )
-    .await
+    let checks = [
+        (
+            format!("magic-link:request:email:short:{email_lookup}"),
+            limits.request_email_short_limit,
+            limits.request_email_short_window_secs,
+        ),
+        (
+            format!("magic-link:request:email:daily:{email_lookup}"),
+            limits.request_email_daily_limit,
+            limits.request_email_daily_window_secs,
+        ),
+        (
+            format!("magic-link:outbox:email:hourly:{email_lookup}"),
+            limits.outbox_email_hourly_limit,
+            limits.outbox_email_hourly_window_secs,
+        ),
+        (
+            format!("magic-link:outbox:email:daily:{email_lookup}"),
+            limits.outbox_email_daily_limit,
+            limits.outbox_email_daily_window_secs,
+        ),
+    ];
+    any_limit_denied(limiter, &checks, now_unix).await
 }
 
 async fn consume_limits_deny<Limiter: RateLimiter>(
@@ -656,35 +614,46 @@ async fn consume_limits_deny<Limiter: RateLimiter>(
     selector_lookup: &str,
     now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
-    let limits = &config.rate_limits;
-    let selector_key = format!("magic-link:consume:selector:{selector_lookup}");
-    if limit_denied(
-        limiter,
-        &selector_key,
-        limits.consume_selector_limit,
+    let checks = [(
+        format!("magic-link:consume:selector:{selector_lookup}"),
+        config.rate_limits.consume_selector_limit,
         config.magic_link_ttl_secs,
-        now_unix,
-    )
-    .await?
-    {
-        return Ok(true);
-    }
-    Ok(false)
+    )];
+    any_limit_denied(limiter, &checks, now_unix).await
 }
 
-async fn limit_denied<Limiter: RateLimiter>(
+/// Run every `(key, limit, window_secs)` check concurrently; report whether
+/// any bucket denied.
+///
+/// Concurrency is an accounting choice as well as a latency one: every bucket
+/// is consulted (and its counter advanced) even when another bucket denies,
+/// where the previous sequential form stopped at the first denial. A denied
+/// request therefore still consumes quota in every bucket, which only
+/// tightens limiting. A dependency error takes precedence over a denial —
+/// limiter state is unknown, so the request fails closed as unavailable.
+async fn any_limit_denied<Limiter: RateLimiter>(
     limiter: &Limiter,
-    key: &str,
-    limit: u32,
-    window_secs: u64,
+    checks: &[(String, u32, u64)],
     now_unix: u64,
 ) -> Result<bool, MagicLinkServiceError> {
-    let key = RateLimitKey::parse(key)?;
-    let decision = limiter
-        .check_rate_limit(&key, limit, window_secs, now_unix)
-        .await
-        .map_err(map_dependency_error)?;
-    Ok(decision == RateLimitDecision::Denied)
+    let keys = checks
+        .iter()
+        .map(|(key, _, _)| RateLimitKey::parse(key))
+        .collect::<Result<Vec<_>, _>>()?;
+    let decisions = join_all(
+        keys.iter()
+            .zip(checks)
+            .map(|(key, (_, limit, window_secs))| {
+                limiter.check_rate_limit(key, *limit, *window_secs, now_unix)
+            }),
+    )
+    .await;
+
+    let mut denied = false;
+    for decision in decisions {
+        denied |= decision.map_err(map_dependency_error)? == RateLimitDecision::Denied;
+    }
+    Ok(denied)
 }
 
 fn mint_country(
