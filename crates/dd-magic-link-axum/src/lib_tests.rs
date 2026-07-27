@@ -683,13 +683,13 @@ async fn request_handler_preserves_generic_success_regression() {
 }
 
 #[tokio::test]
-async fn legacy_request_field_is_rejected_generically_without_reflection() {
+async fn unknown_request_field_is_rejected_generically_without_reflection() {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth/magic-link")
         .header(CONTENT_TYPE, APPLICATION_JSON)
         .body(Body::from(
-            r#"{"email":"user@example.com","locale":"en","terms_accepted":true,"privacy_accepted":true,"client_key":"legacy-value-sentinel"}"#,
+            r#"{"email":"user@example.com","locale":"en","terms_accepted":true,"privacy_accepted":true,"unexpected":"unknown-value-sentinel"}"#,
         ))
         .expect("request");
     let response = handle_magic_link_request_json(request, |_| async {
@@ -704,8 +704,8 @@ async fn legacy_request_field_is_rejected_generically_without_reflection() {
     );
     assert!(
         !body
-            .windows(b"legacy-value-sentinel".len())
-            .any(|window| window == b"legacy-value-sentinel")
+            .windows(b"unknown-value-sentinel".len())
+            .any(|window| window == b"unknown-value-sentinel")
     );
 }
 
