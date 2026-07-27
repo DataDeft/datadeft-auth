@@ -1,4 +1,7 @@
-# Code review — open findings
+# Code review — historical findings
+
+> **Historical audit input.** Findings refer to the commit range below and may have
+> been resolved. Use [`onboarding.md`](onboarding.md) for current implementation status.
 
 Review date: 2026-07-26. Scope: full workspace (dd-auth-token-core, dd-pow-core,
 dd-magic-link-core, dd-magic-link-service, dd-magic-link-aws, dd-magic-link-axum)

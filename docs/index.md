@@ -1,23 +1,26 @@
-# Datadeft auth libraries
+# Datadeft auth documentation
 
-This repository contains reusable Rust authentication libraries.
+## Start here
 
-Crates:
+- [Software architecture](architecture.md) — current components, protocols, diagrams, algorithms, and complexity
+- [Customer onboarding and implementation status](onboarding.md) — production checklist and MVP backlog
+- [Security rules](security.md) — normative security requirements
+- [Formal assurance roadmap](formal-methods.md) — planned TLA+, simulation, fuzzing, and bounded verification
 
-- `dd-pow-core` — pure proof-of-work challenge mint/verify.
-- `dd-auth-token-core` — Branca/keyring/session/PoW cookie primitives.
-- `dd-magic-link-core` — magic-link token grammar and pure auth primitives.
-- `dd-magic-link-service` — storage/email/rate-limit trait based flow orchestration.
-- `dd-magic-link-axum` — optional Axum HTTP integration.
-- `dd-magic-link-aws` — optional AWS DynamoDB/SES adapters.
+## Libraries
 
-Optional package:
+- `dd-pow-core` — implemented pure proof-of-work challenge mint/verify primitives
+- `dd-auth-token-core` — implemented token, keyring, session, and flow-cookie primitives
+- `dd-magic-link-core` — implemented magic-link token and HMAC primitives
+- `dd-magic-link-service` — implemented request, confirmation, session, and repository orchestration
+- `dd-magic-link-axum` — implemented optional Axum HTTP integration
+- `dd-magic-link-aws` — implemented optional DynamoDB/SES adapters and fakes
+- `dd-protect-client` — **planned; browser package is currently a skeleton**
 
-- `dd-protect-client` — optional npm/browser proof-of-work client.
+## Contributor and historical documents
 
-Development docs:
-
-- [Extraction plan](plan.md)
 - [Rust standards](rust-standards.md)
 - [Operating model](operating.md)
-- [Security rules](security.md)
+- [Extraction plan](plan.md) — historical roadmap
+- [Production fix plan](fix.md) — historical remediation input
+- [Prior review](review.md) — historical audit input

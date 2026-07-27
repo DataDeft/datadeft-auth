@@ -1,8 +1,11 @@
 # Verified production fix plan
 
+> **Historical remediation input.** The reviewed fixes were subsequently implemented.
+> Use [`onboarding.md`](onboarding.md) for the current backlog and release gates.
+
 Review basis: `docs/review.md`, current workspace at `b2a6d38`, the repository security/phase contracts, direct code inspection, a compile probe for the async-trait contract, and six independent crate-scoped reviews.
 
-This document is the final fix scope. It is a plan only; no source fix is implemented here.
+This document records the accepted historical fix scope; it is not the current implementation-status document.
 
 ## Decision summary
 

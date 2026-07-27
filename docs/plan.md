@@ -1,5 +1,8 @@
 # Datadeft auth extraction plan
 
+> **Historical roadmap.** For current architecture and implementation status, see
+> [`architecture.md`](architecture.md) and [`onboarding.md`](onboarding.md).
+
 ## Goal
 
 Create a standalone `datadeft-auth` repository containing reusable Rust authentication libraries extracted from the existing application code, with clear crate boundaries, deterministic core crates, optional framework/cloud adapters, and a local-first integration path.

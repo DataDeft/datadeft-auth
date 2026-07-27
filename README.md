@@ -5,10 +5,10 @@ tokens, and scanner-safe magic-link login. Extracted from internal
 application code into small, deterministic, IO-free cores plus optional
 framework and cloud adapters.
 
-> **Status:** local-first, pre-0.1.0. Not published. APIs are not stable.
-> See [`docs/plan.md`](docs/plan.md) for the extraction roadmap and
-> [`docs/security.md`](docs/security.md) for the security rules every crate
-> must satisfy.
+> **Status:** unpublished `0.1.0` workspace. APIs are not yet stable.
+> Start with [`docs/architecture.md`](docs/architecture.md) and
+> [`docs/onboarding.md`](docs/onboarding.md);
+> [`docs/security.md`](docs/security.md) is the normative security policy.
 
 ## What this is
 
@@ -213,24 +213,23 @@ mise run verify   # fmt + clippy + test + docs + audit
 
 See [`docs/operating.md`](docs/operating.md) for the full operating model.
 
-## Extraction order
+## Current delivery focus
 
-1. Create workspace + crate skeletons (`Cargo.toml`, `mise` tasks, CI, license).
-2. Extract `dd-pow-core` from `to-be-porting/celeratax/backends/pow`.
-3. Extract `dd-auth-token-core` from `crypto` + auth keyring/session/pow-cookie.
-4. Extract `dd-magic-link-core` from the auth `magic_link`/token/verifier pieces.
-5. Extract `dd-magic-link-service` from session request/consume orchestration
-   behind traits.
-6. Add optional Axum and AWS adapters **only after** core/service APIs are stable.
-7. Integrate back into consuming projects via path dependencies to prove usability.
-8. Only then consider private git or crates.io publishing.
+The core, service, Axum, and AWS library surfaces are implemented. Current work is
+customer onboarding and production evidence: a runnable integration example,
+deployment logging attestation, live DynamoDB validation, and an immutable release
+reference. Browser PoW and country-aware PoW admission remain planned application
+integration; see the status and MVP IDs in `docs/onboarding.md`.
 
 ## Documentation
 
-- [Extraction plan](docs/plan.md)
+- [Documentation index](docs/index.md)
+- [Software architecture](docs/architecture.md)
+- [Customer onboarding and implementation status](docs/onboarding.md)
+- [Security rules](docs/security.md)
+- [Formal assurance roadmap](docs/formal-methods.md)
 - [Rust standards](docs/rust-standards.md)
 - [Operating model](docs/operating.md)
-- [Security rules](docs/security.md)
 
 ## License
 
