@@ -2,12 +2,32 @@
 
 use core::fmt;
 
-use dd_auth_token_core::keyring::{KeyPurpose, SessionCookie};
+use dd_auth_token_core::keyring::KeyPurpose;
 use dd_magic_link_core::flow_cookie::MintedMagicLinkFlow;
 use dd_magic_link_core::{LookupHmac, MagicLinkToken, NormalizedEmail, VerifierHash};
 use zeroize::Zeroize;
 
 use crate::error::{MagicLinkFlowError, MagicLinkServiceError, TemporaryAuthStateAction};
+
+/// HKDF-SHA256 info string for session-cookie Branca keys.
+pub const HKDF_INFO_SESSION_COOKIE_V1: &[u8] = b"auth/session-v1";
+/// Encrypted payload `typ` for session cookies.
+pub const TOKEN_TYPE_SESSION_COOKIE_V1: &str = "session-v1";
+
+/// Session-cookie key purpose.
+///
+/// Owned here — next to the session flow — so the 30-day lifetime policy and
+/// the versioned derivation constants live with the feature, not in the
+/// generic token crate.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum SessionCookie {}
+
+impl KeyPurpose for SessionCookie {
+    const HKDF_INFO: &'static [u8] = HKDF_INFO_SESSION_COOKIE_V1;
+    const TOKEN_TYPE: &'static str = TOKEN_TYPE_SESSION_COOKIE_V1;
+    const MAX_BODY_BYTES: usize = 128;
+    const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
+}
 
 /// Default magic-link bearer token lifetime: 10 minutes.
 pub const DEFAULT_MAGIC_LINK_TTL_SECS: u64 = 10 * 60;

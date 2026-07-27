@@ -2,8 +2,19 @@
 
 use super::*;
 use crate::branca::{self, encode_with_nonce};
-use crate::keyring::{KeyId, KeyRing, KeySlot, RootSecret, SessionCookie};
+use crate::keyring::{KeyId, KeyRing, KeySlot, RootSecret};
 use rand_core::{CryptoRng, RngCore};
+
+/// Local purpose so wrapper tests do not depend on any product key policy.
+#[derive(Debug)]
+enum TestCookie {}
+
+impl KeyPurpose for TestCookie {
+    const HKDF_INFO: &'static [u8] = b"auth/test-v1";
+    const TOKEN_TYPE: &'static str = "test-v1";
+    const MAX_BODY_BYTES: usize = 128;
+    const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
+}
 
 struct FixedNonceRng([u8; branca::NONCE_BYTES]);
 
@@ -33,20 +44,20 @@ fn kid(value: &str) -> KeyId {
     KeyId::parse(value).expect("kid parses")
 }
 
-fn session_ring(root_byte: u8, kid_str: &str) -> KeyRing<SessionCookie> {
+fn test_ring(root_byte: u8, kid_str: &str) -> KeyRing<TestCookie> {
     let root = RootSecret::new([root_byte; crate::keyring::KEY_BYTES]);
     let key = root
-        .derive_key::<SessionCookie>(&kid(kid_str))
+        .derive_key::<TestCookie>(&kid(kid_str))
         .expect("derive key");
-    KeyRing::<SessionCookie>::new(kid(kid_str), vec![KeySlot::active(kid(kid_str), key)])
+    KeyRing::<TestCookie>::new(kid(kid_str), vec![KeySlot::active(kid(kid_str), key)])
         .expect("ring")
 }
 
 /// A raw (non-bound) branca token wrapped as `v1.active.{token}`, timestamp 123.
-fn ring_and_value() -> (KeyRing<SessionCookie>, String) {
+fn ring_and_value() -> (KeyRing<TestCookie>, String) {
     let root = RootSecret::new([0x66; crate::keyring::KEY_BYTES]);
     let key = root
-        .derive_key::<SessionCookie>(&kid("active"))
+        .derive_key::<TestCookie>(&kid("active"))
         .expect("derive key");
     let token = encode_with_nonce(
         b"payload",
@@ -55,9 +66,8 @@ fn ring_and_value() -> (KeyRing<SessionCookie>, String) {
         123,
     )
     .expect("token");
-    let ring =
-        KeyRing::<SessionCookie>::new(kid("active"), vec![KeySlot::active(kid("active"), key)])
-            .expect("ring");
+    let ring = KeyRing::<TestCookie>::new(kid("active"), vec![KeySlot::active(kid("active"), key)])
+        .expect("ring");
     (ring, format!("v1.active.{token}"))
 }
 
@@ -138,17 +148,15 @@ fn decrypt_wrapped_token_enforces_freshness_and_skew() {
 
 #[test]
 fn bound_cookie_round_trips_body_binds_kid_and_iat() {
-    let ring = session_ring(0x88, "active");
+    let ring = test_ring(0x88, "active");
     let mut rng = FixedNonceRng([0x99; branca::NONCE_BYTES]);
 
-    let value =
-        mint_bound_cookie::<SessionCookie, _>(b"session-body", &ring, &mut rng, 456, 456, 456)
-            .expect("mint");
+    let value = mint_bound_cookie::<TestCookie, _>(b"session-body", &ring, &mut rng, 456, 456, 456)
+        .expect("mint");
     assert!(value.starts_with("v1.active."));
 
-    let verified =
-        parse_bound_cookie::<SessionCookie>(&value, &ring, 456, MaxAge::fixed(1_000_000))
-            .expect("parse");
+    let verified = parse_bound_cookie::<TestCookie>(&value, &ring, 456, MaxAge::fixed(1_000_000))
+        .expect("parse");
     assert_eq!(verified.kid().as_str(), "active");
     assert_eq!(verified.timestamp(), 456);
     assert_eq!(verified.iat(), 456);
@@ -162,42 +170,42 @@ fn bound_cookie_round_trips_body_binds_kid_and_iat() {
 
 #[test]
 fn bound_cookie_enforces_idle_absolute_and_skew() {
-    let ring = session_ring(0x8B, "active");
+    let ring = test_ring(0x8B, "active");
     let mint = |ts: u32, iat: u32| {
         let mut rng = FixedNonceRng([0x99; branca::NONCE_BYTES]);
-        mint_bound_cookie::<SessionCookie, _>(b"body", &ring, &mut rng, ts, iat, u64::from(ts))
+        mint_bound_cookie::<TestCookie, _>(b"body", &ring, &mut rng, ts, iat, u64::from(ts))
             .expect("mint")
     };
     let bounds = MaxAge::new(3_600, 86_400);
 
     // Fresh within both bounds.
     let fresh = mint(1_000, 1_000);
-    assert!(parse_bound_cookie::<SessionCookie>(&fresh, &ring, 1_100, bounds).is_ok());
+    assert!(parse_bound_cookie::<TestCookie>(&fresh, &ring, 1_100, bounds).is_ok());
 
     // Idle exceeded: last activity 1_000, now 5_000 (> 3_600 idle bound).
     assert_eq!(
-        parse_bound_cookie::<SessionCookie>(&fresh, &ring, 5_000, bounds).unwrap_err(),
+        parse_bound_cookie::<TestCookie>(&fresh, &ring, 5_000, bounds).unwrap_err(),
         TokenError::InvalidToken
     );
 
     // Absolute exceeded on a sliding re-mint: iat 1_000, last activity 100_000.
     let slid = mint(100_000, 1_000);
     assert_eq!(
-        parse_bound_cookie::<SessionCookie>(&slid, &ring, 100_050, bounds).unwrap_err(),
+        parse_bound_cookie::<TestCookie>(&slid, &ring, 100_050, bounds).unwrap_err(),
         TokenError::InvalidToken // now - iat = 99_050 > 86_400
     );
 
     // Future-dated beyond skew tolerance (rewound minting clock).
     let future = mint(10_000, 10_000);
     assert_eq!(
-        parse_bound_cookie::<SessionCookie>(&future, &ring, 9_900, bounds).unwrap_err(),
+        parse_bound_cookie::<TestCookie>(&future, &ring, 9_900, bounds).unwrap_err(),
         TokenError::InvalidToken
     );
 
     // iat that postdates the activity timestamp is rejected as malformed.
     let mut rng = FixedNonceRng([0x99; branca::NONCE_BYTES]);
     assert_eq!(
-        mint_bound_cookie::<SessionCookie, _>(b"body", &ring, &mut rng, 1_000, 2_000, 1_000)
+        mint_bound_cookie::<TestCookie, _>(b"body", &ring, &mut rng, 1_000, 2_000, 1_000)
             .unwrap_err(),
         TokenError::InvalidTimestamp
     );
@@ -205,18 +213,18 @@ fn bound_cookie_enforces_idle_absolute_and_skew() {
 
 #[test]
 fn mint_rejects_timestamps_outside_skew_tolerance() {
-    let ring = session_ring(0x8C, "active");
+    let ring = test_ring(0x8C, "active");
     let mut rng = FixedNonceRng([0xAB; branca::NONCE_BYTES]);
 
     assert_eq!(
-        mint_bound_cookie::<SessionCookie, _>(b"body", &ring, &mut rng, 1_000, 1_000, 1_061)
+        mint_bound_cookie::<TestCookie, _>(b"body", &ring, &mut rng, 1_000, 1_000, 1_061)
             .unwrap_err(),
         TokenError::InvalidTimestamp
     );
 
     let mut rng = FixedNonceRng([0xAC; branca::NONCE_BYTES]);
     assert_eq!(
-        mint_bound_cookie::<SessionCookie, _>(b"body", &ring, &mut rng, 1_000, 1_000, 939)
+        mint_bound_cookie::<TestCookie, _>(b"body", &ring, &mut rng, 1_000, 1_000, 939)
             .unwrap_err(),
         TokenError::InvalidTimestamp
     );
@@ -226,22 +234,22 @@ fn mint_rejects_timestamps_outside_skew_tolerance() {
 fn mint_preserves_keyring_errors_instead_of_funneling_to_invalid_token() {
     let root = RootSecret::new([0x8D; crate::keyring::KEY_BYTES]);
     let key = root
-        .derive_key::<SessionCookie>(&kid("active"))
+        .derive_key::<TestCookie>(&kid("active"))
         .expect("derive key");
-    let ring = KeyRing::<SessionCookie>::new(
+    let ring = KeyRing::<TestCookie>::new(
         kid("active"),
         vec![KeySlot::active_with_windows(
             kid("active"),
             key,
             10,
-            10 + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
+            10 + TestCookie::MAX_ABSOLUTE_AGE_SECS,
         )],
     )
     .expect("ring");
     let mut rng = FixedNonceRng([0xAD; branca::NONCE_BYTES]);
 
     assert_eq!(
-        mint_bound_cookie::<SessionCookie, _>(b"body", &ring, &mut rng, 11, 11, 11).unwrap_err(),
+        mint_bound_cookie::<TestCookie, _>(b"body", &ring, &mut rng, 11, 11, 11).unwrap_err(),
         TokenError::KeyExpired
     );
 }
@@ -249,37 +257,37 @@ fn mint_preserves_keyring_errors_instead_of_funneling_to_invalid_token() {
 #[test]
 fn body_cap_helper_accounts_for_framing() {
     let id = kid("active");
-    let cap = max_body_bytes::<SessionCookie>(&id);
+    let cap = max_body_bytes::<TestCookie>(&id);
     assert_eq!(
         cap,
-        SessionCookie::MAX_BODY_BYTES
-            - (1 + 4 + 1 + SessionCookie::TOKEN_TYPE.len() + 1 + id.as_str().len())
+        TestCookie::MAX_BODY_BYTES
+            - (1 + 4 + 1 + TestCookie::TOKEN_TYPE.len() + 1 + id.as_str().len())
     );
 
-    let ring = session_ring(0x8E, "active");
+    let ring = test_ring(0x8E, "active");
     let mut rng = FixedNonceRng([0xAE; branca::NONCE_BYTES]);
     let ok_body = vec![0x42; cap];
-    let value = mint_bound_cookie::<SessionCookie, _>(&ok_body, &ring, &mut rng, 1, 1, 1)
+    let value = mint_bound_cookie::<TestCookie, _>(&ok_body, &ring, &mut rng, 1, 1, 1)
         .expect("max-size body mints");
-    let parsed = parse_bound_cookie::<SessionCookie>(&value, &ring, 1, MaxAge::fixed(60))
+    let parsed = parse_bound_cookie::<TestCookie>(&value, &ring, 1, MaxAge::fixed(60))
         .expect("max-size body parses");
     assert_eq!(parsed.body(), ok_body);
 
     let mut rng = FixedNonceRng([0xAF; branca::NONCE_BYTES]);
     let too_big = vec![0x42; cap + 1];
     assert_eq!(
-        mint_bound_cookie::<SessionCookie, _>(&too_big, &ring, &mut rng, 1, 1, 1).unwrap_err(),
+        mint_bound_cookie::<TestCookie, _>(&too_big, &ring, &mut rng, 1, 1, 1).unwrap_err(),
         TokenError::PayloadTooLarge
     );
 }
 
 #[test]
 fn cookie_edge_rejects_oversized_token_before_decode() {
-    let ring = session_ring(0x8F, "active");
+    let ring = test_ring(0x8F, "active");
     let oversized = format!("v1.active.{}", "1".repeat(branca::MAX_TOKEN_BYTES + 1));
 
     assert_eq!(
-        decrypt_wrapped_token::<SessionCookie>(&oversized, &ring, 1, 60).unwrap_err(),
+        decrypt_wrapped_token::<TestCookie>(&oversized, &ring, 1, 60).unwrap_err(),
         TokenError::InvalidToken
     );
 }
@@ -288,19 +296,18 @@ fn cookie_edge_rejects_oversized_token_before_decode() {
 fn encrypted_typ_must_match_expected_purpose() {
     let root = RootSecret::new([0x89; crate::keyring::KEY_BYTES]);
     let key = root
-        .derive_key::<SessionCookie>(&kid("active"))
+        .derive_key::<TestCookie>(&kid("active"))
         .expect("derive key");
     // Craft a payload whose bound typ is a *different* purpose.
-    let payload = encode_bound_payload::<SessionCookie>("other-typ-v1", "active", 1, b"body")
-        .expect("payload");
+    let payload =
+        encode_bound_payload::<TestCookie>("other-typ-v1", "active", 1, b"body").expect("payload");
     let token = encode_with_nonce(&payload, key.as_bytes(), &[0x9A; branca::NONCE_BYTES], 1)
         .expect("token");
-    let ring =
-        KeyRing::<SessionCookie>::new(kid("active"), vec![KeySlot::active(kid("active"), key)])
-            .expect("ring");
+    let ring = KeyRing::<TestCookie>::new(kid("active"), vec![KeySlot::active(kid("active"), key)])
+        .expect("ring");
 
     assert_eq!(
-        parse_bound_cookie::<SessionCookie>(
+        parse_bound_cookie::<TestCookie>(
             &format!("v1.active.{token}"),
             &ring,
             1,
@@ -315,20 +322,19 @@ fn encrypted_typ_must_match_expected_purpose() {
 fn encrypted_kid_must_match_wrapper_kid() {
     let root = RootSecret::new([0x8A; crate::keyring::KEY_BYTES]);
     let key = root
-        .derive_key::<SessionCookie>(&kid("outer"))
+        .derive_key::<TestCookie>(&kid("outer"))
         .expect("derive key");
     // Craft a payload whose bound kid differs from the outer wrapper kid.
     let payload =
-        encode_bound_payload::<SessionCookie>(SessionCookie::TOKEN_TYPE, "inner-other", 1, b"body")
+        encode_bound_payload::<TestCookie>(TestCookie::TOKEN_TYPE, "inner-other", 1, b"body")
             .expect("payload");
     let token = encode_with_nonce(&payload, key.as_bytes(), &[0x9B; branca::NONCE_BYTES], 1)
         .expect("token");
-    let ring =
-        KeyRing::<SessionCookie>::new(kid("outer"), vec![KeySlot::active(kid("outer"), key)])
-            .expect("ring");
+    let ring = KeyRing::<TestCookie>::new(kid("outer"), vec![KeySlot::active(kid("outer"), key)])
+        .expect("ring");
 
     assert_eq!(
-        parse_bound_cookie::<SessionCookie>(
+        parse_bound_cookie::<TestCookie>(
             &format!("v1.outer.{token}"),
             &ring,
             1,

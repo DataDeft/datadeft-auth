@@ -3,8 +3,10 @@
 use core::fmt;
 
 use dd_auth_token_core::cookie::MaxAge;
-use dd_auth_token_core::keyring::{KeyPurpose, SessionCookie};
+use dd_auth_token_core::keyring::KeyPurpose;
 use dd_magic_link_core::flow_cookie::MagicLinkFlowCookie;
+
+use crate::types::SessionCookie;
 
 use crate::types::{
     DEFAULT_MAGIC_LINK_TTL_SECS, DEFAULT_SESSION_ABSOLUTE_SECS, DEFAULT_SESSION_IDLE_SECS,

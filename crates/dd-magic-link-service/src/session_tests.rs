@@ -3,7 +3,7 @@
 use std::cell::{Cell, RefCell};
 
 use dd_auth_token_core::cookie::mint_bound_cookie;
-use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie};
+use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 use dd_magic_link_core::NormalizedEmail;
 use rand_core::{CryptoRng, RngCore};
 

@@ -9,13 +9,13 @@
 use core::fmt;
 
 use dd_auth_token_core::cookie::{CLOCK_SKEW_TOLERANCE_SECS, parse_bound_cookie};
-use dd_auth_token_core::keyring::{KeyRing, SessionCookie};
+use dd_auth_token_core::keyring::KeyRing;
 
 use crate::config::MagicLinkServiceConfig;
 use crate::error::DependencyError;
 use crate::session_body::decode_session_cookie_body;
 use crate::traits::{Clock, SessionRepository};
-use crate::types::SessionRecord;
+use crate::types::{SessionCookie, SessionRecord};
 
 /// Public failure classes for incoming session authentication.
 ///

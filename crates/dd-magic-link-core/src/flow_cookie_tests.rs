@@ -4,11 +4,22 @@ use core::num::NonZeroU32;
 
 use dd_auth_token_core::branca;
 use dd_auth_token_core::cookie::{max_body_bytes, mint_bound_cookie};
-use dd_auth_token_core::keyring::{KEY_BYTES, KeyId, KeyRing, KeySlot, RootSecret, SessionCookie};
+use dd_auth_token_core::keyring::{KEY_BYTES, KeyId, KeyRing, KeySlot, RootSecret};
 use rand_core::{CryptoRng, RngCore};
 use zeroize::Zeroize;
 
 use super::*;
+
+/// Local non-flow purpose proving cross-purpose cookies are rejected.
+#[derive(Debug)]
+enum OtherCookie {}
+
+impl KeyPurpose for OtherCookie {
+    const HKDF_INFO: &'static [u8] = b"auth/test-other-v1";
+    const TOKEN_TYPE: &'static str = "test-other-v1";
+    const MAX_BODY_BYTES: usize = 128;
+    const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
+}
 
 struct PatternRng {
     calls: u8,
@@ -413,30 +424,30 @@ fn old_authenticated_body_shapes_fail_generically() {
 }
 
 #[test]
-fn flow_purpose_rejects_session_cookie_and_has_tight_size_cap() {
+fn flow_purpose_rejects_other_purpose_cookie_and_has_tight_size_cap() {
     let flow_ring = flow_ring(0x77, "flow-active");
-    let session_root = RootSecret::new([0x77; KEY_BYTES]);
-    let session_key = session_root
-        .derive_key::<SessionCookie>(&kid("session-active"))
-        .expect("derive session key");
-    let session_ring = KeyRing::new(
-        kid("session-active"),
-        vec![KeySlot::active(kid("session-active"), session_key)],
+    let other_root = RootSecret::new([0x77; KEY_BYTES]);
+    let other_key = other_root
+        .derive_key::<OtherCookie>(&kid("other-active"))
+        .expect("derive other key");
+    let other_ring = KeyRing::new(
+        kid("other-active"),
+        vec![KeySlot::active(kid("other-active"), other_key)],
     )
-    .expect("session ring");
+    .expect("other ring");
     let mut rng = PatternRng::new();
-    let session_cookie = mint_bound_cookie::<SessionCookie, _>(
-        b"session",
-        &session_ring,
+    let other_cookie = mint_bound_cookie::<OtherCookie, _>(
+        b"other-body",
+        &other_ring,
         &mut rng,
         1_000,
         1_000,
         1_000,
     )
-    .expect("session cookie mints");
+    .expect("other cookie mints");
     let confirmation = "a0".repeat(MAGIC_LINK_FLOW_NONCE_BYTES);
     assert_eq!(
-        verify_magic_link_flow(&session_cookie, &confirmation, &flow_ring, 1_000, 300).unwrap_err(),
+        verify_magic_link_flow(&other_cookie, &confirmation, &flow_ring, 1_000, 300).unwrap_err(),
         TokenError::InvalidToken
     );
 

@@ -4,7 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::num::NonZeroU32;
 
-use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie};
+use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 use dd_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkFlowCookie, MagicLinkToken, NormalizedEmail,
     selector_lookup_hmac, verifier_hash,
@@ -19,7 +19,8 @@ use crate::traits::{
     SessionRepository,
 };
 use crate::types::{
-    EmailLocale, MAX_RAW_MAGIC_LINK_TOKEN_BYTES, RequestMagicLinkCommand, SessionRecord,
+    EmailLocale, MAX_RAW_MAGIC_LINK_TOKEN_BYTES, RequestMagicLinkCommand, SessionCookie,
+    SessionRecord,
 };
 
 const NOW: u64 = 1_000;

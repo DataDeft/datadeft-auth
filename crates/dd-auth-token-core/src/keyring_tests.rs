@@ -91,29 +91,20 @@ fn root_secret_derives_deterministic_kid_and_purpose_separated_keys() {
 }
 
 #[test]
-fn hkdf_info_strings_are_versioned_constants() {
-    assert_eq!(HKDF_INFO_SESSION_COOKIE_V1, b"auth/session-v1");
-    assert_eq!(SessionCookie::HKDF_INFO, HKDF_INFO_SESSION_COOKIE_V1);
-    assert_eq!(TOKEN_TYPE_SESSION_COOKIE_V1, "session-v1");
-    assert_eq!(SessionCookie::TOKEN_TYPE, TOKEN_TYPE_SESSION_COOKIE_V1);
-    assert_eq!(SessionCookie::MAX_BODY_BYTES, 128);
-    assert_eq!(SessionCookie::MAX_ABSOLUTE_AGE_SECS, 30 * 24 * 60 * 60);
-}
-
-#[test]
-fn hkdf_vectors_are_pinned() {
+fn hkdf_vector_is_pinned() {
     // HKDF-SHA256 with salt=None, IKM=[0x11; 32], L=32,
-    // info = HKDF_INFO || 0x00 || kid. These vectors pin the exact info framing
-    // (purpose + kid) and output length; changing any of them invalidates every
-    // token minted under the previous derived key.
+    // info = HKDF_INFO || 0x00 || kid. This vector pins the exact info framing
+    // (purpose + kid) and output length; changing the framing invalidates every
+    // token minted under previously derived keys. Downstream crates that own a
+    // purpose pin their own product vectors on top of this one.
     let root = RootSecret::new([0x11; KEY_BYTES]);
-    let session = root
-        .derive_key::<SessionCookie>(&kid("session-active"))
-        .expect("derive session");
+    let derived = root
+        .derive_key::<TestCookieA>(&kid("test-active"))
+        .expect("derive test key");
 
     assert_eq!(
-        hex::encode(session.as_bytes()),
-        "eda74d6ba28134ffe9c380e3a14729aa1fa4474dfbf63014a8b82e0325e4b10b"
+        hex::encode(derived.as_bytes()),
+        "4776cde807f361cd1fa77404521c54941e4404750be9e9abdbc694d8df562ad9"
     );
 }
 

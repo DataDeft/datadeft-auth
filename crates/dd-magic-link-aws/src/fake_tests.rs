@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie};
+use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 use dd_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkFlowCookie, MagicLinkToken, NormalizedEmail,
     selector_lookup_hmac, verifier_hash,
@@ -15,8 +15,8 @@ use dd_magic_link_service::{
     MagicLinkAuthenticationUser, MagicLinkFlowError, MagicLinkFlowService,
     MagicLinkFlowServiceInputs, MagicLinkRecord, MagicLinkRepository, MagicLinkRequestService,
     MagicLinkRequestServiceInputs, MagicLinkServiceConfig, MagicLinkServiceError,
-    RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkCommand, SessionId,
-    SessionRecord, SessionRepository, TemporaryAuthStateAction, UserId, UserRecord,
+    RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkCommand, SessionCookie,
+    SessionId, SessionRecord, SessionRepository, TemporaryAuthStateAction, UserId, UserRecord,
 };
 use rand_core::{CryptoRng, RngCore};
 use tokio::sync::Barrier;

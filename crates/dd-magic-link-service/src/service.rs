@@ -6,7 +6,7 @@
 //! randomness policy.
 
 use dd_auth_token_core::cookie::mint_bound_cookie;
-use dd_auth_token_core::keyring::{KeyRing, SessionCookie};
+use dd_auth_token_core::keyring::KeyRing;
 use dd_magic_link_core::flow_cookie::{
     MagicLinkFlowBindings, MagicLinkFlowCookie, VerifiedMagicLinkFlow, mint_magic_link_flow,
     verify_magic_link_flow,
@@ -33,8 +33,8 @@ use crate::types::{
     CommitMagicLinkAuthentication, ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome,
     MagicLinkAccountIdentity, MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
     MagicLinkAuthenticationOutcome, MagicLinkAuthenticationUser, MagicLinkEmail, MagicLinkRecord,
-    RateLimitKey, RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionId, UserId, UserRecord,
-    validate_country,
+    RateLimitKey, RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionCookie, SessionId,
+    UserId, UserRecord, validate_country,
 };
 
 /// Request-flow-only service. It does not require user/session repositories or a

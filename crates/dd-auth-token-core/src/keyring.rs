@@ -65,10 +65,6 @@ use crate::error::TokenError;
 
 /// Required length of all root and Branca key material in this crate.
 pub const KEY_BYTES: usize = 32;
-/// HKDF-SHA256 info string for session-cookie Branca keys.
-pub const HKDF_INFO_SESSION_COOKIE_V1: &[u8] = b"auth/session-v1";
-/// Encrypted payload `typ` for session cookies.
-pub const TOKEN_TYPE_SESSION_COOKIE_V1: &str = "session-v1";
 
 /// HKDF purpose marker for keys derived from a [`RootSecret`].
 pub trait KeyPurpose {
@@ -84,17 +80,6 @@ pub trait KeyPurpose {
     /// Longest absolute validity a token of this purpose may have. Active keys
     /// must verify for at least this long after their final minting instant.
     const MAX_ABSOLUTE_AGE_SECS: u64;
-}
-
-/// Session-cookie key purpose.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum SessionCookie {}
-
-impl KeyPurpose for SessionCookie {
-    const HKDF_INFO: &'static [u8] = HKDF_INFO_SESSION_COOKIE_V1;
-    const TOKEN_TYPE: &'static str = TOKEN_TYPE_SESSION_COOKIE_V1;
-    const MAX_BODY_BYTES: usize = 128;
-    const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
 }
 
 /// Loaded root secret material.
@@ -118,8 +103,7 @@ impl RootSecret {
     /// the key id (`purpose || 0x00 || kid`), so two kids derived from the same
     /// root are cryptographically independent keys — rotation is real, not two
     /// labels on one key. `KeyId` charset excludes `0x00`, so the separator is
-    /// unambiguous. A session key and a PoW key, or two kids, are unrelated AEAD
-    /// keys.
+    /// unambiguous. Two purposes, or two kids, are unrelated AEAD keys.
     pub fn derive_key<P: KeyPurpose>(&self, kid: &KeyId) -> Result<BrancaKey<P>, TokenError> {
         let kid_bytes = kid.as_str().as_bytes();
         let mut info = Vec::with_capacity(P::HKDF_INFO.len() + 1 + kid_bytes.len());

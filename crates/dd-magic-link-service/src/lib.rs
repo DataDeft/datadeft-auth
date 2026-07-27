@@ -18,9 +18,7 @@ pub mod traits;
 pub mod types;
 
 pub use config::{MagicLinkConfigError, MagicLinkServiceConfig, RateLimitConfig};
-pub use dd_auth_token_core::keyring::{
-    KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie,
-};
+pub use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 pub use dd_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkFlowCookie, NormalizedEmail, VerifierHash,
 };
@@ -46,6 +44,6 @@ pub use types::{
     EmailLocale, MAX_RAW_MAGIC_LINK_TOKEN_BYTES, MagicLinkAccountIdentity,
     MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
     MagicLinkAuthenticationOutcome, MagicLinkAuthenticationUser, MagicLinkEmail, MagicLinkRecord,
-    RateLimitKey, RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionId, SessionRecord,
-    UserId, UserRecord,
+    RateLimitKey, RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionCookie, SessionId,
+    SessionRecord, UserId, UserRecord,
 };

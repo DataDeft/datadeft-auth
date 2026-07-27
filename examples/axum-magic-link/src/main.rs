@@ -19,7 +19,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret, SessionCookie};
+use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 use dd_magic_link_axum::{
     APPLICATION_JSON, AuthFlowCookieConfig, MagicLinkHttpError, MagicLinkRequestJson,
     MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect, SessionCookieConfig,
@@ -33,8 +33,8 @@ use dd_magic_link_service::{
     MagicLinkAuthenticationCandidate, MagicLinkAuthenticationRepository, MagicLinkEmail,
     MagicLinkFlowService, MagicLinkFlowServiceInputs, MagicLinkOutbox, MagicLinkRecord,
     MagicLinkRepository, MagicLinkRequestService, MagicLinkRequestServiceInputs,
-    MagicLinkServiceConfig, RateLimitDecision, RateLimitKey, RateLimiter, SessionId, SessionRecord,
-    SessionRepository, UserRecord, validate_session,
+    MagicLinkServiceConfig, RateLimitDecision, RateLimitKey, RateLimiter, SessionCookie, SessionId,
+    SessionRecord, SessionRepository, UserRecord, validate_session,
 };
 use dd_pow_core::{Challenge, PowSecret, Solution, mint_challenge, verify_solution};
 use rand_core::{OsRng, RngCore};
