@@ -17,3 +17,15 @@ name = "axum-magic-link"
 path = "src/main.rs"
 
 [dependencies]
+axum = "0.8"
+dd-auth-token-core = { path = "../../crates/dd-auth-token-core" }
+dd-magic-link-axum = { path = "../../crates/dd-magic-link-axum" }
+dd-magic-link-core = { path = "../../crates/dd-magic-link-core" }
+dd-magic-link-service = { path = "../../crates/dd-magic-link-service" }
+dd-pow-core = { path = "../../crates/dd-pow-core" }
+hex = "0.4"
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+time = { version = "0.3.47", default-features = false, features = ["formatting", "std"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
