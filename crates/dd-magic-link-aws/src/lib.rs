@@ -12,6 +12,7 @@ mod error;
 mod fake;
 mod hmac_key;
 mod ses;
+mod window;
 
 #[cfg(feature = "aws")]
 mod dynamodb;

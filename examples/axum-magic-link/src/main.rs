@@ -385,12 +385,7 @@ fn verify_pow_solution(
     state
         .store
         .consume_pow_tid(&verified.tid, now_unix, expires_at_unix)
-        .map_err(|error| match error {
-            DependencyError::Internal => dd_pow_core::PowError::Internal,
-            DependencyError::Unavailable
-            | DependencyError::ConditionalWriteFailed
-            | DependencyError::RateLimited => dd_pow_core::PowError::InvalidSolution,
-        })?;
+        .map_err(|_| dd_pow_core::PowError::InvalidSolution)?;
     Ok(())
 }
 

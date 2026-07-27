@@ -21,6 +21,7 @@ use crate::error::AwsAdapterError;
 use crate::hmac_key::{
     EMAIL_LOOKUP_HMAC_PREFIX, RATE_LOOKUP_HMAC_PREFIX, SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey,
 };
+use crate::window::fixed_window_index;
 
 /// Fake mirror of the DynamoDB user-session index item.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -37,13 +38,18 @@ pub struct FakeDynamoDbAuthStore {
     storage_hmac_key: Arc<StorageHmacKey>,
 }
 
+/// Session record plus the expiry the DynamoDB item would carry as TTL.
+struct StoredSession {
+    record: SessionRecord,
+    expires_at_unix: u64,
+}
+
 #[derive(Default)]
 struct FakeDynamoDbInner {
     magic_links_by_selector_hmac: HashMap<String, MagicLinkRecord>,
     user_profiles_by_id: HashMap<String, UserRecord>,
     user_id_by_email_hmac: HashMap<String, UserId>,
-    sessions_by_hmac: HashMap<String, SessionRecord>,
-    session_expiry_by_hmac: HashMap<String, u64>,
+    sessions_by_hmac: HashMap<String, StoredSession>,
     user_session_index: HashMap<String, Vec<UserSessionIndexEntry>>,
     authentication_attempts: HashMap<String, CommitMagicLinkAuthentication>,
     rate_counters: HashMap<String, u32>,
@@ -181,10 +187,13 @@ impl FakeDynamoDbAuthStore {
         if inner.sessions_by_hmac.contains_key(&session_hmac) {
             return Err(DependencyError::ConditionalWriteFailed);
         }
-        inner
-            .session_expiry_by_hmac
-            .insert(session_hmac.clone(), expires_at_unix);
-        inner.sessions_by_hmac.insert(session_hmac, session);
+        inner.sessions_by_hmac.insert(
+            session_hmac,
+            StoredSession {
+                record: session,
+                expires_at_unix,
+            },
+        );
         Ok(())
     }
 
@@ -407,10 +416,13 @@ impl MagicLinkAuthenticationRepository for FakeDynamoDbAuthStore {
                 created_at_unix: command.now_unix,
                 expires_at_unix: command.session_expires_at_unix,
             });
-        inner
-            .session_expiry_by_hmac
-            .insert(session_hmac.clone(), command.session_expires_at_unix);
-        inner.sessions_by_hmac.insert(session_hmac, session);
+        inner.sessions_by_hmac.insert(
+            session_hmac,
+            StoredSession {
+                record: session,
+                expires_at_unix: command.session_expires_at_unix,
+            },
+        );
         inner
             .authentication_attempts
             .insert(command.attempt_id.as_str().to_owned(), command.clone());
@@ -427,15 +439,13 @@ impl SessionRepository for FakeDynamoDbAuthStore {
         let session_hmac = self.session_hmac(session_id)?;
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
-        let is_live = inner
-            .session_expiry_by_hmac
-            .get(&session_hmac)
-            .is_some_and(|expires_at_unix| *expires_at_unix >= now_unix);
         Ok(inner
             .sessions_by_hmac
             .get(&session_hmac)
-            .filter(|session| is_live && session.revoked_at_unix.is_none())
-            .cloned())
+            .filter(|stored| {
+                stored.expires_at_unix >= now_unix && stored.record.revoked_at_unix.is_none()
+            })
+            .map(|stored| stored.record.clone()))
     }
 
     async fn revoke_session(
@@ -446,10 +456,11 @@ impl SessionRepository for FakeDynamoDbAuthStore {
         let session_hmac = self.session_hmac(session_id)?;
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
-        let session = inner
+        let session = &mut inner
             .sessions_by_hmac
             .get_mut(&session_hmac)
-            .ok_or(DependencyError::ConditionalWriteFailed)?;
+            .ok_or(DependencyError::ConditionalWriteFailed)?
+            .record;
         if session.revoked_at_unix.is_some() {
             return Err(DependencyError::ConditionalWriteFailed);
         }
@@ -477,13 +488,6 @@ impl RateLimiter for FakeDynamoDbAuthStore {
         }
         *counter += 1;
         Ok(RateLimitDecision::Allowed)
-    }
-}
-fn fixed_window_index(now_unix: u64, window_secs: u64) -> u64 {
-    if window_secs == 0 {
-        0
-    } else {
-        now_unix / window_secs
     }
 }
 

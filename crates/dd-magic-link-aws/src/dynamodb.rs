@@ -2,7 +2,6 @@
 
 use core::fmt;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_dynamodb::operation::get_item::builders::GetItemFluentBuilder;
@@ -25,6 +24,7 @@ use crate::error::{
 use crate::hmac_key::{
     EMAIL_LOOKUP_HMAC_PREFIX, RATE_LOOKUP_HMAC_PREFIX, SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey,
 };
+use crate::window::fixed_window_index;
 
 const MAGIC_LINK_CLEANUP_GRACE_SECS: u64 = 24 * 60 * 60;
 
@@ -32,7 +32,7 @@ const MAGIC_LINK_CLEANUP_GRACE_SECS: u64 = 24 * 60 * 60;
 pub struct DynamoDbAuthStore {
     client: DynamoDbClient,
     table_name: String,
-    storage_hmac_key: Arc<StorageHmacKey>,
+    storage_hmac_key: StorageHmacKey,
 }
 
 impl DynamoDbAuthStore {
@@ -45,7 +45,7 @@ impl DynamoDbAuthStore {
         Self {
             client,
             table_name,
-            storage_hmac_key: Arc::new(storage_hmac_key),
+            storage_hmac_key,
         }
     }
 
@@ -541,14 +541,6 @@ impl RateLimiter for DynamoDbAuthStore {
         }
         .await
         .map_err(DependencyError::from)
-    }
-}
-
-fn fixed_window_index(now_unix: u64, window_secs: u64) -> u64 {
-    if window_secs == 0 {
-        0
-    } else {
-        now_unix / window_secs
     }
 }
 
