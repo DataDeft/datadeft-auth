@@ -20,8 +20,6 @@ pub enum PowError {
     MaxAgeTooLarge,
     /// Wrong leading zeros, or `sol != SHA-256(chg + non)`.
     InvalidSolution,
-    /// Internal cryptographic operation failed.
-    Internal,
 }
 
 impl core::fmt::Display for PowError {
@@ -35,7 +33,6 @@ impl core::fmt::Display for PowError {
             Self::DifficultyTooHigh => "solution difficulty exceeds the supported maximum",
             Self::MaxAgeTooLarge => "maximum challenge age is too large",
             Self::InvalidSolution => "proof-of-work solution is incorrect",
-            Self::Internal => "internal proof-of-work error",
         };
         f.write_str(msg)
     }
