@@ -374,7 +374,6 @@ fn temporary_cookie_defaults_lifetime_and_clear_are_strict() {
     assert_eq!(flow.path(), "/auth");
     assert!(flow.secure());
     assert_eq!(flow.same_site(), SameSite::Lax);
-    assert!(production.pow_proof().is_some());
 
     let set = set_temporary_cookie_header(flow, "flow-value", 300)
         .expect("set")
@@ -399,11 +398,10 @@ fn temporary_cookie_defaults_lifetime_and_clear_are_strict() {
 
     let local = AuthFlowCookieConfig::local_development_defaults();
     assert!(!local.flow().secure());
-    assert!(!local.pow_proof().expect("pow").secure());
 }
 
 #[test]
-fn cookie_setup_rejects_invalid_paths_and_duplicate_names() {
+fn cookie_setup_rejects_invalid_paths() {
     for path in [
         "auth", "/auth?x", "/auth#x", "/auth%x", "/auth\\x", "/auth;x",
     ] {
@@ -412,12 +410,6 @@ fn cookie_setup_rejects_invalid_paths_and_duplicate_names() {
             CookieConfigError::InvalidPath
         );
     }
-    let flow = TemporaryCookieConfig::production("same", "/auth").expect("flow");
-    let pow = TemporaryCookieConfig::production("same", "/auth").expect("pow");
-    assert_eq!(
-        AuthFlowCookieConfig::new(flow, Some(pow)).unwrap_err(),
-        CookieConfigError::DuplicateCookieName
-    );
 }
 
 #[test]
@@ -430,9 +422,7 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
     for path in ["/auth/confirm", "/auth/", "/auth"] {
         let temporary = AuthFlowCookieConfig::new(
             TemporaryCookieConfig::production("flow", path).expect("flow"),
-            None,
-        )
-        .expect("temporary");
+        );
         assert!(
             MagicLinkScannerFlowConfig::new(
                 post.clone(),
@@ -444,11 +434,8 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
             .is_ok()
         );
     }
-    let false_prefix = AuthFlowCookieConfig::new(
-        TemporaryCookieConfig::production("flow", "/aut").expect("flow"),
-        None,
-    )
-    .expect("temporary");
+    let false_prefix =
+        AuthFlowCookieConfig::new(TemporaryCookieConfig::production("flow", "/aut").expect("flow"));
     assert_eq!(
         MagicLinkScannerFlowConfig::new(
             post.clone(),
@@ -464,9 +451,7 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
     let session_flow = session.clone().with_name("flow").expect("session name");
     let temporary = AuthFlowCookieConfig::new(
         TemporaryCookieConfig::production("flow", "/auth").expect("flow"),
-        None,
-    )
-    .expect("temporary");
+    );
     assert_eq!(
         MagicLinkScannerFlowConfig::new(
             post.clone(),
@@ -476,18 +461,6 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
             temporary,
         )
         .unwrap_err(),
-        MagicLinkScannerFlowConfigError::DuplicateCookieName
-    );
-
-    let session_pow = session.with_name("pow").expect("session name");
-    let temporary = AuthFlowCookieConfig::new(
-        TemporaryCookieConfig::production("flow", "/auth").expect("flow"),
-        Some(TemporaryCookieConfig::production("pow", "/auth").expect("pow")),
-    )
-    .expect("temporary");
-    assert_eq!(
-        MagicLinkScannerFlowConfig::new(post, redirect, origin, session_pow, temporary)
-            .unwrap_err(),
         MagicLinkScannerFlowConfigError::DuplicateCookieName
     );
 }
@@ -847,7 +820,7 @@ async fn invalid_landing_is_non_actionable_and_clears_temporary_state() {
     assert!(!text.contains("<form"));
     assert!(!text.contains("confirmation"));
     assert!(!text.contains("not-a-token"));
-    assert_eq!(headers.get_all(SET_COOKIE).iter().count(), 2);
+    assert_eq!(headers.get_all(SET_COOKIE).iter().count(), 1);
     assert!(headers.get("content-security-policy").is_some());
 }
 
@@ -908,10 +881,9 @@ async fn confirmation_success_is_clean_303_with_fixed_cookie_order() {
         .iter()
         .map(HeaderValue::as_bytes)
         .collect();
-    assert_eq!(cookies.len(), 3);
+    assert_eq!(cookies.len(), 2);
     assert!(cookies[0].starts_with(b"dd_session=session-secret"));
     assert!(cookies[1].starts_with(b"dd_auth_flow=;"));
-    assert!(cookies[2].starts_with(b"dd_pow_proof=;"));
     let (_, headers, body) = response_parts(response).await;
     assert!(body.is_empty());
     assert!(
@@ -930,7 +902,7 @@ async fn handler_internal_clears_but_unavailable_preserves_temporary_state() {
         (
             FixtureFlowError::Internal,
             StatusCode::INTERNAL_SERVER_ERROR,
-            2,
+            1,
         ),
         (
             FixtureFlowError::Unavailable,
@@ -1025,7 +997,7 @@ async fn terminal_invalid_confirmation_responses_are_byte_identical() {
         let (status, headers, body) = response_parts(response).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body, TERMINAL_INVALID_BODY.as_bytes());
-        assert_eq!(headers.get_all(SET_COOKIE).iter().count(), 2);
+        assert_eq!(headers.get_all(SET_COOKIE).iter().count(), 1);
         assert!(headers.get(LOCATION).is_none());
         fingerprints.push(terminal_fingerprint(status, &headers, &body));
     }
@@ -1044,7 +1016,7 @@ async fn body_stream_cap_applies_without_content_length() {
         })
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(response.headers().get_all(SET_COOKIE).iter().count(), 2);
+    assert_eq!(response.headers().get_all(SET_COOKIE).iter().count(), 1);
 }
 
 #[tokio::test]

@@ -52,7 +52,6 @@ pub const DEFAULT_SESSION_COOKIE_PATH: &str = "/";
 pub const CLOUDFRONT_VIEWER_COUNTRY: &str = "cloudfront-viewer-country";
 
 const DEFAULT_FLOW_COOKIE_NAME: &str = "dd_auth_flow";
-const DEFAULT_POW_COOKIE_NAME: &str = "dd_pow_proof";
 const DEFAULT_TEMPORARY_COOKIE_PATH: &str = "/auth";
 const MAX_COOKIE_HEADER_FIELDS: usize = 8;
 const MAX_COOKIE_HEADER_BYTES: usize = 8192;
@@ -74,7 +73,6 @@ pub enum MagicLinkHttpError {
     UnsupportedMediaType,
     PayloadTooLarge,
     MagicLinkUnavailable,
-    PowRequired,
     Unavailable,
     Internal,
 }
@@ -84,7 +82,7 @@ impl MagicLinkHttpError {
     pub fn status(self) -> StatusCode {
         match self {
             Self::BadRequest | Self::MagicLinkUnavailable => StatusCode::BAD_REQUEST,
-            Self::Forbidden | Self::PowRequired => StatusCode::FORBIDDEN,
+            Self::Forbidden => StatusCode::FORBIDDEN,
             Self::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
@@ -100,7 +98,6 @@ impl MagicLinkHttpError {
             Self::UnsupportedMediaType => "unsupported_media_type",
             Self::PayloadTooLarge => "payload_too_large",
             Self::MagicLinkUnavailable => "magic_link_unavailable",
-            Self::PowRequired => "pow_required",
             Self::Unavailable => "unavailable",
             Self::Internal => "internal",
         }
@@ -112,7 +109,7 @@ impl MagicLinkHttpError {
             Self::BadRequest | Self::UnsupportedMediaType | Self::PayloadTooLarge => {
                 "Invalid request."
             }
-            Self::Forbidden | Self::PowRequired => "Forbidden.",
+            Self::Forbidden => "Forbidden.",
             Self::MagicLinkUnavailable => "This magic link cannot be used. Request a new one.",
             Self::Unavailable => "Service temporarily unavailable. Try again later.",
             Self::Internal => "Internal server error.",
@@ -275,7 +272,6 @@ pub enum CookieConfigError {
     ZeroMaxAge,
     MaxAgeExceedsFlowCap,
     SameSiteNoneRequiresSecure,
-    DuplicateCookieName,
 }
 
 impl fmt::Display for CookieConfigError {
@@ -286,7 +282,6 @@ impl fmt::Display for CookieConfigError {
             Self::ZeroMaxAge => "cookie max age must be nonzero",
             Self::MaxAgeExceedsFlowCap => "cookie max age exceeds flow cap",
             Self::SameSiteNoneRequiresSecure => "SameSite=None requires Secure",
-            Self::DuplicateCookieName => "cookie names must be distinct",
         })
     }
 }
@@ -349,25 +344,16 @@ impl TemporaryCookieConfig {
     }
 }
 
-/// Validated flow-cookie policy and optional clearing-only PoW-cookie policy.
+/// Validated magic-link flow-cookie policy.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AuthFlowCookieConfig {
     flow: TemporaryCookieConfig,
-    pow_proof: Option<TemporaryCookieConfig>,
 }
 
 impl AuthFlowCookieConfig {
-    pub fn new(
-        flow: TemporaryCookieConfig,
-        pow_proof: Option<TemporaryCookieConfig>,
-    ) -> Result<Self, CookieConfigError> {
-        if pow_proof
-            .as_ref()
-            .is_some_and(|pow| pow.name() == flow.name())
-        {
-            return Err(CookieConfigError::DuplicateCookieName);
-        }
-        Ok(Self { flow, pow_proof })
+    #[must_use]
+    pub fn new(flow: TemporaryCookieConfig) -> Self {
+        Self { flow }
     }
 
     #[must_use]
@@ -379,12 +365,6 @@ impl AuthFlowCookieConfig {
                 secure: true,
                 same_site: SameSite::Lax,
             },
-            pow_proof: Some(TemporaryCookieConfig {
-                name: DEFAULT_POW_COOKIE_NAME.to_owned(),
-                path: DEFAULT_TEMPORARY_COOKIE_PATH.to_owned(),
-                secure: true,
-                same_site: SameSite::Lax,
-            }),
         }
     }
 
@@ -392,20 +372,12 @@ impl AuthFlowCookieConfig {
     pub fn local_development_defaults() -> Self {
         let mut defaults = Self::production_defaults();
         defaults.flow.secure = false;
-        if let Some(pow) = &mut defaults.pow_proof {
-            pow.secure = false;
-        }
         defaults
     }
 
     #[must_use]
     pub fn flow(&self) -> &TemporaryCookieConfig {
         &self.flow
-    }
-
-    #[must_use]
-    pub fn pow_proof(&self) -> Option<&TemporaryCookieConfig> {
-        self.pow_proof.as_ref()
     }
 }
 
@@ -616,11 +588,7 @@ impl MagicLinkScannerFlowConfig {
         temporary_cookies: AuthFlowCookieConfig,
     ) -> Result<Self, MagicLinkScannerFlowConfigError> {
         let flow_name = temporary_cookies.flow().name();
-        if session_cookie.name() == flow_name
-            || temporary_cookies
-                .pow_proof()
-                .is_some_and(|pow| pow.name() == session_cookie.name() || pow.name() == flow_name)
-        {
+        if session_cookie.name() == flow_name {
             return Err(MagicLinkScannerFlowConfigError::DuplicateCookieName);
         }
         let request_path = post_action
@@ -1202,11 +1170,6 @@ fn scanner_plain_response(
 
 fn append_temporary_clears(headers: &mut HeaderMap, config: &AuthFlowCookieConfig) {
     if let Ok(clear) = clear_temporary_cookie_header(config.flow()) {
-        headers.append(SET_COOKIE, clear);
-    }
-    if let Some(pow) = config.pow_proof()
-        && let Ok(clear) = clear_temporary_cookie_header(pow)
-    {
         headers.append(SET_COOKIE, clear);
     }
 }
