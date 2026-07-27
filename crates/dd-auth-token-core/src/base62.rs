@@ -15,12 +15,14 @@
 //!   version byte, but code that round-trips arbitrary bytes (hashes, IDs,
 //!   serialized blobs) will silently corrupt them. Frame the length yourself, or
 //!   use a byte-oriented codec (hex / base64) for that.
-//! - **Decoding is non-canonical.** Leading `'0'` digits add no value, so
-//!   `"X"`, `"0X"`, `"00X"`, … all decode to the same bytes, and embedded
-//!   `\n` / `\r` are stripped. Do not treat a base62 string as a unique handle
-//!   for its decoded value. Token layers that need a unique string (so that
-//!   revocation / replay keys are stable) MUST re-encode and compare — see the
-//!   canonicality gate in [`crate::branca::decode`].
+//! - **Leading `'0'` digits decode non-canonically.** They add no value, so
+//!   `"X"`, `"0X"`, `"00X"`, … all decode to the same bytes. This is the ONLY
+//!   many-to-one case: every byte outside the alphabet (embedded `\n` / `\r`
+//!   included) is rejected, so on inputs without a leading `'0'` decoding is
+//!   injective and `encode(decode(t)) == t`. Token layers that need a unique
+//!   string (so that revocation / replay keys are stable) MUST reject the
+//!   leading-`'0'` family — see the canonicality gate in
+//!   [`crate::branca::decode`].
 //!
 //! There is no length bound here; callers on untrusted input must cap the input
 //! size themselves (the [`crate::branca`] layer does).
@@ -173,15 +175,15 @@ impl Encoding {
         }
     }
 
-    /// Decode base62 `src`, tolerating embedded `\n` / `\r`.
+    /// Decode base62 `src`.
+    ///
+    /// Every byte must be an alphabet digit: embedded `\n` / `\r` (or any
+    /// other byte outside the alphabet) is rejected as
+    /// [`Base62Error::InvalidByte`], never skipped. This strictness is what
+    /// makes decoding injective for inputs without a leading `'0'` digit —
+    /// token layers rely on it for canonical, non-malleable spellings.
     pub fn decode(&self, src: &[u8]) -> Result<Vec<u8>, Base62Error> {
-        // Strip newlines (some encoders wrap lines).
-        let filtered: Vec<u8> = src
-            .iter()
-            .copied()
-            .filter(|&b| b != b'\n' && b != b'\r')
-            .collect();
-        if filtered.is_empty() {
+        if src.is_empty() {
             return Ok(Vec::new());
         }
 
@@ -190,12 +192,11 @@ impl Encoding {
             clippy::cast_sign_loss,
             clippy::cast_precision_loss
         )]
-        let allocated_len =
-            ((filtered.len() as f64) * (62_f64.ln() / 256_f64.ln())).ceil() as usize;
+        let allocated_len = ((src.len() as f64) * (62_f64.ln() / 256_f64.ln())).ceil() as usize;
         let mut result = vec![0u8; allocated_len];
         let mut significant_digits = 0;
 
-        for (position, &byte) in filtered.iter().enumerate() {
+        for (position, &byte) in src.iter().enumerate() {
             let mut digits_this_pass = 0;
             let decoded_val = self.decode_map[usize::from(byte)];
 

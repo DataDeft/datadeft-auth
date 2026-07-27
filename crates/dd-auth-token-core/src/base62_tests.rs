@@ -1,5 +1,5 @@
-//! `base62` tests: Go-parity golden vectors, custom-alphabet parity, newline
-//! tolerance, error cases, and a round-trip property.
+//! `base62` tests: Go-parity golden vectors, custom-alphabet parity, strict
+//! newline rejection, error cases, and round-trip / injectivity properties.
 
 use super::*;
 use proptest::prelude::*;
@@ -80,11 +80,26 @@ fn custom_alphabet_encodes_and_decodes() {
 }
 
 #[test]
-fn decode_tolerates_embedded_newlines() {
+fn decode_rejects_embedded_newlines() {
+    // Newlines are NOT stripped: rejecting every non-alphabet byte is what
+    // keeps decoding injective (and token spellings non-malleable) without a
+    // re-encode comparison at the token layer.
     let enc = Encoding::std();
-    assert_eq!(enc.decode(b"FMEl\nG7cn").unwrap(), b"111111");
-    assert_eq!(enc.decode(b"FMEl\rG7cn").unwrap(), b"111111");
-    assert_eq!(enc.decode(b"\n\r\n\r").unwrap(), Vec::<u8>::new());
+    assert_eq!(
+        enc.decode(b"FMEl\nG7cn").unwrap_err(),
+        Base62Error::InvalidByte {
+            byte: b'\n',
+            position: 4
+        }
+    );
+    assert_eq!(
+        enc.decode(b"FMEl\rG7cn").unwrap_err(),
+        Base62Error::InvalidByte {
+            byte: b'\r',
+            position: 4
+        }
+    );
+    assert!(enc.decode(b"\n\r\n\r").is_err());
 }
 
 #[test]
@@ -178,5 +193,18 @@ proptest! {
         bytes.extend_from_slice(&rest);
         let encoded = encode(&bytes);
         prop_assert_eq!(decode(&encoded).unwrap(), bytes);
+    }
+
+    /// PROPERTY (injectivity): for any digit string without a leading `'0'`,
+    /// `encode(decode(t)) == t` — the string IS the canonical spelling of its
+    /// bytes. Together with the leading-`'0'` reject at the token layer, this
+    /// is exactly the guarantee that used to require an O(n²) re-encode
+    /// comparison in `branca::decode`.
+    #[test]
+    fn prop_decode_is_injective_without_leading_zero(
+        digits in "[1-9A-Za-z][0-9A-Za-z]{0,120}",
+    ) {
+        let decoded = decode(&digits).unwrap();
+        prop_assert_eq!(encode(&decoded), digits);
     }
 }

@@ -96,4 +96,27 @@ proptest! {
         let forged = format!("{}{}", "0".repeat(k), token);
         prop_assert!(branca::decode(&forged, &key).is_err());
     }
+
+    /// PROPERTY: inserting `\n` or `\r` at any position is rejected. These
+    /// were the second malleable spelling family: the codec used to strip
+    /// them, so `"ab\nc"` decoded identically to `"abc"` and only the
+    /// re-encode backstop rejected it. The codec now rejects non-alphabet
+    /// bytes outright, which this pins.
+    #[test]
+    fn any_newline_insertion_is_rejected(
+        payload in prop::collection::vec(any::<u8>(), 0..64),
+        nonce in prop::array::uniform24(any::<u8>()),
+        timestamp in any::<u32>(),
+        position in any::<prop::sample::Index>(),
+        newline in prop::sample::select(vec![b'\n', b'\r']),
+    ) {
+        let key = [0x11u8; branca::KEY_BYTES];
+        let token = encode_with_fixed_nonce(&payload, &key, nonce, timestamp);
+
+        let mut forged = token.clone().into_bytes();
+        forged.insert(position.index(forged.len() + 1), newline);
+        let forged = String::from_utf8(forged).expect("ascii plus newline");
+        prop_assert_ne!(&forged, &token);
+        prop_assert!(branca::decode(&forged, &key).is_err());
+    }
 }

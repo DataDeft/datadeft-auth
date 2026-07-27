@@ -250,8 +250,7 @@ pub fn decode(token: &str, key: &[u8]) -> Result<Verified, TokenError> {
     let blob = base62::decode(token).map_err(|_| TokenError::InvalidBase62)?;
 
     // Header (29) + at least the Poly1305 tag (16), and no more than the
-    // configured payload cap. Check this before canonical re-encoding so an
-    // oversized decoded blob cannot drive extra O(n²) encode work.
+    // configured payload cap.
     if blob.len() < HEADER_BYTES + TAG_BYTES {
         return Err(TokenError::InvalidBase62);
     }
@@ -259,13 +258,17 @@ pub fn decode(token: &str, key: &[u8]) -> Result<Verified, TokenError> {
         return Err(TokenError::PayloadTooLarge);
     }
 
-    // Canonicality backstop: require the token to be the *unique* base62 spelling
-    // of its bytes. Re-encode and demand an exact match. This is intentionally
-    // stricter than generic Branca decoders: non-canonical leading-zero or
-    // embedded-newline spellings may decode elsewhere but are not accepted here.
-    if base62::encode(&blob) != token {
-        return Err(TokenError::InvalidBase62);
-    }
+    // Canonicality: base62 decoding is many-to-one in exactly two ways —
+    // leading '0' digits (rejected above, before decoding) and bytes outside
+    // the alphabet, which `base62::decode` rejects rather than skips (embedded
+    // newlines included). So every token that reaches this point is already
+    // the unique spelling of `blob`; re-encoding to compare would be O(n²)
+    // work that can never fail. Debug builds re-verify the equivalence.
+    debug_assert_eq!(
+        base62::encode(&blob),
+        token,
+        "accepted token must be the unique canonical spelling of its blob"
+    );
 
     // The version byte is a public constant, not secret, so a plain compare
     // leaks nothing a constant-time compare would hide. The distinct error is
