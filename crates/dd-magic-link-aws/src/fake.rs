@@ -18,7 +18,9 @@ use dd_magic_link_service::{
 };
 
 use crate::error::AwsAdapterError;
-use crate::hmac_key::{SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey};
+use crate::hmac_key::{
+    EMAIL_LOOKUP_HMAC_PREFIX, RATE_LOOKUP_HMAC_PREFIX, SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey,
+};
 
 /// Fake mirror of the DynamoDB user-session index item.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -114,7 +116,7 @@ impl FakeDynamoDbAuthStore {
 
     fn email_hmac(&self, email: &NormalizedEmail) -> Result<String, DependencyError> {
         self.storage_hmac_key
-            .hmac("emh", email.as_str())
+            .hmac(EMAIL_LOOKUP_HMAC_PREFIX, email.as_str())
             .map_err(DependencyError::from)
     }
 
@@ -126,7 +128,7 @@ impl FakeDynamoDbAuthStore {
 
     fn rate_hmac(&self, key: &RateLimitKey) -> Result<String, DependencyError> {
         self.storage_hmac_key
-            .hmac("rlh", key.as_str())
+            .hmac(RATE_LOOKUP_HMAC_PREFIX, key.as_str())
             .map_err(DependencyError::from)
     }
 

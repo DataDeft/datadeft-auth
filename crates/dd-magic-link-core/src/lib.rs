@@ -25,8 +25,8 @@ pub use flow_cookie::{
 };
 pub use hmac_lookup::{
     EMAIL_LOOKUP_PREFIX, HMAC_KEY_BYTES, LookupHmac, LookupHmacKey, SELECTOR_LOOKUP_PREFIX,
-    VERIFIER_HASH_PREFIX, VerifierHash, email_lookup_hmac, flow_account_binding,
-    flow_selector_binding, flow_verifier_binding, selector_lookup_hmac,
+    VERIFIER_HASH_PREFIX, VerifierHash, domain_separated_lookup_hmac, email_lookup_hmac,
+    flow_account_binding, flow_selector_binding, flow_verifier_binding, selector_lookup_hmac,
     selector_lookup_hmac_from_flow_binding, verifier_hash, verifier_hash_from_flow_binding,
 };
 pub use magic_link::{

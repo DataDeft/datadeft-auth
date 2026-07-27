@@ -2,54 +2,47 @@
 
 use core::fmt;
 
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
-use zeroize::Zeroize;
+use dd_magic_link_service::{LookupHmacKey, domain_separated_lookup_hmac};
 
 use crate::error::AwsAdapterError;
-
-type HmacSha256 = Hmac<Sha256>;
 
 /// Storage HMAC key length.
 pub const STORAGE_HMAC_KEY_BYTES: usize = 32;
 /// Storage prefix for session-id lookup HMACs.
 pub const SESSION_LOOKUP_HMAC_PREFIX: &str = "sih";
+/// Storage prefix for normalized-email lookup HMACs.
+///
+/// Same three-letter spelling as magic-link-core's `EMAIL_LOOKUP_PREFIX`, but
+/// keyed under the adapter storage domain, so the derived values are unrelated.
+pub const EMAIL_LOOKUP_HMAC_PREFIX: &str = "emh";
+/// Storage prefix for rate-limit counter lookup HMACs.
+pub const RATE_LOOKUP_HMAC_PREFIX: &str = "rlh";
 
 const STORAGE_HMAC_DOMAIN: &[u8] = b"magic-link-aws-storage-v1";
 
-/// Loaded storage lookup HMAC key/pepper. Debug is redacted; bytes zeroize on
-/// drop on a best-effort basis.
-pub struct StorageHmacKey([u8; STORAGE_HMAC_KEY_BYTES]);
+/// Loaded storage lookup HMAC key/pepper, bound to the adapter storage domain.
+///
+/// Wraps magic-link-core's key type and its shared keyed-lookup framing; only
+/// the `magic-link-aws-storage-v1` domain binding lives here, so the framing
+/// cannot drift from the lookup HMACs the service derives. Debug is redacted;
+/// bytes zeroize on drop via the wrapped key type.
+pub struct StorageHmacKey(LookupHmacKey);
 
 impl StorageHmacKey {
     #[must_use]
     pub fn new(bytes: [u8; STORAGE_HMAC_KEY_BYTES]) -> Self {
-        Self(bytes)
+        Self(LookupHmacKey::new(bytes))
     }
 
     pub fn from_slice(bytes: &[u8]) -> Result<Self, AwsAdapterError> {
-        let array: [u8; STORAGE_HMAC_KEY_BYTES] =
-            bytes.try_into().map_err(|_| AwsAdapterError::Internal)?;
-        Ok(Self::new(array))
+        LookupHmacKey::from_slice(bytes)
+            .map(Self)
+            .map_err(|_| AwsAdapterError::Internal)
     }
 
     pub(crate) fn hmac(&self, prefix: &str, value: &str) -> Result<String, AwsAdapterError> {
-        let mut mac = HmacSha256::new_from_slice(&self.0).map_err(|_| AwsAdapterError::Internal)?;
-        mac.update(STORAGE_HMAC_DOMAIN);
-        mac.update(&[0]);
-        mac.update(prefix.as_bytes());
-        mac.update(&[0]);
-        mac.update(value.as_bytes());
-        Ok(format!(
-            "{prefix}_{}",
-            hex::encode(mac.finalize().into_bytes())
-        ))
-    }
-}
-
-impl Drop for StorageHmacKey {
-    fn drop(&mut self) {
-        self.0.zeroize();
+        domain_separated_lookup_hmac(&self.0, STORAGE_HMAC_DOMAIN, prefix, value)
+            .map_err(|_| AwsAdapterError::Internal)
     }
 }
 
@@ -58,3 +51,7 @@ impl fmt::Debug for StorageHmacKey {
         f.write_str("StorageHmacKey(..)")
     }
 }
+
+#[cfg(test)]
+#[path = "hmac_key_tests.rs"]
+mod tests;

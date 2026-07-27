@@ -219,10 +219,23 @@ fn decode_canonical_hmac(
     Ok(decoded)
 }
 
-fn hmac_prefixed(key: &LookupHmacKey, prefix: &str, value: &str) -> Result<String, MagicLinkError> {
+/// Compute a domain-separated, prefixed lookup HMAC.
+///
+/// Framing: `HMAC-SHA256(key, domain || 0x00 || prefix || 0x00 || value)`,
+/// rendered as `{prefix}_{lowercase hex}`. This is the single keyed-lookup
+/// framing for the workspace. Adapters that store their own keyed lookup
+/// material bind a distinct `domain` and key, so their derived values are
+/// cryptographically unrelated to magic-link lookup values even for equal
+/// prefixes and inputs.
+pub fn domain_separated_lookup_hmac(
+    key: &LookupHmacKey,
+    domain: &[u8],
+    prefix: &str,
+    value: &str,
+) -> Result<String, MagicLinkError> {
     let mut mac =
         HmacSha256::new_from_slice(key.as_bytes()).map_err(|_| MagicLinkError::Internal)?;
-    mac.update(HMAC_DOMAIN);
+    mac.update(domain);
     mac.update(&[0]);
     mac.update(prefix.as_bytes());
     mac.update(&[0]);
@@ -231,6 +244,10 @@ fn hmac_prefixed(key: &LookupHmacKey, prefix: &str, value: &str) -> Result<Strin
         "{prefix}_{}",
         hex::encode(mac.finalize().into_bytes())
     ))
+}
+
+fn hmac_prefixed(key: &LookupHmacKey, prefix: &str, value: &str) -> Result<String, MagicLinkError> {
+    domain_separated_lookup_hmac(key, HMAC_DOMAIN, prefix, value)
 }
 
 #[cfg(test)]

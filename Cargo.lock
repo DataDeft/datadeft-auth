@@ -555,12 +555,9 @@ dependencies = [
  "dd-auth-token-core",
  "dd-magic-link-core",
  "dd-magic-link-service",
- "hex",
- "hmac",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
- "sha2",
  "tokio",
  "zeroize",
 ]

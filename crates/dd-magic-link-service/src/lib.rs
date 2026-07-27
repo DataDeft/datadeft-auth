@@ -21,6 +21,7 @@ pub use config::{MagicLinkConfigError, MagicLinkServiceConfig, RateLimitConfig};
 pub use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 pub use dd_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkFlowCookie, NormalizedEmail, VerifierHash,
+    domain_separated_lookup_hmac,
 };
 pub use error::{
     CommitMagicLinkAuthenticationError, DependencyError, MagicLinkFlowError, MagicLinkServiceError,

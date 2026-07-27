@@ -22,7 +22,9 @@ use crate::error::{
     AwsAdapterError, map_authentication_transact_write_items_error, map_get_item_error,
     map_put_item_error, map_update_item_error,
 };
-use crate::hmac_key::{SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey};
+use crate::hmac_key::{
+    EMAIL_LOOKUP_HMAC_PREFIX, RATE_LOOKUP_HMAC_PREFIX, SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey,
+};
 
 const MAGIC_LINK_CLEANUP_GRACE_SECS: u64 = 24 * 60 * 60;
 
@@ -68,7 +70,10 @@ impl DynamoDbAuthStore {
     }
 
     fn pk_user_email(&self, email: &NormalizedEmail) -> Result<String, AwsAdapterError> {
-        Ok(format!("USER#{}", self.hmac("emh", email.as_str())?))
+        Ok(format!(
+            "USER#{}",
+            self.hmac(EMAIL_LOOKUP_HMAC_PREFIX, email.as_str())?
+        ))
     }
 
     fn pk_user_id(user_id: &UserId) -> String {
@@ -83,7 +88,10 @@ impl DynamoDbAuthStore {
     ) -> Result<String, AwsAdapterError> {
         let window_index = fixed_window_index(now_unix, window_secs);
         let storage_key = format!("{}:{window_index}", key.as_str());
-        Ok(format!("RL#{}", self.hmac("rlh", &storage_key)?))
+        Ok(format!(
+            "RL#{}",
+            self.hmac(RATE_LOOKUP_HMAC_PREFIX, &storage_key)?
+        ))
     }
 
     fn item_to_authentication_candidate(
