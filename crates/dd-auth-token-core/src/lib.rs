@@ -43,5 +43,7 @@ pub mod branca;
 pub mod cookie;
 pub mod error;
 pub mod keyring;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 
 pub use error::TokenError;

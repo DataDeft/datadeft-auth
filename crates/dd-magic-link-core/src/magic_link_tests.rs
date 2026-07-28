@@ -1,46 +1,12 @@
 //! Magic-link token tests.
 
+use dd_auth_token_core::test_support::CountingRng;
+
 use super::*;
-use rand_core::{CryptoRng, RngCore};
-
-struct FixedRng {
-    bytes: Vec<u8>,
-    offset: usize,
-}
-
-impl FixedRng {
-    fn new() -> Self {
-        let bytes = (0u8..48).collect();
-        Self { bytes, offset: 0 }
-    }
-}
-
-impl RngCore for FixedRng {
-    fn next_u32(&mut self) -> u32 {
-        0
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        0
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        let end = self.offset + dest.len();
-        dest.copy_from_slice(&self.bytes[self.offset..end]);
-        self.offset = end;
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        self.fill_bytes(dest);
-        Ok(())
-    }
-}
-
-impl CryptoRng for FixedRng {}
 
 #[test]
 fn generated_token_uses_selector_and_verifier_entropy_sizes() {
-    let mut rng = FixedRng::new();
+    let mut rng = CountingRng::starting_at(0);
     let token = MagicLinkToken::generate(&mut rng).expect("generate token");
 
     assert_eq!(token.selector().as_lookup_value().len(), SELECTOR_HEX_LEN);

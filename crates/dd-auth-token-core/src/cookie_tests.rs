@@ -3,7 +3,7 @@
 use super::*;
 use crate::branca::{self, encode_with_nonce};
 use crate::keyring::{KeyId, KeyRing, KeySlot, RootSecret};
-use rand_core::{CryptoRng, RngCore};
+use crate::test_support::FixedBytesRng;
 
 /// Local purpose so wrapper tests do not depend on any product key policy.
 #[derive(Debug)]
@@ -15,30 +15,6 @@ impl KeyPurpose for TestCookie {
     const MAX_BODY_BYTES: usize = 128;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
 }
-
-struct FixedNonceRng([u8; branca::NONCE_BYTES]);
-
-impl RngCore for FixedNonceRng {
-    fn next_u32(&mut self) -> u32 {
-        0
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        0
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        assert_eq!(dest.len(), self.0.len());
-        dest.copy_from_slice(&self.0);
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        self.fill_bytes(dest);
-        Ok(())
-    }
-}
-
-impl CryptoRng for FixedNonceRng {}
 
 fn kid(value: &str) -> KeyId {
     KeyId::parse(value).expect("kid parses")
@@ -147,7 +123,7 @@ fn decrypt_wrapped_token_enforces_freshness_and_skew() {
 #[test]
 fn bound_cookie_round_trips_body_binds_kid_and_iat() {
     let ring = test_ring(0x88, "active");
-    let mut rng = FixedNonceRng([0x99; branca::NONCE_BYTES]);
+    let mut rng = FixedBytesRng([0x99; branca::NONCE_BYTES]);
 
     let value = mint_bound_cookie::<TestCookie, _>(b"session-body", &ring, &mut rng, 456, 456, 456)
         .expect("mint");
@@ -170,7 +146,7 @@ fn bound_cookie_round_trips_body_binds_kid_and_iat() {
 fn bound_cookie_enforces_idle_absolute_and_skew() {
     let ring = test_ring(0x8B, "active");
     let mint = |ts: u32, iat: u32| {
-        let mut rng = FixedNonceRng([0x99; branca::NONCE_BYTES]);
+        let mut rng = FixedBytesRng([0x99; branca::NONCE_BYTES]);
         mint_bound_cookie::<TestCookie, _>(b"body", &ring, &mut rng, ts, iat, u64::from(ts))
             .expect("mint")
     };
@@ -201,7 +177,7 @@ fn bound_cookie_enforces_idle_absolute_and_skew() {
     );
 
     // iat that postdates the activity timestamp is rejected as malformed.
-    let mut rng = FixedNonceRng([0x99; branca::NONCE_BYTES]);
+    let mut rng = FixedBytesRng([0x99; branca::NONCE_BYTES]);
     assert_eq!(
         mint_bound_cookie::<TestCookie, _>(b"body", &ring, &mut rng, 1_000, 2_000, 1_000)
             .unwrap_err(),
@@ -212,7 +188,7 @@ fn bound_cookie_enforces_idle_absolute_and_skew() {
 #[test]
 fn mint_rejects_timestamps_outside_skew_tolerance() {
     let ring = test_ring(0x8C, "active");
-    let mut rng = FixedNonceRng([0xAB; branca::NONCE_BYTES]);
+    let mut rng = FixedBytesRng([0xAB; branca::NONCE_BYTES]);
 
     assert_eq!(
         mint_bound_cookie::<TestCookie, _>(b"body", &ring, &mut rng, 1_000, 1_000, 1_061)
@@ -220,7 +196,7 @@ fn mint_rejects_timestamps_outside_skew_tolerance() {
         TokenError::InvalidTimestamp
     );
 
-    let mut rng = FixedNonceRng([0xAC; branca::NONCE_BYTES]);
+    let mut rng = FixedBytesRng([0xAC; branca::NONCE_BYTES]);
     assert_eq!(
         mint_bound_cookie::<TestCookie, _>(b"body", &ring, &mut rng, 1_000, 1_000, 939)
             .unwrap_err(),
@@ -241,7 +217,7 @@ fn mint_preserves_keyring_errors_instead_of_funneling_to_invalid_token() {
         10 + TestCookie::MAX_ABSOLUTE_AGE_SECS,
     )])
     .expect("ring");
-    let mut rng = FixedNonceRng([0xAD; branca::NONCE_BYTES]);
+    let mut rng = FixedBytesRng([0xAD; branca::NONCE_BYTES]);
 
     assert_eq!(
         mint_bound_cookie::<TestCookie, _>(b"body", &ring, &mut rng, 11, 11, 11).unwrap_err(),
@@ -260,7 +236,7 @@ fn body_cap_helper_accounts_for_framing() {
     );
 
     let ring = test_ring(0x8E, "active");
-    let mut rng = FixedNonceRng([0xAE; branca::NONCE_BYTES]);
+    let mut rng = FixedBytesRng([0xAE; branca::NONCE_BYTES]);
     let ok_body = vec![0x42; cap];
     let value = mint_bound_cookie::<TestCookie, _>(&ok_body, &ring, &mut rng, 1, 1, 1)
         .expect("max-size body mints");
@@ -268,7 +244,7 @@ fn body_cap_helper_accounts_for_framing() {
         .expect("max-size body parses");
     assert_eq!(parsed.body(), ok_body);
 
-    let mut rng = FixedNonceRng([0xAF; branca::NONCE_BYTES]);
+    let mut rng = FixedBytesRng([0xAF; branca::NONCE_BYTES]);
     let too_big = vec![0x42; cap + 1];
     assert_eq!(
         mint_bound_cookie::<TestCookie, _>(&too_big, &ring, &mut rng, 1, 1, 1).unwrap_err(),

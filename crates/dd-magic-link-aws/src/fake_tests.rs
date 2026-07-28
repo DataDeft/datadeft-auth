@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
+use dd_auth_token_core::keyring::{KeyPurpose, KeyRing};
+use dd_auth_token_core::test_support::{CountingRng, test_keyring_with_windows};
 use dd_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkFlowCookie, MagicLinkToken, NormalizedEmail,
     selector_lookup_hmac, verifier_hash,
@@ -17,7 +18,6 @@ use dd_magic_link_service::{
     RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkCommand, SessionCookie,
     SessionId, SessionRecord, SessionRepository, TemporaryAuthStateAction, UserId, UserRecord,
 };
-use rand_core::{CryptoRng, RngCore};
 use tokio::sync::Barrier;
 
 use super::*;
@@ -29,40 +29,6 @@ impl Clock for FixedClock {
         Ok(1_000)
     }
 }
-
-struct CounterRng {
-    next: u8,
-}
-
-impl CounterRng {
-    fn new() -> Self {
-        Self { next: 0 }
-    }
-}
-
-impl RngCore for CounterRng {
-    fn next_u32(&mut self) -> u32 {
-        0
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        0
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        for byte in dest {
-            *byte = self.next;
-            self.next = self.next.wrapping_add(1);
-        }
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        self.fill_bytes(dest);
-        Ok(())
-    }
-}
-
-impl CryptoRng for CounterRng {}
 
 #[derive(Clone)]
 struct CommitBarrierAuthenticationRepository {
@@ -111,26 +77,16 @@ impl RateLimiter for AllowAllLimiter {
 }
 
 fn session_keyring() -> KeyRing<SessionCookie> {
-    let kid = KeyId::parse("active").expect("kid");
-    let root = RootSecret::new([0x11; 32]);
-    let key = root.derive_key::<SessionCookie>(&kid).expect("derive key");
-    KeyRing::new(vec![KeySlot::active_with_windows(
-        kid,
-        key,
+    test_keyring_with_windows(
+        0x11,
+        "active",
         10_000,
         10_000 + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
-    )])
-    .expect("keyring")
+    )
 }
 
 fn flow_keyring() -> KeyRing<MagicLinkFlowCookie> {
-    let kid = KeyId::parse("flow-active").expect("flow kid");
-    let root = RootSecret::new([0x22; 32]);
-    let key = root
-        .derive_key::<MagicLinkFlowCookie>(&kid)
-        .expect("derive flow key");
-    KeyRing::new(vec![KeySlot::active_with_windows(kid, key, 10_000, 10_300)])
-        .expect("flow keyring")
+    test_keyring_with_windows(0x22, "flow-active", 10_000, 10_300)
 }
 
 #[derive(Clone)]
@@ -143,7 +99,7 @@ async fn begin_flow<Authentication, Sessions, Limiter>(
     authentication: &Authentication,
     sessions: &Sessions,
     limiter: &Limiter,
-    rng: &mut CounterRng,
+    rng: &mut CountingRng,
     raw_token: String,
     config: MagicLinkServiceConfig,
 ) -> Result<TestFlowState, MagicLinkFlowError>
@@ -179,7 +135,7 @@ async fn confirm_flow<Authentication, Sessions, Limiter>(
     authentication: &Authentication,
     sessions: &Sessions,
     limiter: &Limiter,
-    rng: &mut CounterRng,
+    rng: &mut CountingRng,
     flow: TestFlowState,
     config: MagicLinkServiceConfig,
 ) -> Result<ConfirmMagicLinkFlowOutcome, MagicLinkFlowError>
@@ -220,7 +176,7 @@ async fn fake_store_round_trips_request_and_scanner_flow_without_raw_session_sto
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
     let outbox = crate::FakeMagicLinkOutbox::default();
     let clock = FixedClock;
-    let mut rng = CounterRng::new();
+    let mut rng = CountingRng::starting_at(0);
     let lookup_key = LookupHmacKey::new([0x42; 32]);
     let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
 
@@ -300,7 +256,7 @@ async fn fake_scanner_confirmation_rejects_second_use() {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
     let outbox = crate::FakeMagicLinkOutbox::default();
     let clock = FixedClock;
-    let mut rng = CounterRng::new();
+    let mut rng = CountingRng::starting_at(0);
     let lookup_key = LookupHmacKey::new([0x42; 32]);
     let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
 
@@ -365,7 +321,7 @@ async fn shared_fake_end_to_end_confirmation_race_has_one_session_and_generic_lo
     let clock = FixedClock;
     let lookup_key = LookupHmacKey::new([0x42; 32]);
     let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
-    let mut request_rng = CounterRng::new();
+    let mut request_rng = CountingRng::starting_at(0);
     {
         let mut request = MagicLinkRequestService {
             magic_links: &store,
@@ -417,7 +373,7 @@ async fn shared_fake_end_to_end_confirmation_race_has_one_session_and_generic_lo
         let task_flow = flow.clone();
         let task_config = config.clone();
         tasks.push(tokio::spawn(async move {
-            let mut rng = CounterRng { next: start };
+            let mut rng = CountingRng::starting_at(start);
             confirm_flow(
                 &task_authentication,
                 &task_store,
@@ -458,7 +414,7 @@ async fn disable_between_landing_read_and_confirmation_commit_does_not_burn_link
     let clock = FixedClock;
     let lookup_key = LookupHmacKey::new([0x42; 32]);
     let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
-    let mut rng = CounterRng::new();
+    let mut rng = CountingRng::starting_at(0);
     {
         let mut request = MagicLinkRequestService {
             magic_links: &store,
@@ -582,7 +538,7 @@ fn authentication_fixture(
 ) {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x35; 32]));
     let lookup_key = LookupHmacKey::new([0x46; 32]);
-    let token = MagicLinkToken::generate(&mut CounterRng::new()).expect("token");
+    let token = MagicLinkToken::generate(&mut CountingRng::starting_at(0)).expect("token");
     let selector_lookup_hmac =
         selector_lookup_hmac(&lookup_key, token.selector()).expect("selector hmac");
     let record = MagicLinkRecord {

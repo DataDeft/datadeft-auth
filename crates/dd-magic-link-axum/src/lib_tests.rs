@@ -8,7 +8,8 @@ use axum::extract::Request;
 use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE, COOKIE, LOCATION, ORIGIN, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::IntoResponse;
-use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
+use dd_auth_token_core::keyring::{KeyPurpose, KeyRing};
+use dd_auth_token_core::test_support::{CountingRng, test_keyring_with_windows};
 use dd_magic_link_core::{LookupHmac, LookupHmacKey, MagicLinkFlowCookie, NormalizedEmail};
 use dd_magic_link_service::{
     BeginMagicLinkLandingCommand, Clock, CommitMagicLinkAuthentication,
@@ -17,7 +18,6 @@ use dd_magic_link_service::{
     MagicLinkServiceError, RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkOutcome,
     SessionCookie, SessionId, SessionRecord, SessionRepository, SessionValidationError, UserRecord,
 };
-use rand_core::{CryptoRng, RngCore};
 
 use super::*;
 
@@ -159,40 +159,8 @@ impl Clock for FixtureClock {
     }
 }
 
-struct FixtureRng(u8);
-
-impl RngCore for FixtureRng {
-    fn next_u32(&mut self) -> u32 {
-        0
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        0
-    }
-
-    fn fill_bytes(&mut self, destination: &mut [u8]) {
-        for byte in destination {
-            *byte = self.0;
-            self.0 = self.0.wrapping_add(1);
-        }
-    }
-
-    fn try_fill_bytes(&mut self, destination: &mut [u8]) -> Result<(), rand_core::Error> {
-        self.fill_bytes(destination);
-        Ok(())
-    }
-}
-
-impl CryptoRng for FixtureRng {}
-
 fn fixture_keyring<P: KeyPurpose>() -> KeyRing<P> {
-    let kid = KeyId::parse("fixture-active").expect("key id");
-    let root = RootSecret::new([0x42; 32]);
-    let key = root.derive_key::<P>(&kid).expect("derived key");
-    KeyRing::new(vec![KeySlot::active_with_windows(
-        kid, key, 20_000, 3_000_000,
-    )])
-    .expect("keyring")
+    test_keyring_with_windows(0x42, "fixture-active", 20_000, 3_000_000)
 }
 
 async fn fixture_flow_error(kind: FixtureFlowError) -> MagicLinkFlowError {
@@ -202,7 +170,7 @@ async fn fixture_flow_error(kind: FixtureFlowError) -> MagicLinkFlowError {
         error: matches!(kind, FixtureFlowError::Unavailable)
             .then_some(DependencyError::Unavailable),
     };
-    let mut rng = FixtureRng(0);
+    let mut rng = CountingRng::starting_at(0);
     let lookup_key = LookupHmacKey::new([0x24; 32]);
     let flow_keyring = fixture_keyring::<MagicLinkFlowCookie>();
     let session_keyring = fixture_keyring::<SessionCookie>();

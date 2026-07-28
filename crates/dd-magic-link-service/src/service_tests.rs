@@ -2,14 +2,13 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
-use std::num::NonZeroU32;
 
-use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
+use dd_auth_token_core::keyring::{KeyPurpose, KeyRing};
+use dd_auth_token_core::test_support::{CountingRng, test_keyring_with_windows};
 use dd_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkFlowCookie, MagicLinkToken, NormalizedEmail,
     selector_lookup_hmac, verifier_hash,
 };
-use rand_core::{CryptoRng, RngCore};
 
 use super::*;
 use crate::TemporaryAuthStateAction;
@@ -27,65 +26,6 @@ const NOW: u64 = 1_000;
 const SELECTOR: &str = "000102030405060708090a0b0c0d0e0f";
 const VERIFIER: &str = "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f";
 const OTHER_VERIFIER: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
-
-struct TestRng {
-    next: u8,
-    calls: usize,
-    fail_at: Option<usize>,
-}
-
-impl TestRng {
-    fn working() -> Self {
-        Self {
-            next: 0,
-            calls: 0,
-            fail_at: None,
-        }
-    }
-
-    fn failing_at(call: usize) -> Self {
-        Self {
-            next: 0,
-            calls: 0,
-            fail_at: Some(call),
-        }
-    }
-
-    fn fill_pattern(&mut self, dest: &mut [u8]) {
-        for byte in dest {
-            *byte = self.next;
-            self.next = self.next.wrapping_add(1);
-        }
-    }
-}
-
-impl RngCore for TestRng {
-    fn next_u32(&mut self) -> u32 {
-        0
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        0
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.calls += 1;
-        self.fill_pattern(dest);
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        self.calls += 1;
-        if self.fail_at == Some(self.calls) {
-            return Err(rand_core::Error::from(
-                NonZeroU32::new(1).expect("nonzero error code"),
-            ));
-        }
-        self.fill_pattern(dest);
-        Ok(())
-    }
-}
-
-impl CryptoRng for TestRng {}
 
 struct FixedClock {
     now: u64,
@@ -375,18 +315,12 @@ fn expected_selector_lookup() -> LookupHmac {
 }
 
 fn session_keyring_with_mint_until(mint_until_unix: u64) -> KeyRing<SessionCookie> {
-    let kid = KeyId::parse("active").expect("key id");
-    let root = RootSecret::new([0x11; 32]);
-    let key = root
-        .derive_key::<SessionCookie>(&kid)
-        .expect("derive session key");
-    KeyRing::new(vec![KeySlot::active_with_windows(
-        kid,
-        key,
+    test_keyring_with_windows(
+        0x11,
+        "active",
         mint_until_unix,
         mint_until_unix + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
-    )])
-    .expect("session keyring")
+    )
 }
 
 fn session_keyring() -> KeyRing<SessionCookie> {
@@ -394,13 +328,7 @@ fn session_keyring() -> KeyRing<SessionCookie> {
 }
 
 fn flow_keyring() -> KeyRing<MagicLinkFlowCookie> {
-    let kid = KeyId::parse("flow-active").expect("key id");
-    let root = RootSecret::new([0x33; 32]);
-    let key = root
-        .derive_key::<MagicLinkFlowCookie>(&kid)
-        .expect("derive flow key");
-    KeyRing::new(vec![KeySlot::active_with_windows(kid, key, 20_000, 20_300)])
-        .expect("flow keyring")
+    test_keyring_with_windows(0x33, "flow-active", 20_000, 20_300)
 }
 
 fn config() -> MagicLinkServiceConfig {
@@ -459,7 +387,7 @@ async fn begin_flow(
     repository: &FakeRepository,
     limiter: &AllowLimiter,
     clock: &FixedClock,
-    rng: &mut TestRng,
+    rng: &mut CountingRng,
     raw_token: String,
     config: MagicLinkServiceConfig,
 ) -> Result<BeginMagicLinkLandingOutcome, MagicLinkFlowError> {
@@ -487,7 +415,7 @@ async fn confirm_flow(
     repository: &FakeRepository,
     limiter: &AllowLimiter,
     clock: &FixedClock,
-    rng: &mut TestRng,
+    rng: &mut CountingRng,
     flow_cookie: String,
     confirmation: String,
     country: Option<String>,
@@ -515,7 +443,7 @@ async fn request(
     repository: &FakeRepository,
     limiter: &AllowLimiter,
     outbox: &FakeOutbox,
-    rng: &mut TestRng,
+    rng: &mut CountingRng,
     config: MagicLinkServiceConfig,
 ) -> Result<RequestMagicLinkOutcome, MagicLinkServiceError> {
     let clock = FixedClock::at(NOW);
@@ -546,7 +474,7 @@ async fn valid_landing_is_bounded_non_mutating_and_caps_expiry_to_record() {
     *repository.candidate.borrow_mut() = Some(candidate());
     let limiter = AllowLimiter::default();
     let clock = FixedClock::at(NOW);
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let outcome = begin_flow(
         &repository,
         &limiter,
@@ -566,7 +494,7 @@ async fn valid_landing_is_bounded_non_mutating_and_caps_expiry_to_record() {
     assert_eq!(verifier_comparison_count(), 1);
     assert_eq!(limiter.calls.get(), 1);
     assert!(limiter.checked.borrow()[0].starts_with("magic-link:landing:selector:"));
-    assert_eq!(rng.calls, 2);
+    assert_eq!(rng.calls(), 2);
     assert_eq!(outcome.cookie_max_age_secs(), 100);
     assert_eq!(outcome.account_identity().as_str(), "account@example.test");
     let debug = format!("{outcome:?}");
@@ -581,7 +509,7 @@ async fn landing_selector_miss_does_one_dummy_read_and_creates_no_flow_state() {
     let repository = FakeRepository::default();
     let limiter = AllowLimiter::default();
     let clock = FixedClock::at(NOW);
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let error = begin_flow(
         &repository,
         &limiter,
@@ -609,7 +537,7 @@ async fn landing_selector_miss_does_one_dummy_read_and_creates_no_flow_state() {
     assert_eq!(repository.user_reads.get(), 0);
     assert!(repository.commands.borrow().is_empty());
     assert!(repository.sessions.borrow().is_empty());
-    assert_eq!(rng.calls, 0);
+    assert_eq!(rng.calls(), 0);
 }
 
 #[tokio::test]
@@ -620,7 +548,7 @@ async fn landing_uses_configured_expiry_cap_and_rejects_expiry_at_now() {
     *repository.candidate.borrow_mut() = Some(value);
     let limiter = AllowLimiter::default();
     let clock = FixedClock::at(NOW);
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let mut policy = config();
     policy.magic_link_flow_ttl_secs = 30;
     let outcome = begin_flow(
@@ -643,7 +571,7 @@ async fn landing_uses_configured_expiry_cap_and_rejects_expiry_at_now() {
         &repository,
         &AllowLimiter::default(),
         &FixedClock::at(NOW),
-        &mut TestRng::working(),
+        &mut CountingRng::starting_at(0),
         token(VERIFIER).as_secret_value().to_string(),
         config(),
     )
@@ -668,7 +596,7 @@ async fn confirmation_accepts_authenticated_expiry_then_rejects_post_expiry() {
         *repository.candidate.borrow_mut() = Some(value);
         let mut policy = config();
         policy.magic_link_flow_ttl_secs = 30;
-        let mut rng = TestRng::working();
+        let mut rng = CountingRng::starting_at(0);
         let landing = begin_flow(
             &repository,
             &AllowLimiter::default(),
@@ -726,7 +654,7 @@ async fn confirmation_accepts_authenticated_expiry_then_rejects_post_expiry() {
     // candidate expiry, the service's stricter candidate rule still rejects.
     let repository = FakeRepository::default();
     *repository.candidate.borrow_mut() = Some(candidate());
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let landing = begin_flow(
         &repository,
         &AllowLimiter::default(),
@@ -779,7 +707,7 @@ async fn malformed_and_oversized_landing_are_generic_and_do_no_limiter_or_reposi
         *repository.candidate.borrow_mut() = Some(candidate());
         let limiter = AllowLimiter::default();
         let clock = FixedClock::at(NOW);
-        let mut rng = TestRng::working();
+        let mut rng = CountingRng::starting_at(0);
         let error = begin_flow(&repository, &limiter, &clock, &mut rng, raw_token, config())
             .await
             .expect_err("invalid landing");
@@ -795,7 +723,7 @@ async fn malformed_and_oversized_landing_are_generic_and_do_no_limiter_or_reposi
         assert_eq!(limiter.calls.get(), 0);
         assert!(limiter.checked.borrow().is_empty());
         assert_eq!(repository.candidate_reads.get(), 0);
-        assert_eq!(rng.calls, 0);
+        assert_eq!(rng.calls(), 0);
     }
 }
 
@@ -809,7 +737,7 @@ async fn landing_selector_limit_is_generic_and_precedes_repository_work() {
         &repository,
         &limiter,
         &FixedClock::at(NOW),
-        &mut TestRng::working(),
+        &mut CountingRng::starting_at(0),
         token(VERIFIER).as_secret_value().to_string(),
         config(),
     )
@@ -829,7 +757,7 @@ async fn landing_invalid_config_precedes_clock_limiter_repository_and_entropy() 
     *repository.candidate.borrow_mut() = Some(candidate());
     let limiter = AllowLimiter::default();
     let clock = FixedClock::at(NOW);
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let mut policy = config();
     policy.magic_link_flow_ttl_secs = 0;
     let error = begin_flow(
@@ -850,7 +778,7 @@ async fn landing_invalid_config_precedes_clock_limiter_repository_and_entropy() 
     assert_eq!(clock.calls.get(), 0);
     assert_eq!(limiter.calls.get(), 0);
     assert_eq!(repository.candidate_reads.get(), 0);
-    assert_eq!(rng.calls, 0);
+    assert_eq!(rng.calls(), 0);
 }
 
 #[tokio::test]
@@ -863,7 +791,7 @@ async fn landing_dependency_and_entropy_failures_preserve_temporary_state() {
         &repository,
         &limiter,
         &FixedClock::at(NOW),
-        &mut TestRng::working(),
+        &mut CountingRng::starting_at(0),
         token(VERIFIER).as_secret_value().to_string(),
         config(),
     )
@@ -882,7 +810,7 @@ async fn landing_dependency_and_entropy_failures_preserve_temporary_state() {
             &repository,
             &AllowLimiter::default(),
             &FixedClock::at(NOW),
-            &mut TestRng::failing_at(fail_at),
+            &mut CountingRng::failing_at(fail_at),
             token(VERIFIER).as_secret_value().to_string(),
             config(),
         )
@@ -901,7 +829,7 @@ async fn landing_dependency_and_entropy_failures_preserve_temporary_state() {
 async fn scanner_confirmation_atomically_authenticates_and_replay_clears() {
     let repository = FakeRepository::default();
     *repository.candidate.borrow_mut() = Some(candidate());
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let landing = begin_flow(
         &repository,
         &AllowLimiter::default(),
@@ -978,7 +906,7 @@ async fn confirmation_rejects_cookie_nonce_verifier_account_and_stale_mismatches
         reset_verifier_comparison_count();
         let repository = FakeRepository::default();
         *repository.candidate.borrow_mut() = Some(candidate());
-        let mut rng = TestRng::working();
+        let mut rng = CountingRng::starting_at(0);
         let landing = begin_flow(
             &repository,
             &AllowLimiter::default(),
@@ -1075,7 +1003,7 @@ async fn scanner_confirmation_disabled_user_is_generic_and_does_not_burn_link() 
     *repository.candidate.borrow_mut() = Some(candidate());
     *repository.user.borrow_mut() =
         Some(existing_user("usr_000102030405060708090a0b0c0d0e0f", true));
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let landing = begin_flow(
         &repository,
         &AllowLimiter::default(),
@@ -1143,7 +1071,7 @@ async fn scanner_confirmation_dependency_preserves_and_internal_clears() {
                 .borrow_mut()
                 .push_back(commit_error);
         }
-        let mut rng = TestRng::working();
+        let mut rng = CountingRng::starting_at(0);
         let landing = begin_flow(
             &repository,
             &AllowLimiter::default(),
@@ -1186,7 +1114,7 @@ async fn confirmation_selector_miss_performs_one_dummy_comparison() {
     reset_verifier_comparison_count();
     let repository = FakeRepository::default();
     *repository.candidate.borrow_mut() = Some(candidate());
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let landing = begin_flow(
         &repository,
         &AllowLimiter::default(),
@@ -1230,7 +1158,7 @@ async fn scanner_confirmation_preserves_exact_retry_and_replan_behavior() {
         .borrow_mut()
         .push_back(CommitMagicLinkAuthenticationError::UserConflict);
     repository.install_winner_on_user_conflict.set(true);
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let landing = begin_flow(
         &repository,
         &AllowLimiter::default(),
@@ -1268,7 +1196,7 @@ async fn scanner_confirmation_retries_ambiguous_commit_without_replanning() {
     let repository = FakeRepository::default();
     *repository.candidate.borrow_mut() = Some(candidate());
     repository.apply_then_unavailable_once.set(true);
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let landing = begin_flow(
         &repository,
         &AllowLimiter::default(),
@@ -1311,7 +1239,7 @@ async fn scanner_confirmation_replans_session_conflict_with_fresh_cookie_and_att
         .commit_results
         .borrow_mut()
         .push_back(CommitMagicLinkAuthenticationError::SessionConflict);
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let landing = begin_flow(
         &repository,
         &AllowLimiter::default(),
@@ -1424,7 +1352,7 @@ async fn request_side_repository_remains_put_only_and_stores_no_user_id() {
     let outbox = FakeOutbox::default();
     let clock = FixedClock::at(NOW);
     let key = lookup_key();
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let mut service = MagicLinkRequestService {
         magic_links: &repository,
         limiter: &limiter,
@@ -1461,7 +1389,7 @@ async fn request_rate_limit_denials_are_generic_and_suppress_side_effects() {
             &repository,
             &limiter,
             &outbox,
-            &mut TestRng::working(),
+            &mut CountingRng::starting_at(0),
             config(),
         )
         .await;
@@ -1481,7 +1409,7 @@ async fn limiter_and_outbox_dependency_errors_remain_generic() {
         &repository,
         &limiter,
         &outbox,
-        &mut TestRng::working(),
+        &mut CountingRng::starting_at(0),
         config(),
     )
     .await;
@@ -1497,7 +1425,7 @@ async fn limiter_and_outbox_dependency_errors_remain_generic() {
         &repository,
         &limiter,
         &outbox,
-        &mut TestRng::working(),
+        &mut CountingRng::starting_at(0),
         config(),
     )
     .await;
@@ -1515,7 +1443,7 @@ async fn scanner_confirmation_malformed_and_selector_limits_are_generic_and_non_
         &repository,
         &malformed_limiter,
         &FixedClock::at(NOW),
-        &mut TestRng::working(),
+        &mut CountingRng::starting_at(0),
         "malformed-flow-cookie".to_owned(),
         "malformed-confirmation".to_owned(),
         Some("HU".to_owned()),
@@ -1531,7 +1459,7 @@ async fn scanner_confirmation_malformed_and_selector_limits_are_generic_and_non_
     assert!(malformed_limiter.checked.borrow().is_empty());
     assert_eq!(repository.candidate_reads.get(), 0);
 
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let landing = begin_flow(
         &repository,
         &AllowLimiter::default(),
@@ -1572,7 +1500,7 @@ async fn revoke_session_still_delegates_to_the_session_repository() {
     let key = lookup_key();
     let flow_keyring = flow_keyring();
     let session_keyring = session_keyring();
-    let mut rng = TestRng::working();
+    let mut rng = CountingRng::starting_at(0);
     let service = MagicLinkFlowService {
         authentication: &repository,
         sessions: &repository,

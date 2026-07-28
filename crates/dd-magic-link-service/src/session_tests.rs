@@ -3,37 +3,13 @@
 use std::cell::{Cell, RefCell};
 
 use dd_auth_token_core::cookie::mint_bound_cookie;
-use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
+use dd_auth_token_core::keyring::{KeyPurpose, KeyRing};
+use dd_auth_token_core::test_support::{PerCallRng, test_keyring_with_windows};
 use dd_magic_link_core::NormalizedEmail;
-use rand_core::{CryptoRng, RngCore};
 
 use super::*;
 use crate::session_body::encode_session_cookie_body;
 use crate::types::{SessionId, UserId};
-
-struct PatternRng(u8);
-
-impl RngCore for PatternRng {
-    fn next_u32(&mut self) -> u32 {
-        0
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        0
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        dest.fill(self.0);
-        self.0 = self.0.wrapping_add(1);
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        self.fill_bytes(dest);
-        Ok(())
-    }
-}
-
-impl CryptoRng for PatternRng {}
 
 struct TestClock {
     result: Result<u64, DependencyError>,
@@ -121,18 +97,12 @@ impl SessionRepository for TestSessions {
 }
 
 fn keyring() -> KeyRing<SessionCookie> {
-    let kid = KeyId::parse("session-active").expect("kid");
-    let root = RootSecret::new([0x51; 32]);
-    let key = root
-        .derive_key::<SessionCookie>(&kid)
-        .expect("derive session key");
-    KeyRing::new(vec![KeySlot::active_with_windows(
-        kid,
-        key,
+    test_keyring_with_windows(
+        0x51,
+        "session-active",
         10_000,
         10_000 + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
-    )])
-    .expect("keyring")
+    )
 }
 
 fn session_id() -> SessionId {
@@ -173,7 +143,7 @@ fn cookie(
 }
 
 fn raw_cookie(keyring: &KeyRing<SessionCookie>, timestamp: u32, iat: u32, body: &[u8]) -> String {
-    let mut rng = PatternRng(0x61);
+    let mut rng = PerCallRng::starting_at(0x61);
     mint_bound_cookie::<SessionCookie, _>(
         body,
         keyring,

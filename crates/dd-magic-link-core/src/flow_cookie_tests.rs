@@ -1,11 +1,9 @@
 //! Magic-link flow-cookie tests.
 
-use core::num::NonZeroU32;
-
 use dd_auth_token_core::branca;
 use dd_auth_token_core::cookie::{max_body_bytes, mint_bound_cookie};
 use dd_auth_token_core::keyring::{KEY_BYTES, KeyId, KeyRing, KeySlot, RootSecret};
-use rand_core::{CryptoRng, RngCore};
+use dd_auth_token_core::test_support::{FailOnCallRng, PerCallRng, test_keyring};
 use zeroize::Zeroize;
 
 use super::*;
@@ -21,82 +19,12 @@ impl KeyPurpose for OtherCookie {
     const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
 }
 
-struct PatternRng {
-    calls: u8,
-}
-
-impl PatternRng {
-    fn new() -> Self {
-        Self { calls: 0 }
-    }
-}
-
-impl RngCore for PatternRng {
-    fn next_u32(&mut self) -> u32 {
-        0
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        0
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.try_fill_bytes(dest).expect("pattern rng fills");
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        let value = 0xa0_u8.wrapping_add(self.calls);
-        dest.fill(value);
-        self.calls = self.calls.wrapping_add(1);
-        Ok(())
-    }
-}
-
-impl CryptoRng for PatternRng {}
-
-struct FailOnCallRng {
-    calls: usize,
-    fail_on: usize,
-}
-
-impl RngCore for FailOnCallRng {
-    fn next_u32(&mut self) -> u32 {
-        0
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        0
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        let _ = self.try_fill_bytes(dest);
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        let call = self.calls;
-        self.calls += 1;
-        if call == self.fail_on {
-            let code = NonZeroU32::new(rand_core::Error::CUSTOM_START)
-                .expect("rand_core custom error code is non-zero");
-            return Err(rand_core::Error::from(code));
-        }
-        dest.fill(0x5a);
-        Ok(())
-    }
-}
-
-impl CryptoRng for FailOnCallRng {}
-
 fn kid(value: &str) -> KeyId {
     KeyId::parse(value).expect("kid parses")
 }
 
 fn flow_ring(root_byte: u8, kid_value: &str) -> KeyRing<MagicLinkFlowCookie> {
-    let root = RootSecret::new([root_byte; KEY_BYTES]);
-    let key = root
-        .derive_key::<MagicLinkFlowCookie>(&kid(kid_value))
-        .expect("derive flow key");
-    KeyRing::new(vec![KeySlot::active(kid(kid_value), key)]).expect("flow ring")
+    test_keyring::<MagicLinkFlowCookie>(root_byte, kid_value)
 }
 
 fn bindings(expires_at_unix: u32) -> MagicLinkFlowBindings {
@@ -113,7 +41,7 @@ fn mint_flow(
     now_unix: u64,
     expires_at_unix: u32,
 ) -> MintedMagicLinkFlow {
-    let mut rng = PatternRng::new();
+    let mut rng = PerCallRng::starting_at(0xa0);
     mint_magic_link_flow(bindings(expires_at_unix), ring, &mut rng, now_unix).expect("flow mints")
 }
 
@@ -296,19 +224,19 @@ fn flow_enforces_explicit_and_caller_freshness_boundaries() {
 fn mint_enforces_explicit_expiry_and_u32_time_bounds() {
     let ring = flow_ring(0x74, "flow-active");
 
-    let mut rng = PatternRng::new();
+    let mut rng = PerCallRng::starting_at(0xa0);
     assert_eq!(
         mint_magic_link_flow(bindings(999), &ring, &mut rng, 1_000).unwrap_err(),
         TokenError::InvalidTimestamp
     );
-    let mut rng = PatternRng::new();
+    let mut rng = PerCallRng::starting_at(0xa0);
     assert_eq!(
         mint_magic_link_flow(bindings(1_301), &ring, &mut rng, 1_000).unwrap_err(),
         TokenError::InvalidTimestamp
     );
-    let mut rng = PatternRng::new();
+    let mut rng = PerCallRng::starting_at(0xa0);
     assert!(mint_magic_link_flow(bindings(1_000), &ring, &mut rng, 1_000).is_ok());
-    let mut rng = PatternRng::new();
+    let mut rng = PerCallRng::starting_at(0xa0);
     assert_eq!(
         mint_magic_link_flow(bindings(u32::MAX), &ring, &mut rng, u64::from(u32::MAX) + 1,)
             .unwrap_err(),
@@ -321,7 +249,7 @@ fn future_dated_flow_cookie_beyond_skew_fails_generically() {
     let ring = flow_ring(0x7a, "flow-active");
     let confirmation_nonce = MagicLinkFlowNonce([0xa0; MAGIC_LINK_FLOW_NONCE_BYTES]);
     let mut body = encode_flow_body(&bindings(1_100), &confirmation_nonce);
-    let mut rng = PatternRng::new();
+    let mut rng = PerCallRng::starting_at(0xa0);
     let cookie =
         mint_bound_cookie::<MagicLinkFlowCookie, _>(&body, &ring, &mut rng, 1_100, 1_100, 1_100)
             .expect("future fixture mints");
@@ -411,7 +339,7 @@ fn old_authenticated_body_shapes_fail_generically() {
     let confirmation = "aa".repeat(MAGIC_LINK_FLOW_NONCE_BYTES);
 
     for old_body in [&old_134_body, &old_166_body] {
-        let mut rng = PatternRng::new();
+        let mut rng = PerCallRng::starting_at(0xa0);
         let cookie = mint_bound_cookie::<MagicLinkFlowCookie, _>(
             old_body, &ring, &mut rng, 1_000, 1_000, 1_000,
         )
@@ -426,13 +354,8 @@ fn old_authenticated_body_shapes_fail_generically() {
 #[test]
 fn flow_purpose_rejects_other_purpose_cookie_and_has_tight_size_cap() {
     let flow_ring = flow_ring(0x77, "flow-active");
-    let other_root = RootSecret::new([0x77; KEY_BYTES]);
-    let other_key = other_root
-        .derive_key::<OtherCookie>(&kid("other-active"))
-        .expect("derive other key");
-    let other_ring =
-        KeyRing::new(vec![KeySlot::active(kid("other-active"), other_key)]).expect("other ring");
-    let mut rng = PatternRng::new();
+    let other_ring = test_keyring::<OtherCookie>(0x77, "other-active");
+    let mut rng = PerCallRng::starting_at(0xa0);
     let other_cookie = mint_bound_cookie::<OtherCookie, _>(
         b"other-body",
         &other_ring,
@@ -508,20 +431,14 @@ fn flow_cookie_verifies_across_active_to_verify_only_rotation() {
 fn entropy_failures_propagate_from_both_nonce_draws() {
     let ring = flow_ring(0x78, "flow-active");
 
-    let mut confirmation_failure = FailOnCallRng {
-        calls: 0,
-        fail_on: 0,
-    };
+    let mut confirmation_failure = FailOnCallRng::failing_on(0);
     assert_eq!(
         mint_magic_link_flow(bindings(1_300), &ring, &mut confirmation_failure, 1_000,)
             .unwrap_err(),
         TokenError::EntropyUnavailable
     );
 
-    let mut branca_failure = FailOnCallRng {
-        calls: 0,
-        fail_on: 1,
-    };
+    let mut branca_failure = FailOnCallRng::failing_on(1);
     assert_eq!(
         mint_magic_link_flow(bindings(1_300), &ring, &mut branca_failure, 1_000,).unwrap_err(),
         TokenError::EntropyUnavailable
@@ -534,7 +451,7 @@ fn sensitive_debug_output_is_fully_redacted() {
     let input = bindings(1_300);
     assert_eq!(format!("{input:?}"), "MagicLinkFlowBindings(..)");
     let minted = {
-        let mut rng = PatternRng::new();
+        let mut rng = PerCallRng::starting_at(0xa0);
         mint_magic_link_flow(input, &ring, &mut rng, 1_000).expect("flow mints")
     };
     let cookie_value = minted.cookie().as_secret_value().to_owned();
