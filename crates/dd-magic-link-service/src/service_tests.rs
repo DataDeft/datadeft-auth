@@ -18,8 +18,7 @@ use crate::traits::{
     SessionRepository,
 };
 use crate::types::{
-    EmailLocale, MAX_RAW_MAGIC_LINK_TOKEN_BYTES, RequestMagicLinkCommand, SessionCookie,
-    SessionRecord,
+    MAX_RAW_MAGIC_LINK_TOKEN_BYTES, RequestMagicLinkCommand, SessionCookie, SessionRecord,
 };
 
 const NOW: u64 = 1_000;
@@ -460,7 +459,6 @@ async fn request(
     service
         .request_magic_link(RequestMagicLinkCommand::new(
             NormalizedEmail::parse("account@example.test").expect("email"),
-            EmailLocale::En,
             true,
             true,
         ))
@@ -1365,7 +1363,6 @@ async fn request_side_repository_remains_put_only_and_stores_no_user_id() {
     service
         .request_magic_link(RequestMagicLinkCommand::new(
             NormalizedEmail::parse("account@example.test").expect("email"),
-            EmailLocale::En,
             true,
             true,
         ))

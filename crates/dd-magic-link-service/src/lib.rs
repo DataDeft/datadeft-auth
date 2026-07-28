@@ -53,9 +53,9 @@ pub use traits::{
 pub use types::{
     AuthenticationAttemptId, BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome,
     CommitMagicLinkAuthentication, ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome,
-    EmailLocale, MAX_RAW_MAGIC_LINK_TOKEN_BYTES, MagicLinkAccountIdentity,
-    MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
-    MagicLinkAuthenticationOutcome, MagicLinkAuthenticationUser, MagicLinkEmail, MagicLinkRecord,
-    RateLimitKey, RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionCookie, SessionId,
-    SessionRecord, UserId, UserRecord,
+    MAX_RAW_MAGIC_LINK_TOKEN_BYTES, MagicLinkAccountIdentity, MagicLinkAuthenticationCandidate,
+    MagicLinkAuthenticationExpectation, MagicLinkAuthenticationOutcome,
+    MagicLinkAuthenticationUser, MagicLinkEmail, MagicLinkRecord, RateLimitKey,
+    RequestMagicLinkCommand, RequestMagicLinkOutcome, SessionCookie, SessionId, SessionRecord,
+    UserId, UserRecord,
 };

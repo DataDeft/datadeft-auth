@@ -11,12 +11,12 @@ use dd_magic_link_core::{
 use dd_magic_link_service::{
     AuthenticationAttemptId, BeginMagicLinkLandingCommand, Clock, CommitMagicLinkAuthentication,
     CommitMagicLinkAuthenticationError, ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome,
-    DependencyError, EmailLocale, MagicLinkAuthenticationCandidate,
-    MagicLinkAuthenticationExpectation, MagicLinkAuthenticationRepository,
-    MagicLinkAuthenticationUser, MagicLinkFlowError, MagicLinkFlowService, MagicLinkRecord,
-    MagicLinkRepository, MagicLinkRequestService, MagicLinkServiceConfig, MagicLinkServiceError,
-    RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkCommand, SessionCookie,
-    SessionId, SessionRecord, SessionRepository, TemporaryAuthStateAction, UserId, UserRecord,
+    DependencyError, MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
+    MagicLinkAuthenticationRepository, MagicLinkAuthenticationUser, MagicLinkFlowError,
+    MagicLinkFlowService, MagicLinkRecord, MagicLinkRepository, MagicLinkRequestService,
+    MagicLinkServiceConfig, MagicLinkServiceError, RateLimitDecision, RateLimitKey, RateLimiter,
+    RequestMagicLinkCommand, SessionCookie, SessionId, SessionRecord, SessionRepository,
+    TemporaryAuthStateAction, UserId, UserRecord,
 };
 use tokio::sync::Barrier;
 
@@ -165,7 +165,6 @@ where
 fn command() -> RequestMagicLinkCommand {
     RequestMagicLinkCommand::new(
         NormalizedEmail::parse("user@example.com").expect("email"),
-        EmailLocale::En,
         true,
         true,
     )

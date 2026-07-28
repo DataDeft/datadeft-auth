@@ -214,7 +214,6 @@ async fn request_magic_link_inner(
     verify_pow_solution(&state, body.pow).map_err(|_| MagicLinkHttpError::Forbidden)?;
     let command = MagicLinkRequestJson {
         email: body.email,
-        locale: body.locale,
         terms_accepted: body.terms_accepted,
         privacy_accepted: body.privacy_accepted,
     }
@@ -501,7 +500,6 @@ fn current_unix() -> Result<u64, DependencyError> {
 #[derive(Debug, Deserialize)]
 struct RequestMagicLinkWithPow {
     email: String,
-    locale: String,
     terms_accepted: bool,
     privacy_accepted: bool,
     pow: PowSolutionJson,
@@ -602,7 +600,6 @@ const INDEX_HTML: &str = r#"<!doctype html>
     <p>This local example gates magic-link requests with a low-development proof of work.</p>
     <form id="login-form">
       <label>Email <input name="email" type="email" value="local@example.test" required></label>
-      <input type="hidden" name="locale" value="en">
       <label><input name="terms" type="checkbox" checked> Accept terms</label>
       <label><input name="privacy" type="checkbox" checked> Accept privacy policy</label>
       <button type="submit">Request magic link</button>
@@ -640,7 +637,6 @@ const INDEX_HTML: &str = r#"<!doctype html>
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           email: form.get('email'),
-          locale: form.get('locale'),
           terms_accepted: form.get('terms') === 'on',
           privacy_accepted: form.get('privacy') === 'on',
           pow,

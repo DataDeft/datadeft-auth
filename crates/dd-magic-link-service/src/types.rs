@@ -19,13 +19,6 @@ pub const DEFAULT_MAGIC_LINK_TTL_SECS: u64 = 10 * 60;
 /// Conservative resource cap applied before parsing an untrusted raw magic-link token.
 pub const MAX_RAW_MAGIC_LINK_TOKEN_BYTES: usize = 512;
 
-/// Magic-link email locale. Adapters decide the rendered template and URL.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum EmailLocale {
-    En,
-    Hu,
-}
-
 /// Rate-limit bucket key derived from keyed email or selector material and
 /// redacted in `Debug`.
 #[derive(Clone, Eq, Hash, PartialEq)]
@@ -378,24 +371,20 @@ impl fmt::Debug for CommitMagicLinkAuthentication {
 }
 
 /// Request command. Debug redacts the target account.
+///
+/// The library is language-agnostic: email rendering (and any locale) is owned
+/// entirely by the [`MagicLinkOutbox`](crate::MagicLinkOutbox) implementation.
 #[derive(Clone, Eq, PartialEq)]
 pub struct RequestMagicLinkCommand {
     email: NormalizedEmail,
-    locale: EmailLocale,
     terms_accepted: bool,
     privacy_accepted: bool,
 }
 
 impl RequestMagicLinkCommand {
-    pub fn new(
-        email: NormalizedEmail,
-        locale: EmailLocale,
-        terms_accepted: bool,
-        privacy_accepted: bool,
-    ) -> Self {
+    pub fn new(email: NormalizedEmail, terms_accepted: bool, privacy_accepted: bool) -> Self {
         Self {
             email,
-            locale,
             terms_accepted,
             privacy_accepted,
         }
@@ -404,11 +393,6 @@ impl RequestMagicLinkCommand {
     #[must_use]
     pub fn email(&self) -> &NormalizedEmail {
         &self.email
-    }
-
-    #[must_use]
-    pub fn locale(&self) -> EmailLocale {
-        self.locale
     }
 
     #[must_use]
@@ -426,7 +410,6 @@ impl fmt::Debug for RequestMagicLinkCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RequestMagicLinkCommand")
             .field("email", &"NormalizedEmail(..)")
-            .field("locale", &self.locale)
             .field("terms_accepted", &self.terms_accepted)
             .field("privacy_accepted", &self.privacy_accepted)
             .finish()
@@ -586,12 +569,13 @@ impl Drop for ConfirmMagicLinkFlowCommand {
     }
 }
 
-/// Email outbox request. The contained token is bearer material; Debug redacts it.
+/// Email outbox request. The contained token is bearer material; Debug redacts
+/// it. The outbox owns URL construction, template, and language — this carries
+/// only the recipient, the token, and the token's expiry.
 #[derive(Clone, Eq, PartialEq)]
 pub struct MagicLinkEmail {
     pub email: NormalizedEmail,
     pub token: MagicLinkToken,
-    pub locale: EmailLocale,
     pub expires_at_unix: u64,
 }
 
@@ -600,7 +584,6 @@ impl fmt::Debug for MagicLinkEmail {
         f.debug_struct("MagicLinkEmail")
             .field("email", &"NormalizedEmail(..)")
             .field("token", &"MagicLinkToken(..)")
-            .field("locale", &self.locale)
             .field("expires_at_unix", &self.expires_at_unix)
             .finish()
     }

@@ -8,7 +8,7 @@ use axum::extract::Request;
 use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderName};
 use dd_magic_link_service::{
-    EmailLocale, MAX_RAW_MAGIC_LINK_TOKEN_BYTES, NormalizedEmail, RequestMagicLinkCommand,
+    MAX_RAW_MAGIC_LINK_TOKEN_BYTES, NormalizedEmail, RequestMagicLinkCommand,
 };
 use serde::Deserialize;
 use zeroize::Zeroize;
@@ -28,11 +28,15 @@ pub const CLOUDFRONT_VIEWER_COUNTRY: &str = "cloudfront-viewer-country";
 
 /// Request JSON accepted by
 /// [`handle_magic_link_request_json`](crate::handle_magic_link_request_json).
+///
+/// This crate is language-agnostic: the request JSON carries no locale. An
+/// application that localizes emails parses its own request shape and selects
+/// the language in its [`MagicLinkOutbox`](dd_magic_link_service::MagicLinkOutbox)
+/// (for example a request-scoped outbox), so the library never sees it.
 #[derive(Clone, Eq, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MagicLinkRequestJson {
     pub email: String,
-    pub locale: String,
     pub terms_accepted: bool,
     pub privacy_accepted: bool,
 }
@@ -41,7 +45,6 @@ impl fmt::Debug for MagicLinkRequestJson {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MagicLinkRequestJson")
             .field("email", &"<redacted>")
-            .field("locale", &self.locale)
             .field("terms_accepted", &self.terms_accepted)
             .field("privacy_accepted", &self.privacy_accepted)
             .finish()
@@ -52,10 +55,8 @@ impl MagicLinkRequestJson {
     pub fn into_command(self) -> Result<RequestMagicLinkCommand, MagicLinkHttpError> {
         let email =
             NormalizedEmail::parse(&self.email).map_err(|_| MagicLinkHttpError::BadRequest)?;
-        let locale = parse_locale(&self.locale)?;
         Ok(RequestMagicLinkCommand::new(
             email,
-            locale,
             self.terms_accepted,
             self.privacy_accepted,
         ))
@@ -220,14 +221,6 @@ pub(crate) fn extract_landing_token(
         return Err(MagicLinkHttpError::BadRequest);
     }
     MagicLinkLandingToken::new(value.to_owned())
-}
-
-fn parse_locale(value: &str) -> Result<EmailLocale, MagicLinkHttpError> {
-    match value {
-        "en" => Ok(EmailLocale::En),
-        "hu" => Ok(EmailLocale::Hu),
-        _ => Err(MagicLinkHttpError::BadRequest),
-    }
 }
 
 fn content_type_matches_value(actual: &str, expected: &str) -> bool {

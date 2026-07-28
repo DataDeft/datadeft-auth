@@ -7,7 +7,7 @@ use axum::http::header::{CONTENT_TYPE, COOKIE, ORIGIN};
 use axum::http::{Method, StatusCode};
 use dd_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
 use dd_magic_link_service::{
-    Clock, DependencyError, EmailLocale, LookupHmacKey, MagicLinkFlowCookie, MagicLinkFlowService,
+    Clock, DependencyError, LookupHmacKey, MagicLinkFlowCookie, MagicLinkFlowService,
     MagicLinkRequestService, MagicLinkServiceConfig, RequestMagicLinkCommand, SessionCookie,
 };
 use rand_core::OsRng;
@@ -36,7 +36,7 @@ async fn request_handler_preserves_generic_success_regression() {
         .uri("/auth/magic-link")
         .header(CONTENT_TYPE, APPLICATION_JSON)
         .body(Body::from(
-            r#"{"email":"user@example.com","locale":"en","terms_accepted":true,"privacy_accepted":true}"#,
+            r#"{"email":"user@example.com","terms_accepted":true,"privacy_accepted":true}"#,
         ))
         .expect("request");
     let response = handle_magic_link_request_json(request, |command| async move {
@@ -56,7 +56,7 @@ async fn unknown_request_field_is_rejected_generically_without_reflection() {
         .uri("/auth/magic-link")
         .header(CONTENT_TYPE, APPLICATION_JSON)
         .body(Body::from(
-            r#"{"email":"user@example.com","locale":"en","terms_accepted":true,"privacy_accepted":true,"unexpected":"unknown-value-sentinel"}"#,
+            r#"{"email":"user@example.com","terms_accepted":true,"privacy_accepted":true,"unexpected":"unknown-value-sentinel"}"#,
         ))
         .expect("request");
     let response = handle_magic_link_request_json(request, |_| async {
@@ -291,7 +291,6 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
         request
             .request_magic_link(RequestMagicLinkCommand::new(
                 dd_magic_link_service::NormalizedEmail::parse("user@example.com").expect("email"),
-                EmailLocale::En,
                 true,
                 true,
             ))

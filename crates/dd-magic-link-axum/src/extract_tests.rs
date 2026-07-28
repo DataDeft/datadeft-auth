@@ -7,26 +7,28 @@ use super::*;
 fn request_json_regression_preserves_email_and_consent() {
     let body = br#"{
         "email":"User@example.com",
-        "locale":"hu",
         "terms_accepted":true,
         "privacy_accepted":true
     }"#;
     let command = parse_magic_link_request_json(body).expect("command");
     assert_eq!(command.email().as_str(), "User@example.com");
-    assert_eq!(command.locale(), EmailLocale::Hu);
     assert!(command.terms_accepted());
     assert!(command.privacy_accepted());
 }
 
 #[test]
-fn request_negative_regressions_reject_locale_and_forward_false_consent() {
-    let bad_locale = br#"{"email":"user@example.com","locale":"de","terms_accepted":true,"privacy_accepted":true}"#;
+fn request_negative_regressions_reject_unknown_fields_and_forward_false_consent() {
+    // The library is language-agnostic: a locale (or any unknown field) is
+    // rejected, so applications parse their own request shape and select the
+    // email language in their own outbox.
+    let with_locale = br#"{"email":"user@example.com","locale":"de","terms_accepted":true,"privacy_accepted":true}"#;
     assert_eq!(
-        parse_magic_link_request_json(bad_locale).unwrap_err(),
+        parse_magic_link_request_json(with_locale).unwrap_err(),
         MagicLinkHttpError::BadRequest
     );
 
-    let false_consent = br#"{"email":"user@example.com","locale":"en","terms_accepted":false,"privacy_accepted":true}"#;
+    let false_consent =
+        br#"{"email":"user@example.com","terms_accepted":false,"privacy_accepted":true}"#;
     let command = parse_magic_link_request_json(false_consent).expect("command");
     assert!(!command.terms_accepted());
     assert!(command.privacy_accepted());
@@ -35,7 +37,7 @@ fn request_negative_regressions_reject_locale_and_forward_false_consent() {
 #[test]
 fn request_and_confirmation_dto_debug_are_redacted() {
     let request: MagicLinkRequestJson = serde_json::from_str(
-        r#"{"email":"sensitive@example.test","locale":"en","terms_accepted":true,"privacy_accepted":true}"#,
+        r#"{"email":"sensitive@example.test","terms_accepted":true,"privacy_accepted":true}"#,
     )
     .expect("request dto");
     let debug = format!("{request:?}");

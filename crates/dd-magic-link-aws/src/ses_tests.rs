@@ -1,7 +1,7 @@
 //! Fake outbox tests.
 
 use dd_magic_link_core::{MagicLinkToken, NormalizedEmail};
-use dd_magic_link_service::{DependencyError, EmailLocale, MagicLinkEmail, MagicLinkOutbox};
+use dd_magic_link_service::{DependencyError, MagicLinkEmail, MagicLinkOutbox};
 
 use super::*;
 
@@ -12,7 +12,6 @@ fn email() -> MagicLinkEmail {
             "mlv1.000102030405060708090a0b0c0d0e0f.101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
         )
         .expect("token"),
-        locale: EmailLocale::En,
         expires_at_unix: 1_600,
     }
 }

@@ -112,7 +112,6 @@ where
             .enqueue_magic_link(MagicLinkEmail {
                 email: command.email().clone(),
                 token,
-                locale: command.locale(),
                 expires_at_unix,
             })
             .await
