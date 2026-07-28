@@ -334,6 +334,27 @@ impl TemporaryCookieConfig {
         })
     }
 
+    /// Default production flow-cookie policy (`dd_auth_flow`, `/auth`, Secure).
+    #[must_use]
+    pub fn production_defaults() -> Self {
+        Self {
+            name: DEFAULT_FLOW_COOKIE_NAME.to_owned(),
+            path: DEFAULT_TEMPORARY_COOKIE_PATH.to_owned(),
+            secure: true,
+            same_site: SameSite::Lax,
+            clear_header: HeaderValue::from_static(DEFAULT_FLOW_CLEAR_HEADER),
+        }
+    }
+
+    /// Default local-HTTP flow-cookie policy (no `Secure` attribute).
+    #[must_use]
+    pub fn local_development_defaults() -> Self {
+        let mut defaults = Self::production_defaults();
+        defaults.secure = false;
+        defaults.clear_header = HeaderValue::from_static(DEFAULT_FLOW_CLEAR_HEADER_INSECURE);
+        defaults
+    }
+
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
@@ -352,45 +373,6 @@ impl TemporaryCookieConfig {
     #[must_use]
     pub fn same_site(&self) -> SameSite {
         self.same_site
-    }
-}
-
-/// Validated magic-link flow-cookie policy.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct AuthFlowCookieConfig {
-    flow: TemporaryCookieConfig,
-}
-
-impl AuthFlowCookieConfig {
-    #[must_use]
-    pub fn new(flow: TemporaryCookieConfig) -> Self {
-        Self { flow }
-    }
-
-    #[must_use]
-    pub fn production_defaults() -> Self {
-        Self {
-            flow: TemporaryCookieConfig {
-                name: DEFAULT_FLOW_COOKIE_NAME.to_owned(),
-                path: DEFAULT_TEMPORARY_COOKIE_PATH.to_owned(),
-                secure: true,
-                same_site: SameSite::Lax,
-                clear_header: HeaderValue::from_static(DEFAULT_FLOW_CLEAR_HEADER),
-            },
-        }
-    }
-
-    #[must_use]
-    pub fn local_development_defaults() -> Self {
-        let mut defaults = Self::production_defaults();
-        defaults.flow.secure = false;
-        defaults.flow.clear_header = HeaderValue::from_static(DEFAULT_FLOW_CLEAR_HEADER_INSECURE);
-        defaults
-    }
-
-    #[must_use]
-    pub fn flow(&self) -> &TemporaryCookieConfig {
-        &self.flow
     }
 }
 
@@ -601,7 +583,7 @@ pub struct MagicLinkScannerFlowConfig {
     success_redirect: SameOriginRedirect,
     same_origin_post: SameOriginPostConfig,
     session_cookie: SessionCookieConfig,
-    temporary_cookies: AuthFlowCookieConfig,
+    temporary_cookies: TemporaryCookieConfig,
 }
 
 impl MagicLinkScannerFlowConfig {
@@ -610,9 +592,9 @@ impl MagicLinkScannerFlowConfig {
         success_redirect: SameOriginRedirect,
         same_origin_post: SameOriginPostConfig,
         session_cookie: SessionCookieConfig,
-        temporary_cookies: AuthFlowCookieConfig,
+        temporary_cookies: TemporaryCookieConfig,
     ) -> Result<Self, MagicLinkScannerFlowConfigError> {
-        let flow_name = temporary_cookies.flow().name();
+        let flow_name = temporary_cookies.name();
         if session_cookie.name() == flow_name {
             return Err(MagicLinkScannerFlowConfigError::DuplicateCookieName);
         }
@@ -620,7 +602,7 @@ impl MagicLinkScannerFlowConfig {
             .as_str()
             .split_once('?')
             .map_or(post_action.as_str(), |(path, _)| path);
-        if !cookie_path_covers(temporary_cookies.flow().path(), request_path) {
+        if !cookie_path_covers(temporary_cookies.path(), request_path) {
             return Err(MagicLinkScannerFlowConfigError::FlowCookiePathDoesNotCoverPostAction);
         }
         Ok(Self {
@@ -653,7 +635,7 @@ impl MagicLinkScannerFlowConfig {
     }
 
     #[must_use]
-    pub fn temporary_cookies(&self) -> &AuthFlowCookieConfig {
+    pub fn temporary_cookies(&self) -> &TemporaryCookieConfig {
         &self.temporary_cookies
     }
 }
@@ -870,7 +852,7 @@ where
     }
 
     let flow_cookie =
-        match extract_target_cookie(request.headers(), config.temporary_cookies().flow().name()) {
+        match extract_target_cookie(request.headers(), config.temporary_cookies().name()) {
             Ok(value) => value,
             Err(_) => return terminal_invalid_confirmation(config),
         };
@@ -1034,7 +1016,7 @@ fn build_valid_landing_response(
     config: &MagicLinkScannerFlowConfig,
 ) -> Response {
     let set_cookie = match set_temporary_cookie_header(
-        config.temporary_cookies().flow(),
+        config.temporary_cookies(),
         flow_cookie,
         cookie_max_age_secs,
     ) {
@@ -1186,8 +1168,8 @@ fn scanner_plain_response(
     response
 }
 
-fn append_temporary_clears(headers: &mut HeaderMap, config: &AuthFlowCookieConfig) {
-    headers.append(SET_COOKIE, clear_temporary_cookie_header(config.flow()));
+fn append_temporary_clears(headers: &mut HeaderMap, config: &TemporaryCookieConfig) {
+    headers.append(SET_COOKIE, clear_temporary_cookie_header(config));
 }
 
 fn session_unauthorized(config: &SessionCookieConfig) -> SessionAuthRejection {

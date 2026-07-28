@@ -31,7 +31,7 @@ fn scanner_config() -> MagicLinkScannerFlowConfig {
         SameOriginRedirect::parse("/signed-in").expect("success redirect"),
         SameOriginPostConfig::parse("https://example.test").expect("origin"),
         SessionCookieConfig::production(&policy()).expect("session policy"),
-        AuthFlowCookieConfig::production_defaults(),
+        TemporaryCookieConfig::production_defaults(),
     )
     .expect("scanner config")
 }
@@ -367,10 +367,8 @@ fn precomputed_clear_headers_match_freshly_built_ones() {
     // The from_static default constants and every construction path must stay
     // byte-for-byte in lockstep with cookie_header's wire format.
     let cases = [
-        (AuthFlowCookieConfig::production_defaults().flow().clone()),
-        (AuthFlowCookieConfig::local_development_defaults()
-            .flow()
-            .clone()),
+        (TemporaryCookieConfig::production_defaults()),
+        (TemporaryCookieConfig::local_development_defaults()),
         (TemporaryCookieConfig::production("custom_flow", "/custom").expect("custom flow")),
     ];
     for flow in cases {
@@ -416,8 +414,8 @@ fn precomputed_clear_headers_match_freshly_built_ones() {
 
 #[test]
 fn temporary_cookie_defaults_lifetime_and_clear_are_strict() {
-    let production = AuthFlowCookieConfig::production_defaults();
-    let flow = production.flow();
+    let production = TemporaryCookieConfig::production_defaults();
+    let flow = &production;
     assert_eq!(flow.name(), "dd_auth_flow");
     assert_eq!(flow.path(), "/auth");
     assert!(flow.secure());
@@ -443,8 +441,8 @@ fn temporary_cookie_defaults_lifetime_and_clear_are_strict() {
     assert!(set_temporary_cookie_header(flow, "flow-value", 0).is_err());
     assert!(set_temporary_cookie_header(flow, "flow-value", 301).is_err());
 
-    let local = AuthFlowCookieConfig::local_development_defaults();
-    assert!(!local.flow().secure());
+    let local = TemporaryCookieConfig::local_development_defaults();
+    assert!(!local.secure());
 }
 
 #[test]
@@ -467,9 +465,7 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
     let session = SessionCookieConfig::production(&policy()).expect("session");
 
     for path in ["/auth/confirm", "/auth/", "/auth"] {
-        let temporary = AuthFlowCookieConfig::new(
-            TemporaryCookieConfig::production("flow", path).expect("flow"),
-        );
+        let temporary = TemporaryCookieConfig::production("flow", path).expect("flow");
         assert!(
             MagicLinkScannerFlowConfig::new(
                 post.clone(),
@@ -481,8 +477,7 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
             .is_ok()
         );
     }
-    let false_prefix =
-        AuthFlowCookieConfig::new(TemporaryCookieConfig::production("flow", "/aut").expect("flow"));
+    let false_prefix = TemporaryCookieConfig::production("flow", "/aut").expect("flow");
     assert_eq!(
         MagicLinkScannerFlowConfig::new(
             post.clone(),
@@ -496,9 +491,7 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
     );
 
     let session_flow = session.clone().with_name("flow").expect("session name");
-    let temporary = AuthFlowCookieConfig::new(
-        TemporaryCookieConfig::production("flow", "/auth").expect("flow"),
-    );
+    let temporary = TemporaryCookieConfig::production("flow", "/auth").expect("flow");
     assert_eq!(
         MagicLinkScannerFlowConfig::new(
             post.clone(),

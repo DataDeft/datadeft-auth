@@ -21,8 +21,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 use dd_magic_link_axum::{
-    APPLICATION_JSON, AuthFlowCookieConfig, MagicLinkHttpError, MagicLinkRequestJson,
-    MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect, SessionCookieConfig,
+    APPLICATION_JSON, MagicLinkHttpError, MagicLinkRequestJson, MagicLinkScannerFlowConfig,
+    SameOriginPostConfig, SameOriginRedirect, SessionCookieConfig, TemporaryCookieConfig,
     authenticate_session, clear_session_cookie_header, generic_accepted_response, guarded_body,
     handle_magic_link_confirmation, handle_magic_link_landing,
 };
@@ -116,7 +116,7 @@ fn build_state() -> AppResult<AppState> {
             .map_err(|_| SetupError("invalid magic-link success redirect"))?,
         SameOriginPostConfig::parse(LOCAL_ORIGIN)?,
         session_cookie,
-        AuthFlowCookieConfig::local_development_defaults(),
+        TemporaryCookieConfig::local_development_defaults(),
     )?;
 
     Ok(AppState {
