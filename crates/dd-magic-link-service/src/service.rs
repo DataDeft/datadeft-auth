@@ -673,15 +673,22 @@ fn authentication_expectation(
     }
 }
 
-fn build_initial_authentication_plan<Rng: RngCore + CryptoRng>(
+/// Freshly generated per-attempt session material, shared by the initial plan
+/// and every SessionConflict replan so the two paths cannot drift.
+struct SessionPlanParts {
+    session_id: SessionId,
+    session_expires_at_unix: u64,
+    session_cookie: Zeroizing<String>,
+    attempt_id: AuthenticationAttemptId,
+}
+
+fn new_session_plan_parts<Rng: RngCore + CryptoRng>(
     session_keyring: &KeyRing<SessionCookie>,
     rng: &mut Rng,
-    magic_link: MagicLinkAuthenticationExpectation,
-    user: MagicLinkAuthenticationUser,
     now_unix: u64,
     session_absolute_secs: u64,
     country: Option<&str>,
-) -> Result<AuthenticationPlan, MagicLinkServiceError> {
+) -> Result<SessionPlanParts, MagicLinkServiceError> {
     let session_id = generate_session_id(rng)?;
     let session_expires_at_unix = now_unix
         .checked_add(session_absolute_secs)
@@ -694,16 +701,40 @@ fn build_initial_authentication_plan<Rng: RngCore + CryptoRng>(
         country,
     )?);
     let attempt_id = generate_authentication_attempt_id(rng)?;
+    Ok(SessionPlanParts {
+        session_id,
+        session_expires_at_unix,
+        session_cookie,
+        attempt_id,
+    })
+}
+
+fn build_initial_authentication_plan<Rng: RngCore + CryptoRng>(
+    session_keyring: &KeyRing<SessionCookie>,
+    rng: &mut Rng,
+    magic_link: MagicLinkAuthenticationExpectation,
+    user: MagicLinkAuthenticationUser,
+    now_unix: u64,
+    session_absolute_secs: u64,
+    country: Option<&str>,
+) -> Result<AuthenticationPlan, MagicLinkServiceError> {
+    let parts = new_session_plan_parts(
+        session_keyring,
+        rng,
+        now_unix,
+        session_absolute_secs,
+        country,
+    )?;
     Ok(AuthenticationPlan {
         command: CommitMagicLinkAuthentication {
             magic_link,
             now_unix,
-            attempt_id,
+            attempt_id: parts.attempt_id,
             user,
-            session_id,
-            session_expires_at_unix,
+            session_id: parts.session_id,
+            session_expires_at_unix: parts.session_expires_at_unix,
         },
-        session_cookie,
+        session_cookie: parts.session_cookie,
     })
 }
 
@@ -715,23 +746,17 @@ fn replace_session_plan<Rng: RngCore + CryptoRng>(
     session_absolute_secs: u64,
     country: Option<&str>,
 ) -> Result<(), MagicLinkServiceError> {
-    let session_id = generate_session_id(rng)?;
-    let session_expires_at_unix = now_unix
-        .checked_add(session_absolute_secs)
-        .ok_or(MagicLinkServiceError::Internal)?;
-    let session_cookie = Zeroizing::new(mint_session_cookie(
+    let parts = new_session_plan_parts(
         session_keyring,
         rng,
-        &session_id,
         now_unix,
+        session_absolute_secs,
         country,
-    )?);
-    let attempt_id = generate_authentication_attempt_id(rng)?;
-
-    plan.command.session_id = session_id;
-    plan.command.session_expires_at_unix = session_expires_at_unix;
-    plan.command.attempt_id = attempt_id;
-    plan.session_cookie = session_cookie;
+    )?;
+    plan.command.session_id = parts.session_id;
+    plan.command.session_expires_at_unix = parts.session_expires_at_unix;
+    plan.command.attempt_id = parts.attempt_id;
+    plan.session_cookie = parts.session_cookie;
     Ok(())
 }
 

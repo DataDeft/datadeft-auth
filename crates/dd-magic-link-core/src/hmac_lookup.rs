@@ -13,7 +13,7 @@ use zeroize::Zeroize;
 use crate::email::NormalizedEmail;
 use crate::error::MagicLinkError;
 use crate::flow_cookie::{FlowAccountBinding, FlowSelectorBinding, FlowVerifierBinding};
-use crate::magic_link::{MagicLinkSelector, MagicLinkVerifier};
+use crate::magic_link::{MagicLinkSelector, MagicLinkVerifier, is_lower_hex_len};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -84,21 +84,13 @@ impl fmt::Debug for LookupHmac {
 pub struct VerifierHash(String);
 
 impl VerifierHash {
-    /// Parse the one canonical verifier-hash storage representation.
-    ///
-    /// The accepted form is exactly `mlv_` followed by 64 lowercase
-    /// hexadecimal characters.
+    /// Parse the one canonical verifier-hash storage representation:
+    /// exactly `mlv_` followed by 64 lowercase hexadecimal characters.
     pub fn parse_storage_value(value: &str) -> Result<Self, MagicLinkError> {
-        let Some(encoded_hash) = value.strip_prefix("mlv_") else {
-            return Err(MagicLinkError::InvalidToken);
-        };
-        if encoded_hash.len() != 64
-            || !encoded_hash
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err(MagicLinkError::InvalidToken);
-        }
+        // One canonical-shape definition: delegate to the same decoder the
+        // flow bindings use, discarding the decoded bytes.
+        let mut decoded = decode_canonical_hmac(value, VERIFIER_HASH_PREFIX)?;
+        decoded.zeroize();
         Ok(Self(value.to_owned()))
     }
 
@@ -203,11 +195,7 @@ fn decode_canonical_hmac(
     let Some(encoded) = encoded.strip_prefix('_') else {
         return Err(MagicLinkError::InvalidToken);
     };
-    if encoded.len() != HMAC_HEX_LEN
-        || !encoded
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
+    if !is_lower_hex_len(encoded, HMAC_HEX_LEN) {
         return Err(MagicLinkError::InvalidToken);
     }
 

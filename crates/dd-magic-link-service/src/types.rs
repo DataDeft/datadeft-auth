@@ -452,17 +452,12 @@ impl fmt::Debug for RequestMagicLinkCommand {
     }
 }
 
-enum RawMagicLinkCandidate {
-    Bounded(String),
-    Oversized,
-}
-
 /// Scanner-safe landing command containing a bounded raw token candidate.
 ///
-/// Construction immediately destroys oversized attacker input. `Debug` never
-/// exposes the candidate.
+/// Construction immediately destroys oversized attacker input (`None`).
+/// `Debug` never exposes the candidate.
 pub struct BeginMagicLinkLandingCommand {
-    raw_token: RawMagicLinkCandidate,
+    raw_token: Option<String>,
 }
 
 impl BeginMagicLinkLandingCommand {
@@ -470,18 +465,15 @@ impl BeginMagicLinkLandingCommand {
     pub fn new(mut raw_token: String) -> Self {
         let raw_token = if raw_token.len() > MAX_RAW_MAGIC_LINK_TOKEN_BYTES {
             raw_token.zeroize();
-            RawMagicLinkCandidate::Oversized
+            None
         } else {
-            RawMagicLinkCandidate::Bounded(raw_token)
+            Some(raw_token)
         };
         Self { raw_token }
     }
 
     pub(crate) fn raw_token(&self) -> Option<&str> {
-        match &self.raw_token {
-            RawMagicLinkCandidate::Bounded(value) => Some(value),
-            RawMagicLinkCandidate::Oversized => None,
-        }
+        self.raw_token.as_deref()
     }
 }
 
@@ -493,7 +485,7 @@ impl fmt::Debug for BeginMagicLinkLandingCommand {
 
 impl Drop for BeginMagicLinkLandingCommand {
     fn drop(&mut self) {
-        if let RawMagicLinkCandidate::Bounded(value) = &mut self.raw_token {
+        if let Some(value) = &mut self.raw_token {
             value.zeroize();
         }
     }
