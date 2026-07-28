@@ -162,7 +162,7 @@ async fn valid_session_resolves_once_without_writes_or_refresh() {
     let sessions = TestSessions::with_record(record(800));
     let clock = TestClock::at(900);
 
-    let validated = validate_session(&cookie, &keyring, &sessions, &clock, &config())
+    let validated = validate_session(&cookie, Some("HU"), &keyring, &sessions, &clock, &config())
         .await
         .expect("session validates");
 
@@ -189,7 +189,7 @@ async fn invalid_cookie_or_authenticated_body_never_reaches_repository() {
 
     for invalid in ["not-a-cookie", &unknown_key, &tampered, &invalid_body] {
         assert_eq!(
-            validate_session(invalid, &keyring, &sessions, &clock, &config())
+            validate_session(invalid, None, &keyring, &sessions, &clock, &config())
                 .await
                 .unwrap_err(),
             SessionValidationError::InvalidSession
@@ -208,6 +208,7 @@ async fn idle_and_absolute_cookie_boundaries_are_inclusive_then_expire() {
     assert!(
         validate_session(
             &idle_cookie,
+            None,
             &keyring,
             &idle_sessions,
             &TestClock::at(1_000),
@@ -219,6 +220,7 @@ async fn idle_and_absolute_cookie_boundaries_are_inclusive_then_expire() {
     assert_eq!(
         validate_session(
             &idle_cookie,
+            None,
             &keyring,
             &idle_sessions,
             &TestClock::at(1_001),
@@ -234,6 +236,7 @@ async fn idle_and_absolute_cookie_boundaries_are_inclusive_then_expire() {
     assert!(
         validate_session(
             &absolute_cookie,
+            None,
             &keyring,
             &absolute_sessions,
             &TestClock::at(1_000),
@@ -245,6 +248,7 @@ async fn idle_and_absolute_cookie_boundaries_are_inclusive_then_expire() {
     assert_eq!(
         validate_session(
             &absolute_cookie,
+            None,
             &keyring,
             &absolute_sessions,
             &TestClock::at(1_001),
@@ -266,6 +270,7 @@ async fn future_dated_cookie_beyond_skew_is_invalid_without_lookup() {
     assert_eq!(
         validate_session(
             &cookie,
+            None,
             &keyring,
             &sessions,
             &TestClock::at(1_000),
@@ -287,7 +292,7 @@ async fn repository_absence_revocation_and_expiry_are_generic() {
 
     let missing = TestSessions::default();
     assert_eq!(
-        validate_session(&cookie, &keyring, &missing, &clock, &config)
+        validate_session(&cookie, None, &keyring, &missing, &clock, &config)
             .await
             .unwrap_err(),
         SessionValidationError::InvalidSession
@@ -297,7 +302,7 @@ async fn repository_absence_revocation_and_expiry_are_generic() {
     revoked_record.revoked_at_unix = Some(999);
     let revoked = TestSessions::with_record(revoked_record);
     assert_eq!(
-        validate_session(&cookie, &keyring, &revoked, &clock, &config)
+        validate_session(&cookie, None, &keyring, &revoked, &clock, &config)
             .await
             .unwrap_err(),
         SessionValidationError::InvalidSession
@@ -306,7 +311,7 @@ async fn repository_absence_revocation_and_expiry_are_generic() {
     let storage_expired = TestSessions::with_record(record(800));
     storage_expired.storage_expires_at_unix.set(Some(999));
     assert_eq!(
-        validate_session(&cookie, &keyring, &storage_expired, &clock, &config)
+        validate_session(&cookie, None, &keyring, &storage_expired, &clock, &config)
             .await
             .unwrap_err(),
         SessionValidationError::InvalidSession
@@ -329,6 +334,7 @@ async fn mismatched_repository_record_is_rejected() {
     assert_eq!(
         validate_session(
             &cookie,
+            None,
             &keyring,
             &sessions,
             &TestClock::at(1_000),
@@ -352,7 +358,7 @@ async fn repository_creation_skew_and_service_expiry_boundaries_are_enforced() {
         1_000 + dd_auth_token_core::cookie::CLOCK_SKEW_TOLERANCE_SECS,
     ));
     assert!(
-        validate_session(&cookie, &keyring, &within_skew, &clock, &config)
+        validate_session(&cookie, None, &keyring, &within_skew, &clock, &config)
             .await
             .is_ok()
     );
@@ -363,7 +369,7 @@ async fn repository_creation_skew_and_service_expiry_boundaries_are_enforced() {
     ] {
         let sessions = TestSessions::with_record(invalid_record);
         assert_eq!(
-            validate_session(&cookie, &keyring, &sessions, &clock, &config)
+            validate_session(&cookie, None, &keyring, &sessions, &clock, &config)
                 .await
                 .unwrap_err(),
             SessionValidationError::InvalidSession
@@ -396,7 +402,7 @@ async fn dependency_errors_keep_unavailable_and_internal_distinct() {
         let sessions = TestSessions::with_record(record(800));
         sessions.next_error.set(Some(dependency));
         assert_eq!(
-            validate_session(&cookie, &keyring, &sessions, &clock, &config())
+            validate_session(&cookie, None, &keyring, &sessions, &clock, &config())
                 .await
                 .unwrap_err(),
             expected
@@ -415,9 +421,16 @@ async fn unrelated_invalid_pre_auth_config_does_not_disable_session_validation()
     config.rate_limits.request_email_short_limit = 0;
 
     assert!(
-        validate_session(&cookie, &keyring, &sessions, &TestClock::at(900), &config,)
-            .await
-            .is_ok()
+        validate_session(
+            &cookie,
+            None,
+            &keyring,
+            &sessions,
+            &TestClock::at(900),
+            &config,
+        )
+        .await
+        .is_ok()
     );
     assert_eq!(sessions.find_calls.get(), 1);
 }
@@ -432,16 +445,23 @@ async fn configuration_clock_and_cookie_error_precedence_is_deterministic() {
     invalid_config.session_idle_secs = 0;
 
     assert_eq!(
-        validate_session("not-a-cookie", &keyring, &sessions, &clock, &invalid_config)
-            .await
-            .unwrap_err(),
+        validate_session(
+            "not-a-cookie",
+            None,
+            &keyring,
+            &sessions,
+            &clock,
+            &invalid_config
+        )
+        .await
+        .unwrap_err(),
         SessionValidationError::Internal
     );
     assert_eq!(clock.calls.get(), 0);
     assert_eq!(sessions.find_calls.get(), 0);
 
     assert_eq!(
-        validate_session("not-a-cookie", &keyring, &sessions, &clock, &config())
+        validate_session("not-a-cookie", None, &keyring, &sessions, &clock, &config())
             .await
             .unwrap_err(),
         SessionValidationError::Unavailable
@@ -453,6 +473,7 @@ async fn configuration_clock_and_cookie_error_precedence_is_deterministic() {
     assert_eq!(
         validate_session(
             "not-a-cookie",
+            None,
             &keyring,
             &sessions,
             &working_clock,
@@ -470,9 +491,16 @@ async fn result_and_errors_redact_session_cookie_and_account_data() {
     let keyring = keyring();
     let cookie = cookie(&keyring, 900, 800, Some("HU"));
     let sessions = TestSessions::with_record(record(800));
-    let validated = validate_session(&cookie, &keyring, &sessions, &TestClock::at(900), &config())
-        .await
-        .expect("session validates");
+    let validated = validate_session(
+        &cookie,
+        Some("HU"),
+        &keyring,
+        &sessions,
+        &TestClock::at(900),
+        &config(),
+    )
+    .await
+    .expect("session validates");
 
     let debug = format!("{validated:?}");
     assert_eq!(debug, "ValidatedSession(..)");
@@ -490,4 +518,51 @@ async fn result_and_errors_redact_session_cookie_and_account_data() {
         assert!(!display.contains("session-user@example.com"));
         assert!(!display.contains(session_id().as_str()));
     }
+}
+
+#[tokio::test]
+async fn country_locked_sessions_require_the_same_trusted_country() {
+    let keyring = keyring();
+    let sessions = TestSessions::with_record(record(800));
+    let clock = TestClock::at(900);
+    let config = config();
+
+    // Locked session: same trusted country validates.
+    let locked = cookie(&keyring, 900, 800, Some("HU"));
+    assert!(
+        validate_session(&locked, Some("HU"), &keyring, &sessions, &clock, &config)
+            .await
+            .is_ok()
+    );
+    // Different country is invalid.
+    assert_eq!(
+        validate_session(&locked, Some("DE"), &keyring, &sessions, &clock, &config)
+            .await
+            .unwrap_err(),
+        SessionValidationError::InvalidSession
+    );
+    // A locked session with no current signal fails closed.
+    assert_eq!(
+        validate_session(&locked, None, &keyring, &sessions, &clock, &config)
+            .await
+            .unwrap_err(),
+        SessionValidationError::InvalidSession
+    );
+
+    // Unlocked sessions ignore the request country entirely.
+    let unlocked = cookie(&keyring, 900, 800, None);
+    assert!(
+        validate_session(&unlocked, Some("DE"), &keyring, &sessions, &clock, &config)
+            .await
+            .is_ok()
+    );
+    assert!(
+        validate_session(&unlocked, None, &keyring, &sessions, &clock, &config)
+            .await
+            .is_ok()
+    );
+
+    // Country mismatches are rejected before any repository lookup: only the
+    // three successful validations above reached the repository.
+    assert_eq!(sessions.find_calls.get(), 3);
 }

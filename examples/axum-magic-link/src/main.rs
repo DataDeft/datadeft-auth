@@ -28,7 +28,7 @@ use dd_magic_link_axum::{
     APPLICATION_JSON, MagicLinkHttpError, MagicLinkRequestJson, MagicLinkScannerFlowConfig,
     SameOriginPostConfig, SameOriginRedirect, SessionCookieConfig, TemporaryCookieConfig,
     authenticate_session, clear_session_cookie_header, generic_accepted_response, guarded_body,
-    handle_magic_link_confirmation, handle_magic_link_landing,
+    handle_magic_link_confirmation, handle_magic_link_landing, viewer_country_from,
 };
 use dd_magic_link_service::{
     Clock, DependencyError, KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey,
@@ -286,12 +286,16 @@ async fn auth_complete() -> Html<&'static str> {
 
 async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let auth_state = state.clone();
+    // Country pinning: pass the trusted-edge signal for this request; sessions
+    // issued without a country are unlocked and ignore it.
+    let country = viewer_country_from(&headers, state.http_config.country_header());
     match authenticate_session(
         &headers,
         state.http_config.session_cookie(),
         move |cookie| async move {
             validate_session(
                 cookie.as_str(),
+                country.as_deref(),
                 auth_state.session_keyring.as_ref(),
                 &auth_state.auth,
                 &LocalClock,
@@ -318,12 +322,14 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
     }
 
     let auth_state = state.clone();
+    let country = viewer_country_from(&headers, state.http_config.country_header());
     let session = match authenticate_session(
         &headers,
         state.http_config.session_cookie(),
         move |cookie| async move {
             validate_session(
                 cookie.as_str(),
+                country.as_deref(),
                 auth_state.session_keyring.as_ref(),
                 &auth_state.auth,
                 &LocalClock,

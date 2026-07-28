@@ -50,7 +50,7 @@ PoW is optional application admission and is not required by the magic-link prot
 | MVP-011 | PoW delivery | Not implemented | Implement challenge endpoint and upstream admission middleware | HTTP integration tests for mint, solve, verify, expiry, downgrade, and generic errors |
 | MVP-012 | PoW security | Not implemented | Implement authenticated proof-cookie/replay lifecycle with single-use or small use cap | Replay/concurrency tests and proof-cookie key-rotation tests |
 | MVP-013 | PoW policy | Not implemented | Define trusted country source and monotonic country difficulty policy | Tests prove `effective >= production_floor`, `effective >= base`, and country changes never decrease active-flow difficulty |
-| MVP-014 | P1 boundary cleanup | Planned | Decide whether to remove the current magic-link session-country field or keep it explicitly as non-authoritative session context | Public API and docs expose one unambiguous owner for country policy |
+| MVP-014 | P1 boundary cleanup | Done | Session country is an opportunistic lock: bound from the configured trusted-edge header at confirmation; `validate_session` requires the same country for locked sessions (absent signal fails closed) and skips the check for unlocked ones. Request bodies are never a country source | Pinning tests cover locked-match, locked-mismatch, locked-missing (fail closed), and unlocked paths |
 | MVP-020 | Assurance | Future | Add executable TLA+ state models and CI model checking | Model-check report linked from `formal-methods.md` |
 | MVP-021 | Assurance | Future | Add deterministic simulation, fuzzing, and bounded verification targets | Seeded failure schedules, fuzz corpus, and Kani proof reports |
 

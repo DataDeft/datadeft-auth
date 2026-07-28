@@ -39,6 +39,13 @@ This repo must never contain:
 - Do not use an integer codec (base62 here) to round-trip arbitrary byte strings such as hashes, IDs, or serialized blobs: leading `0x00` bytes are silently dropped. Use a byte-oriented codec (hex/base64) or frame the length.
 - Cookie/token validation must enforce freshness, and the freshness bound must be a required parameter of the validation call — never optional, never a documentation-only expectation. A caller must not be able to obtain a verified value without stating a TTL. Passing the current time into a validator that does not itself check the token's age is a footgun; make the age check mandatory in the same call.
 - Sliding sessions need two clocks: an idle bound against last-activity time and an absolute bound against a separate issue-time (`iat`) claim carried inside the authenticated payload. A single re-minted timestamp cannot express both, so absolute expiry silently disappears if `iat` is not stored. Decide this in the payload format before launch.
+- Session country is an **opportunistic lock**, sourced only from a configured
+  trusted-edge header (never from request bodies). When the edge supplies a
+  country at confirmation, the session is bound to it and every validation
+  requires the same country — an absent signal does not satisfy the lock (fail
+  closed). Sessions issued without a country are unlocked and skip the check.
+  The lock is only meaningful if the edge strips or overwrites the header on
+  every request and the origin is not directly reachable.
 - Reject future-dated tokens beyond a small clock-skew tolerance. `now - timestamp` with saturating subtraction reads a rewound/skewed minting clock as permanently fresh; bound the timestamp in both directions.
 - Internal encrypted payloads that are never parsed by a client should use a compact, non-self-describing framing, not JSON. A JSON byte array expands ~3.5x against a fixed ciphertext budget and turns a large body into an inexplicable generic failure; there is no interop reason for a self-describing codec on an internal payload.
 

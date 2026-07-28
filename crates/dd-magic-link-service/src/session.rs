@@ -73,14 +73,24 @@ impl fmt::Debug for ValidatedSession {
 ///
 /// The operation validates configuration before reading the clock, reads the
 /// clock exactly once, authenticates and freshness-checks the cookie, decodes its
-/// body, and performs exactly one repository lookup. Missing, revoked, expired,
-/// future-created, and malformed sessions all collapse to
-/// [`SessionValidationError::InvalidSession`].
+/// body, enforces the country lock, and performs exactly one repository lookup.
+/// Missing, revoked, expired, future-created, malformed, and wrong-country
+/// sessions all collapse to [`SessionValidationError::InvalidSession`].
+///
+/// # Country pinning
+///
+/// A session issued with a trusted-edge country is locked to that country:
+/// `request_country` (the current request's trusted-edge signal, never
+/// client-supplied input) must match it on every validation, and an absent
+/// signal does not satisfy the lock — fail closed. Sessions issued without a
+/// country are unlocked and skip the check, so deployments without an edge
+/// country header are unaffected.
 ///
 /// This operation is not a sliding refresh: it never writes, revokes, touches, or
 /// re-mints session state.
 pub async fn validate_session<Sessions, ServiceClock>(
     cookie_value: &str,
+    request_country: Option<&str>,
     session_keyring: &KeyRing<SessionCookie>,
     sessions: &Sessions,
     clock: &ServiceClock,
@@ -99,6 +109,11 @@ where
             .map_err(|_| SessionValidationError::InvalidSession)?;
     let body = decode_session_cookie_body(verified.body())
         .map_err(|_| SessionValidationError::InvalidSession)?;
+    if let Some(bound_country) = body.country.as_deref() {
+        if request_country != Some(bound_country) {
+            return Err(SessionValidationError::InvalidSession);
+        }
+    }
     let session = sessions
         .find_session(&body.session_id, now_unix)
         .await

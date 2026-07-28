@@ -148,7 +148,7 @@ pub use extract::{
     APPLICATION_JSON, CLOUDFRONT_VIEWER_COUNTRY, FORM_URLENCODED, GuardedBody,
     MAX_MAGIC_LINK_BODY_BYTES, MAX_MAGIC_LINK_LANDING_QUERY_BYTES, MagicLinkConfirmationBody,
     MagicLinkLandingToken, MagicLinkRequestJson, content_type_matches, guarded_body,
-    parse_magic_link_request_json, viewer_country,
+    parse_magic_link_request_json, viewer_country, viewer_country_from,
 };
 pub use handlers::{
     apply_magic_link_security_headers, handle_magic_link_confirmation, handle_magic_link_landing,
