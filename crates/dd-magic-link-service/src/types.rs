@@ -2,41 +2,22 @@
 
 use core::fmt;
 
-use dd_auth_token_core::keyring::KeyPurpose;
 use dd_magic_link_core::flow_cookie::MintedMagicLinkFlow;
 use dd_magic_link_core::{LookupHmac, MagicLinkToken, NormalizedEmail, VerifierHash};
 use zeroize::Zeroize;
 
 use crate::error::{MagicLinkFlowError, MagicLinkServiceError, TemporaryAuthStateAction};
-
-/// HKDF-SHA256 info string for session-cookie Branca keys.
-pub const HKDF_INFO_SESSION_COOKIE_V1: &[u8] = b"auth/session-v1";
-/// Encrypted payload `typ` for session cookies.
-pub const TOKEN_TYPE_SESSION_COOKIE_V1: &str = "session-v1";
-
-/// Session-cookie key purpose.
-///
-/// Owned here — next to the session flow — so the 30-day lifetime policy and
-/// the versioned derivation constants live with the feature, not in the
-/// generic token crate.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum SessionCookie {}
-
-impl KeyPurpose for SessionCookie {
-    const HKDF_INFO: &'static [u8] = HKDF_INFO_SESSION_COOKIE_V1;
-    const TOKEN_TYPE: &'static str = TOKEN_TYPE_SESSION_COOKIE_V1;
-    const MAX_BODY_BYTES: usize = 128;
-    const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
-}
+// The session-cookie purpose lives with the session-cookie framing in
+// `session_body`; re-exported here so `types::SessionCookie` paths keep working.
+pub use crate::session_body::{
+    DEFAULT_SESSION_ABSOLUTE_SECS, DEFAULT_SESSION_IDLE_SECS, HKDF_INFO_SESSION_COOKIE_V1,
+    SessionCookie, TOKEN_TYPE_SESSION_COOKIE_V1,
+};
 
 /// Default magic-link bearer token lifetime: 10 minutes.
 pub const DEFAULT_MAGIC_LINK_TTL_SECS: u64 = 10 * 60;
 /// Conservative resource cap applied before parsing an untrusted raw magic-link token.
 pub const MAX_RAW_MAGIC_LINK_TOKEN_BYTES: usize = 512;
-/// Default session idle lifetime: 24 hours.
-pub const DEFAULT_SESSION_IDLE_SECS: u64 = 24 * 60 * 60;
-/// Default session absolute lifetime, owned by the session-cookie purpose.
-pub const DEFAULT_SESSION_ABSOLUTE_SECS: u64 = SessionCookie::MAX_ABSOLUTE_AGE_SECS;
 
 /// Magic-link email locale. Adapters decide the rendered template and URL.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

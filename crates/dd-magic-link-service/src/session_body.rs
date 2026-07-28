@@ -1,9 +1,38 @@
-//! Encrypted session-cookie body framing owned by the service crate.
+//! The session cookie, owned end to end by the service crate: its key purpose
+//! (HKDF derivation constants and lifetime policy) and its encrypted body
+//! framing.
 
 use core::fmt;
 
+use dd_auth_token_core::keyring::KeyPurpose;
+
 use crate::error::MagicLinkServiceError;
 use crate::types::{SessionId, validate_country};
+
+/// HKDF-SHA256 info string for session-cookie Branca keys.
+pub const HKDF_INFO_SESSION_COOKIE_V1: &[u8] = b"auth/session-v1";
+/// Encrypted payload `typ` for session cookies.
+pub const TOKEN_TYPE_SESSION_COOKIE_V1: &str = "session-v1";
+
+/// Session-cookie key purpose.
+///
+/// Owned in this module together with the session-cookie body framing, so the
+/// 30-day lifetime policy and the versioned derivation constants live with the
+/// feature, not in the generic token crate.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum SessionCookie {}
+
+impl KeyPurpose for SessionCookie {
+    const HKDF_INFO: &'static [u8] = HKDF_INFO_SESSION_COOKIE_V1;
+    const TOKEN_TYPE: &'static str = TOKEN_TYPE_SESSION_COOKIE_V1;
+    const MAX_BODY_BYTES: usize = 128;
+    const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
+}
+
+/// Default session idle lifetime: 24 hours.
+pub const DEFAULT_SESSION_IDLE_SECS: u64 = 24 * 60 * 60;
+/// Default session absolute lifetime, owned by the session-cookie purpose.
+pub const DEFAULT_SESSION_ABSOLUTE_SECS: u64 = SessionCookie::MAX_ABSOLUTE_AGE_SECS;
 
 const SESSION_BODY_V1: u8 = 1;
 

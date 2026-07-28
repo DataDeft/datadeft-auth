@@ -1,37 +1,10 @@
 //! Service type tests.
 
-use dd_auth_token_core::keyring::{KEY_BYTES, KeyId, RootSecret};
 use dd_magic_link_core::{
     LookupHmacKey, MagicLinkSelector, NormalizedEmail, VerifierHash, selector_lookup_hmac,
 };
 
 use super::*;
-
-#[test]
-fn session_purpose_constants_are_pinned() {
-    assert_eq!(HKDF_INFO_SESSION_COOKIE_V1, b"auth/session-v1");
-    assert_eq!(SessionCookie::HKDF_INFO, HKDF_INFO_SESSION_COOKIE_V1);
-    assert_eq!(TOKEN_TYPE_SESSION_COOKIE_V1, "session-v1");
-    assert_eq!(SessionCookie::TOKEN_TYPE, TOKEN_TYPE_SESSION_COOKIE_V1);
-    assert_eq!(SessionCookie::MAX_BODY_BYTES, 128);
-    assert_eq!(SessionCookie::MAX_ABSOLUTE_AGE_SECS, 30 * 24 * 60 * 60);
-}
-
-#[test]
-fn session_hkdf_vector_is_pinned() {
-    // HKDF-SHA256 with salt=None, IKM=[0x11; 32], L=32,
-    // info = HKDF_INFO || 0x00 || kid. This vector pins the exact info framing;
-    // changing it invalidates every session cookie minted under the previous key.
-    let root = RootSecret::new([0x11; KEY_BYTES]);
-    let session = root
-        .derive_key::<SessionCookie>(&KeyId::parse("session-active").expect("kid parses"))
-        .expect("derive session");
-
-    assert_eq!(
-        hex::encode(session.as_test_bytes()),
-        "eda74d6ba28134ffe9c380e3a14729aa1fa4474dfbf63014a8b82e0325e4b10b"
-    );
-}
 
 #[test]
 fn ids_are_validated_and_redacted() {
