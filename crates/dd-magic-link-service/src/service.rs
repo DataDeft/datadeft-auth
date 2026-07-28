@@ -428,7 +428,7 @@ where
         now_unix,
     )
     .await?;
-    let (user_branch, mut user_id, mut user_created) = plan_user(user, &candidate.email, rng)?;
+    let user_branch = plan_user(user, &candidate.email, rng)?;
     let expectation = authentication_expectation(selector_lookup, &candidate);
     let mut plan = build_initial_authentication_plan(
         session_keyring,
@@ -445,6 +445,7 @@ where
         match commit_with_dependency_retries(authentication, &plan.command).await {
             Ok(()) => {
                 let session_cookie = core::mem::take(&mut *plan.session_cookie);
+                let (user_id, user_created) = user_outcome(&plan.command.user);
                 return Ok(MagicLinkAuthenticationOutcome {
                     session_cookie,
                     user_id,
@@ -477,13 +478,9 @@ where
                     now_unix,
                 )
                 .await?;
-                let (user_branch, replanned_user_id, replanned_user_created) =
-                    plan_user(user, &candidate.email, rng)?;
                 plan.command.magic_link = authentication_expectation(selector_lookup, &candidate);
-                plan.command.user = user_branch;
+                plan.command.user = plan_user(user, &candidate.email, rng)?;
                 plan.command.attempt_id = generate_authentication_attempt_id(rng)?;
-                user_id = replanned_user_id;
-                user_created = replanned_user_created;
             }
             Err(CommitMagicLinkAuthenticationError::SessionConflict) => {
                 if replans >= 2 {
@@ -633,29 +630,28 @@ fn plan_user<Rng: RngCore + CryptoRng + ?Sized>(
     user: Option<UserRecord>,
     expected_email: &dd_magic_link_core::NormalizedEmail,
     rng: &mut Rng,
-) -> Result<(MagicLinkAuthenticationUser, UserId, bool), MagicLinkServiceError> {
+) -> Result<MagicLinkAuthenticationUser, MagicLinkServiceError> {
     if let Some(user) = user {
         if user.email != *expected_email || user.disabled {
             return Err(MagicLinkServiceError::MagicLinkUnavailable);
         }
-        let user_id = user.user_id;
-        return Ok((
-            MagicLinkAuthenticationUser::Existing {
-                user_id: user_id.clone(),
-            },
-            user_id,
-            false,
-        ));
+        return Ok(MagicLinkAuthenticationUser::Existing {
+            user_id: user.user_id,
+        });
     }
 
-    let user_id = generate_user_id(rng)?;
-    Ok((
-        MagicLinkAuthenticationUser::Create {
-            user_id: user_id.clone(),
-        },
-        user_id,
-        true,
-    ))
+    Ok(MagicLinkAuthenticationUser::Create {
+        user_id: generate_user_id(rng)?,
+    })
+}
+
+/// The user id and whether the account was created, derived from the planned
+/// user branch — the single source of truth, so no parallel state can drift.
+fn user_outcome(user: &MagicLinkAuthenticationUser) -> (UserId, bool) {
+    match user {
+        MagicLinkAuthenticationUser::Existing { user_id } => (user_id.clone(), false),
+        MagicLinkAuthenticationUser::Create { user_id } => (user_id.clone(), true),
+    }
 }
 
 fn authentication_expectation(
