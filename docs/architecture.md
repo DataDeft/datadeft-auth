@@ -18,7 +18,7 @@ The repository provides reusable authentication libraries. A consuming applicati
 | `dd-magic-link-aws` | DynamoDB, SES, and faithful in-memory adapters | Implemented; live AWS validation remains deployment work |
 | Consuming application | Routes, trusted edge metadata, PoW admission, secrets, templates, logging, deployment | Required integration |
 | `dd-protect-client` | Browser PoW solver | **Planned; skeleton only** |
-| Example application | End-to-end integration reference | **Planned; placeholder only** |
+| Example application | End-to-end integration reference | **Available** — [`examples/axum-magic-link`](../examples/axum-magic-link/src/main.rs): request, landing, confirmation, session, logout on the shipped in-memory fakes |
 
 Dependency direction is intentionally one-way:
 

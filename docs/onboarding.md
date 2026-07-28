@@ -8,13 +8,13 @@
 | --- | --- | --- |
 | Magic-link core/service | Ready for integration | Supply clock, CSPRNG, keyrings, repository, limiter, and outbox implementations |
 | Scanner-safe Axum helpers | Ready for integration | Own routes; configure exact Origin, fixed redirects, flow/session cookies, body limits, and token-safe logging |
-| In-memory AWS-style fakes | Ready for development/tests | Do not use fake secrets, clocks, or entropy in production |
+| In-memory AWS-style fakes | Ready for development/tests | `FakeDynamoDbAuthStore` / `FakeMagicLinkOutbox` in `dd-magic-link-aws` (default build is SDK-free). Do not use fake secrets, clocks, or entropy in production |
 | DynamoDB/SES adapters | Available behind `aws` feature | Provision and validate table/IAM/TTL/encryption, renderer, SES identity, and live transaction behavior |
 | Session validation/revocation | Ready for integration | Invoke validation on protected requests and revoke server state on logout/compromise |
 | PoW Rust core | Ready as a primitive | Build the independent endpoint, policy, replay/proof lifecycle, and browser integration |
 | Browser PoW client | **Not implemented** | Implement `dd-protect-client` or provide an application-owned compatible solver |
 | Country-aware PoW | **Not implemented** | Implement upstream monotonic difficulty policy; never lower below base/floor |
-| Runnable example | **Not implemented** | Current example is a placeholder; use the API descriptions until MVP-001 lands |
+| Runnable example | **Available** | [`examples/axum-magic-link`](../examples/axum-magic-link/src/main.rs) covers request, landing, confirmation, authenticated session, and logout on the shipped fakes — start there |
 | Published package/crates | **Not published** | Consume by pinned path/git revision; APIs remain pre-stable |
 
 ## Production integration checklist
@@ -39,7 +39,7 @@ PoW is optional application admission and is not required by the magic-link prot
 
 | ID | Priority | Status | Work | Acceptance evidence |
 | --- | --- | --- | --- | --- |
-| MVP-001 | P0 onboarding | Planned | Replace the placeholder with a runnable fake-backed Axum example covering request, landing, confirmation, authenticated session, and logout | Example compiles; end-to-end test passes; no production secrets |
+| MVP-001 | P0 onboarding | Done | Runnable fake-backed Axum example covering request, landing, confirmation, authenticated session, and logout (`examples/axum-magic-link`) | Example compiles in workspace CI on the shipped fakes; no production secrets |
 | MVP-002 | P0 deployment | Required per deployment | Attest that raw magic-link request targets and tokens are scrubbed from every outer logging/telemetry layer | Production-like probe report with representative failures and redirects |
 | MVP-003 | P0 AWS deployment | Required for AWS users | Validate real DynamoDB transaction cancellation, replay, concurrency, rollback, TTL, and post-revocation visibility | Live/local AWS integration suite and recorded schema/IAM checklist |
 | MVP-004 | P0 distribution | Planned | Publish or provide an immutable private tag/SHA, supported feature matrix, MSRV, and API review | Consumer builds from immutable reference and `cargo publish --dry-run` or private-release equivalent passes |
@@ -77,7 +77,12 @@ country policy may increase effective_difficulty, never decrease it
 ## Integration order
 
 1. Pin an immutable repository revision.
-2. Wire core/service with fakes and complete the scanner-safe HTTP flow.
+2. Wire core/service with fakes and complete the scanner-safe HTTP flow — start
+   from [`examples/axum-magic-link`](../examples/axum-magic-link/src/main.rs),
+   which does exactly this. The common dependency set is `dd-magic-link-service`
+   + `dd-magic-link-axum` + `dd-magic-link-aws` (the service crate re-exports
+   the keyring and lookup-key types, so the core crates are not direct
+   dependencies).
 3. Replace fakes with the chosen repository/outbox adapters.
 4. Add session authentication and server-side logout/revocation.
 5. Complete the deployment logging and live storage gates.

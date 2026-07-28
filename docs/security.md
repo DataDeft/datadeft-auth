@@ -200,20 +200,62 @@ Production deployments use AWS Secrets Manager for secret storage, but core crat
 
 Use an extremely thin supported-manager enum plus secret-reference config. It is configuration only; it is not a dependency-injection framework.
 
-Example shape:
+The implemented shape (see `dd-magic-link-aws/src/config.rs`):
 
 ```rust
-#[non_exhaustive]
 pub enum SupportedSecretManager {
     AwsSecretsManager,
 }
 
+pub enum SecretVersionRef {
+    /// Resolve by provider version stage, e.g. "AWSCURRENT" / "AWSPREVIOUS".
+    Stage(String),
+    /// Resolve by provider version id.
+    VersionId(String),
+}
+
 pub struct SecretRef {
     pub manager: SupportedSecretManager,
-    pub name: SecretName,
-    pub version_stage: Option<SecretVersionStage>,
+    /// AWS Secrets Manager secret name or ARN. Redacted in `Debug`.
+    pub name_or_arn: String,
+    pub version: SecretVersionRef,
 }
 ```
+
+### The auth secret document
+
+Each `SecretRef` must resolve to a JSON document with exactly these fields
+(`AuthSecretsConfig` takes an active document and, during rotation, an
+optional previous one):
+
+```json
+{
+  "kid": "prod-2026-07",
+  "mint_until_unix": 1790000000,
+  "verify_until_unix": 1792600000,
+  "magic_link_lookup_hmac_b64": "<32 bytes, standard base64>",
+  "aws_storage_hmac_b64": "<32 bytes, standard base64>",
+  "session_cookie_root_b64": "<32 bytes, standard base64>",
+  "magic_link_flow_cookie_root_b64": "<32 bytes, standard base64>"
+}
+```
+
+- `kid` is the key id for every keyring slot derived from this document; it
+  must satisfy `KeyId::parse` (1–64 chars).
+- `mint_until_unix` / `verify_until_unix` are the active slot's rotation
+  windows; `verify_until_unix` must be at least `mint_until_unix` plus the
+  longest purpose lifetime (see the rotation cadence below).
+- Each `*_b64` value is exactly 32 random bytes, standard base64. Generate
+  each one independently:
+
+```sh
+openssl rand -base64 32
+```
+
+Never reuse one value across fields — the four secrets separate the lookup
+HMAC, adapter storage HMAC, session-cookie root, and flow-cookie root
+concerns, and `resolve_auth_secrets` derives purpose-separated keyrings from
+them.
 
 Rules:
 

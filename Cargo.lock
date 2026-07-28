@@ -347,12 +347,10 @@ name = "axum-magic-link"
 version = "0.1.0"
 dependencies = [
  "axum",
- "dd-auth-token-core",
+ "dd-magic-link-aws",
  "dd-magic-link-axum",
- "dd-magic-link-core",
  "dd-magic-link-service",
  "dd-pow-core",
- "hex",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
@@ -568,6 +566,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "dd-auth-token-core",
+ "dd-magic-link-aws",
  "dd-magic-link-core",
  "dd-magic-link-service",
  "rand_core 0.6.4",

@@ -180,17 +180,37 @@ The only login path is scanner-safe:
 The consuming application still owns its router, templates, deployment logging
 policy, infrastructure wiring, and repository implementations. There is no raw
 consume alternative.
-## Local development
+## Which crates do I depend on?
 
-Start with local path dependencies, not git or crates.io.
+For the common case (Axum HTTP + DynamoDB storage) the recipe is **three
+crates** — the service crate re-exports the keyring and lookup-key types, so
+the core crates are not direct dependencies:
 
 ```toml
 [dependencies]
-dd-pow-core          = { path = "../datadeft-auth/crates/dd-pow-core" }
-dd-auth-token-core   = { path = "../datadeft-auth/crates/dd-auth-token-core" }
-dd-magic-link-core   = { path = "../datadeft-auth/crates/dd-magic-link-core" }
 dd-magic-link-service = { path = "../datadeft-auth/crates/dd-magic-link-service" }
+dd-magic-link-axum    = { path = "../datadeft-auth/crates/dd-magic-link-axum" }
+dd-magic-link-aws     = { path = "../datadeft-auth/crates/dd-magic-link-aws", features = ["aws"] }
+# Optional pre-request admission hardening:
+dd-pow-core           = { path = "../datadeft-auth/crates/dd-pow-core" }
 ```
+
+For development and tests, `dd-magic-link-aws` **without** the `aws` feature
+is SDK-free and provides `FakeDynamoDbAuthStore` / `FakeMagicLinkOutbox` —
+in-memory implementations of every storage trait that mirror the DynamoDB
+adapter's semantics. For a different backend (for example Postgres), depend on
+`dd-magic-link-service` + `dd-magic-link-axum` and implement the repository
+traits.
+
+The complete integration — request, scanner-safe landing, confirmation,
+authenticated session, and logout, wired on the shipped fakes — is
+[`examples/axum-magic-link`](examples/axum-magic-link/src/main.rs). Start
+there; a compiling quickstart also lives in the `dd-magic-link-axum` crate
+docs.
+
+## Local development
+
+Start with local path dependencies, not git or crates.io.
 
 Later, private-git consumption should pin exact commits or tags:
 
@@ -215,11 +235,13 @@ See [`docs/operating.md`](docs/operating.md) for the full operating model.
 
 ## Current delivery focus
 
-The core, service, Axum, and AWS library surfaces are implemented. Current work is
-customer onboarding and production evidence: a runnable integration example,
-deployment logging attestation, live DynamoDB validation, and an immutable release
-reference. Browser PoW and country-aware PoW admission remain planned application
-integration; see the status and MVP IDs in `docs/onboarding.md`.
+The core, service, Axum, and AWS library surfaces are implemented, and the
+runnable integration example ships in
+[`examples/axum-magic-link`](examples/axum-magic-link/src/main.rs). Remaining
+work is production evidence: deployment logging attestation, live DynamoDB
+validation, and an immutable release reference. Browser PoW and country-aware
+PoW admission remain planned application integration; see the status and MVP
+IDs in `docs/onboarding.md`.
 
 ## Documentation
 

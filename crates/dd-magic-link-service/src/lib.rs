@@ -6,6 +6,20 @@
 //! the clock, and randomness. Public errors are generic and non-enumerating. No
 //! Axum, Tokio, AWS SDK, filesystem, process environment, network, or logging
 //! dependency.
+//!
+//! # Getting started
+//!
+//! The common integration depends on this crate plus `dd-magic-link-axum`
+//! (HTTP) and `dd-magic-link-aws` (DynamoDB behind the `aws` feature; its
+//! default SDK-free build ships in-memory fakes for every trait here). This
+//! crate re-exports the keyring and lookup-key types, so the core crates are
+//! not direct dependencies. A compiling quickstart lives in the
+//! `dd-magic-link-axum` crate docs, and the complete runnable integration —
+//! request, scanner-safe landing, confirmation, authenticated session, and
+//! logout — is `examples/axum-magic-link` in the repository. Implementors of
+//! a non-AWS backend start from the trait contracts in [`traits`]
+//! (particularly the atomic-commit contract on
+//! [`traits::MagicLinkAuthenticationRepository`]).
 
 #![forbid(unsafe_code)]
 
