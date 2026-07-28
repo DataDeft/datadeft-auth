@@ -39,19 +39,9 @@ use crate::types::{
 };
 
 /// Request-flow-only service. It does not require user/session repositories or a
-/// session-cookie keyring.
+/// session-cookie keyring. Construct with a struct literal; every field is a
+/// required dependency.
 pub struct MagicLinkRequestService<'a, MagicLinks, Limiter, Outbox, ServiceClock, Rng> {
-    magic_links: &'a MagicLinks,
-    limiter: &'a Limiter,
-    outbox: &'a Outbox,
-    clock: &'a ServiceClock,
-    rng: &'a mut Rng,
-    lookup_hmac_key: &'a LookupHmacKey,
-    config: MagicLinkServiceConfig,
-}
-
-/// Constructor inputs for [`MagicLinkRequestService`].
-pub struct MagicLinkRequestServiceInputs<'a, MagicLinks, Limiter, Outbox, ServiceClock, Rng> {
     pub magic_links: &'a MagicLinks,
     pub limiter: &'a Limiter,
     pub outbox: &'a Outbox,
@@ -59,25 +49,6 @@ pub struct MagicLinkRequestServiceInputs<'a, MagicLinks, Limiter, Outbox, Servic
     pub rng: &'a mut Rng,
     pub lookup_hmac_key: &'a LookupHmacKey,
     pub config: MagicLinkServiceConfig,
-}
-
-impl<'a, MagicLinks, Limiter, Outbox, ServiceClock, Rng>
-    MagicLinkRequestService<'a, MagicLinks, Limiter, Outbox, ServiceClock, Rng>
-{
-    #[must_use]
-    pub fn new(
-        inputs: MagicLinkRequestServiceInputs<'a, MagicLinks, Limiter, Outbox, ServiceClock, Rng>,
-    ) -> Self {
-        Self {
-            magic_links: inputs.magic_links,
-            limiter: inputs.limiter,
-            outbox: inputs.outbox,
-            clock: inputs.clock,
-            rng: inputs.rng,
-            lookup_hmac_key: inputs.lookup_hmac_key,
-            config: inputs.config,
-        }
-    }
 }
 
 impl<MagicLinks, Limiter, Outbox, ServiceClock, Rng>
@@ -152,20 +123,8 @@ where
 }
 
 /// Canonical scanner-safe landing, confirmation, and revocation service.
+/// Construct with a struct literal; every field is a required dependency.
 pub struct MagicLinkFlowService<'a, Authentication, Sessions, Limiter, ServiceClock, Rng> {
-    authentication: &'a Authentication,
-    sessions: &'a Sessions,
-    limiter: &'a Limiter,
-    clock: &'a ServiceClock,
-    rng: &'a mut Rng,
-    lookup_hmac_key: &'a LookupHmacKey,
-    flow_keyring: &'a KeyRing<MagicLinkFlowCookie>,
-    session_keyring: &'a KeyRing<SessionCookie>,
-    config: MagicLinkServiceConfig,
-}
-
-/// Constructor inputs for [`MagicLinkFlowService`].
-pub struct MagicLinkFlowServiceInputs<'a, Authentication, Sessions, Limiter, ServiceClock, Rng> {
     pub authentication: &'a Authentication,
     pub sessions: &'a Sessions,
     pub limiter: &'a Limiter,
@@ -175,34 +134,6 @@ pub struct MagicLinkFlowServiceInputs<'a, Authentication, Sessions, Limiter, Ser
     pub flow_keyring: &'a KeyRing<MagicLinkFlowCookie>,
     pub session_keyring: &'a KeyRing<SessionCookie>,
     pub config: MagicLinkServiceConfig,
-}
-
-impl<'a, Authentication, Sessions, Limiter, ServiceClock, Rng>
-    MagicLinkFlowService<'a, Authentication, Sessions, Limiter, ServiceClock, Rng>
-{
-    #[must_use]
-    pub fn new(
-        inputs: MagicLinkFlowServiceInputs<
-            'a,
-            Authentication,
-            Sessions,
-            Limiter,
-            ServiceClock,
-            Rng,
-        >,
-    ) -> Self {
-        Self {
-            authentication: inputs.authentication,
-            sessions: inputs.sessions,
-            limiter: inputs.limiter,
-            clock: inputs.clock,
-            rng: inputs.rng,
-            lookup_hmac_key: inputs.lookup_hmac_key,
-            flow_keyring: inputs.flow_keyring,
-            session_keyring: inputs.session_keyring,
-            config: inputs.config,
-        }
-    }
 }
 
 impl<Authentication, Sessions, Limiter, ServiceClock, Rng>

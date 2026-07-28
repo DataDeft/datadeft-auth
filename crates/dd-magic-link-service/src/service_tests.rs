@@ -472,7 +472,7 @@ async fn begin_flow(
     let key = lookup_key();
     let flow_keyring = flow_keyring();
     let session_keyring = session_keyring();
-    let mut service = MagicLinkFlowService::new(MagicLinkFlowServiceInputs {
+    let mut service = MagicLinkFlowService {
         authentication: repository,
         sessions: repository,
         limiter,
@@ -482,7 +482,7 @@ async fn begin_flow(
         flow_keyring: &flow_keyring,
         session_keyring: &session_keyring,
         config,
-    });
+    };
     service
         .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(raw_token))
         .await
@@ -502,7 +502,7 @@ async fn confirm_flow(
     let key = lookup_key();
     let flow_keyring = flow_keyring();
     let session_keyring = session_keyring();
-    let mut service = MagicLinkFlowService::new(MagicLinkFlowServiceInputs {
+    let mut service = MagicLinkFlowService {
         authentication: repository,
         sessions: repository,
         limiter,
@@ -512,7 +512,7 @@ async fn confirm_flow(
         flow_keyring: &flow_keyring,
         session_keyring: &session_keyring,
         config,
-    });
+    };
     let command = ConfirmMagicLinkFlowCommand::new(flow_cookie, confirmation, country)?;
     service.confirm_magic_link_flow(command).await
 }
@@ -526,7 +526,7 @@ async fn request(
 ) -> Result<RequestMagicLinkOutcome, MagicLinkServiceError> {
     let clock = FixedClock::at(NOW);
     let key = lookup_key();
-    let mut service = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
+    let mut service = MagicLinkRequestService {
         magic_links: repository,
         limiter,
         outbox,
@@ -534,7 +534,7 @@ async fn request(
         rng,
         lookup_hmac_key: &key,
         config,
-    });
+    };
     service
         .request_magic_link(RequestMagicLinkCommand::new(
             NormalizedEmail::parse("account@example.test").expect("email"),
@@ -1431,7 +1431,7 @@ async fn request_side_repository_remains_put_only_and_stores_no_user_id() {
     let clock = FixedClock::at(NOW);
     let key = lookup_key();
     let mut rng = TestRng::working();
-    let mut service = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
+    let mut service = MagicLinkRequestService {
         magic_links: &repository,
         limiter: &limiter,
         outbox: &outbox,
@@ -1439,7 +1439,7 @@ async fn request_side_repository_remains_put_only_and_stores_no_user_id() {
         rng: &mut rng,
         lookup_hmac_key: &key,
         config: config(),
-    });
+    };
     service
         .request_magic_link(RequestMagicLinkCommand::new(
             NormalizedEmail::parse("account@example.test").expect("email"),
@@ -1579,7 +1579,7 @@ async fn revoke_session_still_delegates_to_the_session_repository() {
     let flow_keyring = flow_keyring();
     let session_keyring = session_keyring();
     let mut rng = TestRng::working();
-    let service = MagicLinkFlowService::new(MagicLinkFlowServiceInputs {
+    let service = MagicLinkFlowService {
         authentication: &repository,
         sessions: &repository,
         limiter: &limiter,
@@ -1589,7 +1589,7 @@ async fn revoke_session_still_delegates_to_the_session_repository() {
         flow_keyring: &flow_keyring,
         session_keyring: &session_keyring,
         config: config(),
-    });
+    };
     let session_id =
         SessionId::parse("sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
             .expect("session id");

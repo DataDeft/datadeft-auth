@@ -12,9 +12,8 @@ use dd_magic_link_service::{
     CommitMagicLinkAuthenticationError, ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome,
     DependencyError, EmailLocale, MagicLinkAuthenticationCandidate,
     MagicLinkAuthenticationExpectation, MagicLinkAuthenticationRepository,
-    MagicLinkAuthenticationUser, MagicLinkFlowError, MagicLinkFlowService,
-    MagicLinkFlowServiceInputs, MagicLinkRecord, MagicLinkRepository, MagicLinkRequestService,
-    MagicLinkRequestServiceInputs, MagicLinkServiceConfig, MagicLinkServiceError,
+    MagicLinkAuthenticationUser, MagicLinkFlowError, MagicLinkFlowService, MagicLinkRecord,
+    MagicLinkRepository, MagicLinkRequestService, MagicLinkServiceConfig, MagicLinkServiceError,
     RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkCommand, SessionCookie,
     SessionId, SessionRecord, SessionRepository, TemporaryAuthStateAction, UserId, UserRecord,
 };
@@ -162,7 +161,7 @@ where
     let lookup_key = LookupHmacKey::new([0x42; 32]);
     let flow_keyring = flow_keyring();
     let session_keyring = session_keyring();
-    let mut service = MagicLinkFlowService::new(MagicLinkFlowServiceInputs {
+    let mut service = MagicLinkFlowService {
         authentication,
         sessions,
         limiter,
@@ -172,7 +171,7 @@ where
         flow_keyring: &flow_keyring,
         session_keyring: &session_keyring,
         config,
-    });
+    };
     let landing = service
         .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(raw_token))
         .await?;
@@ -198,7 +197,7 @@ where
     let lookup_key = LookupHmacKey::new([0x42; 32]);
     let flow_keyring = flow_keyring();
     let session_keyring = session_keyring();
-    let mut service = MagicLinkFlowService::new(MagicLinkFlowServiceInputs {
+    let mut service = MagicLinkFlowService {
         authentication,
         sessions,
         limiter,
@@ -208,7 +207,7 @@ where
         flow_keyring: &flow_keyring,
         session_keyring: &session_keyring,
         config,
-    });
+    };
     let command = ConfirmMagicLinkFlowCommand::new(flow.cookie, flow.confirmation, None)?;
     service.confirm_magic_link_flow(command).await
 }
@@ -232,7 +231,7 @@ async fn fake_store_round_trips_request_and_scanner_flow_without_raw_session_sto
     let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
 
     {
-        let mut request = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
+        let mut request = MagicLinkRequestService {
             magic_links: &store,
             limiter: &store,
             outbox: &outbox,
@@ -240,7 +239,7 @@ async fn fake_store_round_trips_request_and_scanner_flow_without_raw_session_sto
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
             config: config.clone(),
-        });
+        };
         request
             .request_magic_link(command())
             .await
@@ -312,7 +311,7 @@ async fn fake_scanner_confirmation_rejects_second_use() {
     let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
 
     {
-        let mut request = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
+        let mut request = MagicLinkRequestService {
             magic_links: &store,
             limiter: &store,
             outbox: &outbox,
@@ -320,7 +319,7 @@ async fn fake_scanner_confirmation_rejects_second_use() {
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
             config: config.clone(),
-        });
+        };
         request
             .request_magic_link(command())
             .await
@@ -374,7 +373,7 @@ async fn shared_fake_end_to_end_confirmation_race_has_one_session_and_generic_lo
     let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
     let mut request_rng = CounterRng::new();
     {
-        let mut request = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
+        let mut request = MagicLinkRequestService {
             magic_links: &store,
             limiter: &store,
             outbox: &outbox,
@@ -382,7 +381,7 @@ async fn shared_fake_end_to_end_confirmation_race_has_one_session_and_generic_lo
             rng: &mut request_rng,
             lookup_hmac_key: &lookup_key,
             config: config.clone(),
-        });
+        };
         request
             .request_magic_link(command())
             .await
@@ -467,7 +466,7 @@ async fn disable_between_landing_read_and_confirmation_commit_does_not_burn_link
     let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
     let mut rng = CounterRng::new();
     {
-        let mut request = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
+        let mut request = MagicLinkRequestService {
             magic_links: &store,
             limiter: &store,
             outbox: &outbox,
@@ -475,7 +474,7 @@ async fn disable_between_landing_read_and_confirmation_commit_does_not_burn_link
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
             config: config.clone(),
-        });
+        };
         request
             .request_magic_link(command())
             .await

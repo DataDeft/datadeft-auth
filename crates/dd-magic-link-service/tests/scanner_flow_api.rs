@@ -3,9 +3,8 @@
 use dd_magic_link_service::{
     BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, Clock, ConfirmMagicLinkFlowCommand,
     ConfirmMagicLinkFlowOutcome, EmailLocale, MagicLinkAuthenticationOutcome,
-    MagicLinkAuthenticationRepository, MagicLinkFlowError, MagicLinkFlowService,
-    MagicLinkFlowServiceInputs, NormalizedEmail, RateLimiter, RequestMagicLinkCommand, SessionId,
-    SessionRepository, TemporaryAuthStateAction,
+    MagicLinkAuthenticationRepository, MagicLinkFlowError, MagicLinkFlowService, NormalizedEmail,
+    RateLimiter, RequestMagicLinkCommand, SessionId, SessionRepository, TemporaryAuthStateAction,
 };
 use rand_core::{CryptoRng, RngCore};
 
@@ -63,5 +62,4 @@ fn final_scanner_flow_surface_is_available() {
     accepts_confirmation_command(Some(confirmation));
 
     let _ = core::mem::size_of::<MagicLinkFlowService<'static, (), (), (), (), ()>>();
-    let _ = core::mem::size_of::<MagicLinkFlowServiceInputs<'static, (), (), (), (), ()>>();
 }

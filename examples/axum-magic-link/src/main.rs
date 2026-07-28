@@ -31,10 +31,9 @@ use dd_magic_link_core::{LookupHmac, LookupHmacKey, NormalizedEmail};
 use dd_magic_link_service::{
     Clock, CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, DependencyError,
     MagicLinkAuthenticationCandidate, MagicLinkAuthenticationRepository, MagicLinkEmail,
-    MagicLinkFlowService, MagicLinkFlowServiceInputs, MagicLinkOutbox, MagicLinkRecord,
-    MagicLinkRepository, MagicLinkRequestService, MagicLinkRequestServiceInputs,
-    MagicLinkServiceConfig, RateLimitDecision, RateLimitKey, RateLimiter, SessionCookie, SessionId,
-    SessionRecord, SessionRepository, UserRecord, validate_session,
+    MagicLinkFlowService, MagicLinkOutbox, MagicLinkRecord, MagicLinkRepository,
+    MagicLinkRequestService, MagicLinkServiceConfig, RateLimitDecision, RateLimitKey, RateLimiter,
+    SessionCookie, SessionId, SessionRecord, SessionRepository, UserRecord, validate_session,
 };
 use dd_pow_core::{Challenge, PowSecret, Solution, mint_challenge, verify_solution};
 use rand_core::{OsRng, RngCore};
@@ -208,7 +207,7 @@ async fn request_magic_link_inner(
     .into_command()?;
 
     let mut rng = OsRng;
-    let mut service = MagicLinkRequestService::new(MagicLinkRequestServiceInputs {
+    let mut service = MagicLinkRequestService {
         magic_links: state.store.as_ref(),
         limiter: state.store.as_ref(),
         outbox: state.store.as_ref(),
@@ -216,7 +215,7 @@ async fn request_magic_link_inner(
         rng: &mut rng,
         lookup_hmac_key: state.lookup_hmac_key.as_ref(),
         config: state.config.clone(),
-    });
+    };
     service
         .request_magic_link(command)
         .await
@@ -228,7 +227,7 @@ async fn magic_link_landing(State(state): State<AppState>, request: Request) -> 
     let config = state.http_config.clone();
     handle_magic_link_landing(request, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
-        let mut service = MagicLinkFlowService::new(MagicLinkFlowServiceInputs {
+        let mut service = MagicLinkFlowService {
             authentication: state.store.as_ref(),
             sessions: state.store.as_ref(),
             limiter: state.store.as_ref(),
@@ -238,7 +237,7 @@ async fn magic_link_landing(State(state): State<AppState>, request: Request) -> 
             flow_keyring: state.flow_keyring.as_ref(),
             session_keyring: state.session_keyring.as_ref(),
             config: state.config.clone(),
-        });
+        };
         service.begin_magic_link_landing(command).await
     })
     .await
@@ -248,7 +247,7 @@ async fn magic_link_confirmation(State(state): State<AppState>, request: Request
     let config = state.http_config.clone();
     handle_magic_link_confirmation(request, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
-        let mut service = MagicLinkFlowService::new(MagicLinkFlowServiceInputs {
+        let mut service = MagicLinkFlowService {
             authentication: state.store.as_ref(),
             sessions: state.store.as_ref(),
             limiter: state.store.as_ref(),
@@ -258,7 +257,7 @@ async fn magic_link_confirmation(State(state): State<AppState>, request: Request
             flow_keyring: state.flow_keyring.as_ref(),
             session_keyring: state.session_keyring.as_ref(),
             config: state.config.clone(),
-        });
+        };
         service.confirm_magic_link_flow(command).await
     })
     .await
@@ -325,7 +324,7 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
     };
 
     let mut rng = OsRng;
-    let service = MagicLinkFlowService::new(MagicLinkFlowServiceInputs {
+    let service = MagicLinkFlowService {
         authentication: state.store.as_ref(),
         sessions: state.store.as_ref(),
         limiter: state.store.as_ref(),
@@ -335,7 +334,7 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
         flow_keyring: state.flow_keyring.as_ref(),
         session_keyring: state.session_keyring.as_ref(),
         config: state.config.clone(),
-    });
+    };
     if service
         .revoke_session(&session.session().session_id)
         .await

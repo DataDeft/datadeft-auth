@@ -22,3 +22,6 @@
 
 # Local source-import scratch space
 /to-be-porting/
+
+# Claude Code local state (agent worktrees, settings)
+.claude/

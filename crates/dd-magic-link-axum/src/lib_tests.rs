@@ -14,9 +14,8 @@ use dd_magic_link_service::{
     BeginMagicLinkLandingCommand, Clock, CommitMagicLinkAuthentication,
     CommitMagicLinkAuthenticationError, ConfirmMagicLinkFlowCommand, DependencyError, EmailLocale,
     MagicLinkAuthenticationCandidate, MagicLinkAuthenticationRepository, MagicLinkFlowService,
-    MagicLinkFlowServiceInputs, MagicLinkServiceError, RateLimitDecision, RateLimitKey,
-    RateLimiter, RequestMagicLinkOutcome, SessionCookie, SessionId, SessionRecord,
-    SessionRepository, SessionValidationError, UserRecord,
+    MagicLinkServiceError, RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkOutcome,
+    SessionCookie, SessionId, SessionRecord, SessionRepository, SessionValidationError, UserRecord,
 };
 use rand_core::{CryptoRng, RngCore};
 
@@ -212,7 +211,7 @@ async fn fixture_flow_error(kind: FixtureFlowError) -> MagicLinkFlowError {
     if matches!(kind, FixtureFlowError::Internal) {
         service_config.magic_link_flow_ttl_secs = 0;
     }
-    let mut service = MagicLinkFlowService::new(MagicLinkFlowServiceInputs {
+    let mut service = MagicLinkFlowService {
         authentication: &repository,
         sessions: &repository,
         limiter: &limiter,
@@ -222,7 +221,7 @@ async fn fixture_flow_error(kind: FixtureFlowError) -> MagicLinkFlowError {
         flow_keyring: &flow_keyring,
         session_keyring: &session_keyring,
         config: service_config,
-    });
+    };
     service
         .begin_magic_link_landing(BeginMagicLinkLandingCommand::new("malformed".to_owned()))
         .await

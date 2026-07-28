@@ -27,10 +27,7 @@ pub use error::{
     CommitMagicLinkAuthenticationError, DependencyError, MagicLinkFlowError, MagicLinkServiceError,
     TemporaryAuthStateAction,
 };
-pub use service::{
-    MagicLinkFlowService, MagicLinkFlowServiceInputs, MagicLinkRequestService,
-    MagicLinkRequestServiceInputs,
-};
+pub use service::{MagicLinkFlowService, MagicLinkRequestService};
 pub use session::{SessionValidationError, ValidatedSession, validate_session};
 pub use session_body::{
     SessionBodyError, SessionCookieBody, decode_session_cookie_body, encode_session_cookie_body,
