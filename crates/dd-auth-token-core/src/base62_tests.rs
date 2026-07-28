@@ -1,5 +1,5 @@
-//! `base62` tests: Go-parity golden vectors, custom-alphabet parity, strict
-//! newline rejection, error cases, and round-trip / injectivity properties.
+//! `base62` tests: Go-parity golden vectors, strict newline rejection, error
+//! cases, and round-trip / injectivity properties.
 
 use super::*;
 use proptest::prelude::*;
@@ -36,20 +36,6 @@ const SAMPLES_STD: &[(&[u8], &str)] = &[
     ("안녕하십니까".as_bytes(), "1yl6dfHPaO9hroEXU9qFioFhM"),
 ];
 
-/// A custom alphabet that is a permutation of the standard one, with its own
-/// independent golden vectors (also Go-parity). Proves `new()` honors the
-/// supplied alphabet, not a hardcoded one.
-const SAMPLES_CUSTOM: &[(&[u8], &str)] = &[
-    (b"", ""),
-    (b"f", "Bo"),
-    (b"foobar", "f83XIgt8"),
-    (b"Hello, World!", "B6Tp195nl3heYvetep"),
-];
-
-fn custom_alphabet() -> &'static str {
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-}
-
 #[test]
 fn std_encodes_match_golden_vectors() {
     let enc = Encoding::std();
@@ -63,19 +49,6 @@ fn std_decodes_match_golden_vectors() {
     let enc = Encoding::std();
     for &(src, target) in SAMPLES_STD {
         assert_eq!(enc.decode_str(target).unwrap(), src, "decode {target}");
-    }
-}
-
-#[test]
-fn custom_alphabet_encodes_and_decodes() {
-    let enc = Encoding::new(custom_alphabet()).expect("custom alphabet parses");
-    for &(src, target) in SAMPLES_CUSTOM {
-        assert_eq!(enc.encode_to_string(src), target, "custom encode {src:?}");
-        assert_eq!(
-            enc.decode_str(target).unwrap(),
-            src,
-            "custom decode {target}"
-        );
     }
 }
 
@@ -116,22 +89,6 @@ fn decode_rejects_invalid_bytes_with_position() {
     );
     // Non-alphabet unicode fails too.
     assert!(enc.decode_str("哈哈").is_err());
-}
-
-#[test]
-fn new_rejects_malformed_alphabets() {
-    assert!(Encoding::new("ABC").is_err(), "wrong length");
-    // Newline in alphabet.
-    let mut bad = ENCODE_STD.to_vec();
-    bad[0] = b'\n';
-    assert!(Encoding::new(std::str::from_utf8(&bad).unwrap()).is_err());
-    // Duplicate byte in alphabet.
-    let mut dup = ENCODE_STD.to_vec();
-    dup[5] = dup[0]; // two '0's
-    assert!(Encoding::new(std::str::from_utf8(&dup).unwrap()).is_err());
-    // Non-ASCII alphabets are rejected even when their UTF-8 byte length is 62.
-    assert_eq!("é".repeat(31).len(), 62);
-    assert!(Encoding::new(&"é".repeat(31)).is_err());
 }
 
 #[test]

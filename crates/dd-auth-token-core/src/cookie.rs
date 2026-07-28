@@ -241,10 +241,8 @@ where
     }
 
     let active = keyring.minting_key_at(now_unix)?;
-    if body.len() > max_body_bytes::<P>(active.kid()) {
-        return Err(TokenError::PayloadTooLarge);
-    }
-
+    // The body-size cap (`max_body_bytes`) is enforced inside
+    // `encode_bound_payload`, which fails with `TokenError::PayloadTooLarge`.
     let mut payload = encode_bound_payload::<P>(P::TOKEN_TYPE, active.kid().as_str(), iat, body)?;
     let token = match branca::encode(&payload, active.key().as_bytes(), rng, timestamp) {
         Ok(token) => token,

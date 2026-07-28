@@ -133,10 +133,11 @@ pub fn encode<R: RngCore + CryptoRng + ?Sized>(
     rng: &mut R,
     timestamp: u32,
 ) -> Result<String, TokenError> {
-    validate_encode_inputs(data, key)?;
     let mut nonce = [0u8; NONCE_BYTES];
     rng.try_fill_bytes(&mut nonce)
         .map_err(|_| TokenError::EntropyUnavailable)?;
+    // Input validation happens once, in `encode_with_nonce_inner`, which every
+    // encode path funnels through.
     encode_with_nonce_inner(data, key, &nonce, timestamp)
 }
 

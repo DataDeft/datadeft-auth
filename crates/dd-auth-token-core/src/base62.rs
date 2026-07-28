@@ -1,8 +1,7 @@
 //! Big-number base62 encode / decode.
 //!
-//! A radix-62 encoding over a configurable 62-character alphabet. This is the
-//! wire encoding for Branca tokens (see [`crate::branca`]). The standard
-//! alphabet is `0-9A-Za-z`.
+//! A radix-62 encoding over the standard `0-9A-Za-z` alphabet. This is the
+//! wire encoding for Branca tokens (see [`crate::branca`]).
 //!
 //! # This is an integer codec, not a byte-string codec
 //!
@@ -41,8 +40,6 @@ pub const ENCODE_STD: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
 pub enum Base62Error {
     /// An input byte is not in the alphabet.
     InvalidByte { byte: u8, position: usize },
-    /// A custom alphabet was malformed (wrong length, duplicates, non-ASCII, or newline).
-    InvalidAlphabet,
 }
 
 impl fmt::Display for Base62Error {
@@ -54,16 +51,14 @@ impl fmt::Display for Base62Error {
                 byte = *byte,
                 position = *position,
             ),
-            Base62Error::InvalidAlphabet => {
-                f.write_str("base62 alphabet must be 62 unique ASCII non-newline bytes")
-            }
         }
     }
 }
 
 impl Error for Base62Error {}
 
-/// A radix-62 encoding defined by a 62-byte alphabet.
+/// The radix-62 encoding over the standard alphabet: a 62-byte encode table
+/// plus a 256-byte decode map.
 #[derive(Clone)]
 pub struct Encoding {
     encode: [u8; 62],
@@ -71,48 +66,20 @@ pub struct Encoding {
 }
 
 impl Encoding {
-    /// Build an encoding from a 62-byte alphabet.
-    ///
-    /// The alphabet must be exactly 62 ASCII bytes, contain no `\n` / `\r`,
-    /// and have no duplicate bytes. User-supplied alphabets are validated; the
-    /// standard alphabet should be obtained via [`Encoding::std`].
-    pub fn new(alphabet: &str) -> Result<Self, Base62Error> {
-        let bytes = alphabet.as_bytes();
-        if bytes.len() != 62 {
-            return Err(Base62Error::InvalidAlphabet);
-        }
-        if bytes
-            .iter()
-            .any(|&b| !b.is_ascii() || matches!(b, b'\n' | b'\r'))
-        {
-            return Err(Base62Error::InvalidAlphabet);
-        }
-
-        let mut encoding = Encoding {
-            encode: [0; 62],
-            decode_map: [0xFF; 256],
-        };
-        encoding.encode.copy_from_slice(bytes);
-
-        // A duplicate byte would map two positions to the same value, breaking
-        // round-tripping — reject it.
-        #[allow(clippy::cast_possible_truncation)]
-        for (i, &byte) in bytes.iter().enumerate() {
-            if encoding.decode_map[byte as usize] != 0xFF {
-                return Err(Base62Error::InvalidAlphabet);
-            }
-            encoding.decode_map[byte as usize] = i as u8;
-        }
-
-        Ok(encoding)
-    }
-
     /// The standard `0-9A-Za-z` encoding. Built from the const
     /// [`ENCODE_STD`], which is known-valid at compile time, so this never
     /// validates or panics.
     #[must_use]
     pub fn std() -> Self {
-        from_known_good_alphabet(ENCODE_STD)
+        let mut encoding = Encoding {
+            encode: *ENCODE_STD,
+            decode_map: [0xFF; 256],
+        };
+        #[allow(clippy::cast_possible_truncation)]
+        for (i, &byte) in ENCODE_STD.iter().enumerate() {
+            encoding.decode_map[usize::from(byte)] = i as u8;
+        }
+        encoding
     }
 
     /// Encode `src` to base62 bytes.
@@ -174,11 +141,10 @@ impl Encoding {
     #[must_use]
     pub fn encode_to_string(&self, src: &[u8]) -> String {
         let encoded = self.encode(src);
-        // `Encoding::new` validates every alphabet byte as ASCII, and
-        // `Encoding::std` is a known-good ASCII constant, so the Ok path moves
-        // the encoded bytes into the String. The Err branch is unreachable for
-        // validated alphabets but avoids panicking in production code if this
-        // module is refactored incorrectly.
+        // `Encoding::std` is built from a known-good ASCII constant, so the Ok
+        // path moves the encoded bytes into the String. The Err branch is
+        // unreachable for the standard alphabet but avoids panicking in
+        // production code if this module is refactored incorrectly.
         match String::from_utf8(encoded) {
             Ok(value) => value,
             Err(err) => String::from_utf8_lossy(&err.into_bytes()).into_owned(),
@@ -254,21 +220,6 @@ impl Encoding {
     pub fn decode_str(&self, s: &str) -> Result<Vec<u8>, Base62Error> {
         self.decode(s.as_bytes())
     }
-}
-
-/// Build an encoding from an alphabet known to be valid at compile time (the
-/// const [`ENCODE_STD`]). Skips validation and therefore never fails or panics;
-/// must not be exposed for arbitrary user input.
-fn from_known_good_alphabet(alphabet: &[u8; 62]) -> Encoding {
-    let mut encoding = Encoding {
-        encode: *alphabet,
-        decode_map: [0xFF; 256],
-    };
-    #[allow(clippy::cast_possible_truncation)]
-    for (i, &byte) in alphabet.iter().enumerate() {
-        encoding.decode_map[usize::from(byte)] = i as u8;
-    }
-    encoding
 }
 
 /// Shared standard-alphabet encoding. The 62-byte encode array and 256-byte
