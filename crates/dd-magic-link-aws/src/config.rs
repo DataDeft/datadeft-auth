@@ -335,18 +335,8 @@ async fn load_secret_string(
         .ok_or(AwsAdapterError::Internal)
 }
 
-struct AuthSecretDocument {
-    kid: String,
-    mint_until_unix: u64,
-    verify_until_unix: u64,
-    magic_link_lookup_hmac_b64: String,
-    aws_storage_hmac_b64: String,
-    session_cookie_root_b64: String,
-    magic_link_flow_cookie_root_b64: String,
-}
-
 #[derive(Deserialize)]
-struct AuthSecretDocumentSerde {
+struct AuthSecretDocument {
     kid: String,
     mint_until_unix: u64,
     verify_until_unix: u64,
@@ -358,8 +348,7 @@ struct AuthSecretDocumentSerde {
 
 impl AuthSecretDocument {
     fn parse(json: &str) -> Result<Self, AwsAdapterError> {
-        let parsed: AuthSecretDocumentSerde =
-            serde_json::from_str(json).map_err(|_| AwsAdapterError::Internal)?;
+        let parsed: Self = serde_json::from_str(json).map_err(|_| AwsAdapterError::Internal)?;
         if parsed.magic_link_lookup_hmac_b64.len() > KEY_B64_BYTES
             || parsed.aws_storage_hmac_b64.len() > KEY_B64_BYTES
             || parsed.session_cookie_root_b64.len() > KEY_B64_BYTES
@@ -374,15 +363,7 @@ impl AuthSecretDocument {
         {
             return Err(AwsAdapterError::Internal);
         }
-        Ok(Self {
-            kid: parsed.kid,
-            mint_until_unix: parsed.mint_until_unix,
-            verify_until_unix: parsed.verify_until_unix,
-            magic_link_lookup_hmac_b64: parsed.magic_link_lookup_hmac_b64,
-            aws_storage_hmac_b64: parsed.aws_storage_hmac_b64,
-            session_cookie_root_b64: parsed.session_cookie_root_b64,
-            magic_link_flow_cookie_root_b64: parsed.magic_link_flow_cookie_root_b64,
-        })
+        Ok(parsed)
     }
 }
 
