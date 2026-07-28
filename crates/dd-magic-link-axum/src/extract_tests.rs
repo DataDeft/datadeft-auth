@@ -62,8 +62,6 @@ fn request_and_confirmation_dto_debug_are_redacted() {
         )
         .is_err()
     );
-    let token = MagicLinkLandingToken::new("candidate-secret".to_owned()).expect("bounded");
-    assert_eq!(format!("{token:?}"), "MagicLinkLandingToken(..)");
 }
 
 #[test]
@@ -88,8 +86,8 @@ fn landing_query_parser_is_raw_exact_and_bounded() {
             assert!(extract_landing_token(query).is_err(), "query {query:?}");
         }
     }
-    let over_value = format!("token={}", "a".repeat(MAX_RAW_MAGIC_LINK_TOKEN_BYTES + 1));
-    assert!(extract_landing_token(Some(&over_value)).is_err());
+    // The raw-token length cap is owned by the service command, not this
+    // extractor; only the outer query-size guard applies here.
     let over_query = "a".repeat(MAX_MAGIC_LINK_LANDING_QUERY_BYTES + 1);
     assert!(extract_landing_token(Some(&over_query)).is_err());
 }

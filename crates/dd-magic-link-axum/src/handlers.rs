@@ -110,10 +110,7 @@ where
     F: FnOnce(BeginMagicLinkLandingCommand) -> Fut,
     Fut: Future<Output = Result<BeginMagicLinkLandingOutcome, MagicLinkFlowError>>,
 {
-    let raw_token = match extract_landing_token(request.uri().query()) {
-        Ok(token) => token.into_string(),
-        Err(_) => String::new(),
-    };
+    let raw_token = extract_landing_token(request.uri().query()).unwrap_or_default();
     let outcome = begin(BeginMagicLinkLandingCommand::new(raw_token))
         .await
         .map_err(map_flow_error)?;

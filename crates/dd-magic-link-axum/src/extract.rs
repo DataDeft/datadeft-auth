@@ -7,9 +7,7 @@ use axum::body::{Bytes, to_bytes};
 use axum::extract::Request;
 use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderName};
-use dd_magic_link_service::{
-    MAX_RAW_MAGIC_LINK_TOKEN_BYTES, NormalizedEmail, RequestMagicLinkCommand,
-};
+use dd_magic_link_service::{NormalizedEmail, RequestMagicLinkCommand};
 use serde::Deserialize;
 use zeroize::Zeroize;
 
@@ -60,37 +58,6 @@ impl MagicLinkRequestJson {
             self.terms_accepted,
             self.privacy_accepted,
         ))
-    }
-}
-
-/// Bounded, redacted raw landing candidate. Token grammar remains owned by the
-/// service/core parser.
-pub struct MagicLinkLandingToken(String);
-
-impl MagicLinkLandingToken {
-    /// Accept a candidate only within the service-owned pre-parse resource cap.
-    pub fn new(mut value: String) -> Result<Self, MagicLinkHttpError> {
-        if value.is_empty() || value.len() > MAX_RAW_MAGIC_LINK_TOKEN_BYTES {
-            value.zeroize();
-            return Err(MagicLinkHttpError::BadRequest);
-        }
-        Ok(Self(value))
-    }
-
-    pub(crate) fn into_string(mut self) -> String {
-        core::mem::take(&mut self.0)
-    }
-}
-
-impl fmt::Debug for MagicLinkLandingToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("MagicLinkLandingToken(..)")
-    }
-}
-
-impl Drop for MagicLinkLandingToken {
-    fn drop(&mut self) {
-        self.0.zeroize();
     }
 }
 
@@ -202,9 +169,12 @@ pub fn viewer_country(headers: &HeaderMap) -> Option<String> {
     viewer_country_from(headers, &HeaderName::from_static(CLOUDFRONT_VIEWER_COUNTRY))
 }
 
-pub(crate) fn extract_landing_token(
-    query: Option<&str>,
-) -> Result<MagicLinkLandingToken, MagicLinkHttpError> {
+/// Extract the raw `token=` candidate from the landing query, bounded only by
+/// the outer query-size guard. The service command
+/// ([`BeginMagicLinkLandingCommand`](dd_magic_link_service::BeginMagicLinkLandingCommand))
+/// owns the raw-token cap and its zeroization, and the core parser owns the
+/// grammar — so the candidate travels as a plain string.
+pub(crate) fn extract_landing_token(query: Option<&str>) -> Result<String, MagicLinkHttpError> {
     let query = query.ok_or(MagicLinkHttpError::BadRequest)?;
     if query.is_empty()
         || query.len() > MAX_MAGIC_LINK_LANDING_QUERY_BYTES
@@ -217,10 +187,10 @@ pub(crate) fn extract_landing_token(
     let value = query
         .strip_prefix("token=")
         .ok_or(MagicLinkHttpError::BadRequest)?;
-    if value.len() > MAX_RAW_MAGIC_LINK_TOKEN_BYTES || value.contains('=') {
+    if value.is_empty() || value.contains('=') {
         return Err(MagicLinkHttpError::BadRequest);
     }
-    MagicLinkLandingToken::new(value.to_owned())
+    Ok(value.to_owned())
 }
 
 fn content_type_matches_value(actual: &str, expected: &str) -> bool {

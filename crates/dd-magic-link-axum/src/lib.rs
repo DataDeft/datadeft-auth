@@ -191,8 +191,8 @@ pub use error::{ErrorBody, GenericAcceptedBody, MagicLinkHttpError, generic_acce
 pub use extract::{
     APPLICATION_JSON, CLOUDFRONT_VIEWER_COUNTRY, FORM_URLENCODED, GuardedBody,
     MAX_MAGIC_LINK_BODY_BYTES, MAX_MAGIC_LINK_LANDING_QUERY_BYTES, MagicLinkConfirmationBody,
-    MagicLinkLandingToken, MagicLinkRequestJson, content_type_matches, guarded_body,
-    parse_magic_link_request_json, viewer_country, viewer_country_from,
+    MagicLinkRequestJson, content_type_matches, guarded_body, parse_magic_link_request_json,
+    viewer_country, viewer_country_from,
 };
 pub use handlers::{
     MagicLinkConfirmed, MagicLinkFlowResponseError, MagicLinkLanding,
