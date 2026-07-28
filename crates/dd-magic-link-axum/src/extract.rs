@@ -98,15 +98,12 @@ impl Drop for MagicLinkLandingToken {
 #[serde(deny_unknown_fields)]
 pub struct MagicLinkConfirmationBody {
     pub(crate) confirmation: String,
-    #[serde(default)]
-    pub(crate) country: Option<String>,
 }
 
 impl fmt::Debug for MagicLinkConfirmationBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MagicLinkConfirmationBody")
             .field("confirmation", &"<redacted>")
-            .field("country", &self.country)
             .finish()
     }
 }
@@ -180,16 +177,28 @@ pub fn parse_magic_link_request_json(
         .into_command()
 }
 
-/// Extract a unique CloudFront viewer country as ISO 3166-1 alpha-2.
+/// Extract a unique trusted-edge viewer country (ISO 3166-1 alpha-2) from the
+/// given header.
+///
+/// Country is opportunistic: when the edge supplies the header it is validated
+/// and bound into the session; when absent, the flow proceeds without a
+/// country. The header is only meaningful if the CDN/edge strips or overwrites
+/// it on every request and the origin is not directly reachable — otherwise a
+/// caller can omit it. Never source country from request bodies.
 #[must_use]
-pub fn viewer_country(headers: &HeaderMap) -> Option<String> {
-    let name = HeaderName::from_static(CLOUDFRONT_VIEWER_COUNTRY);
-    let value = unique_header_str(headers, name)?;
+pub fn viewer_country_from(headers: &HeaderMap, name: &HeaderName) -> Option<String> {
+    let value = unique_header_str(headers, name.clone())?;
     if value.len() == 2 && value.bytes().all(|byte| byte.is_ascii_uppercase()) {
         Some(value.to_owned())
     } else {
         None
     }
+}
+
+/// [`viewer_country_from`] with the CloudFront viewer-country header.
+#[must_use]
+pub fn viewer_country(headers: &HeaderMap) -> Option<String> {
+    viewer_country_from(headers, &HeaderName::from_static(CLOUDFRONT_VIEWER_COUNTRY))
 }
 
 pub(crate) fn extract_landing_token(

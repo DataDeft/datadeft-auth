@@ -22,7 +22,7 @@ use crate::cookie_parse::extract_target_cookie;
 use crate::error::{MagicLinkHttpError, generic_accepted_response};
 use crate::extract::{
     APPLICATION_JSON, FORM_URLENCODED, MAX_MAGIC_LINK_BODY_BYTES, MagicLinkConfirmationBody,
-    extract_landing_token, guarded_body, parse_magic_link_request_json, viewer_country,
+    extract_landing_token, guarded_body, parse_magic_link_request_json, viewer_country_from,
 };
 use crate::origin::request_is_same_origin;
 use crate::scanner_config::MagicLinkScannerFlowConfig;
@@ -130,7 +130,10 @@ where
             Err(_) => return terminal_invalid_confirmation(config),
         }
     };
-    let country = viewer_country(&guarded.headers).or_else(|| body.country.take());
+    // Country comes only from the configured trusted-edge header. When the
+    // edge does not supply it, the flow proceeds without a country — request
+    // bodies are never a country source (client-controlled).
+    let country = viewer_country_from(&guarded.headers, config.country_header());
     let confirmation = core::mem::take(&mut body.confirmation);
     let command = match ConfirmMagicLinkFlowCommand::new(flow_cookie, confirmation, country) {
         Ok(command) => command,

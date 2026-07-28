@@ -3,7 +3,10 @@
 
 use core::fmt;
 
+use axum::http::HeaderName;
+
 use crate::cookie::{SessionCookieConfig, TemporaryCookieConfig, cookie_path_covers};
+use crate::extract::CLOUDFRONT_VIEWER_COUNTRY;
 use crate::origin::{SameOriginPostConfig, SameOriginRedirect};
 
 /// Typed scanner-flow setup failures.
@@ -34,6 +37,7 @@ pub struct MagicLinkScannerFlowConfig {
     same_origin_post: SameOriginPostConfig,
     session_cookie: SessionCookieConfig,
     temporary_cookies: TemporaryCookieConfig,
+    country_header: HeaderName,
 }
 
 impl MagicLinkScannerFlowConfig {
@@ -61,7 +65,26 @@ impl MagicLinkScannerFlowConfig {
             same_origin_post,
             session_cookie,
             temporary_cookies,
+            country_header: HeaderName::from_static(CLOUDFRONT_VIEWER_COUNTRY),
         })
+    }
+
+    /// Use a different trusted-edge country header (for example Cloudflare's
+    /// `cf-ipcountry`). Country binding is opportunistic: when the header is
+    /// present it is validated and bound into the session; when absent the
+    /// flow proceeds without a country. The header is only trustworthy if the
+    /// edge strips or overwrites it on every request and the origin is not
+    /// directly reachable.
+    #[must_use]
+    pub fn with_country_header(mut self, name: HeaderName) -> Self {
+        self.country_header = name;
+        self
+    }
+
+    /// The trusted-edge header consulted for the viewer country.
+    #[must_use]
+    pub fn country_header(&self) -> &HeaderName {
+        &self.country_header
     }
 
     #[must_use]

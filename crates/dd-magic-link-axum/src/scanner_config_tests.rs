@@ -1,5 +1,19 @@
+use axum::http::HeaderName;
+
 use super::*;
-use crate::test_fixtures::policy;
+use crate::test_fixtures::{policy, scanner_config};
+
+#[test]
+fn country_header_defaults_to_cloudfront_and_is_configurable() {
+    let config = scanner_config();
+    assert_eq!(
+        config.country_header().as_str(),
+        "cloudfront-viewer-country"
+    );
+
+    let cloudflare = scanner_config().with_country_header(HeaderName::from_static("cf-ipcountry"));
+    assert_eq!(cloudflare.country_header().as_str(), "cf-ipcountry");
+}
 
 #[test]
 fn scanner_config_checks_every_cookie_collision_and_path_boundary() {

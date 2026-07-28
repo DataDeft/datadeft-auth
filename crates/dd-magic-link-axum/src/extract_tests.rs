@@ -42,13 +42,21 @@ fn request_and_confirmation_dto_debug_are_redacted() {
     assert!(!debug.contains("sensitive@example.test"));
 
     let confirmation: MagicLinkConfirmationBody =
-        serde_json::from_str(r#"{"confirmation":"confirmation-secret","country":"HU"}"#)
+        serde_json::from_str(r#"{"confirmation":"confirmation-secret"}"#)
             .expect("confirmation dto");
     let debug = format!("{confirmation:?}");
     assert!(!debug.contains("confirmation-secret"));
     assert!(
         serde_json::from_str::<MagicLinkConfirmationBody>(
             r#"{"confirmation":"ok","token":"forbidden"}"#
+        )
+        .is_err()
+    );
+    // Country is never accepted from the body — it is a trusted-edge header
+    // concern only, so a body-supplied country is an unknown field.
+    assert!(
+        serde_json::from_str::<MagicLinkConfirmationBody>(
+            r#"{"confirmation":"ok","country":"HU"}"#
         )
         .is_err()
     );
@@ -155,4 +163,15 @@ async fn guarded_body_and_country_regressions_remain_strict() {
         HeaderValue::from_static("hu"),
     );
     assert_eq!(viewer_country(&headers), None);
+
+    // A configured non-CloudFront edge header works through the same
+    // validation; the CloudFront helper ignores it.
+    let cf_ipcountry = HeaderName::from_static("cf-ipcountry");
+    let mut cloudflare_headers = HeaderMap::new();
+    cloudflare_headers.insert(cf_ipcountry.clone(), HeaderValue::from_static("DE"));
+    assert_eq!(
+        viewer_country_from(&cloudflare_headers, &cf_ipcountry).as_deref(),
+        Some("DE")
+    );
+    assert_eq!(viewer_country(&cloudflare_headers), None);
 }
