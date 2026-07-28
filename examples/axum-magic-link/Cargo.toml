@@ -18,12 +18,14 @@ path = "src/main.rs"
 
 [dependencies]
 axum = "0.8"
-dd-auth-token-core = { path = "../../crates/dd-auth-token-core" }
+# The minimal consumer dependency set: the service crate re-exports the keyring
+# and lookup-key types, the axum crate owns HTTP, and the aws crate's default
+# (SDK-free) build provides the in-memory fakes. dd-pow-core is optional
+# admission hardening.
+dd-magic-link-aws = { path = "../../crates/dd-magic-link-aws" }
 dd-magic-link-axum = { path = "../../crates/dd-magic-link-axum" }
-dd-magic-link-core = { path = "../../crates/dd-magic-link-core" }
 dd-magic-link-service = { path = "../../crates/dd-magic-link-service" }
 dd-pow-core = { path = "../../crates/dd-pow-core" }
-hex = "0.4"
 rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

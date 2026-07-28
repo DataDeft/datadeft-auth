@@ -1,9 +1,13 @@
-//! Local Axum example wiring `dd-pow-core`, `dd-magic-link-service`, and
-//! `dd-magic-link-axum` together.
+//! Local Axum example wiring `dd-magic-link-service`, `dd-magic-link-axum`,
+//! the in-memory fakes from `dd-magic-link-aws` (default, SDK-free build), and
+//! `dd-pow-core` together.
 //!
-//! This binary is intentionally local-development only. It uses in-memory
-//! storage, generates fresh development secrets at startup, and exposes a
-//! `/dev/latest-magic-link` helper instead of sending email.
+//! This binary is intentionally local-development only. It uses the
+//! crate-shipped in-memory fakes for storage/rate limiting/outbox, generates
+//! fresh development secrets at startup, and exposes a
+//! `/dev/latest-magic-link` helper instead of sending email. The only
+//! app-owned storage here is the PoW replay set, which is deliberately outside
+//! the magic-link protocol.
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -19,21 +23,17 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
+use dd_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
 use dd_magic_link_axum::{
     APPLICATION_JSON, MagicLinkHttpError, MagicLinkRequestJson, MagicLinkScannerFlowConfig,
     SameOriginPostConfig, SameOriginRedirect, SessionCookieConfig, TemporaryCookieConfig,
     authenticate_session, clear_session_cookie_header, generic_accepted_response, guarded_body,
     handle_magic_link_confirmation, handle_magic_link_landing,
 };
-use dd_magic_link_core::MagicLinkFlowCookie;
-use dd_magic_link_core::{LookupHmac, LookupHmacKey, NormalizedEmail};
 use dd_magic_link_service::{
-    Clock, CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, DependencyError,
-    MagicLinkAuthenticationCandidate, MagicLinkAuthenticationRepository, MagicLinkEmail,
-    MagicLinkFlowService, MagicLinkOutbox, MagicLinkRecord, MagicLinkRepository,
-    MagicLinkRequestService, MagicLinkServiceConfig, RateLimitDecision, RateLimitKey, RateLimiter,
-    SessionCookie, SessionId, SessionRecord, SessionRepository, UserRecord, validate_session,
+    Clock, DependencyError, KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey,
+    MagicLinkFlowCookie, MagicLinkFlowService, MagicLinkRequestService, MagicLinkServiceConfig,
+    RootSecret, SessionCookie, validate_session,
 };
 use dd_pow_core::{Challenge, PowSecret, Solution, mint_challenge, verify_solution};
 use rand_core::{OsRng, RngCore};
@@ -83,13 +83,29 @@ impl Error for SetupError {}
 
 #[derive(Clone)]
 struct AppState {
-    store: Arc<MemoryStore>,
+    /// Crate-shipped in-memory fake implementing every repository trait plus
+    /// the rate limiter — mirroring the DynamoDB adapter's storage shape.
+    auth: FakeDynamoDbAuthStore,
+    outbox: FakeMagicLinkOutbox,
+    /// App-owned PoW replay set (tid -> expiry). PoW admission is outside the
+    /// magic-link protocol, so its replay store is application code.
+    pow_replay: Arc<Mutex<HashMap<String, u64>>>,
     config: MagicLinkServiceConfig,
     http_config: Arc<MagicLinkScannerFlowConfig>,
     lookup_hmac_key: Arc<LookupHmacKey>,
     flow_keyring: Arc<KeyRing<MagicLinkFlowCookie>>,
     session_keyring: Arc<KeyRing<SessionCookie>>,
     pow_secret: Arc<PowSecret>,
+}
+
+/// Wall clock for the example. The library never reads the clock itself; the
+/// application supplies it.
+struct LocalClock;
+
+impl Clock for LocalClock {
+    fn now_unix(&self) -> Result<u64, DependencyError> {
+        current_unix()
+    }
 }
 
 fn build_state() -> AppResult<AppState> {
@@ -120,7 +136,9 @@ fn build_state() -> AppResult<AppState> {
     )?;
 
     Ok(AppState {
-        store: Arc::new(MemoryStore::default()),
+        auth: FakeDynamoDbAuthStore::new(StorageHmacKey::new(random_32()?)),
+        outbox: FakeMagicLinkOutbox::default(),
+        pow_replay: Arc::default(),
         config,
         http_config: Arc::new(http_config),
         lookup_hmac_key,
@@ -205,10 +223,10 @@ async fn request_magic_link_inner(
 
     let mut rng = OsRng;
     let mut service = MagicLinkRequestService {
-        magic_links: state.store.as_ref(),
-        limiter: state.store.as_ref(),
-        outbox: state.store.as_ref(),
-        clock: state.store.as_ref(),
+        magic_links: &state.auth,
+        limiter: &state.auth,
+        outbox: &state.outbox,
+        clock: &LocalClock,
         rng: &mut rng,
         lookup_hmac_key: state.lookup_hmac_key.as_ref(),
         config: state.config.clone(),
@@ -225,10 +243,10 @@ async fn magic_link_landing(State(state): State<AppState>, request: Request) -> 
     handle_magic_link_landing(request, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
         let mut service = MagicLinkFlowService {
-            authentication: state.store.as_ref(),
-            sessions: state.store.as_ref(),
-            limiter: state.store.as_ref(),
-            clock: state.store.as_ref(),
+            authentication: &state.auth,
+            sessions: &state.auth,
+            limiter: &state.auth,
+            clock: &LocalClock,
             rng: &mut rng,
             lookup_hmac_key: state.lookup_hmac_key.as_ref(),
             flow_keyring: state.flow_keyring.as_ref(),
@@ -245,10 +263,10 @@ async fn magic_link_confirmation(State(state): State<AppState>, request: Request
     handle_magic_link_confirmation(request, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
         let mut service = MagicLinkFlowService {
-            authentication: state.store.as_ref(),
-            sessions: state.store.as_ref(),
-            limiter: state.store.as_ref(),
-            clock: state.store.as_ref(),
+            authentication: &state.auth,
+            sessions: &state.auth,
+            limiter: &state.auth,
+            clock: &LocalClock,
             rng: &mut rng,
             lookup_hmac_key: state.lookup_hmac_key.as_ref(),
             flow_keyring: state.flow_keyring.as_ref(),
@@ -275,8 +293,8 @@ async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
             validate_session(
                 cookie.as_str(),
                 auth_state.session_keyring.as_ref(),
-                auth_state.store.as_ref(),
-                auth_state.store.as_ref(),
+                &auth_state.auth,
+                &LocalClock,
                 &auth_state.config,
             )
             .await
@@ -307,8 +325,8 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
             validate_session(
                 cookie.as_str(),
                 auth_state.session_keyring.as_ref(),
-                auth_state.store.as_ref(),
-                auth_state.store.as_ref(),
+                &auth_state.auth,
+                &LocalClock,
                 &auth_state.config,
             )
             .await
@@ -322,10 +340,10 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
 
     let mut rng = OsRng;
     let service = MagicLinkFlowService {
-        authentication: state.store.as_ref(),
-        sessions: state.store.as_ref(),
-        limiter: state.store.as_ref(),
-        clock: state.store.as_ref(),
+        authentication: &state.auth,
+        sessions: &state.auth,
+        limiter: &state.auth,
+        clock: &LocalClock,
         rng: &mut rng,
         lookup_hmac_key: state.lookup_hmac_key.as_ref(),
         flow_keyring: state.flow_keyring.as_ref(),
@@ -353,7 +371,7 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
 }
 
 async fn dev_latest_magic_link(State(state): State<AppState>) -> Response {
-    match state.store.latest_magic_link() {
+    match latest_magic_link(&state.outbox) {
         Some(link) => Html(format!(
             "<!doctype html><h1>Development outbox</h1><p>This endpoint exposes a local-only bearer magic link for the example app.</p><p><a href=\"{}\">Continue sign in</a></p>",
             escape_html(&link),
@@ -378,9 +396,7 @@ fn verify_pow_solution(
     let expires_at_unix = now_unix
         .checked_add(POW_CHALLENGE_TTL_SECS)
         .ok_or(dd_pow_core::PowError::InvalidTimestamp)?;
-    state
-        .store
-        .consume_pow_tid(&verified.tid, now_unix, expires_at_unix)
+    consume_pow_tid(&state.pow_replay, &verified.tid, now_unix, expires_at_unix)
         .map_err(|_| dd_pow_core::PowError::InvalidSolution)?;
     Ok(())
 }
@@ -451,271 +467,29 @@ impl PowSolutionJson {
     }
 }
 
-#[derive(Default)]
-struct MemoryStore {
-    inner: Mutex<MemoryStoreInner>,
+/// Local-development helper: render the newest outbox email as a clickable
+/// relative magic link instead of sending real mail.
+fn latest_magic_link(outbox: &FakeMagicLinkOutbox) -> Option<String> {
+    let email = outbox.recorded().ok()?.pop()?;
+    let token = email.token.as_secret_value();
+    Some(format!("/auth/magic-link?token={}", token.as_str()))
 }
 
-#[derive(Default)]
-struct MemoryStoreInner {
-    magic_links: HashMap<String, MagicLinkRecord>,
-    users_by_email: HashMap<String, UserRecord>,
-    sessions: HashMap<String, SessionRecord>,
-    session_expires_at: HashMap<String, u64>,
-    committed_attempts: HashMap<String, CommitMagicLinkAuthentication>,
-    outbox: Vec<MagicLinkEmail>,
-    rate_limits: HashMap<String, RateLimitBucket>,
-    pow_tids: HashMap<String, u64>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct RateLimitBucket {
-    window_start_unix: u64,
-    count: u32,
-}
-
-impl MemoryStore {
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, MemoryStoreInner>, DependencyError> {
-        self.inner.lock().map_err(|_| DependencyError::Internal)
+/// Single-use PoW proof enforcement: reject a tid that was already spent and
+/// drop expired entries.
+fn consume_pow_tid(
+    replay: &Mutex<HashMap<String, u64>>,
+    tid: &str,
+    now_unix: u64,
+    expires_at_unix: u64,
+) -> Result<(), DependencyError> {
+    let mut tids = replay.lock().map_err(|_| DependencyError::Internal)?;
+    tids.retain(|_, expires_at| *expires_at > now_unix);
+    if tids.contains_key(tid) {
+        return Err(DependencyError::ConditionalWriteFailed);
     }
-
-    fn latest_magic_link(&self) -> Option<String> {
-        let inner = self.inner.lock().ok()?;
-        let email = inner.outbox.last()?;
-        let token = email.token.as_secret_value();
-        Some(format!("/auth/magic-link?token={}", token.as_str()))
-    }
-
-    fn consume_pow_tid(
-        &self,
-        tid: &str,
-        now_unix: u64,
-        expires_at_unix: u64,
-    ) -> Result<(), DependencyError> {
-        let mut inner = self.lock()?;
-        inner
-            .pow_tids
-            .retain(|_, expires_at| *expires_at > now_unix);
-        if inner.pow_tids.contains_key(tid) {
-            return Err(DependencyError::ConditionalWriteFailed);
-        }
-        inner.pow_tids.insert(tid.to_owned(), expires_at_unix);
-        Ok(())
-    }
-}
-
-impl Clock for MemoryStore {
-    fn now_unix(&self) -> Result<u64, DependencyError> {
-        current_unix()
-    }
-}
-
-impl MagicLinkRepository for MemoryStore {
-    async fn put_magic_link_if_absent(
-        &self,
-        record: MagicLinkRecord,
-    ) -> Result<(), DependencyError> {
-        let key = record.selector_lookup_hmac.as_storage_value().to_owned();
-        let mut inner = self.lock()?;
-        if inner.magic_links.contains_key(&key) {
-            return Err(DependencyError::ConditionalWriteFailed);
-        }
-        inner.magic_links.insert(key, record);
-        Ok(())
-    }
-}
-
-impl MagicLinkAuthenticationRepository for MemoryStore {
-    async fn find_magic_link_for_authentication(
-        &self,
-        selector_lookup_hmac: &LookupHmac,
-    ) -> Result<Option<MagicLinkAuthenticationCandidate>, DependencyError> {
-        let inner = self.lock()?;
-        Ok(inner
-            .magic_links
-            .get(selector_lookup_hmac.as_storage_value())
-            .map(|record| MagicLinkAuthenticationCandidate {
-                verifier_hash: record.verifier_hash.clone(),
-                email: record.email.clone(),
-                expires_at_unix: record.expires_at_unix,
-                consumed_at_unix: record.consumed_at_unix,
-                terms_version: record.terms_version.clone(),
-                privacy_version: record.privacy_version.clone(),
-                consented_at_unix: record.consented_at_unix,
-            }))
-    }
-
-    async fn find_user_for_authentication(
-        &self,
-        email: &NormalizedEmail,
-    ) -> Result<Option<UserRecord>, DependencyError> {
-        let inner = self.lock()?;
-        Ok(inner.users_by_email.get(email.as_str()).cloned())
-    }
-
-    async fn commit_magic_link_authentication(
-        &self,
-        command: &CommitMagicLinkAuthentication,
-    ) -> Result<(), CommitMagicLinkAuthenticationError> {
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|_| CommitMagicLinkAuthenticationError::Internal)?;
-
-        if let Some(committed) = inner.committed_attempts.get(command.attempt_id.as_str()) {
-            return if committed == command {
-                Ok(())
-            } else {
-                Err(CommitMagicLinkAuthenticationError::Internal)
-            };
-        }
-
-        let selector_key = command.magic_link.selector_lookup_hmac.as_storage_value();
-        let record = inner
-            .magic_links
-            .get(selector_key)
-            .cloned()
-            .ok_or(CommitMagicLinkAuthenticationError::Rejected)?;
-        if record.consumed_at_unix.is_some()
-            || record.email != command.magic_link.email
-            || record.expires_at_unix != command.magic_link.expires_at_unix
-            || record.terms_version != command.magic_link.terms_version
-            || record.privacy_version != command.magic_link.privacy_version
-            || record.consented_at_unix != command.magic_link.consented_at_unix
-            || record.expires_at_unix <= command.now_unix
-            || record.consented_at_unix == 0
-        {
-            return Err(CommitMagicLinkAuthenticationError::Rejected);
-        }
-
-        let (user_id, created_user) = match &command.user {
-            dd_magic_link_service::MagicLinkAuthenticationUser::Existing { user_id } => {
-                let user = inner
-                    .users_by_email
-                    .get(record.email.as_str())
-                    .ok_or(CommitMagicLinkAuthenticationError::UserConflict)?;
-                if user.user_id != *user_id || user.email != record.email || user.disabled {
-                    return Err(CommitMagicLinkAuthenticationError::UserConflict);
-                }
-                (user_id.clone(), None)
-            }
-            dd_magic_link_service::MagicLinkAuthenticationUser::Create { user_id } => {
-                if inner.users_by_email.contains_key(record.email.as_str()) {
-                    return Err(CommitMagicLinkAuthenticationError::UserConflict);
-                }
-                (
-                    user_id.clone(),
-                    Some(UserRecord {
-                        user_id: user_id.clone(),
-                        email: record.email.clone(),
-                        disabled: false,
-                        terms_version: Some(record.terms_version.clone()),
-                        privacy_version: Some(record.privacy_version.clone()),
-                        consented_at_unix: Some(record.consented_at_unix),
-                    }),
-                )
-            }
-        };
-
-        if inner.sessions.contains_key(command.session_id.as_str()) {
-            return Err(CommitMagicLinkAuthenticationError::SessionConflict);
-        }
-
-        if let Some(user) = created_user {
-            inner
-                .users_by_email
-                .insert(record.email.as_str().to_owned(), user);
-        }
-        let stored = inner
-            .magic_links
-            .get_mut(selector_key)
-            .ok_or(CommitMagicLinkAuthenticationError::Internal)?;
-        stored.consumed_at_unix = Some(command.now_unix);
-        inner.sessions.insert(
-            command.session_id.as_str().to_owned(),
-            SessionRecord {
-                session_id: command.session_id.clone(),
-                user_id,
-                email: record.email,
-                created_at_unix: command.now_unix,
-                revoked_at_unix: None,
-            },
-        );
-        inner.session_expires_at.insert(
-            command.session_id.as_str().to_owned(),
-            command.session_expires_at_unix,
-        );
-        inner
-            .committed_attempts
-            .insert(command.attempt_id.as_str().to_owned(), command.clone());
-        Ok(())
-    }
-}
-
-impl SessionRepository for MemoryStore {
-    async fn find_session(
-        &self,
-        session_id: &SessionId,
-        now_unix: u64,
-    ) -> Result<Option<SessionRecord>, DependencyError> {
-        let inner = self.lock()?;
-        let Some(expires_at) = inner.session_expires_at.get(session_id.as_str()) else {
-            return Ok(None);
-        };
-        if *expires_at <= now_unix {
-            return Ok(None);
-        }
-        Ok(inner.sessions.get(session_id.as_str()).cloned())
-    }
-
-    async fn revoke_session(
-        &self,
-        session_id: &SessionId,
-        revoked_at_unix: u64,
-    ) -> Result<(), DependencyError> {
-        let mut inner = self.lock()?;
-        if let Some(session) = inner.sessions.get_mut(session_id.as_str()) {
-            session.revoked_at_unix = Some(revoked_at_unix);
-        }
-        Ok(())
-    }
-}
-
-impl RateLimiter for MemoryStore {
-    async fn check_rate_limit(
-        &self,
-        key: &RateLimitKey,
-        limit: u32,
-        window_secs: u64,
-        now_unix: u64,
-    ) -> Result<RateLimitDecision, DependencyError> {
-        let mut inner = self.lock()?;
-        let bucket = inner
-            .rate_limits
-            .entry(key.as_str().to_owned())
-            .or_insert(RateLimitBucket {
-                window_start_unix: now_unix,
-                count: 0,
-            });
-        if now_unix >= bucket.window_start_unix.saturating_add(window_secs) {
-            bucket.window_start_unix = now_unix;
-            bucket.count = 0;
-        }
-        bucket.count = bucket.count.saturating_add(1);
-        if bucket.count > limit {
-            Ok(RateLimitDecision::Denied)
-        } else {
-            Ok(RateLimitDecision::Allowed)
-        }
-    }
-}
-
-impl MagicLinkOutbox for MemoryStore {
-    async fn enqueue_magic_link(&self, email: MagicLinkEmail) -> Result<(), DependencyError> {
-        let mut inner = self.lock()?;
-        inner.outbox.push(email);
-        Ok(())
-    }
+    tids.insert(tid.to_owned(), expires_at_unix);
+    Ok(())
 }
 
 fn escape_html(value: &str) -> String {
