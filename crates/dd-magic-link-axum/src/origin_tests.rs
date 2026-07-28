@@ -11,7 +11,6 @@ fn same_origin_redirect_is_fully_prevalidated_for_location() {
     ] {
         let redirect = SameOriginRedirect::parse(value).expect(value);
         assert_eq!(redirect.as_str(), value);
-        assert_eq!(redirect.location_header(), value);
     }
     for value in [
         "",

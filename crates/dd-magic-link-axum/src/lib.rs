@@ -15,6 +15,34 @@
 //! verify the emitted logs and telemetry. These handlers prove non-reflection only
 //! after handler entry; they cannot make an unreviewed outer HTTP stack safe.
 //!
+//! # Response contract
+//!
+//! The scanner-safe flow is headless: [`magic_link_landing`] and
+//! [`magic_link_confirmation`] run the input gauntlet and hand back structured
+//! results (plus prepared cookie headers), and the application renders the
+//! responses (JSON for an API, HTML for a server-rendered page). The caller
+//! MUST uphold these invariants — they are the scanner-safety and
+//! non-enumeration guarantees:
+//!
+//! - **Consumption is POST-only.** Only the same-origin confirmation POST
+//!   consumes the magic link and mints a session. Never consume on a GET.
+//! - **The landing GET is side-effect-free and repeatable.** Email security
+//!   scanners fetch link URLs; the landing must be safe to fetch any number of
+//!   times without burning the link. [`magic_link_landing`] guarantees this on
+//!   the library side — do not add consuming side effects in your handler.
+//! - **Respond uniformly (non-enumeration).** Return
+//!   [`MagicLinkFlowResponseError::Rejected`] with the **same HTTP status you
+//!   use for success** so an attacker cannot probe whether a link is
+//!   valid/expired. Only genuine `Unavailable`/`Internal` failures use a 5xx.
+//! - **Clear the flow cookie** on a rejected/internal confirmation
+//!   ([`clear_temporary_cookie_header`]); preserve it on `Unavailable` so the
+//!   user can retry.
+//! - **Stamp security headers** ([`apply_magic_link_security_headers`]:
+//!   `no-store`, `no-referrer`, CSP, frame-deny) on every landing/confirmation
+//!   response you render.
+//! - **Never echo the raw token** into the response body or logs, and
+//!   HTML-escape any rendered account identity.
+//!
 //! # Quickstart
 //!
 //! Construct the configs and keyrings once at startup, then call the handler
@@ -26,11 +54,11 @@
 //! use std::sync::Arc;
 //!
 //! use axum::extract::{Request, State};
-//! use axum::response::Response;
+//! use axum::response::{IntoResponse, Response};
 //! use dd_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
 //! use dd_magic_link_axum::{
-//!     MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect,
-//!     SessionCookieConfig, TemporaryCookieConfig, handle_magic_link_landing,
+//!     MagicLinkFlowResponseError, MagicLinkScannerFlowConfig, SameOriginPostConfig,
+//!     SameOriginRedirect, SessionCookieConfig, TemporaryCookieConfig, magic_link_landing,
 //! };
 //! use dd_magic_link_service::{
 //!     Clock, DependencyError, KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey,
@@ -81,7 +109,6 @@
 //!     OsRng.try_fill_bytes(&mut key).expect("OS randomness");
 //!     let http_config = MagicLinkScannerFlowConfig::new(
 //!         SameOriginRedirect::parse("/auth/magic-link/consume").expect("post action"),
-//!         SameOriginRedirect::parse("/signed-in").expect("redirect"),
 //!         SameOriginPostConfig::parse("https://example.test").expect("origin"),
 //!         SessionCookieConfig::production(&config).expect("session cookie"),
 //!         TemporaryCookieConfig::production_defaults(),
@@ -100,11 +127,13 @@
 //!     }
 //! }
 //!
-//! /// One route: the scanner-safe landing page. Confirmation, request, and
-//! /// session authentication wire up the same way — see the example app.
-//! async fn magic_link_landing(State(state): State<AppState>, request: Request) -> Response {
+//! /// One route: the side-effect-free landing. It returns the account and
+//! /// confirmation value plus the flow cookie; the app renders JSON or HTML
+//! /// and lets the browser POST the confirmation back. Confirmation, request,
+//! /// and session authentication wire up the same way — see the example app.
+//! async fn landing(State(state): State<AppState>, request: Request) -> Response {
 //!     let config = state.http_config.clone();
-//!     handle_magic_link_landing(request, config.as_ref(), move |command| async move {
+//!     let result = magic_link_landing(request, config.as_ref(), move |command| async move {
 //!         let mut rng = OsRng;
 //!         let mut service = MagicLinkFlowService {
 //!             authentication: &state.auth,
@@ -119,9 +148,24 @@
 //!         };
 //!         service.begin_magic_link_landing(command).await
 //!     })
-//!     .await
+//!     .await;
+//!
+//!     match result {
+//!         Ok(landing) => {
+//!             let mut response = axum::Json(serde_json::json!({
+//!                 "account": landing.outcome.account_identity().as_str(),
+//!                 "confirmation": landing.outcome.confirmation_value(),
+//!             }))
+//!             .into_response();
+//!             response.headers_mut().append(axum::http::header::SET_COOKIE, landing.flow_cookie);
+//!             response
+//!         }
+//!         // Respond uniformly so link validity is not enumerable.
+//!         Err(MagicLinkFlowResponseError::Rejected) => axum::http::StatusCode::OK.into_response(),
+//!         Err(_) => axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response(),
+//!     }
 //! }
-//! # let _ = (build_state, magic_link_landing);
+//! # let _ = (build_state, landing);
 //! ```
 
 #![forbid(unsafe_code)]
@@ -151,8 +195,9 @@ pub use extract::{
     parse_magic_link_request_json, viewer_country, viewer_country_from,
 };
 pub use handlers::{
-    apply_magic_link_security_headers, handle_magic_link_confirmation, handle_magic_link_landing,
-    handle_magic_link_request_json,
+    MagicLinkConfirmed, MagicLinkFlowResponseError, MagicLinkLanding,
+    apply_magic_link_security_headers, handle_magic_link_request_json, magic_link_confirmation,
+    magic_link_landing,
 };
 pub use origin::{OriginConfigError, SameOriginPostConfig, SameOriginRedirect};
 pub use scanner_config::{MagicLinkScannerFlowConfig, MagicLinkScannerFlowConfigError};

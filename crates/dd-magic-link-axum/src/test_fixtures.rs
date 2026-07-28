@@ -29,7 +29,6 @@ pub(crate) fn policy() -> MagicLinkServiceConfig {
 pub(crate) fn scanner_config() -> MagicLinkScannerFlowConfig {
     MagicLinkScannerFlowConfig::new(
         SameOriginRedirect::parse("/auth/magic-link/confirm").expect("post action"),
-        SameOriginRedirect::parse("/signed-in").expect("success redirect"),
         SameOriginPostConfig::parse("https://example.test").expect("origin"),
         SessionCookieConfig::production(&policy()).expect("session policy"),
         TemporaryCookieConfig::production_defaults(),
@@ -56,29 +55,6 @@ pub(crate) async fn response_parts(response: Response) -> (StatusCode, HeaderMap
         .expect("body reads")
         .to_vec();
     (status, headers, body)
-}
-
-pub(crate) fn terminal_fingerprint(
-    status: StatusCode,
-    headers: &HeaderMap,
-    body: &[u8],
-) -> Vec<u8> {
-    let mut fields = Vec::new();
-    for name in headers.keys() {
-        for value in headers.get_all(name).iter() {
-            fields.push((name.as_str().as_bytes().to_vec(), value.as_bytes().to_vec()));
-        }
-    }
-    fields.sort();
-    let mut fingerprint = format!("{status}\n").into_bytes();
-    for (name, value) in fields {
-        fingerprint.extend_from_slice(&name);
-        fingerprint.push(b':');
-        fingerprint.extend_from_slice(&value);
-        fingerprint.push(b'\n');
-    }
-    fingerprint.extend_from_slice(body);
-    fingerprint
 }
 
 #[derive(Clone, Copy)]

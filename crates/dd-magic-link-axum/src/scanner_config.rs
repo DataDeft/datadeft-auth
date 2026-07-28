@@ -30,10 +30,14 @@ impl fmt::Display for MagicLinkScannerFlowConfigError {
 impl std::error::Error for MagicLinkScannerFlowConfigError {}
 
 /// Fully validated scanner-safe HTTP configuration.
+///
+/// `post_action` is the same-origin path the confirmation form/POST targets;
+/// the caller renders it and it is validated against the flow-cookie path. The
+/// post-login redirect is the caller's concern in the headless helpers, so it
+/// is not part of this config.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MagicLinkScannerFlowConfig {
     post_action: SameOriginRedirect,
-    success_redirect: SameOriginRedirect,
     same_origin_post: SameOriginPostConfig,
     session_cookie: SessionCookieConfig,
     temporary_cookies: TemporaryCookieConfig,
@@ -43,7 +47,6 @@ pub struct MagicLinkScannerFlowConfig {
 impl MagicLinkScannerFlowConfig {
     pub fn new(
         post_action: SameOriginRedirect,
-        success_redirect: SameOriginRedirect,
         same_origin_post: SameOriginPostConfig,
         session_cookie: SessionCookieConfig,
         temporary_cookies: TemporaryCookieConfig,
@@ -61,7 +64,6 @@ impl MagicLinkScannerFlowConfig {
         }
         Ok(Self {
             post_action,
-            success_redirect,
             same_origin_post,
             session_cookie,
             temporary_cookies,
@@ -90,11 +92,6 @@ impl MagicLinkScannerFlowConfig {
     #[must_use]
     pub fn post_action(&self) -> &SameOriginRedirect {
         &self.post_action
-    }
-
-    #[must_use]
-    pub fn success_redirect(&self) -> &SameOriginRedirect {
-        &self.success_redirect
     }
 
     #[must_use]

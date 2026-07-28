@@ -18,7 +18,6 @@ fn country_header_defaults_to_cloudfront_and_is_configurable() {
 #[test]
 fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
     let post = SameOriginRedirect::parse("/auth/confirm?fixed=1").expect("post");
-    let redirect = SameOriginRedirect::parse("/done").expect("redirect");
     let origin = SameOriginPostConfig::parse("https://example.test").expect("origin");
     let session = SessionCookieConfig::production(&policy()).expect("session");
 
@@ -27,7 +26,6 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
         assert!(
             MagicLinkScannerFlowConfig::new(
                 post.clone(),
-                redirect.clone(),
                 origin.clone(),
                 session.clone(),
                 temporary,
@@ -39,7 +37,6 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
     assert_eq!(
         MagicLinkScannerFlowConfig::new(
             post.clone(),
-            redirect.clone(),
             origin.clone(),
             session.clone(),
             false_prefix,
@@ -51,14 +48,8 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
     let session_flow = session.clone().with_name("flow").expect("session name");
     let temporary = TemporaryCookieConfig::production("flow", "/auth").expect("flow");
     assert_eq!(
-        MagicLinkScannerFlowConfig::new(
-            post.clone(),
-            redirect.clone(),
-            origin.clone(),
-            session_flow,
-            temporary,
-        )
-        .unwrap_err(),
+        MagicLinkScannerFlowConfig::new(post.clone(), origin.clone(), session_flow, temporary,)
+            .unwrap_err(),
         MagicLinkScannerFlowConfigError::DuplicateCookieName
     );
 }

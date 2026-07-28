@@ -7,7 +7,7 @@
 | Surface | Status | Customer action |
 | --- | --- | --- |
 | Magic-link core/service | Ready for integration | Supply clock, CSPRNG, keyrings, repository, limiter, and outbox implementations |
-| Scanner-safe Axum helpers | Ready for integration | Own routes; configure exact Origin, fixed redirects, flow/session cookies, body limits, and token-safe logging |
+| Scanner-safe Axum helpers | Ready for integration | Headless: the helpers run the input gauntlet and return structured results + cookie headers; you render responses under the scanner-safe response contract (POST-only consumption, side-effect-free GET, uniform/non-enumerating errors, security headers) — see `dd-magic-link-axum` crate docs and security.md |
 | In-memory AWS-style fakes | Ready for development/tests | `FakeDynamoDbAuthStore` / `FakeMagicLinkOutbox` in `dd-magic-link-aws` (default build is SDK-free). Do not use fake secrets, clocks, or entropy in production |
 | DynamoDB/SES adapters | Available behind `aws` feature | Provision and validate table/IAM/TTL/encryption, renderer, SES identity, and live transaction behavior |
 | Session validation/revocation | Ready for integration | Invoke validation on protected requests and revoke server state on logout/compromise |

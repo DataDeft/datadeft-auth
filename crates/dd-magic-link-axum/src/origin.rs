@@ -13,12 +13,11 @@ use crate::handlers::SEC_FETCH_SITE;
 /// Setup-validated same-origin redirect target.
 ///
 /// Only canonical ASCII relative request targets with an absolute path are
-/// accepted. The `Location` header is constructed during setup, before any
-/// authentication transaction can commit.
+/// accepted. Used for the confirmation `post_action` (the same-origin path the
+/// confirmation POST targets), validated during setup.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SameOriginRedirect {
     value: String,
-    location: HeaderValue,
 }
 
 impl SameOriginRedirect {
@@ -38,17 +37,15 @@ impl SameOriginRedirect {
         {
             return Err(MagicLinkHttpError::BadRequest);
         }
-        let location = HeaderValue::from_str(&value).map_err(|_| MagicLinkHttpError::BadRequest)?;
-        Ok(Self { value, location })
+        // Reject values that cannot form a header value, so callers may render
+        // this path into a Location/form action safely.
+        HeaderValue::from_str(&value).map_err(|_| MagicLinkHttpError::BadRequest)?;
+        Ok(Self { value })
     }
 
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.value
-    }
-
-    pub(crate) fn location_header(&self) -> HeaderValue {
-        self.location.clone()
     }
 }
 

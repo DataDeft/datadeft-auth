@@ -1,13 +1,21 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use axum::http::Method;
-use axum::http::header::{COOKIE, ORIGIN};
+use axum::body::Body;
+use axum::extract::Request;
+use axum::http::header::{CONTENT_TYPE, COOKIE, ORIGIN};
+use axum::http::{Method, StatusCode};
+use dd_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
+use dd_magic_link_service::{
+    Clock, DependencyError, EmailLocale, LookupHmacKey, MagicLinkFlowCookie, MagicLinkFlowService,
+    MagicLinkRequestService, MagicLinkServiceConfig, RequestMagicLinkCommand, SessionCookie,
+};
+use rand_core::OsRng;
 
 use super::*;
 use crate::test_fixtures::{
-    FixtureFlowError, fixture_flow_error, post_request, response_parts, scanner_config,
-    terminal_fingerprint,
+    FixtureFlowError, fixture_flow_error, fixture_keyring, post_request, response_parts,
+    scanner_config,
 };
 
 fn bad_request_flow_error() -> MagicLinkFlowError {
@@ -18,6 +26,8 @@ fn bad_request_flow_error() -> MagicLinkFlowError {
     )
     .expect_err("invalid country")
 }
+
+// --- request handler (unchanged generic-ack behavior) ---------------------
 
 #[tokio::test]
 async fn request_handler_preserves_generic_success_regression() {
@@ -66,83 +76,46 @@ async fn unknown_request_field_is_rejected_generically_without_reflection() {
     );
 }
 
+// --- landing: side-effect-free, error mapping -----------------------------
+
 #[tokio::test]
-async fn valid_landing_html_identifies_and_escapes_account_without_raw_token() {
+async fn landing_errors_map_without_consuming_and_run_the_closure() {
     let config = scanner_config();
-    let response = build_valid_landing_response(
-        "user<&>\"'@example.test",
-        "confirmation-handle",
-        "encrypted-flow-cookie",
-        123,
-        &config,
-    );
-    let (status, headers, body) = response_parts(response).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(headers.get_all(SET_COOKIE).iter().count(), 1);
-    let set_cookie = headers.get(SET_COOKIE).expect("flow set cookie");
-    assert!(
-        set_cookie
-            .as_bytes()
-            .starts_with(b"dd_auth_flow=encrypted-flow-cookie")
-    );
-    let text = String::from_utf8(body).expect("utf8");
-    assert!(text.contains("user&lt;&amp;&gt;&quot;&#39;@example.test"));
-    assert!(!text.contains("user<&>\"'@example.test"));
-    assert!(text.contains("name=\"confirmation\" value=\"confirmation-handle\""));
-    assert_eq!(text.matches("type=\"hidden\"").count(), 1);
-    assert!(text.contains("Continue sign in"));
-    assert!(!text.contains("name=\"token\""));
-    assert!(!text.contains("raw-token-secret"));
-    assert!(!text.contains("encrypted-flow-cookie"));
+    for (kind, expected) in [
+        (
+            FixtureFlowError::MagicLinkUnavailable,
+            MagicLinkFlowResponseError::Rejected,
+        ),
+        (
+            FixtureFlowError::Unavailable,
+            MagicLinkFlowResponseError::Unavailable,
+        ),
+        (
+            FixtureFlowError::Internal,
+            MagicLinkFlowResponseError::Internal,
+        ),
+    ] {
+        let called = Rc::new(Cell::new(false));
+        let closure_called = Rc::clone(&called);
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/auth/magic-link?token=not-a-token")
+            .body(Body::from("body-must-not-be-read"))
+            .expect("request");
+        let result = magic_link_landing(request, &config, move |_command| {
+            closure_called.set(true);
+            async move { Err(fixture_flow_error(kind).await) }
+        })
+        .await;
+        assert!(called.get(), "begin closure must run");
+        assert_eq!(result.err(), Some(expected));
+    }
 }
 
-#[tokio::test]
-async fn request_handler_forwards_false_consent_to_service_behavior() {
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri("/auth/magic-link")
-        .header(CONTENT_TYPE, APPLICATION_JSON)
-        .body(Body::from(
-            r#"{"email":"user@example.com","locale":"en","terms_accepted":false,"privacy_accepted":true}"#,
-        ))
-        .expect("request");
-    let response = handle_magic_link_request_json(request, |command| async move {
-        assert!(!command.terms_accepted());
-        assert!(command.privacy_accepted());
-        Err(MagicLinkServiceError::BadRequest)
-    })
-    .await;
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
+// --- confirmation: gauntlet runs before the service ------------------------
 
 #[tokio::test]
-async fn invalid_landing_is_non_actionable_and_clears_temporary_state() {
-    let config = scanner_config();
-    let called = Rc::new(Cell::new(false));
-    let closure_called = Rc::clone(&called);
-    let request = Request::builder()
-        .method(Method::GET)
-        .uri("/auth/magic-link?token=not-a-token")
-        .body(Body::from("body-must-not-be-read"))
-        .expect("request");
-    let response = handle_magic_link_landing(request, &config, move |_command| {
-        closure_called.set(true);
-        async { Err(bad_request_flow_error()) }
-    })
-    .await;
-    assert!(called.get());
-    let (status, headers, body) = response_parts(response).await;
-    assert_eq!(status, StatusCode::OK);
-    let text = String::from_utf8(body).expect("utf8");
-    assert!(!text.contains("<form"));
-    assert!(!text.contains("confirmation"));
-    assert!(!text.contains("not-a-token"));
-    assert_eq!(headers.get_all(SET_COOKIE).iter().count(), 1);
-    assert!(headers.get("content-security-policy").is_some());
-}
-
-#[tokio::test]
-async fn origin_rejection_precedes_cookie_body_and_service_and_does_not_clear() {
+async fn origin_rejection_precedes_cookie_body_and_service() {
     let config = scanner_config();
     for setup in ["missing", "mismatch", "duplicate", "bad-fetch"] {
         let called = Rc::new(Cell::new(false));
@@ -170,84 +143,22 @@ async fn origin_rejection_precedes_cookie_body_and_service_and_does_not_clear() 
                 .headers_mut()
                 .append(ORIGIN, HeaderValue::from_static("https://example.test"));
         }
-        let response = handle_magic_link_confirmation(request, &config, move |_command| {
+        let result = magic_link_confirmation(request, &config, move |_command| {
             closure_called.set(true);
             async { Err(bad_request_flow_error()) }
         })
         .await;
-        assert!(!called.get(), "{setup}");
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        assert_eq!(response.headers().get_all(SET_COOKIE).iter().count(), 0);
-        assert!(response.headers().get("cache-control").is_some());
+        assert!(!called.get(), "{setup}: service must not run");
+        assert_eq!(result.err(), Some(MagicLinkFlowResponseError::Rejected));
     }
 }
 
 #[tokio::test]
-async fn confirmation_success_is_clean_303_with_fixed_cookie_order() {
+async fn malformed_cookie_and_body_are_rejected_uniformly_without_service() {
     let config = scanner_config();
-    let response = build_confirmation_success_response("session-secret", &config);
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.headers().get(LOCATION).expect("location"),
-        "/signed-in"
-    );
-    assert!(response.headers().get("cache-control").is_some());
-    let cookies: Vec<&[u8]> = response
-        .headers()
-        .get_all(SET_COOKIE)
-        .iter()
-        .map(HeaderValue::as_bytes)
-        .collect();
-    assert_eq!(cookies.len(), 2);
-    assert!(cookies[0].starts_with(b"dd_session=session-secret"));
-    assert!(cookies[1].starts_with(b"dd_auth_flow=;"));
-    let (_, headers, body) = response_parts(response).await;
-    assert!(body.is_empty());
-    assert!(
-        !headers
-            .get(LOCATION)
-            .expect("location")
-            .as_bytes()
-            .contains(&b'?')
-    );
-}
 
-#[tokio::test]
-async fn handler_internal_clears_but_unavailable_preserves_temporary_state() {
-    let config = scanner_config();
-    for (kind, expected_status, expected_clears) in [
-        (
-            FixtureFlowError::Internal,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            1,
-        ),
-        (
-            FixtureFlowError::Unavailable,
-            StatusCode::SERVICE_UNAVAILABLE,
-            0,
-        ),
-    ] {
-        let response = handle_magic_link_confirmation(
-            post_request(APPLICATION_JSON, Body::from(r#"{"confirmation":"x"}"#)),
-            &config,
-            move |_command| async move { Err(fixture_flow_error(kind).await) },
-        )
-        .await;
-        assert_eq!(response.status(), expected_status);
-        assert_eq!(
-            response.headers().get_all(SET_COOKIE).iter().count(),
-            expected_clears
-        );
-        assert!(response.headers().get("cache-control").is_some());
-        assert!(response.headers().get("content-security-policy").is_some());
-    }
-}
-
-#[tokio::test]
-async fn terminal_invalid_confirmation_responses_are_byte_identical() {
-    let config = scanner_config();
-    let mut responses = Vec::new();
-
+    // Malformed / missing / duplicate flow cookie, valid body — all Rejected
+    // before the service runs.
     for cookie in [
         None,
         Some("dd_auth_flow="),
@@ -265,14 +176,15 @@ async fn terminal_invalid_confirmation_responses_are_byte_identical() {
         let request = builder
             .body(Body::from(r#"{"confirmation":"x"}"#))
             .expect("request");
-        responses.push(
-            handle_magic_link_confirmation(request, &config, |_| async {
-                unreachable!("service must not run")
-            })
-            .await,
-        );
+        let result = magic_link_confirmation(request, &config, |_| async {
+            unreachable!("service must not run")
+        })
+        .await;
+        assert_eq!(result.err(), Some(MagicLinkFlowResponseError::Rejected));
     }
 
+    // Bad content-type / empty / non-JSON / unknown field / body country — all
+    // Rejected before the service runs.
     for (content_type, body) in [
         ("text/plain", Body::from("bad")),
         (APPLICATION_JSON, Body::empty()),
@@ -281,45 +193,46 @@ async fn terminal_invalid_confirmation_responses_are_byte_identical() {
             APPLICATION_JSON,
             Body::from(r#"{"confirmation":"x","token":"forbidden"}"#),
         ),
+        (
+            APPLICATION_JSON,
+            Body::from(r#"{"confirmation":"x","country":"HU"}"#),
+        ),
         (FORM_URLENCODED, Body::from(vec![0xff])),
         (FORM_URLENCODED, Body::from("country=HU")),
     ] {
-        responses.push(
-            handle_magic_link_confirmation(post_request(content_type, body), &config, |_| async {
+        let result =
+            magic_link_confirmation(post_request(content_type, body), &config, |_| async {
                 unreachable!("service must not run")
             })
-            .await,
-        );
+            .await;
+        assert_eq!(result.err(), Some(MagicLinkFlowResponseError::Rejected));
     }
+}
 
-    responses.push(
-        handle_magic_link_confirmation(
+#[tokio::test]
+async fn confirmation_service_errors_map_to_response_errors() {
+    let config = scanner_config();
+    for (kind, expected) in [
+        (
+            FixtureFlowError::MagicLinkUnavailable,
+            MagicLinkFlowResponseError::Rejected,
+        ),
+        (
+            FixtureFlowError::Unavailable,
+            MagicLinkFlowResponseError::Unavailable,
+        ),
+        (
+            FixtureFlowError::Internal,
+            MagicLinkFlowResponseError::Internal,
+        ),
+    ] {
+        let result = magic_link_confirmation(
             post_request(APPLICATION_JSON, Body::from(r#"{"confirmation":"x"}"#)),
             &config,
-            |_| async { Err(bad_request_flow_error()) },
+            move |_command| async move { Err(fixture_flow_error(kind).await) },
         )
-        .await,
-    );
-    responses.push(
-        handle_magic_link_confirmation(
-            post_request(APPLICATION_JSON, Body::from(r#"{"confirmation":"x"}"#)),
-            &config,
-            |_| async { Err(fixture_flow_error(FixtureFlowError::MagicLinkUnavailable).await) },
-        )
-        .await,
-    );
-
-    let mut fingerprints = Vec::new();
-    for response in responses {
-        let (status, headers, body) = response_parts(response).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert_eq!(body, TERMINAL_INVALID_BODY.as_bytes());
-        assert_eq!(headers.get_all(SET_COOKIE).iter().count(), 1);
-        assert!(headers.get(LOCATION).is_none());
-        fingerprints.push(terminal_fingerprint(status, &headers, &body));
-    }
-    for fingerprint in &fingerprints[1..] {
-        assert_eq!(fingerprint, &fingerprints[0]);
+        .await;
+        assert_eq!(result.err(), Some(expected));
     }
 }
 
@@ -327,11 +240,169 @@ async fn terminal_invalid_confirmation_responses_are_byte_identical() {
 async fn body_stream_cap_applies_without_content_length() {
     let config = scanner_config();
     let body = Body::from(vec![b'a'; MAX_MAGIC_LINK_BODY_BYTES + 1]);
-    let response =
-        handle_magic_link_confirmation(post_request(APPLICATION_JSON, body), &config, |_| async {
+    let result =
+        magic_link_confirmation(post_request(APPLICATION_JSON, body), &config, |_| async {
             unreachable!("service must not run")
         })
         .await;
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(response.headers().get_all(SET_COOKIE).iter().count(), 1);
+    assert_eq!(result.err(), Some(MagicLinkFlowResponseError::Rejected));
+}
+
+// --- end-to-end success through the headless handlers ---------------------
+
+struct FlowClock;
+
+impl Clock for FlowClock {
+    fn now_unix(&self) -> Result<u64, DependencyError> {
+        Ok(20_000)
+    }
+}
+
+fn cookie_value(set_cookie: &HeaderValue, name: &str) -> String {
+    let text = set_cookie.to_str().expect("ascii cookie");
+    let prefix = format!("{name}=");
+    let rest = text.strip_prefix(&prefix).expect("cookie name prefix");
+    rest.split(';').next().expect("cookie value").to_owned()
+}
+
+#[tokio::test]
+async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
+    let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
+    let outbox = FakeMagicLinkOutbox::default();
+    let lookup_key = LookupHmacKey::new([0x42; 32]);
+    let flow_keyring = fixture_keyring::<MagicLinkFlowCookie>();
+    let session_keyring = fixture_keyring::<SessionCookie>();
+    let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
+    let scanner = scanner_config();
+
+    // Seed a magic link via the request service; recover the token from the
+    // fake outbox (stands in for the delivered email).
+    {
+        let mut rng = OsRng;
+        let mut request = MagicLinkRequestService {
+            magic_links: &store,
+            limiter: &store,
+            outbox: &outbox,
+            clock: &FlowClock,
+            rng: &mut rng,
+            lookup_hmac_key: &lookup_key,
+            config: config.clone(),
+        };
+        request
+            .request_magic_link(RequestMagicLinkCommand::new(
+                dd_magic_link_service::NormalizedEmail::parse("user@example.com").expect("email"),
+                EmailLocale::En,
+                true,
+                true,
+            ))
+            .await
+            .expect("request accepted");
+    }
+    let token = outbox
+        .recorded()
+        .expect("outbox")
+        .pop()
+        .expect("one email")
+        .token
+        .as_secret_value()
+        .to_string();
+
+    // Landing (GET) is side-effect-free: it neither consumes the link nor
+    // creates a session.
+    let landing_request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/auth/magic-link?token={token}"))
+        .body(Body::empty())
+        .expect("landing request");
+    let landing = magic_link_landing(landing_request, &scanner, |command| {
+        let (store, lookup_key, flow_keyring, session_keyring, config) = (
+            &store,
+            &lookup_key,
+            &flow_keyring,
+            &session_keyring,
+            &config,
+        );
+        async move {
+            let mut rng = OsRng;
+            let mut service = MagicLinkFlowService {
+                authentication: store,
+                sessions: store,
+                limiter: store,
+                clock: &FlowClock,
+                rng: &mut rng,
+                lookup_hmac_key: lookup_key,
+                flow_keyring,
+                session_keyring,
+                config: config.clone(),
+            };
+            service.begin_magic_link_landing(command).await
+        }
+    })
+    .await
+    .expect("landing succeeds");
+
+    assert_eq!(store.session_count().expect("sessions"), 0);
+    assert!(
+        landing
+            .flow_cookie
+            .to_str()
+            .expect("ascii")
+            .starts_with("dd_auth_flow=")
+    );
+    let flow_cookie = cookie_value(&landing.flow_cookie, "dd_auth_flow");
+    let confirmation = landing.outcome.confirmation_value().to_owned();
+
+    // Confirmation (same-origin POST) consumes the link and mints the session.
+    let confirm_request = Request::builder()
+        .method(Method::POST)
+        .uri("/auth/magic-link/confirm")
+        .header(ORIGIN, "https://example.test")
+        .header(CONTENT_TYPE, APPLICATION_JSON)
+        .header(COOKIE, format!("dd_auth_flow={flow_cookie}"))
+        .body(Body::from(format!(
+            r#"{{"confirmation":"{confirmation}"}}"#
+        )))
+        .expect("confirm request");
+    let confirmed = magic_link_confirmation(confirm_request, &scanner, |command| {
+        let (store, lookup_key, flow_keyring, session_keyring, config) = (
+            &store,
+            &lookup_key,
+            &flow_keyring,
+            &session_keyring,
+            &config,
+        );
+        async move {
+            let mut rng = OsRng;
+            let mut service = MagicLinkFlowService {
+                authentication: store,
+                sessions: store,
+                limiter: store,
+                clock: &FlowClock,
+                rng: &mut rng,
+                lookup_hmac_key: lookup_key,
+                flow_keyring,
+                session_keyring,
+                config: config.clone(),
+            };
+            service.confirm_magic_link_flow(command).await
+        }
+    })
+    .await
+    .expect("confirmation succeeds");
+
+    assert_eq!(store.session_count().expect("sessions"), 1);
+    assert!(
+        confirmed
+            .session_cookie
+            .to_str()
+            .expect("ascii")
+            .starts_with("dd_session=")
+    );
+    assert!(
+        confirmed
+            .clear_flow_cookie
+            .to_str()
+            .expect("ascii")
+            .starts_with("dd_auth_flow=;")
+    );
 }

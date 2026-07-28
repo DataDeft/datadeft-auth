@@ -3,10 +3,8 @@
 
 use core::future::Future;
 
-use axum::body::Body;
 use axum::extract::Request;
-use axum::http::header::{CONTENT_TYPE, LOCATION, SET_COOKIE};
-use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use dd_magic_link_service::{
     BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, ConfirmMagicLinkFlowCommand,
@@ -15,8 +13,7 @@ use dd_magic_link_service::{
 };
 
 use crate::cookie::{
-    TemporaryCookieConfig, clear_temporary_cookie_header, session_set_cookie_header,
-    set_temporary_cookie_header,
+    clear_temporary_cookie_header, session_set_cookie_header, set_temporary_cookie_header,
 };
 use crate::cookie_parse::extract_target_cookie;
 use crate::error::{MagicLinkHttpError, generic_accepted_response};
@@ -32,8 +29,6 @@ const CONTENT_SECURITY_POLICY: HeaderName = HeaderName::from_static("content-sec
 const REFERRER_POLICY: HeaderName = HeaderName::from_static("referrer-policy");
 pub(crate) const SEC_FETCH_SITE: HeaderName = HeaderName::from_static("sec-fetch-site");
 const X_FRAME_OPTIONS: HeaderName = HeaderName::from_static("x-frame-options");
-
-const TERMINAL_INVALID_BODY: &str = "Invalid confirmation.\n";
 
 /// Handle a JSON magic-link request with a generic public response.
 pub async fn handle_magic_link_request_json<F, Fut>(request: Request, handle: F) -> Response
@@ -61,13 +56,56 @@ where
     Ok(generic_accepted_response())
 }
 
-/// Scanner-safe landing handler. The mandatory deployment logging gate described
-/// in the crate documentation applies before this handler can be production-ready.
-pub async fn handle_magic_link_landing<F, Fut>(
+/// Successful scanner-safe landing.
+///
+/// Carries the validated flow state to present (account identity + confirmation
+/// value) and the `Set-Cookie` header for the short-lived flow cookie. The
+/// caller renders the page/JSON and attaches [`flow_cookie`](Self::flow_cookie).
+pub struct MagicLinkLanding {
+    /// The validated landing outcome (account identity, confirmation value).
+    pub outcome: BeginMagicLinkLandingOutcome,
+    /// `Set-Cookie` value for the encrypted, short-lived flow cookie. Attach it
+    /// to the landing response.
+    pub flow_cookie: HeaderValue,
+}
+
+/// Why a scanner-safe landing or confirmation did not succeed.
+///
+/// The variants map to responses the caller produces:
+///
+/// - [`Rejected`](Self::Rejected): the request was malformed, or the link was
+///   invalid/expired/already-used. Respond **uniformly** so link validity is
+///   not enumerable — for a landing, use the **same HTTP status you return on
+///   success**; for a confirmation, a single generic failure. On confirmation,
+///   clear the flow cookie with [`clear_temporary_cookie_header`].
+/// - [`Unavailable`](Self::Unavailable): a dependency was down. Respond 503 and
+///   **preserve** the flow cookie so the user can retry.
+/// - [`Internal`](Self::Internal): an internal error. Respond 500; clearing the
+///   flow cookie on confirmation is fine.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum MagicLinkFlowResponseError {
+    Rejected,
+    Unavailable,
+    Internal,
+}
+
+/// Run the scanner-safe landing: extract the token, validate it via `begin`,
+/// and prepare the flow cookie. **The landing is side-effect-free** — it does
+/// not consume the magic link or create a session, so email security scanners
+/// may fetch the landing URL repeatedly without burning the link. The caller
+/// owns the response: a typical API returns JSON `{ account, confirmation }`
+/// with [`flow_cookie`](MagicLinkLanding::flow_cookie) attached and lets the
+/// browser POST the confirmation back same-origin.
+///
+/// On [`MagicLinkFlowResponseError::Rejected`], respond with the **same HTTP
+/// status you use for success** so a caller cannot probe link validity. The
+/// mandatory deployment logging gate in the crate docs applies before this is
+/// production-ready.
+pub async fn magic_link_landing<F, Fut>(
     request: Request,
     config: &MagicLinkScannerFlowConfig,
     begin: F,
-) -> Response
+) -> Result<MagicLinkLanding, MagicLinkFlowResponseError>
 where
     F: FnOnce(BeginMagicLinkLandingCommand) -> Fut,
     Fut: Future<Output = Result<BeginMagicLinkLandingOutcome, MagicLinkFlowError>>,
@@ -76,76 +114,111 @@ where
         Ok(token) => token.into_string(),
         Err(_) => String::new(),
     };
-    let command = BeginMagicLinkLandingCommand::new(raw_token);
-    match begin(command).await {
-        Ok(outcome) => valid_landing_response(&outcome, config),
-        Err(error) => landing_error_response(error, config),
-    }
+    let outcome = begin(BeginMagicLinkLandingCommand::new(raw_token))
+        .await
+        .map_err(map_flow_error)?;
+    let flow_cookie = set_temporary_cookie_header(
+        config.temporary_cookies(),
+        outcome.flow_cookie_value(),
+        outcome.cookie_max_age_secs(),
+    )
+    .map_err(|_| MagicLinkFlowResponseError::Internal)?;
+    Ok(MagicLinkLanding {
+        outcome,
+        flow_cookie,
+    })
 }
 
-/// Scanner-safe confirmation handler. Origin is enforced before cookie, body, or
-/// service work.
-pub async fn handle_magic_link_confirmation<F, Fut>(
+/// Successful scanner-safe confirmation.
+///
+/// The magic link is consumed and the session is minted. Attach both cookie
+/// headers to the response, then respond however the app prefers (a 303 to a
+/// post-login page, a 200/204 for an SPA, etc.).
+pub struct MagicLinkConfirmed {
+    /// The authentication outcome (created/existing user, session).
+    pub outcome: ConfirmMagicLinkFlowOutcome,
+    /// `Set-Cookie` value that installs the session cookie.
+    pub session_cookie: HeaderValue,
+    /// `Set-Cookie` value that clears the now-spent flow cookie. Attach it too.
+    pub clear_flow_cookie: HeaderValue,
+}
+
+/// Run the scanner-safe confirmation gauntlet: enforce same-origin, extract the
+/// flow cookie, bound and parse the body, read the trusted-edge country, then
+/// consume the link via `confirm`. **This is the only step that consumes the
+/// magic link and mints a session, and it only runs for a same-origin POST.**
+/// The caller maps the result to its own response and attaches the cookie
+/// headers on success.
+pub async fn magic_link_confirmation<F, Fut>(
     request: Request,
     config: &MagicLinkScannerFlowConfig,
     confirm: F,
-) -> Response
+) -> Result<MagicLinkConfirmed, MagicLinkFlowResponseError>
 where
     F: FnOnce(ConfirmMagicLinkFlowCommand) -> Fut,
     Fut: Future<Output = Result<ConfirmMagicLinkFlowOutcome, MagicLinkFlowError>>,
 {
     if !request_is_same_origin(request.headers(), config.same_origin_post()) {
-        return scanner_plain_response(
-            StatusCode::FORBIDDEN,
-            "Forbidden.\n",
-            config,
-            ClearMode::None,
-        );
+        return Err(MagicLinkFlowResponseError::Rejected);
     }
 
-    let flow_cookie =
-        match extract_target_cookie(request.headers(), config.temporary_cookies().name()) {
-            Ok(value) => value,
-            Err(_) => return terminal_invalid_confirmation(config),
-        };
+    let flow_cookie = extract_target_cookie(request.headers(), config.temporary_cookies().name())
+        .map_err(|_| MagicLinkFlowResponseError::Rejected)?;
 
-    let guarded = match guarded_body(
+    let guarded = guarded_body(
         request,
         &[APPLICATION_JSON, FORM_URLENCODED],
         MAX_MAGIC_LINK_BODY_BYTES,
     )
     .await
-    {
-        Ok(guarded) => guarded,
-        Err(_) => return terminal_invalid_confirmation(config),
-    };
+    .map_err(|_| MagicLinkFlowResponseError::Rejected)?;
+
     let mut body: MagicLinkConfirmationBody = if guarded.is_json {
-        match serde_json::from_slice(&guarded.bytes) {
-            Ok(body) => body,
-            Err(_) => return terminal_invalid_confirmation(config),
-        }
+        serde_json::from_slice(&guarded.bytes).map_err(|_| MagicLinkFlowResponseError::Rejected)?
     } else {
-        match serde_urlencoded::from_bytes(&guarded.bytes) {
-            Ok(body) => body,
-            Err(_) => return terminal_invalid_confirmation(config),
-        }
+        serde_urlencoded::from_bytes(&guarded.bytes)
+            .map_err(|_| MagicLinkFlowResponseError::Rejected)?
     };
-    // Country comes only from the configured trusted-edge header. When the
-    // edge does not supply it, the flow proceeds without a country — request
-    // bodies are never a country source (client-controlled).
+
+    // Country comes only from the configured trusted-edge header — never from
+    // request bodies (client-controlled).
     let country = viewer_country_from(&guarded.headers, config.country_header());
     let confirmation = core::mem::take(&mut body.confirmation);
-    let command = match ConfirmMagicLinkFlowCommand::new(flow_cookie, confirmation, country) {
-        Ok(command) => command,
-        Err(_) => return terminal_invalid_confirmation(config),
-    };
-    match confirm(command).await {
-        Ok(outcome) => confirmation_success_response(&outcome, config),
-        Err(error) => confirmation_error_response(error, config),
+    let command = ConfirmMagicLinkFlowCommand::new(flow_cookie, confirmation, country)
+        .map_err(|_| MagicLinkFlowResponseError::Rejected)?;
+
+    let outcome = confirm(command).await.map_err(map_flow_error)?;
+
+    let session_cookie = session_set_cookie_header(
+        config.session_cookie(),
+        outcome.authentication().session_cookie_value(),
+    )
+    .map_err(|_| MagicLinkFlowResponseError::Internal)?;
+    let clear_flow_cookie = clear_temporary_cookie_header(config.temporary_cookies());
+
+    Ok(MagicLinkConfirmed {
+        outcome,
+        session_cookie,
+        clear_flow_cookie,
+    })
+}
+
+fn map_flow_error(error: MagicLinkFlowError) -> MagicLinkFlowResponseError {
+    match (error.public_error(), error.temporary_state_action()) {
+        (
+            MagicLinkServiceError::BadRequest | MagicLinkServiceError::MagicLinkUnavailable,
+            TemporaryAuthStateAction::Clear,
+        ) => MagicLinkFlowResponseError::Rejected,
+        (MagicLinkServiceError::Unavailable, TemporaryAuthStateAction::Preserve) => {
+            MagicLinkFlowResponseError::Unavailable
+        }
+        _ => MagicLinkFlowResponseError::Internal,
     }
 }
 
-/// Apply no-store, no-referrer, CSP, and frame-denial headers to scanner results.
+/// Apply no-store, no-referrer, CSP, and frame-denial headers to scanner-safe
+/// responses. Callers that render their own landing/confirmation pages should
+/// stamp these onto every such response.
 pub fn apply_magic_link_security_headers(headers: &mut HeaderMap) {
     headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     headers.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
@@ -156,198 +229,6 @@ pub fn apply_magic_link_security_headers(headers: &mut HeaderMap) {
             "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
         ),
     );
-}
-
-fn valid_landing_response(
-    outcome: &BeginMagicLinkLandingOutcome,
-    config: &MagicLinkScannerFlowConfig,
-) -> Response {
-    build_valid_landing_response(
-        outcome.account_identity().as_str(),
-        outcome.confirmation_value(),
-        outcome.flow_cookie_value(),
-        outcome.cookie_max_age_secs(),
-        config,
-    )
-}
-
-fn build_valid_landing_response(
-    account_identity: &str,
-    confirmation: &str,
-    flow_cookie: &str,
-    cookie_max_age_secs: u64,
-    config: &MagicLinkScannerFlowConfig,
-) -> Response {
-    let set_cookie = match set_temporary_cookie_header(
-        config.temporary_cookies(),
-        flow_cookie,
-        cookie_max_age_secs,
-    ) {
-        Ok(header) => header,
-        Err(_) => {
-            return scanner_plain_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error.\n",
-                config,
-                ClearMode::Temporary,
-            );
-        }
-    };
-    let body = format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Confirm sign in</title></head><body><main><h1>Confirm sign in</h1><p>Sign in as <strong>{}</strong>.</p><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"confirmation\" value=\"{}\"><button type=\"submit\">Continue sign in</button></form></main></body></html>",
-        escape_html(account_identity),
-        escape_html(config.post_action().as_str()),
-        escape_html(confirmation),
-    );
-    let mut response = Response::new(Body::from(body));
-    *response.status_mut() = StatusCode::OK;
-    response.headers_mut().insert(
-        CONTENT_TYPE,
-        HeaderValue::from_static("text/html; charset=utf-8"),
-    );
-    response.headers_mut().append(SET_COOKIE, set_cookie);
-    apply_magic_link_security_headers(response.headers_mut());
-    response
-}
-
-fn landing_error_response(
-    error: MagicLinkFlowError,
-    config: &MagicLinkScannerFlowConfig,
-) -> Response {
-    match error.public_error() {
-        MagicLinkServiceError::BadRequest | MagicLinkServiceError::MagicLinkUnavailable => {
-            scanner_plain_response(
-                StatusCode::OK,
-                "Unable to continue sign in.\n",
-                config,
-                ClearMode::Temporary,
-            )
-        }
-        MagicLinkServiceError::Unavailable => scanner_plain_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Service temporarily unavailable.\n",
-            config,
-            ClearMode::None,
-        ),
-        MagicLinkServiceError::Internal => scanner_plain_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Internal server error.\n",
-            config,
-            ClearMode::Temporary,
-        ),
-    }
-}
-
-fn confirmation_success_response(
-    outcome: &ConfirmMagicLinkFlowOutcome,
-    config: &MagicLinkScannerFlowConfig,
-) -> Response {
-    build_confirmation_success_response(outcome.authentication().session_cookie_value(), config)
-}
-
-fn build_confirmation_success_response(
-    session_cookie: &str,
-    config: &MagicLinkScannerFlowConfig,
-) -> Response {
-    let session = match session_set_cookie_header(config.session_cookie(), session_cookie) {
-        Ok(header) => header,
-        Err(_) => {
-            return scanner_plain_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error.\n",
-                config,
-                ClearMode::Temporary,
-            );
-        }
-    };
-    let mut response = Response::new(Body::empty());
-    *response.status_mut() = StatusCode::SEE_OTHER;
-    response
-        .headers_mut()
-        .insert(LOCATION, config.success_redirect().location_header());
-    response.headers_mut().append(SET_COOKIE, session);
-    append_temporary_clears(response.headers_mut(), config.temporary_cookies());
-    apply_magic_link_security_headers(response.headers_mut());
-    response
-}
-
-fn confirmation_error_response(
-    error: MagicLinkFlowError,
-    config: &MagicLinkScannerFlowConfig,
-) -> Response {
-    match (error.public_error(), error.temporary_state_action()) {
-        (
-            MagicLinkServiceError::BadRequest | MagicLinkServiceError::MagicLinkUnavailable,
-            TemporaryAuthStateAction::Clear,
-        ) => terminal_invalid_confirmation(config),
-        (MagicLinkServiceError::Unavailable, TemporaryAuthStateAction::Preserve) => {
-            scanner_plain_response(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Service temporarily unavailable.\n",
-                config,
-                ClearMode::None,
-            )
-        }
-        _ => scanner_plain_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Internal server error.\n",
-            config,
-            ClearMode::Temporary,
-        ),
-    }
-}
-
-fn terminal_invalid_confirmation(config: &MagicLinkScannerFlowConfig) -> Response {
-    scanner_plain_response(
-        StatusCode::BAD_REQUEST,
-        TERMINAL_INVALID_BODY,
-        config,
-        ClearMode::Temporary,
-    )
-}
-
-#[derive(Clone, Copy)]
-enum ClearMode {
-    None,
-    Temporary,
-}
-
-fn scanner_plain_response(
-    status: StatusCode,
-    body: &'static str,
-    config: &MagicLinkScannerFlowConfig,
-    clear_mode: ClearMode,
-) -> Response {
-    let mut response = Response::new(Body::from(body));
-    *response.status_mut() = status;
-    response.headers_mut().insert(
-        CONTENT_TYPE,
-        HeaderValue::from_static("text/plain; charset=utf-8"),
-    );
-    apply_magic_link_security_headers(response.headers_mut());
-    if matches!(clear_mode, ClearMode::Temporary) {
-        append_temporary_clears(response.headers_mut(), config.temporary_cookies());
-    }
-    response
-}
-
-fn append_temporary_clears(headers: &mut HeaderMap, config: &TemporaryCookieConfig) {
-    headers.append(SET_COOKIE, clear_temporary_cookie_header(config));
-}
-
-fn escape_html(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for character in value.chars() {
-        match character {
-            '&' => escaped.push_str("&amp;"),
-            '<' => escaped.push_str("&lt;"),
-            '>' => escaped.push_str("&gt;"),
-            '"' => escaped.push_str("&quot;"),
-            '\'' => escaped.push_str("&#39;"),
-            _ => escaped.push(character),
-        }
-    }
-    escaped
 }
 
 #[cfg(test)]

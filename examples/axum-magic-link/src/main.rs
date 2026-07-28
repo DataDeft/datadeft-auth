@@ -25,10 +25,11 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use dd_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
 use dd_magic_link_axum::{
-    APPLICATION_JSON, MagicLinkHttpError, MagicLinkRequestJson, MagicLinkScannerFlowConfig,
-    SameOriginPostConfig, SameOriginRedirect, SessionCookieConfig, TemporaryCookieConfig,
-    authenticate_session, clear_session_cookie_header, generic_accepted_response, guarded_body,
-    handle_magic_link_confirmation, handle_magic_link_landing, viewer_country_from,
+    APPLICATION_JSON, MagicLinkFlowResponseError, MagicLinkHttpError, MagicLinkRequestJson,
+    MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect, SessionCookieConfig,
+    TemporaryCookieConfig, apply_magic_link_security_headers, authenticate_session,
+    clear_session_cookie_header, clear_temporary_cookie_header, generic_accepted_response,
+    guarded_body, magic_link_confirmation, magic_link_landing, viewer_country_from,
 };
 use dd_magic_link_service::{
     Clock, DependencyError, KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey,
@@ -53,8 +54,8 @@ async fn main() -> AppResult<()> {
         .route("/", get(index))
         .route("/auth/pow/challenge", get(pow_challenge))
         .route("/auth/magic-link/request", post(request_magic_link))
-        .route("/auth/magic-link", get(magic_link_landing))
-        .route("/auth/magic-link/consume", post(magic_link_confirmation))
+        .route("/auth/magic-link", get(landing_route))
+        .route("/auth/magic-link/consume", post(confirm_route))
         .route("/auth/complete", get(auth_complete))
         .route("/me", get(me))
         .route("/logout", post(logout))
@@ -128,8 +129,6 @@ fn build_state() -> AppResult<AppState> {
     let http_config = MagicLinkScannerFlowConfig::new(
         SameOriginRedirect::parse("/auth/magic-link/consume")
             .map_err(|_| SetupError("invalid magic-link POST action"))?,
-        SameOriginRedirect::parse("/auth/complete")
-            .map_err(|_| SetupError("invalid magic-link success redirect"))?,
         SameOriginPostConfig::parse(LOCAL_ORIGIN)?,
         session_cookie,
         TemporaryCookieConfig::local_development_defaults(),
@@ -238,9 +237,14 @@ async fn request_magic_link_inner(
     Ok(generic_accepted_response())
 }
 
-async fn magic_link_landing(State(state): State<AppState>, request: Request) -> Response {
+// The landing GET is side-effect-free (the library guarantees it never
+// consumes the link), so this application owns the interstitial page. It
+// renders the account and a form that POSTs the confirmation back same-origin
+// — the only step that consumes the link. Errors are returned with the SAME
+// 200 status as success so link validity is not enumerable.
+async fn landing_route(State(state): State<AppState>, request: Request) -> Response {
     let config = state.http_config.clone();
-    handle_magic_link_landing(request, config.as_ref(), move |command| async move {
+    let result = magic_link_landing(request, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
         let mut service = MagicLinkFlowService {
             authentication: &state.auth,
@@ -255,12 +259,45 @@ async fn magic_link_landing(State(state): State<AppState>, request: Request) -> 
         };
         service.begin_magic_link_landing(command).await
     })
-    .await
+    .await;
+
+    match result {
+        Ok(landing) => {
+            let page = format!(
+                "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Confirm sign in</title></head><body><main><h1>Confirm sign in</h1><p>Sign in as <strong>{}</strong>.</p><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"confirmation\" value=\"{}\"><button type=\"submit\">Continue sign in</button></form></main></body></html>",
+                escape_html(landing.outcome.account_identity().as_str()),
+                escape_html(config.post_action().as_str()),
+                escape_html(landing.outcome.confirmation_value()),
+            );
+            let mut response = Html(page).into_response();
+            response
+                .headers_mut()
+                .append(SET_COOKIE, landing.flow_cookie);
+            apply_magic_link_security_headers(response.headers_mut());
+            response
+        }
+        // Same 200 status as success (non-enumeration); dependency/internal
+        // failures may use their own status.
+        Err(MagicLinkFlowResponseError::Rejected) => scanner_page(
+            StatusCode::OK,
+            "<!doctype html><h1>Unable to continue sign in</h1><p>Request a new link.</p>",
+        ),
+        Err(MagicLinkFlowResponseError::Unavailable) => scanner_page(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Service temporarily unavailable.",
+        ),
+        Err(MagicLinkFlowResponseError::Internal) => {
+            scanner_page(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error.")
+        }
+    }
 }
 
-async fn magic_link_confirmation(State(state): State<AppState>, request: Request) -> Response {
+// The confirmation POST is the only step that consumes the link and mints the
+// session. On success this app 303-redirects to /auth/complete with the session
+// cookie; an SPA would return JSON instead.
+async fn confirm_route(State(state): State<AppState>, request: Request) -> Response {
     let config = state.http_config.clone();
-    handle_magic_link_confirmation(request, config.as_ref(), move |command| async move {
+    let result = magic_link_confirmation(request, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
         let mut service = MagicLinkFlowService {
             authentication: &state.auth,
@@ -275,7 +312,46 @@ async fn magic_link_confirmation(State(state): State<AppState>, request: Request
         };
         service.confirm_magic_link_flow(command).await
     })
-    .await
+    .await;
+
+    match result {
+        Ok(confirmed) => {
+            let mut response = Response::new(Body::empty());
+            *response.status_mut() = StatusCode::SEE_OTHER;
+            response
+                .headers_mut()
+                .insert(LOCATION, HeaderValue::from_static("/auth/complete"));
+            response
+                .headers_mut()
+                .append(SET_COOKIE, confirmed.session_cookie);
+            response
+                .headers_mut()
+                .append(SET_COOKIE, confirmed.clear_flow_cookie);
+            apply_magic_link_security_headers(response.headers_mut());
+            response
+        }
+        Err(MagicLinkFlowResponseError::Rejected) => {
+            let mut response = scanner_page(StatusCode::BAD_REQUEST, "Invalid confirmation.");
+            response.headers_mut().append(
+                SET_COOKIE,
+                clear_temporary_cookie_header(config.temporary_cookies()),
+            );
+            response
+        }
+        Err(MagicLinkFlowResponseError::Unavailable) => scanner_page(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Service temporarily unavailable.",
+        ),
+        Err(MagicLinkFlowResponseError::Internal) => {
+            scanner_page(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error.")
+        }
+    }
+}
+
+fn scanner_page(status: StatusCode, body: &'static str) -> Response {
+    let mut response = (status, Html(body)).into_response();
+    apply_magic_link_security_headers(response.headers_mut());
+    response
 }
 
 async fn auth_complete() -> Html<&'static str> {
