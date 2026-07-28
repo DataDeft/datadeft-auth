@@ -380,15 +380,12 @@ fn session_keyring_with_mint_until(mint_until_unix: u64) -> KeyRing<SessionCooki
     let key = root
         .derive_key::<SessionCookie>(&kid)
         .expect("derive session key");
-    KeyRing::new(
-        kid.clone(),
-        vec![KeySlot::active_with_windows(
-            kid,
-            key,
-            mint_until_unix,
-            mint_until_unix + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
-        )],
-    )
+    KeyRing::new(vec![KeySlot::active_with_windows(
+        kid,
+        key,
+        mint_until_unix,
+        mint_until_unix + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
+    )])
     .expect("session keyring")
 }
 
@@ -402,11 +399,8 @@ fn flow_keyring() -> KeyRing<MagicLinkFlowCookie> {
     let key = root
         .derive_key::<MagicLinkFlowCookie>(&kid)
         .expect("derive flow key");
-    KeyRing::new(
-        kid.clone(),
-        vec![KeySlot::active_with_windows(kid, key, 20_000, 20_300)],
-    )
-    .expect("flow keyring")
+    KeyRing::new(vec![KeySlot::active_with_windows(kid, key, 20_000, 20_300)])
+        .expect("flow keyring")
 }
 
 fn config() -> MagicLinkServiceConfig {

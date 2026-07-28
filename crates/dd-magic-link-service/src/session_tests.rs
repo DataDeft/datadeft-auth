@@ -126,15 +126,12 @@ fn keyring() -> KeyRing<SessionCookie> {
     let key = root
         .derive_key::<SessionCookie>(&kid)
         .expect("derive session key");
-    KeyRing::new(
-        kid.clone(),
-        vec![KeySlot::active_with_windows(
-            kid,
-            key,
-            10_000,
-            10_000 + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
-        )],
-    )
+    KeyRing::new(vec![KeySlot::active_with_windows(
+        kid,
+        key,
+        10_000,
+        10_000 + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
+    )])
     .expect("keyring")
 }
 

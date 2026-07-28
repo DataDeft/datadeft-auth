@@ -114,15 +114,12 @@ fn session_keyring() -> KeyRing<SessionCookie> {
     let kid = KeyId::parse("active").expect("kid");
     let root = RootSecret::new([0x11; 32]);
     let key = root.derive_key::<SessionCookie>(&kid).expect("derive key");
-    KeyRing::new(
-        kid.clone(),
-        vec![KeySlot::active_with_windows(
-            kid,
-            key,
-            10_000,
-            10_000 + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
-        )],
-    )
+    KeyRing::new(vec![KeySlot::active_with_windows(
+        kid,
+        key,
+        10_000,
+        10_000 + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
+    )])
     .expect("keyring")
 }
 
@@ -132,11 +129,8 @@ fn flow_keyring() -> KeyRing<MagicLinkFlowCookie> {
     let key = root
         .derive_key::<MagicLinkFlowCookie>(&kid)
         .expect("derive flow key");
-    KeyRing::new(
-        kid.clone(),
-        vec![KeySlot::active_with_windows(kid, key, 10_000, 10_300)],
-    )
-    .expect("flow keyring")
+    KeyRing::new(vec![KeySlot::active_with_windows(kid, key, 10_000, 10_300)])
+        .expect("flow keyring")
 }
 
 #[derive(Clone)]

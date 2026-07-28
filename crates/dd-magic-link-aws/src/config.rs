@@ -425,7 +425,7 @@ fn build_keyring<P: KeyPurpose>(
         ));
     }
 
-    KeyRing::new(active_kid, slots).map_err(|_| AwsAdapterError::Internal)
+    KeyRing::new(slots).map_err(|_| AwsAdapterError::Internal)
 }
 
 fn decode_key(value: &str) -> Result<[u8; KEY_BYTES], AwsAdapterError> {

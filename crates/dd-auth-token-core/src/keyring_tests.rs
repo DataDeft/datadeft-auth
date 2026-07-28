@@ -118,18 +118,15 @@ fn typed_keyring_mints_with_active_and_verifies_with_previous() {
         .derive_key::<TestCookieA>(&kid("test-prev"))
         .expect("previous key");
 
-    let ring = KeyRing::<TestCookieA>::new(
-        kid("test-active"),
-        vec![
-            KeySlot::active_with_windows(
-                kid("test-active"),
-                active,
-                10,
-                10 + TestCookieA::MAX_ABSOLUTE_AGE_SECS,
-            ),
-            KeySlot::verify_only(kid("test-prev"), previous, 100),
-        ],
-    )
+    let ring = KeyRing::<TestCookieA>::new(vec![
+        KeySlot::active_with_windows(
+            kid("test-active"),
+            active,
+            10,
+            10 + TestCookieA::MAX_ABSOLUTE_AGE_SECS,
+        ),
+        KeySlot::verify_only(kid("test-prev"), previous, 100),
+    ])
     .expect("ring builds");
 
     assert_eq!(
@@ -166,24 +163,18 @@ fn keyring_rejects_duplicate_or_missing_active_keys() {
         .derive_key::<TestCookieA>(&kid("test-old"))
         .expect("previous key");
 
-    let dup = KeyRing::<TestCookieA>::new(
-        kid("test-active"),
-        vec![
-            KeySlot::active(kid("test-active"), active_dup),
-            KeySlot::verify_only(kid("test-active"), previous_dup, u64::MAX),
-        ],
-    )
+    let dup = KeyRing::<TestCookieA>::new(vec![
+        KeySlot::active(kid("test-active"), active_dup),
+        KeySlot::verify_only(kid("test-active"), previous_dup, u64::MAX),
+    ])
     .unwrap_err();
     assert_eq!(dup, TokenError::KeyringMisconfigured);
 
-    let no_active = KeyRing::<TestCookieA>::new(
-        kid("test-active"),
-        vec![KeySlot::verify_only(
-            kid("test-old"),
-            previous_only,
-            u64::MAX,
-        )],
-    )
+    let no_active = KeyRing::<TestCookieA>::new(vec![KeySlot::verify_only(
+        kid("test-old"),
+        previous_only,
+        u64::MAX,
+    )])
     .unwrap_err();
     assert_eq!(no_active, TokenError::KeyringMisconfigured);
 }
@@ -195,15 +186,12 @@ fn keyring_rejects_active_verify_window_shorter_than_absolute_lifetime() {
         .derive_key::<TestCookieA>(&kid("test-active"))
         .expect("active key");
 
-    let err = KeyRing::<TestCookieA>::new(
+    let err = KeyRing::<TestCookieA>::new(vec![KeySlot::active_with_windows(
         kid("test-active"),
-        vec![KeySlot::active_with_windows(
-            kid("test-active"),
-            key,
-            100,
-            100 + TestCookieA::MAX_ABSOLUTE_AGE_SECS - 1,
-        )],
-    )
+        key,
+        100,
+        100 + TestCookieA::MAX_ABSOLUTE_AGE_SECS - 1,
+    )])
     .unwrap_err();
 
     assert_eq!(err, TokenError::KeyringMisconfigured);
@@ -216,15 +204,12 @@ fn keyring_rejects_active_mint_window_after_verify_window() {
         .derive_key::<TestCookieA>(&kid("test-active"))
         .expect("active key");
 
-    let err = KeyRing::<TestCookieA>::new(
+    let err = KeyRing::<TestCookieA>::new(vec![KeySlot::active_with_windows(
         kid("test-active"),
-        vec![KeySlot::active_with_windows(
-            kid("test-active"),
-            key,
-            100,
-            50,
-        )],
-    )
+        key,
+        100,
+        50,
+    )])
     .unwrap_err();
 
     assert_eq!(err, TokenError::KeyringMisconfigured);
@@ -247,11 +232,8 @@ fn retired_keys_are_absent_and_return_unknown_key() {
     let active = root
         .derive_key::<TestCookieA>(&kid("test-active"))
         .expect("active key");
-    let ring = KeyRing::<TestCookieA>::new(
-        kid("test-active"),
-        vec![KeySlot::active(kid("test-active"), active)],
-    )
-    .expect("ring builds");
+    let ring = KeyRing::<TestCookieA>::new(vec![KeySlot::active(kid("test-active"), active)])
+        .expect("ring builds");
 
     assert_eq!(
         ring.verification_key_at(&kid("removed-old-key"), 0)

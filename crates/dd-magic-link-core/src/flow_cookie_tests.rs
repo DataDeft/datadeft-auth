@@ -96,7 +96,7 @@ fn flow_ring(root_byte: u8, kid_value: &str) -> KeyRing<MagicLinkFlowCookie> {
     let key = root
         .derive_key::<MagicLinkFlowCookie>(&kid(kid_value))
         .expect("derive flow key");
-    KeyRing::new(kid(kid_value), vec![KeySlot::active(kid(kid_value), key)]).expect("flow ring")
+    KeyRing::new(vec![KeySlot::active(kid(kid_value), key)]).expect("flow ring")
 }
 
 fn bindings(expires_at_unix: u32) -> MagicLinkFlowBindings {
@@ -430,11 +430,8 @@ fn flow_purpose_rejects_other_purpose_cookie_and_has_tight_size_cap() {
     let other_key = other_root
         .derive_key::<OtherCookie>(&kid("other-active"))
         .expect("derive other key");
-    let other_ring = KeyRing::new(
-        kid("other-active"),
-        vec![KeySlot::active(kid("other-active"), other_key)],
-    )
-    .expect("other ring");
+    let other_ring =
+        KeyRing::new(vec![KeySlot::active(kid("other-active"), other_key)]).expect("other ring");
     let mut rng = PatternRng::new();
     let other_cookie = mint_bound_cookie::<OtherCookie, _>(
         b"other-body",
@@ -462,15 +459,12 @@ fn flow_cookie_verifies_across_active_to_verify_only_rotation() {
     let old_key = old_root
         .derive_key::<MagicLinkFlowCookie>(&kid("flow-old"))
         .expect("derive old active");
-    let old_ring = KeyRing::new(
+    let old_ring = KeyRing::new(vec![KeySlot::active_with_windows(
         kid("flow-old"),
-        vec![KeySlot::active_with_windows(
-            kid("flow-old"),
-            old_key,
-            1_000,
-            1_300,
-        )],
-    )
+        old_key,
+        1_000,
+        1_300,
+    )])
     .expect("old ring");
     let minted = mint_flow(&old_ring, 1_000, 1_300);
 
@@ -481,13 +475,10 @@ fn flow_cookie_verifies_across_active_to_verify_only_rotation() {
     let old_key = old_root
         .derive_key::<MagicLinkFlowCookie>(&kid("flow-old"))
         .expect("derive old verify key");
-    let rotated_ring = KeyRing::new(
-        kid("flow-new"),
-        vec![
-            KeySlot::active_with_windows(kid("flow-new"), new_key, 1_300, 1_600),
-            KeySlot::verify_only(kid("flow-old"), old_key, 1_300),
-        ],
-    )
+    let rotated_ring = KeyRing::new(vec![
+        KeySlot::active_with_windows(kid("flow-new"), new_key, 1_300, 1_600),
+        KeySlot::verify_only(kid("flow-old"), old_key, 1_300),
+    ])
     .expect("rotated ring");
 
     assert!(

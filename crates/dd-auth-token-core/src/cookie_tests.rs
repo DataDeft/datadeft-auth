@@ -49,8 +49,7 @@ fn test_ring(root_byte: u8, kid_str: &str) -> KeyRing<TestCookie> {
     let key = root
         .derive_key::<TestCookie>(&kid(kid_str))
         .expect("derive key");
-    KeyRing::<TestCookie>::new(kid(kid_str), vec![KeySlot::active(kid(kid_str), key)])
-        .expect("ring")
+    KeyRing::<TestCookie>::new(vec![KeySlot::active(kid(kid_str), key)]).expect("ring")
 }
 
 /// A raw (non-bound) branca token wrapped as `v1.active.{token}`, timestamp 123.
@@ -66,8 +65,7 @@ fn ring_and_value() -> (KeyRing<TestCookie>, String) {
         123,
     )
     .expect("token");
-    let ring = KeyRing::<TestCookie>::new(kid("active"), vec![KeySlot::active(kid("active"), key)])
-        .expect("ring");
+    let ring = KeyRing::<TestCookie>::new(vec![KeySlot::active(kid("active"), key)]).expect("ring");
     (ring, format!("v1.active.{token}"))
 }
 
@@ -236,15 +234,12 @@ fn mint_preserves_keyring_errors_instead_of_funneling_to_invalid_token() {
     let key = root
         .derive_key::<TestCookie>(&kid("active"))
         .expect("derive key");
-    let ring = KeyRing::<TestCookie>::new(
+    let ring = KeyRing::<TestCookie>::new(vec![KeySlot::active_with_windows(
         kid("active"),
-        vec![KeySlot::active_with_windows(
-            kid("active"),
-            key,
-            10,
-            10 + TestCookie::MAX_ABSOLUTE_AGE_SECS,
-        )],
-    )
+        key,
+        10,
+        10 + TestCookie::MAX_ABSOLUTE_AGE_SECS,
+    )])
     .expect("ring");
     let mut rng = FixedNonceRng([0xAD; branca::NONCE_BYTES]);
 
@@ -303,8 +298,7 @@ fn encrypted_typ_must_match_expected_purpose() {
         encode_bound_payload::<TestCookie>("other-typ-v1", "active", 1, b"body").expect("payload");
     let token = encode_with_nonce(&payload, key.as_bytes(), &[0x9A; branca::NONCE_BYTES], 1)
         .expect("token");
-    let ring = KeyRing::<TestCookie>::new(kid("active"), vec![KeySlot::active(kid("active"), key)])
-        .expect("ring");
+    let ring = KeyRing::<TestCookie>::new(vec![KeySlot::active(kid("active"), key)]).expect("ring");
 
     assert_eq!(
         parse_bound_cookie::<TestCookie>(
@@ -330,8 +324,7 @@ fn encrypted_kid_must_match_wrapper_kid() {
             .expect("payload");
     let token = encode_with_nonce(&payload, key.as_bytes(), &[0x9B; branca::NONCE_BYTES], 1)
         .expect("token");
-    let ring = KeyRing::<TestCookie>::new(kid("outer"), vec![KeySlot::active(kid("outer"), key)])
-        .expect("ring");
+    let ring = KeyRing::<TestCookie>::new(vec![KeySlot::active(kid("outer"), key)]).expect("ring");
 
     assert_eq!(
         parse_bound_cookie::<TestCookie>(

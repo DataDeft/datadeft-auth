@@ -189,10 +189,9 @@ fn fixture_keyring<P: KeyPurpose>() -> KeyRing<P> {
     let kid = KeyId::parse("fixture-active").expect("key id");
     let root = RootSecret::new([0x42; 32]);
     let key = root.derive_key::<P>(&kid).expect("derived key");
-    KeyRing::new(
-        kid.clone(),
-        vec![KeySlot::active_with_windows(kid, key, 20_000, 3_000_000)],
-    )
+    KeyRing::new(vec![KeySlot::active_with_windows(
+        kid, key, 20_000, 3_000_000,
+    )])
     .expect("keyring")
 }
 

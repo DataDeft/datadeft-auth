@@ -140,15 +140,12 @@ fn development_keyring<P: KeyPurpose>(kid: &str, now_unix: u64) -> AppResult<Key
     let verify_until = mint_until
         .checked_add(P::MAX_ABSOLUTE_AGE_SECS)
         .ok_or(SetupError("development key verify window overflow"))?;
-    KeyRing::new(
-        key_id.clone(),
-        vec![KeySlot::active_with_windows(
-            key_id,
-            key,
-            mint_until,
-            verify_until,
-        )],
-    )
+    KeyRing::new(vec![KeySlot::active_with_windows(
+        key_id,
+        key,
+        mint_until,
+        verify_until,
+    )])
     .map_err(|error| Box::new(error) as Box<dyn Error + Send + Sync>)
 }
 

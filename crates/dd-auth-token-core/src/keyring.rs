@@ -321,45 +321,44 @@ impl<P: KeyPurpose> KeySlot<P> {
 /// Rust type.
 #[derive(Debug)]
 pub struct KeyRing<P: KeyPurpose> {
-    active_kid: KeyId,
     keys: Vec<KeySlot<P>>,
+    /// Index of the unique `Active` slot, established by the constructor. The
+    /// slots are never mutated after construction, so the index stays valid.
+    active_index: usize,
 }
 
 impl<P: KeyPurpose> KeyRing<P> {
     /// Build a ring with exactly one active key, no duplicate `kid`s, and
     /// coherent rotation windows. Active slots must verify through the full
-    /// maximum absolute lifetime after their final minting instant.
-    pub fn new(active_kid: KeyId, keys: Vec<KeySlot<P>>) -> Result<Self, TokenError> {
+    /// maximum absolute lifetime after their final minting instant. The active
+    /// slot is identified by its status — there is no separate active-kid
+    /// parameter to keep in sync.
+    pub fn new(keys: Vec<KeySlot<P>>) -> Result<Self, TokenError> {
         if keys.is_empty() || has_duplicate_key_ids(&keys) || has_incoherent_windows(&keys) {
             return Err(TokenError::KeyringMisconfigured);
         }
 
-        let active_count = keys
+        let mut active_indices = keys
             .iter()
-            .filter(|slot| slot.status == KeyStatus::Active)
-            .count();
-        let active_matches = keys
-            .iter()
-            .any(|slot| slot.status == KeyStatus::Active && slot.kid == active_kid);
-
-        if active_count != 1 || !active_matches {
+            .enumerate()
+            .filter(|(_, slot)| slot.status == KeyStatus::Active)
+            .map(|(index, _)| index);
+        let (Some(active_index), None) = (active_indices.next(), active_indices.next()) else {
             return Err(TokenError::KeyringMisconfigured);
-        }
+        };
 
-        Ok(Self { active_kid, keys })
+        Ok(Self { keys, active_index })
     }
 
-    /// The active slot, if the ring invariant still holds.
-    pub fn active(&self) -> Result<&KeySlot<P>, TokenError> {
-        self.keys
-            .iter()
-            .find(|slot| slot.status == KeyStatus::Active && slot.kid == self.active_kid)
-            .ok_or(TokenError::KeyringMisconfigured)
+    /// The unique active slot, guaranteed by construction.
+    #[must_use]
+    pub fn active(&self) -> &KeySlot<P> {
+        &self.keys[self.active_index]
     }
 
     /// Active key allowed to mint at `now_unix`.
     pub fn minting_key_at(&self, now_unix: u64) -> Result<&KeySlot<P>, TokenError> {
-        let key = self.active()?;
+        let key = self.active();
         if key.accepts_minting_at(now_unix) {
             Ok(key)
         } else {
