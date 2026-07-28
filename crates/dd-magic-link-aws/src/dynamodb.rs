@@ -26,13 +26,18 @@ use crate::hmac_key::{
 };
 use crate::window::fixed_window_index;
 
-const MAGIC_LINK_CLEANUP_GRACE_SECS: u64 = 24 * 60 * 60;
+/// Default TTL grace applied to spent auth artifacts: 24 hours past their
+/// logical expiry. DynamoDB TTL deletion is asynchronous and best-effort, so
+/// the grace keeps a row queryable slightly past expiry; it is garbage
+/// collection, not a validity window (record fields gate validity).
+pub const DEFAULT_CLEANUP_GRACE_SECS: u64 = 24 * 60 * 60;
 
 /// DynamoDB single-table auth store.
 pub struct DynamoDbAuthStore {
     client: DynamoDbClient,
     table_name: String,
     storage_hmac_key: StorageHmacKey,
+    cleanup_grace_secs: u64,
 }
 
 impl DynamoDbAuthStore {
@@ -46,7 +51,17 @@ impl DynamoDbAuthStore {
             client,
             table_name,
             storage_hmac_key,
+            cleanup_grace_secs: DEFAULT_CLEANUP_GRACE_SECS,
         }
+    }
+
+    /// Override the retention grace (seconds past logical expiry) applied to
+    /// the DynamoDB TTL of spent magic-link challenge and rate-counter rows.
+    /// This is a data-retention/minimization policy, not a security control.
+    #[must_use]
+    pub fn with_cleanup_grace_secs(mut self, cleanup_grace_secs: u64) -> Self {
+        self.cleanup_grace_secs = cleanup_grace_secs;
+        self
     }
 
     fn hmac(&self, prefix: &str, value: &str) -> Result<String, AwsAdapterError> {
@@ -341,7 +356,7 @@ impl MagicLinkRepository for DynamoDbAuthStore {
         let pk = Self::pk_magic_link(&record.selector_lookup_hmac);
         let ttl = record
             .expires_at_unix
-            .saturating_add(MAGIC_LINK_CLEANUP_GRACE_SECS);
+            .saturating_add(self.cleanup_grace_secs);
         async {
             self.client
                 .put_item()
@@ -507,7 +522,7 @@ impl RateLimiter for DynamoDbAuthStore {
             .map_err(DependencyError::from)?;
         let window_start_unix = fixed_window_start(now_unix, window_secs);
         let window_expires_unix = window_start_unix.saturating_add(window_secs);
-        let ttl = window_expires_unix.saturating_add(24 * 60 * 60);
+        let ttl = window_expires_unix.saturating_add(self.cleanup_grace_secs);
         async {
             let result = self
                 .client

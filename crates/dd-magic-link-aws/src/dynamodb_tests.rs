@@ -299,3 +299,11 @@ fn authentication_transaction_rejects_expiry_before_creation_time() {
         Err(AwsAdapterError::Internal)
     );
 }
+
+#[test]
+fn cleanup_grace_defaults_and_is_configurable() {
+    assert_eq!(store().cleanup_grace_secs, DEFAULT_CLEANUP_GRACE_SECS);
+    assert_eq!(DEFAULT_CLEANUP_GRACE_SECS, 24 * 60 * 60);
+    let tuned = store().with_cleanup_grace_secs(0);
+    assert_eq!(tuned.cleanup_grace_secs, 0);
+}
