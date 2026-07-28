@@ -5,6 +5,7 @@ use dd_magic_link_core::{
 };
 
 use super::*;
+use crate::error::TemporaryAuthStateAction;
 
 #[test]
 fn ids_are_validated_and_redacted() {

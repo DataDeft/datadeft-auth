@@ -1,92 +1,112 @@
-# Customer onboarding and implementation status
+# Onboarding
 
-**Status:** Current onboarding checklist. This is the live implementation backlog; `fix.md`, `review.md`, and `plan.md` are historical inputs.
+**Status:** Current checklist and live backlog.
 
 ## Can a customer use this today?
 
 | Surface | Status | Customer action |
 | --- | --- | --- |
-| Magic-link core/service | Ready for integration | Supply clock, CSPRNG, keyrings, repository, limiter, and outbox implementations |
-| Scanner-safe Axum helpers | Ready for integration | Headless: the helpers run the input gauntlet and return structured results + cookie headers; you render responses under the scanner-safe response contract (POST-only consumption, side-effect-free GET, uniform/non-enumerating errors, security headers) — see `dd-magic-link-axum` crate docs and security.md |
-| In-memory AWS-style fakes | Ready for development/tests | `FakeDynamoDbAuthStore` / `FakeMagicLinkOutbox` in `dd-magic-link-aws` (default build is SDK-free). Do not use fake secrets, clocks, or entropy in production |
-| DynamoDB/SES adapters | Available behind `aws` feature | Provision and validate table/IAM/TTL/encryption, renderer, SES identity, and live transaction behavior |
-| Session validation/revocation | Ready for integration | Invoke validation on protected requests and revoke server state on logout/compromise |
-| PoW Rust core | Ready as a primitive | Build the independent endpoint, policy, replay/proof lifecycle, and browser integration |
-| Browser PoW client | **Not implemented** | Implement `dd-protect-client` or provide an application-owned compatible solver |
-| Country-aware PoW | **Not implemented** | Implement upstream monotonic difficulty policy; never lower below base/floor |
-| Runnable example | **Available** | [`examples/axum-magic-link`](../examples/axum-magic-link/src/main.rs) covers request, landing, confirmation, authenticated session, and logout on the shipped fakes — start there |
-| Published package/crates | **Not published** | Consume by pinned path/git revision; APIs remain pre-stable |
+| Magic-link core | Ready | Supply clock, CSPRNG, keyrings, repository, limiter, and outbox. |
+| Axum helpers | Ready | Configure origin, redirects, cookies, body limits, and token-safe logs. |
+| In-memory fakes | Ready for tests | Use `FakeDynamoDbAuthStore` and `FakeMagicLinkOutbox`. |
+| DynamoDB and SES | Ready for test deployment | Provision table, IAM, TTL, encryption, SES identity, and live tests. |
+| Session validation | Ready | Validate protected requests. Revoke server state on logout. |
+| PoW Rust core | Ready as a primitive | Build the endpoint, policy, replay store, and browser path. |
+| Browser PoW client | Not ready | Build `dd-protect-client` or an app-owned solver. |
+| Country-aware PoW | Not ready | Build upstream policy. Never lower below the floor. |
+| Example app | Ready | Start with `examples/axum-magic-link`. |
+| Published crates | Not ready | Use a pinned path or Git revision. |
 
-## Production integration checklist
+Do not use fake secrets, fake clocks, or fake entropy in production.
 
-A magic-link deployment can be put into production when the consuming application has completed and recorded the following:
+## Production checklist
 
-- [ ] Use an OS-backed CSPRNG and distinct production secrets for flow cookies, session cookies, lookup HMACs, storage HMACs, and independent PoW concerns.
-- [ ] Configure active and verify-only keyrings with the retention rules in [security.md](security.md).
-- [ ] Implement `MagicLinkOutbox` with application-owned email templates and a token-safe URL.
-- [ ] Implement the aggregate authentication repository contract atomically. For AWS, use the provided DynamoDB transaction shape.
-- [ ] Provision DynamoDB TTL, encryption, backups, least-privilege IAM, and strongly consistent session/authentication reads.
-- [ ] Decide whether inline SES delivery is acceptable or wrap delivery in a durable outbox.
-- [ ] Configure exact same-origin confirmation, fixed/same-origin redirect, production-secure cookies, and session validation on protected routes.
-- [ ] Verify proxies, access logs, middleware, tracing, metrics, diagnostics, and error reporting never retain token-bearing request targets, cookies, or confirmation values.
-- [ ] Run live or production-like authentication replay, concurrent confirmation, rollback, logout, and post-revocation tests.
-- [ ] Document that normalized email is stored in DynamoDB records and apply the required privacy/IAM/KMS/retention controls.
-- [ ] Run `mise run verify` and the consuming application's integration tests against an immutable commit/tag.
+A magic-link deployment can run in production after the app completes this list.
 
-PoW is optional application admission and is not required by the magic-link protocol. If a deployment requires PoW, the PoW-specific MVP items below must also be complete.
+1. Use an OS CSPRNG.
+2. Use separate production secrets for each purpose.
+3. Configure active and verify-only keyrings.
+4. Follow the retention rules in [security.md](security.md).
+5. Provide app-owned email templates.
+6. Use a token-safe email URL.
+7. Implement the repository contract atomically.
+8. Use the DynamoDB transaction shape for AWS.
+9. Configure DynamoDB TTL, encryption, backups, and IAM.
+10. Use strong reads for session and authentication records.
+11. Decide whether inline SES delivery is acceptable.
+12. Use a durable outbox if inline delivery is not acceptable.
+13. Configure exact same-origin confirmation.
+14. Configure fixed or same-origin redirects.
+15. Configure production-secure cookies.
+16. Validate sessions on protected routes.
+17. Scrub token-bearing request targets from logs.
+18. Scrub cookies and confirmation values from logs.
+19. Test replay, concurrent confirmation, rollback, and logout.
+20. Test post-revocation visibility.
+21. Document normalized-email storage controls.
+22. Run `mise run verify`.
+23. Run the consuming app integration tests.
+24. Pin an immutable commit or tag.
+
+PoW is optional app admission. Complete the PoW backlog before you require PoW.
 
 ## Implementation backlog
 
-| ID | Priority | Status | Work | Acceptance evidence |
-| --- | --- | --- | --- | --- |
-| MVP-001 | P0 onboarding | Done | Runnable fake-backed Axum example covering request, landing, confirmation, authenticated session, and logout (`examples/axum-magic-link`) | Example compiles in workspace CI on the shipped fakes; no production secrets |
-| MVP-002 | P0 deployment | Required per deployment | Attest that raw magic-link request targets and tokens are scrubbed from every outer logging/telemetry layer | Production-like probe report with representative failures and redirects |
-| MVP-003 | P0 AWS deployment | Required for AWS users | Validate real DynamoDB transaction cancellation, replay, concurrency, rollback, TTL, and post-revocation visibility | Live/local AWS integration suite and recorded schema/IAM checklist |
-| MVP-004 | P0 distribution | Planned | Publish or provide an immutable private tag/SHA, supported feature matrix, MSRV, and API review | Consumer builds from immutable reference and `cargo publish --dry-run` or private-release equivalent passes |
-| MVP-005 | P1 API | Planned | Decide and implement explicit `Future + Send` and dyn-safety policy before external API freeze | Compile tests for multithreaded Tokio/Axum generic callers |
-| MVP-006 | P1 delivery | Decision required | Choose durable outbox semantics or explicitly support/document inline SES failure behavior | Failure/retry tests and documented operational contract |
-| MVP-007 | P1 privacy | Decision required | Accept plaintext normalized-email storage controls or add application-level encryption | Written data classification and tested storage policy |
-| MVP-010 | PoW delivery | Not implemented | Implement and vector-test `dd-protect-client` browser worker with cancellation and timeout | Browser/Rust shared vectors and target-device benchmark report |
-| MVP-011 | PoW delivery | Not implemented | Implement challenge endpoint and upstream admission middleware | HTTP integration tests for mint, solve, verify, expiry, downgrade, and generic errors |
-| MVP-012 | PoW security | Not implemented | Implement authenticated proof-cookie/replay lifecycle with single-use or small use cap | Replay/concurrency tests and proof-cookie key-rotation tests |
-| MVP-013 | PoW policy | Not implemented | Define trusted country source and monotonic country difficulty policy | Tests prove `effective >= production_floor`, `effective >= base`, and country changes never decrease active-flow difficulty |
-| MVP-014 | P1 boundary cleanup | Done | Session country is an opportunistic lock: bound from the configured trusted-edge header at confirmation; `validate_session` requires the same country for locked sessions (absent signal fails closed) and skips the check for unlocked ones. Request bodies are never a country source | Pinning tests cover locked-match, locked-mismatch, locked-missing (fail closed), and unlocked paths |
-| MVP-020 | Assurance | Future | Add executable TLA+ state models and CI model checking | Model-check report linked from `formal-methods.md` |
-| MVP-021 | Assurance | Future | Add deterministic simulation, fuzzing, and bounded verification targets | Seeded failure schedules, fuzz corpus, and Kani proof reports |
+| ID | Priority | Status | Work |
+| --- | --- | --- | --- |
+| MVP-001 | P0 | Done | Keep the fake-backed Axum example runnable. |
+| MVP-002 | P0 | Per deployment | Attest token-safe logging. |
+| MVP-003 | P0 | AWS users | Validate live DynamoDB behavior. |
+| MVP-004 | P0 | Planned | Publish crates or provide an immutable private tag. |
+| MVP-005 | P1 | Planned | Set `Future + Send` and dyn-safety policy. |
+| MVP-006 | P1 | Decision needed | Choose durable outbox or document inline SES. |
+| MVP-007 | P1 | Decision needed | Accept plaintext email storage or add app encryption. |
+| MVP-010 | PoW | Not ready | Build and vector-test the browser worker. |
+| MVP-011 | PoW | Not ready | Build challenge endpoint and admission middleware. |
+| MVP-012 | PoW | Not ready | Build proof-cookie and replay lifecycle. |
+| MVP-013 | PoW | Not ready | Define trusted country source and difficulty policy. |
+| MVP-014 | P1 | Done | Keep session country as an opportunistic lock. |
+| MVP-020 | Assurance | Future | Add TLA+ models and CI checks. |
+| MVP-021 | Assurance | Future | Add simulation, fuzzing, and bounded checks. |
 
-## PoW target decisions still required
+## PoW decisions
 
-Before MVP-010 through MVP-014 are treated as implemented, define:
+Define these values before you implement MVP-010 through MVP-013.
 
-- trusted country source and behavior when missing;
-- country risk classes and required difficulty for each class;
-- whether difficulty is fixed at challenge mint or may only increase during one admission flow;
-- challenge and proof-cookie lifetime;
-- replay store and use cap;
-- generic public errors and challenge issuance controls;
-- browser performance targets and accessibility fallback.
+1. Select the trusted country source.
+2. Select behavior when country is absent.
+3. Define country risk classes.
+4. Set required difficulty for each class.
+5. Decide when difficulty becomes fixed.
+6. Set challenge lifetime.
+7. Set proof-cookie lifetime.
+8. Select replay store behavior.
+9. Set proof use cap.
+10. Define generic public errors.
+11. Define challenge issuance controls.
+12. Set browser performance targets.
+13. Define accessibility fallback.
 
-The minimum invariant is fixed now:
+Use this minimum invariant.
 
 ```text
 effective_difficulty >= production_floor
 effective_difficulty >= configured_base_difficulty
-country policy may increase effective_difficulty, never decrease it
+country policy may increase difficulty
+country policy must not decrease difficulty
 ```
 
 ## Integration order
 
 1. Pin an immutable repository revision.
-2. Wire core/service with fakes and complete the scanner-safe HTTP flow — start
-   from [`examples/axum-magic-link`](../examples/axum-magic-link/src/main.rs),
-   which does exactly this. The common dependency set is `dd-magic-link-service`
-   + `dd-magic-link-axum` + `dd-magic-link-aws` (the service crate re-exports
-   the keyring and lookup-key types, so the core crates are not direct
-   dependencies).
-3. Replace fakes with the chosen repository/outbox adapters.
-4. Add session authentication and server-side logout/revocation.
-5. Complete the deployment logging and live storage gates.
-6. If required, place independent PoW admission before the protected request endpoint.
-7. Run the full consumer integration and release checklist.
+2. Wire service, Axum helpers, and fakes.
+3. Start from `examples/axum-magic-link`.
+4. Replace fakes with selected adapters.
+5. Add session authentication.
+6. Add server-side logout.
+7. Complete logging checks.
+8. Complete live storage checks.
+9. Add independent PoW admission if required.
+10. Run all integration and release checks.
 
-See [architecture.md](architecture.md) for component and sequence diagrams and [formal-methods.md](formal-methods.md) for future assurance work.
+See [architecture.md](architecture.md) for flows. See [formal-methods.md](formal-methods.md) for future assurance work.

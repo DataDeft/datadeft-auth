@@ -12,7 +12,7 @@
   <rect x="20" y="130" width="1360" height="195" class="phase"/><text x="35" y="153" class="head">1. Request</text>
   <line x1="102" y1="180" x2="340" y2="180" class="msg"/><text x="221" y="172" text-anchor="middle" class="text">request normalized email + consent</text>
   <line x1="340" y1="215" x2="610" y2="215" class="msg"/><text x="475" y="207" text-anchor="middle" class="text">request_magic_link</text>
-  <line x1="610" y1="250" x2="880" y2="250" class="msg"/><text x="745" y="242" text-anchor="middle" class="text">email limits; store keyed challenge</text>
+  <line x1="610" y1="250" x2="880" y2="250" class="msg"/><text x="745" y="242" text-anchor="middle" class="text">email limits and keyed challenge store</text>
   <line x1="610" y1="285" x2="1135" y2="285" class="msg"/><text x="872" y="277" text-anchor="middle" class="text">application-rendered bearer link</text>
   <line x1="610" y1="310" x2="102" y2="310" class="return"/><text x="356" y="302" text-anchor="middle" class="text">generic accepted response</text>
 
@@ -21,7 +21,7 @@
   <line x1="340" y1="430" x2="610" y2="430" class="msg"/><text x="475" y="422" text-anchor="middle" class="text">begin_magic_link_landing</text>
   <line x1="610" y1="465" x2="880" y2="465" class="msg"/><text x="745" y="457" text-anchor="middle" class="text">selector limit + consistent read</text>
   <line x1="880" y1="495" x2="610" y2="495" class="return"/><text x="745" y="487" text-anchor="middle" class="text">candidate or miss</text>
-  <text x="620" y="522" class="note">constant-time real/dummy verifier work; GET never consumes</text>
+  <text x="620" y="522" class="note">constant-time real/dummy verifier work. GET never consumes</text>
   <line x1="610" y1="545" x2="102" y2="545" class="return"/><text x="356" y="537" text-anchor="middle" class="text">flow cookie + account page + confirmation nonce</text>
 
   <rect x="20" y="595" width="1360" height="270" class="phase"/><text x="35" y="618" class="head">3. Explicit confirmation and session</text>

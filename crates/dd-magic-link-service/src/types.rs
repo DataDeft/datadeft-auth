@@ -6,7 +6,7 @@ use dd_magic_link_core::flow_cookie::MintedMagicLinkFlow;
 use dd_magic_link_core::{LookupHmac, MagicLinkToken, NormalizedEmail, VerifierHash};
 use zeroize::Zeroize;
 
-use crate::error::{MagicLinkFlowError, MagicLinkServiceError, TemporaryAuthStateAction};
+use crate::error::{MagicLinkFlowError, MagicLinkServiceError};
 // The session-cookie purpose lives with the session-cookie framing in
 // `session_body`; re-exported here so `types::SessionCookie` paths keep working.
 pub use crate::session_body::{
@@ -661,11 +661,6 @@ impl ConfirmMagicLinkFlowOutcome {
     #[must_use]
     pub fn into_authentication(self) -> MagicLinkAuthenticationOutcome {
         self.authentication
-    }
-
-    #[must_use]
-    pub fn temporary_state_action(&self) -> TemporaryAuthStateAction {
-        TemporaryAuthStateAction::Clear
     }
 }
 

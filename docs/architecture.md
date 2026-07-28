@@ -1,8 +1,8 @@
-# Software architecture
+# Architecture
 
-**Status:** Current implementation. This document describes what exists in the repository today and labels planned work explicitly.
+**Status:** This document describes the current repository.
 
-The repository provides reusable authentication libraries. A consuming application owns its router, deployment policy, secrets loading, email templates, observability, and any upstream proof-of-work (PoW) admission.
+The repository provides reusable authentication libraries. The consuming application owns routes, deployment policy, secrets, email templates, logs, and proof-of-work admission.
 
 ![Components and infrastructure](diagrams/components-infrastructure.svg)
 
@@ -10,58 +10,67 @@ The repository provides reusable authentication libraries. A consuming applicati
 
 | Component | Responsibility | Status |
 | --- | --- | --- |
-| `dd-pow-core` | Pure challenge minting and solution verification | Implemented and tested |
-| `dd-auth-token-core` | XChaCha20-Poly1305 token/cookie primitives and purpose-separated keyrings | Implemented and tested |
-| `dd-magic-link-core` | Magic-link token grammar, email validation, HMAC lookup/verifier primitives | Implemented and tested |
-| `dd-magic-link-service` | Request, scanner-safe confirmation, atomic authentication, session validation/revocation | Implemented and tested |
-| `dd-magic-link-axum` | Bounded HTTP parsing, same-origin confirmation, cookie and response helpers | Implemented and tested |
-| `dd-magic-link-aws` | DynamoDB, SES, and faithful in-memory adapters | Implemented; live AWS validation remains deployment work |
-| Consuming application | Routes, trusted edge metadata, PoW admission, secrets, templates, logging, deployment | Required integration |
-| `dd-protect-client` | Browser PoW solver | **Planned; skeleton only** |
-| Example application | End-to-end integration reference | **Available** — [`examples/axum-magic-link`](../examples/axum-magic-link/src/main.rs): request, landing, confirmation, session, logout on the shipped in-memory fakes |
+| `dd-pow-core` | Mint and verify PoW challenges. | Ready |
+| `dd-auth-token-core` | Encrypt cookies and manage purpose keys. | Ready |
+| `dd-magic-link-core` | Parse tokens and compute HMAC lookup values. | Ready |
+| `dd-magic-link-service` | Run request, confirmation, session, and repository logic. | Ready |
+| `dd-magic-link-axum` | Parse HTTP input and create safe responses. | Ready |
+| `dd-magic-link-aws` | Store data in DynamoDB and send email with SES. | Ready for test deployment |
+| Consuming application | Configure routes, secrets, templates, logs, and edge policy. | Required |
+| `dd-protect-client` | Solve PoW in the browser. | Planned |
+| Example app | Show a full fake-backed Axum flow. | Available |
 
-Dependency direction is intentionally one-way:
+The dependency direction stays one-way.
 
 ```text
-dd-auth-token-core      -> (no workspace crates)
+dd-auth-token-core      -> no workspace crates
 dd-magic-link-core     -> dd-auth-token-core
 dd-magic-link-service  -> dd-magic-link-core, dd-auth-token-core
 dd-magic-link-axum     -> dd-magic-link-service
 dd-magic-link-aws      -> dd-magic-link-service
 
-consuming application  -> adapters and services it selects
-PoW admission          -> dd-pow-core (independent of magic-link)
+consuming application  -> selected adapters and services
+PoW admission          -> dd-pow-core
 ```
 
-## Magic-link protocol
+## Magic-link flow
 
 ![Magic-link sequence](diagrams/magic-link-sequence.svg)
 
-1. The request service validates consent and the normalized email, applies keyed-email request/outbox limits, creates independent 128-bit selector and 256-bit verifier values, stores only keyed material, and sends the bearer link through the application outbox.
-2. `GET` landing parses the token, applies a keyed-selector limit, performs a strongly consistent read and constant-time verifier comparison (dummy work on miss), and mints a five-minute encrypted flow cookie.
-3. Flow state authenticates the selector, verifier proof, exact account, expiry, and an independent confirmation nonce. `GET` does not consume the challenge or create a session.
-4. The page identifies the account and submits an explicit same-origin `POST` containing only the confirmation value. The raw token is not rendered into HTML.
-5. Confirmation revalidates flow state and repository state, then executes one atomic authentication commit. DynamoDB uses a fixed five-action transaction to consume the challenge and create/update user and session records without partial authentication.
-6. The browser receives the encrypted session-cookie value and a fixed, same-origin `303` redirect. Session validation checks both cookie freshness and strongly consistent server-side state; logout/revocation updates server state before cookie clearing.
+1. The request service validates consent and the normalized email.
+2. The request service applies keyed-email limits.
+3. The request service creates an independent selector and verifier.
+4. The repository stores only keyed material.
+5. The outbox sends the bearer link.
+6. The `GET` landing route parses the token.
+7. The landing route applies a keyed-selector limit.
+8. The landing route reads repository state.
+9. The landing route compares verifier material in constant time.
+10. The landing route does dummy work on a miss.
+11. The landing route mints a five-minute flow cookie.
+12. The flow cookie binds selector, verifier proof, account, expiry, and nonce.
+13. The `GET` landing route never consumes the challenge.
+14. The page shows the account and asks for a same-origin `POST`.
+15. The `POST` route validates the flow state.
+16. The repository commits challenge consumption and session creation atomically.
+17. The browser gets a session cookie and a fixed `303` redirect.
+18. Session validation checks the cookie and server state.
+19. Logout revokes server state before it clears the cookie.
 
-The security rules and required deployment behavior are normative in [security.md](security.md).
-
-## PoW protocol and country policy
+## PoW flow
 
 ![PoW sequence](diagrams/pow-sequence.svg)
 
-### Implemented now
+`dd-pow-core` is deterministic. It does not read clocks, files, network, or environment variables.
 
-`dd-pow-core` is deterministic and IO-free. It can:
+It can do these tasks:
 
-- mint a challenge from a server secret, difficulty, RFC3339 time, and 128 bits of caller-supplied entropy;
-- authenticate `(domain, challenge, difficulty, time)` with HMAC-SHA-256;
-- verify freshness, the current minimum difficulty, and SHA-256 work;
-- return a stable, non-secret replay identifier (`tid`) for an upstream replay store.
+1. Mint a challenge from a server secret, difficulty, time, and entropy.
+2. Authenticate challenge metadata with HMAC-SHA-256.
+3. Verify freshness, minimum difficulty, and SHA-256 work.
+4. Return a stable replay identifier.
 
-### Target architecture — not implemented in this repository
-
-The consuming application or edge will own country-aware PoW admission. Country may increase required work and must never decrease it:
+The consuming application owns country-aware PoW policy. Country policy can only increase work.
 
 ```text
 effective_difficulty = max(
@@ -71,74 +80,69 @@ effective_difficulty = max(
 )
 ```
 
-The authenticated challenge already binds its selected difficulty, and verification applies a current minimum, preventing client-side downgrade. Missing or invalid country input must use at least the base production floor.
+The repository does not yet include these PoW parts:
 
-The following are **not complete system components today**:
+- country-to-difficulty policy
+- challenge HTTP endpoint
+- upstream PoW middleware
+- proof-cookie lifecycle
+- replay lifecycle
+- production browser worker
+- end-to-end PoW integration
 
-- country-to-difficulty policy and trusted country extraction;
-- challenge HTTP endpoint;
-- upstream PoW admission middleware;
-- proof-cookie and replay lifecycle;
-- production browser worker (`dd-protect-client` is a skeleton);
-- end-to-end PoW application integration.
-
-PoW is independent of magic-link. Magic-link does not carry a PoW result, IP identity, or generic client key. The current confirmation/session API can carry an optional two-letter country as session context; that field is not trusted PoW policy input and is not connected to `dd-pow-core`. Country-based PoW belongs upstream, and any future removal or separation of the session-country field is tracked in onboarding.
+PoW stays independent from magic-link. Magic-link does not carry a PoW result, IP address, or client key.
 
 ## Trust boundaries
 
 | Boundary | Untrusted input | Required control |
 | --- | --- | --- |
-| Browser to edge/application | Email, token, cookies, confirmation, PoW solution, body/header metadata | Bounds, canonical parsing, generic errors, TLS |
-| Edge to origin | Request target, IP/country metadata | Trusted overwrite rules, direct-origin blocking where required, token-safe logging |
-| Application to libraries | Clock, CSPRNG, keyrings, redirects, templates, policy | Purpose-separated secrets and validated configuration |
-| Service to storage/outbox | Repository and delivery results | Typed errors, atomic repository contract, generic public failures |
-| AWS/provider | DynamoDB/SES behavior | IAM, encryption, TTL/schema, strong reads, transaction and deployment tests |
-| Email channel | Bearer magic-link token | Short TTL, scanner-safe GET, explicit POST, one-time atomic consume |
+| Browser to app | Email, token, cookies, body, headers, PoW solution | Bounds, parse rules, generic errors, TLS |
+| Edge to origin | Request target, IP, country headers | Trusted overwrite rules and token-safe logs |
+| App to libraries | Clock, CSPRNG, keyrings, redirects, templates, policy | Purpose separation and validated config |
+| Service to storage | Repository and delivery results | Typed errors and atomic repository contract |
+| AWS provider | DynamoDB and SES behavior | IAM, encryption, TTL, tests, and strong reads |
+| Email channel | Bearer magic-link token | Short TTL and scanner-safe confirmation |
 
-## Security algorithms
+## Security mechanisms
 
-| Purpose | Current algorithm or mechanism |
+| Purpose | Mechanism |
 | --- | --- |
-| Session and flow-cookie encryption | XChaCha20-Poly1305, 256-bit key, 192-bit nonce, authenticated header |
-| Key derivation | HKDF-SHA-256 with purpose and key-ID separation |
-| Magic-link lookup/verifier storage | Domain-separated HMAC-SHA-256 |
-| Magic-link entropy | Independent 128-bit selector and 256-bit verifier from caller-supplied CSPRNG |
-| Flow state | AEAD-authenticated fixed 133-byte body plus independent confirmation nonce |
-| PoW challenge identity | BLAKE3 over time and 128-bit entropy |
-| PoW challenge authenticity | Domain-separated HMAC-SHA-256 over challenge, difficulty, and timestamp |
-| PoW work | SHA-256 of challenge plus decimal nonce; leading zero hexadecimal nibbles |
-| PoW replay identity | BLAKE3 of challenge; identifier only, never a credential |
-| Constant-time comparisons | `subtle::ConstantTimeEq` for verifier/tag/hash material |
-| One-time authentication | DynamoDB conditional five-action transaction or equivalent repository implementation |
-| Session revocation visibility | Strongly consistent server-side session reads |
-| Sensitive memory handling | Redacted `Debug` and `zeroize` for owned sensitive values |
-| Wire encoding | Canonical lowercase hex and Base62; encoding is not cryptographic protection |
+| Session and flow cookies | XChaCha20-Poly1305 |
+| Key derivation | HKDF-SHA-256 with purpose and key ID |
+| Magic-link lookup | HMAC-SHA-256 |
+| Magic-link entropy | 128-bit selector and 256-bit verifier |
+| Flow state | AEAD body plus confirmation nonce |
+| PoW challenge identity | BLAKE3 over time and entropy |
+| PoW challenge tag | HMAC-SHA-256 |
+| PoW work | SHA-256 with leading zero nibbles |
+| PoW replay identity | BLAKE3 challenge digest |
+| Constant-time checks | `subtle::ConstantTimeEq` |
+| One-time auth | DynamoDB transaction or matching repository action |
+| Session revocation | Strong session reads |
+| Sensitive memory | Redacted `Debug` and `zeroize` |
+| Wire encoding | Lowercase hex and Base62 |
 
-The system relies on established cryptographic crates. It does not claim to prove the underlying XChaCha20-Poly1305, SHA-256, BLAKE3, HMAC, or HKDF implementations.
+## Complexity
 
-## Critical-path complexity
+Input sizes have bounds before expensive work starts. Let `n` mean bounded input length. Let `d` mean required zero nibbles.
 
-Input sizes are bounded before expensive work. Let `n` be bounded input length and `d` the number of required leading zero hexadecimal nibbles.
-
-| Operation | Time | Additional memory | Operational note |
+| Operation | Time | Memory | Note |
 | --- | ---: | ---: | --- |
-| PoW challenge mint | `O(n)` | `O(n)` current formatting | Bounded timestamp and fixed entropy |
-| PoW solution verification | `O(n)` | `O(n)` current formatting/hex buffers | Bounded fields; one HMAC, timestamp parse, and SHA-256 |
-| Browser PoW solve | Expected `O(16^d)` SHA-256 trials | `O(1)` | `d=5`: about 1,048,576 expected trials; `d=6`: about 16,777,216 |
-| Magic-link generation | `O(1)` | `O(1)` | Fixed 48 bytes of entropy |
-| Magic-link parse/HMAC check | `O(n)` | `O(n)` owned text, `O(1)` crypto state | Fixed/bounded token grammar |
-| Flow/session AEAD | `O(n)` | `O(n)` | Flow body is fixed at 133 bytes |
-| Branca Base62 encode/decode | `O(n²)` current conversion | `O(n)` | Strictly bounded token sizes |
-| Request path | `O(1)` bounded local work | `O(1)` | Remote limiter/storage/delivery latency dominates |
-| Landing path | `O(1)` bounded local work | `O(1)` | Selector limit plus one strongly consistent candidate read |
-| Confirmation path | `O(1)` bounded local work | `O(1)` | Repository reads plus fixed atomic transaction dominate |
-| Session validation | `O(n)` cookie work | `O(n)` | One strongly consistent session read |
-
-Production PoW difficulty must be selected from browser benchmarks, not asymptotic complexity alone.
+| PoW mint | `O(n)` | `O(n)` | Fixed entropy and bounded time text. |
+| PoW verify | `O(n)` | `O(n)` | One HMAC, time parse, and SHA-256 check. |
+| Browser PoW solve | `O(16^d)` expected | `O(1)` | Benchmark before production. |
+| Magic-link generation | `O(1)` | `O(1)` | Fixed entropy. |
+| Magic-link parse | `O(n)` | `O(n)` | Bounded token grammar. |
+| Flow or session AEAD | `O(n)` | `O(n)` | Bounded body size. |
+| Base62 encode or decode | `O(n²)` | `O(n)` | Bounded token size. |
+| Request path | `O(1)` | `O(1)` | Remote calls dominate. |
+| Landing path | `O(1)` | `O(1)` | One strong candidate read. |
+| Confirmation path | `O(1)` | `O(1)` | Fixed transaction dominates. |
+| Session validation | `O(n)` | `O(n)` | One strong session read. |
 
 ## Related documents
 
-- [Customer onboarding and implementation status](onboarding.md)
-- [Security requirements](security.md)
-- [Formal assurance roadmap](formal-methods.md)
+- [Onboarding](onboarding.md)
+- [Security rules](security.md)
+- [Formal assurance](formal-methods.md)
 - [Operating model](operating.md)

@@ -2,25 +2,24 @@
 
 ## Start here
 
-- [Software architecture](architecture.md) — current components, protocols, diagrams, algorithms, and complexity
-- [Customer onboarding and implementation status](onboarding.md) — production checklist and MVP backlog
-- [Security rules](security.md) — normative security requirements
-- [Formal assurance roadmap](formal-methods.md) — planned TLA+, simulation, fuzzing, and bounded verification
+- [Architecture](architecture.md): current parts, flows, and limits.
+- [Onboarding](onboarding.md): production checklist and backlog.
+- [Security rules](security.md): required security behavior.
+- [Formal assurance](formal-methods.md): planned model checks and fuzzing.
 
 ## Libraries
 
-- `dd-pow-core` — implemented pure proof-of-work challenge mint/verify primitives
-- `dd-auth-token-core` — implemented token, keyring, session, and flow-cookie primitives
-- `dd-magic-link-core` — implemented magic-link token and HMAC primitives
-- `dd-magic-link-service` — implemented request, confirmation, session, and repository orchestration
-- `dd-magic-link-axum` — implemented optional Axum HTTP integration
-- `dd-magic-link-aws` — implemented optional DynamoDB/SES adapters and fakes
-- `dd-protect-client` — **planned; browser package is currently a skeleton**
+| Library | Purpose |
+| --- | --- |
+| `dd-pow-core` | Pure proof-of-work challenge mint and verify code. |
+| `dd-auth-token-core` | Token, keyring, session, and cookie primitives. |
+| `dd-magic-link-core` | Magic-link token and HMAC primitives. |
+| `dd-magic-link-service` | Request, confirmation, session, and repository logic. |
+| `dd-magic-link-axum` | Optional Axum HTTP helpers. |
+| `dd-magic-link-aws` | Optional DynamoDB and SES adapters. |
+| `dd-protect-client` | Planned browser PoW client. |
 
-## Contributor and historical documents
+## Contributor documents
 
 - [Rust standards](rust-standards.md)
 - [Operating model](operating.md)
-- [Extraction plan](plan.md) — historical roadmap
-- [Production fix plan](fix.md) — historical remediation input
-- [Prior review](review.md) — historical audit input

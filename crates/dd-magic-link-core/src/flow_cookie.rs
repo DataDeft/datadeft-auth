@@ -422,12 +422,7 @@ fn decode_flow_body(body: &[u8]) -> Result<DecodedFlowBody, TokenError> {
     let verifier = FlowVerifierBinding::new(take_array(body, &mut offset)?);
     let account = FlowAccountBinding::new(take_array(body, &mut offset)?);
     let confirmation = MagicLinkFlowNonce(take_array(body, &mut offset)?);
-    let expiry_bytes: [u8; 4] = body
-        .get(offset..offset + 4)
-        .ok_or(TokenError::InvalidToken)?
-        .try_into()
-        .map_err(|_| TokenError::InvalidToken)?;
-    offset += 4;
+    let expiry_bytes: [u8; 4] = take_array(body, &mut offset)?;
     if offset != body.len() {
         return Err(TokenError::InvalidToken);
     }

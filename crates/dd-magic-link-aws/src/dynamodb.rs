@@ -6,9 +6,7 @@ use std::collections::HashMap;
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_dynamodb::operation::get_item::builders::GetItemFluentBuilder;
 use aws_sdk_dynamodb::operation::transact_write_items::builders::TransactWriteItemsFluentBuilder;
-use aws_sdk_dynamodb::types::{
-    AttributeValue, ConditionCheck, Put, ReturnValue, TransactWriteItem, Update,
-};
+use aws_sdk_dynamodb::types::{AttributeValue, ConditionCheck, Put, TransactWriteItem, Update};
 use dd_magic_link_service::{
     CommitMagicLinkAuthentication, CommitMagicLinkAuthenticationError, DependencyError, LookupHmac,
     MagicLinkAuthenticationCandidate, MagicLinkAuthenticationRepository,
@@ -543,7 +541,6 @@ impl RateLimiter for DynamoDbAuthStore {
                 .expression_attribute_values(":ttl", av_n(ttl))
                 .expression_attribute_values(":one", av_n(1))
                 .expression_attribute_values(":limit", av_n(limit))
-                .return_values(ReturnValue::AllNew)
                 .send()
                 .await;
             match result {

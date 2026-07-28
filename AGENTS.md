@@ -7,7 +7,6 @@ Before editing Rust code, read:
 - `docs/rust-standards.md`
 - `docs/operating.md`
 - `docs/security.md`
-- `docs/plan.md` for phase scope and crate ownership
 
 ## Operating model
 

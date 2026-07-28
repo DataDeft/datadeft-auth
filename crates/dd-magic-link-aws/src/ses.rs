@@ -112,8 +112,6 @@ where
         use aws_sdk_sesv2::types::{Body, Content, Destination, EmailContent, Message};
 
         let rendered = self.renderer.render(&email)?;
-        let from = self.from_email.clone();
-        let client = self.client.clone();
 
         let destination = Destination::builder().to_addresses(rendered.to).build();
         let subject = Content::builder()
@@ -138,15 +136,15 @@ where
         let body = body_builder.build();
         let message = Message::builder().subject(subject).body(body).build();
         let content = EmailContent::builder().simple(message).build();
-        client
+        self.client
             .send_email()
-            .from_email_address(from)
+            .from_email_address(self.from_email.clone())
             .destination(destination)
             .content(content)
             .send()
             .await
             .map_err(crate::error::map_ses_send_email_error)?;
-        Ok::<(), AwsAdapterError>(()).map_err(DependencyError::from)
+        Ok(())
     }
 }
 

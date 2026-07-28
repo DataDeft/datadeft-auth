@@ -2,57 +2,64 @@
 
 ## Core principles
 
-- Explicit over clever.
-- Prefer plain functions, structs, enums, traits, and generics.
-- Do not write macros for application/library logic.
-- No `unwrap`, `expect`, or `panic!` in production paths.
-- Core crates must be deterministic and IO-free.
-- Adapter crates own IO, network, clocks, and external dependency mapping.
-- Security-sensitive values must use redacted `Debug`.
-- `unsafe` is not allowed unless a short security/design note explains why there is no safe alternative.
+- Prefer explicit code over clever code.
+- Use plain functions, structs, enums, traits, and generics.
+- Do not write application macros.
+- Do not use `unwrap`, `expect`, or `panic!` in production paths.
+- Keep core crates deterministic and IO-free.
+- Put IO, network, clocks, and external mapping in adapters.
+- Redact `Debug` for sensitive values.
+- Do not use `unsafe` without a security note.
 
 ## Crate layering
 
 Allowed dependency graph:
 
 ```text
-dd-auth-token-core      -> (no workspace crates)
+dd-auth-token-core      -> no workspace crates
 dd-magic-link-core     -> dd-auth-token-core
 dd-magic-link-service  -> dd-magic-link-core, dd-auth-token-core
 dd-magic-link-axum     -> dd-magic-link-service
 dd-magic-link-aws      -> dd-magic-link-service
-examples/*             -> adapter and service crates as needed
+examples               -> selected adapters and services
 ```
 
 Rules:
 
-- `*-core` crates must not depend on Axum, Tokio, AWS SDK, tracing, filesystem, process environment, or network clients.
-- Core functions receive clock/entropy/config as input.
-- Adapter crates may depend on Tokio/AWS/Axum.
-- Axum and AWS adapter crates are siblings; neither adapter may depend on the other.
-- Shared adapter concerns belong in service traits or core domain types, not cross-adapter imports.
-- Service crates depend on traits, not concrete infrastructure.
-- No circular dependencies.
-- Keep public APIs small and stable.
-- Keep optional integrations behind feature flags.
-- Prefer dependency injection over globals, singletons, or environment reads.
+- Keep `*-core` crates free of IO.
+- Keep Axum, Tokio, AWS SDK, tracing, files, env, and network out of core crates.
+- Pass clock, entropy, and config into core functions.
+- Put Tokio, AWS, and Axum in adapter crates.
+- Keep Axum and AWS adapters as siblings.
+- Do not make adapters depend on each other.
+- Put shared adapter concerns in service traits or core types.
+- Make service crates depend on traits.
+- Avoid circular dependencies.
+- Keep public APIs small.
+- Put optional integrations behind feature flags.
+- Prefer dependency injection over globals and environment reads.
 
 ## Error handling
 
-- Library APIs return typed errors.
-- Public error enums should implement:
-  - `Debug`
-  - `Display`
-  - `std::error::Error`
-  - `Clone`/`Copy` where practical
-  - `Eq`/`PartialEq` where practical
-- Do not leak tokens, cookies, HMAC inputs, key material, email addresses, or raw identifiers in errors.
-- `anyhow` is acceptable in examples, binaries, tests, and setup code, but not as the main public library error type.
-- Conversion from adapter-specific errors into public errors must scrub sensitive data.
+- Return typed errors from library APIs.
+- Scrub adapter errors before public conversion.
+- Do not leak tokens, cookies, HMAC inputs, key material, emails, or raw IDs.
+
+Public error enums should implement these traits where practical:
+
+- `Debug`
+- `Display`
+- `std::error::Error`
+- `Clone`
+- `Copy`
+- `Eq`
+- `PartialEq`
+
+Use `anyhow` only in examples, binaries, tests, and setup code.
 
 ## No application macros
 
-Do not author our own macros for:
+Do not write macros for these tasks:
 
 - dispatch
 - key building
@@ -62,16 +69,16 @@ Do not author our own macros for:
 - storage shape generation
 - route generation
 
-Allowed:
+You can use these macro forms:
 
 - serde derives
 - test macros
 - `tokio::test`
-- established crate derives/attributes where they improve clarity
+- established crate derives and attributes
 
 ## Secrets and redaction
 
-Any type wrapping secret or sensitive material must redact `Debug`.
+Any type that wraps secret or sensitive material must redact `Debug`.
 
 Example:
 
@@ -83,19 +90,20 @@ impl core::fmt::Debug for MagicLinkToken {
 }
 ```
 
-Redact:
+Redact these values:
 
 - magic-link tokens
-- selectors/verifiers
+- selectors
+- verifiers
 - session IDs
 - Branca keys
 - HMAC peppers
 - cookie values
-- normalized emails when used as user identifiers
+- normalized emails used as user IDs
 
 ## Determinism
 
-Core APIs should not call:
+Core APIs must not call these sources:
 
 - system clock
 - random number generators
@@ -104,30 +112,32 @@ Core APIs should not call:
 - network
 - logging
 
-Instead, callers inject:
+Callers inject these inputs:
 
 - `now_unix`
 - `now_rfc3339`
-- CSPRNG entropy bytes for production/adapters
-- deterministic fixture entropy only in tests
+- CSPRNG entropy bytes
+- deterministic fixture entropy for tests
 - key material
 - config values
 
-Adapter crates that generate bearer secrets, nonces, session IDs, token verifiers, or proof-of-work challenges must use operating-system CSPRNGs or a reviewed cryptographic RNG seeded from OS entropy.
+Adapters that create secrets or nonces must use OS-backed CSPRNGs. A reviewed cryptographic RNG can replace OS RNG when needed.
 
 ## Tests
 
-Each crate must have:
+Each crate must include these tests:
 
 - unit tests for pure functions
-- golden/vector tests for token formats
-- tamper tests for security-sensitive parsing/verification
-- round-trip tests for mint/parse or encode/decode flows
-- public API smoke tests that compile with default features
+- golden tests for token formats
+- tamper tests for security parsing and verification
+- round-trip tests for mint, parse, encode, or decode flows
+- public API smoke tests with default features
 
-Prefer property tests for token grammar and cryptographic wrappers when cheap.
+Prefer property tests for token grammar and crypto wrappers when cheap.
 
-Test code may use `unwrap`/`expect` only when the failure message makes the test failure clearer. Production code may not.
+Test code may use `unwrap` and `expect`. Add a clear failure message when that helps.
+
+Production code must not use `unwrap` or `expect`.
 
 ## Module layout
 
@@ -142,7 +152,7 @@ src/
   session_cookie_tests.rs
 ```
 
-Wire tests with:
+Wire tests with this pattern:
 
 ```rust
 #[cfg(test)]
@@ -150,33 +160,35 @@ Wire tests with:
 mod magic_link_tests;
 ```
 
-Entry files decode/delegate/encode only. Business logic lives in named modules.
+Entry files decode, delegate, and encode. Put business logic in named modules.
 
 ## Naming
 
-- Rust symbols: `snake_case`
-- Types/enums/traits: `UpperCamelCase`
-- JSON fields: `snake_case`
-- Cookie names: lower `snake_case`, optionally app-prefixed, for example `dd_session`
-- HTTP paths: `kebab-case`
-- CLI flags: `--kebab-case`
-- Environment variables: `SCREAMING_SNAKE_CASE`
-- Opaque IDs: `tag-<body>`
+- Rust symbols use `snake_case`.
+- Types, enums, and traits use `UpperCamelCase`.
+- JSON fields use `snake_case`.
+- Cookie names use lower `snake_case`.
+- HTTP paths use `kebab-case`.
+- CLI flags use `--kebab-case`.
+- Environment variables use `SCREAMING_SNAKE_CASE`.
+- Opaque IDs use `tag-<body>`.
 
-Opaque identifiers must not encode real-world facts.
+Opaque IDs must not encode real-world facts.
 
 ## Public API shape
 
 - Prefer owned domain types at crate boundaries.
-- Use `&str`, `&[u8]`, and borrowed views internally where helpful, but do not make public APIs lifetime-heavy without a clear payoff.
-- Expose builders/config structs for required configuration.
-- Use `#[non_exhaustive]` for public structs/enums only when we intentionally reserve expansion space.
-- Document security-relevant invariants on public types and functions.
-- Keep serde support explicit and feature-gated when it is not required by the core behavior.
+- Use `&str` and `&[u8]` inside crates where helpful.
+- Avoid lifetime-heavy public APIs without a clear payoff.
+- Expose builders or config structs for required config.
+- Add `#[non_exhaustive]` only when we reserve expansion space.
+- Document security invariants on public types and functions.
+- Gate serde support when core behavior does not require it.
 
 ## Features and dependencies
 
-- Default features should be minimal.
-- Avoid adding dependencies for tiny helpers.
-- Pin broad integration dependencies to adapter crates, not core crates.
-- Every dependency added for crypto, parsing, HTTP, AWS, or async must have a clear owner crate and reason.
+- Keep default features minimal.
+- Avoid dependencies for tiny helpers.
+- Put broad integration dependencies in adapter crates.
+- Give each crypto, parsing, HTTP, AWS, or async dependency an owner crate.
+- Record the reason for each such dependency.

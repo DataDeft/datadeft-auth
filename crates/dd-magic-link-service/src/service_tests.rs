@@ -619,11 +619,7 @@ async fn confirmation_accepts_authenticated_expiry_then_rejects_post_expiry() {
         )
         .await;
         if succeeds {
-            let outcome = result.expect("authenticated expiry is inclusive in flow core");
-            assert_eq!(
-                outcome.temporary_state_action(),
-                TemporaryAuthStateAction::Clear
-            );
+            result.expect("authenticated expiry is inclusive in flow core");
             assert_eq!(repository.commands.borrow().len(), 1);
             assert_eq!(repository.sessions.borrow().len(), 1);
         } else {
@@ -853,10 +849,6 @@ async fn scanner_confirmation_atomically_authenticates_and_replay_clears() {
     )
     .await
     .expect("confirmation");
-    assert_eq!(
-        outcome.temporary_state_action(),
-        TemporaryAuthStateAction::Clear
-    );
     assert!(outcome.authentication().user_created());
     assert_eq!(outcome.authentication().country(), Some("HU"));
     assert!(

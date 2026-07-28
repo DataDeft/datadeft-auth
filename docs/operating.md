@@ -1,8 +1,8 @@
 # Operating model
 
-## Local development first
+## Local development
 
-Initial development uses local path dependencies, not GitHub, crates.io, or private registries.
+Use local path dependencies during initial work.
 
 Example consuming-project dependency:
 
@@ -14,9 +14,9 @@ dd-magic-link-core = { path = "../datadeft-auth/crates/dd-magic-link-core" }
 
 ## Task runner
 
-Use `mise` for repository tasks.
+Use `mise` tasks. Do not hand-type long command chains.
 
-Common tasks should exist:
+Common tasks:
 
 ```sh
 mise run fmt
@@ -27,7 +27,7 @@ mise run audit
 mise run verify
 ```
 
-`verify` should run formatting, clippy, tests, docs checks, and the configured dependency audit.
+`verify` runs format, Clippy, tests, docs, and dependency audit.
 
 Recommended commands behind tasks:
 
@@ -41,45 +41,46 @@ cargo deny check
 
 ## Development loop
 
-1. Work in the auth library repo.
+1. Work in this repository.
 2. Run `mise run verify`.
 3. Use local path deps from a consuming project.
-4. Run the consuming project tests.
-5. Only then consider tagging or publishing.
+4. Run consuming project tests.
+5. Tag or publish only after those checks pass.
 
-## Multi-agent library model
+## Multi-agent model
 
-This repo is developed with a single-orchestrator, one-library-per-agent model.
+Use one orchestrator and one owner for each crate.
 
-- The orchestrator owns repo-wide choices, user questions, dependency boundaries, merge order, and final acceptance.
-- Each implementation agent owns exactly one crate or package at a time.
-- Agents must not edit another agent's crate without orchestrator approval.
-- Only one writer may modify a given crate/worktree at once.
-- If multiple agents work concurrently, use separate git branches or worktrees.
-- Cross-crate public API changes require a short handoff note before implementation.
+The orchestrator owns repo-wide decisions. The orchestrator owns user questions, dependency boundaries, merge order, and acceptance.
 
-Agent ownership:
+Each implementation agent owns one crate or package. Agents must not edit another crate without orchestrator approval.
 
-| Agent lane | Owns | Primary output |
+Only one writer may modify a crate or worktree at a time. Use separate worktrees for concurrent implementation.
+
+Public API changes across crates need a short proposal first.
+
+## Agent ownership
+
+| Lane | Owns | Output |
 | --- | --- | --- |
-| Repo setup agent | workspace root, CI, licensing, docs, `mise` tasks | standalone buildable repo |
-| PoW core agent | `crates/dd-pow-core` | deterministic PoW core |
-| Auth token core agent | `crates/dd-auth-token-core` | reusable session/token/cookie primitives |
-| Magic-link core agent | `crates/dd-magic-link-core` | IO-free magic-link primitives |
-| Magic-link service agent | `crates/dd-magic-link-service` | trait-based request/consume orchestration |
-| Axum adapter agent | `crates/dd-magic-link-axum` | HTTP integration and response helpers |
-| AWS adapter agent | `crates/dd-magic-link-aws` | DynamoDB/SES adapters and fakes |
-| Browser client agent | `packages/dd-protect-client` | optional browser PoW client |
-| Example/integration agent | `examples/axum-magic-link` and consuming-project integration | proof that extraction works |
+| Repo setup | Workspace root, CI, licensing, docs, tasks | Buildable repo |
+| PoW core | `crates/dd-pow-core` | Deterministic PoW core |
+| Auth token core | `crates/dd-auth-token-core` | Token and cookie primitives |
+| Magic-link core | `crates/dd-magic-link-core` | Magic-link primitives |
+| Magic-link service | `crates/dd-magic-link-service` | Trait-based auth flow |
+| Axum adapter | `crates/dd-magic-link-axum` | HTTP integration |
+| AWS adapter | `crates/dd-magic-link-aws` | DynamoDB and SES adapters |
+| Browser client | `packages/dd-protect-client` | Browser PoW client |
+| Example | `examples/axum-magic-link` | Integration proof |
 
-## Agent work packet
+## Work packet
 
-Every agent receives a packet with:
+Each agent receives this packet.
 
 ```text
 Goal:
 Owned paths:
-Read-only context paths:
+Read-only context:
 Allowed dependencies:
 Forbidden dependencies:
 Public API expectations:
@@ -88,11 +89,11 @@ Validation commands:
 Escalation questions:
 ```
 
-Every agent returns a handoff with:
+Each agent returns this handoff.
 
 ```text
 Changed files:
-Public API added/changed:
+Public API added or changed:
 Security-sensitive behavior:
 Validation run:
 Validation not run:
@@ -100,40 +101,40 @@ Open questions:
 Follow-up work:
 ```
 
-## Cross-crate change protocol
+## Cross-crate changes
 
-Before changing another crate's public API, write a short proposal:
+Write a proposal before you change another crate public API.
 
 ```text
 Producer crate:
-Consumer crate(s):
-Proposed type/function/trait change:
+Consumer crates:
+Proposed type, function, or trait change:
 Reason:
 Security impact:
 Migration impact:
 Tests needed:
 ```
 
-The orchestrator accepts, revises, or rejects the proposal before implementation.
+The orchestrator accepts, changes, or rejects the proposal.
 
 ## Merge order
 
-1. Phase 0 repo setup.
+1. Repo setup.
 2. `dd-pow-core`.
 3. `dd-auth-token-core`.
 4. `dd-magic-link-core`.
 5. `dd-magic-link-service`.
 6. `dd-magic-link-axum`.
 7. `dd-magic-link-aws`.
-8. `dd-protect-client` and examples, if in scope.
+8. `dd-protect-client` and examples.
 9. Consuming-project integration.
 10. Publish preparation.
 
-A downstream agent may scaffold early, but should not lock public API against unreviewed upstream code.
+A downstream agent may scaffold early. It must not lock public API against unreviewed upstream code.
 
 ## Versioning
 
-Before public publishing, use `0.x` versions.
+Use `0.x` versions before public publishing.
 
 Recommended early versions:
 
@@ -141,26 +142,27 @@ Recommended early versions:
 0.1.0 - first local extraction
 0.2.0 - first second-project integration
 0.3.0 - API cleanup after integration feedback
-1.0.0 - stable public API, after security/provenance audit
+1.0.0 - stable public API after audits
 ```
 
 ## Commit policy
 
-- Small focused commits.
-- One crate or one behavior change per commit where practical.
+- Make small focused commits.
+- Change one crate or one behavior per commit where practical.
 - Commit generated lockfile changes.
 - Do not commit secrets.
 - Do not commit local `.env` files.
-- Include validation notes in commit/PR descriptions.
+- Include validation notes in commit or PR text.
 
 ## Release policy
 
-Do not publish to crates.io until:
+Do not publish until the repo meets these conditions.
 
-- provenance is audited
-- MIT `LICENSE` file exists
-- docs exist
-- examples compile
-- public API is reviewed
-- dependency/license/vulnerability audit passes
-- `cargo publish --dry-run` passes for every publishable crate
+1. Provenance audit passed.
+2. MIT license file exists.
+3. Docs exist.
+4. Examples compile.
+5. Public API review passed.
+6. Dependency audit passed.
+7. License audit passed.
+8. `cargo publish --dry-run` passed for each crate.

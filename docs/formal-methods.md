@@ -1,33 +1,39 @@
 # Formal assurance roadmap
 
-**Status:** Draft, non-normative, and not model-checked. No formal proof is currently claimed.
+**Status:** Draft and non-normative. The repository does not claim formal proof.
 
-The production priority is a working, tested integration. Formal methods are planned follow-up work that strengthens evidence without replacing cryptographic review, live infrastructure tests, or deployment controls.
+Production work comes first. Formal methods will add evidence later. They do not replace crypto review, live tests, or deployment controls.
 
-## Available tooling
+## Tooling
 
-The development environment currently includes the Rust `tla` TLA+ checker, Kani, Cargo Fuzz, Quint, and Creusot. This document does not install or configure them. Tool versions and CI integration will be pinned when the corresponding MVP begins.
+The development environment has these tools:
+
+- Rust `tla` checker
+- Kani
+- Cargo Fuzz
+- Quint
+- Creusot
+
+This document does not install or configure them. CI will pin tool versions when each MVP starts.
 
 ## Claims to model
 
-| Claim ID | Safety claim | Current implementation evidence | Planned method |
+| Claim | Safety property | Current evidence | Planned method |
 | --- | --- | --- | --- |
-| ML-INV-001 | `GET` landing never consumes a challenge or creates a session | Service/Axum landing tests | TLA+ action invariant |
-| ML-INV-002 | One challenge is consumed at most once | Atomic fake race tests and DynamoDB conditions | TLA+ concurrent state exploration |
-| ML-INV-003 | Successful confirmation atomically pairs consumption with session creation | Aggregate repository contract and five-action transaction tests | TLA+ transaction model plus DST failpoints |
-| ML-INV-004 | Wrong selector, verifier, account, nonce, expiry, or consent cannot authenticate | Tamper/mismatch tests | TLA+ abstract guards; Tamarin later if justified |
-| ML-INV-005 | Disabled-user/session-conflict failures do not burn the challenge | Fake transaction tests | TLA+ transition invariant |
-| SES-INV-001 | Revoked or expired sessions never validate | Session boundary tests and strong-read request test | TLA+ session lifecycle model |
-| POW-INV-001 | Accepted proof has authentic challenge metadata, valid freshness, required work, and current minimum difficulty | PoW vector/tamper/downgrade tests | TLA+ policy model plus Kani pure-policy proof |
-| POW-INV-002 | Country policy never lowers required difficulty | Not implemented | TLA+ invariant and property tests for MVP-013 |
-| POW-INV-003 | A proof cannot exceed its configured replay budget | Not implemented | TLA+ replay model and deterministic concurrency tests |
-| BOUND-INV-001 | Parsers reject values outside documented caps without panic | Unit/property tests | Cargo Fuzz and selected Kani harnesses |
+| ML-INV-001 | `GET` landing never consumes a challenge. | Service and Axum tests | TLA+ invariant |
+| ML-INV-002 | One challenge has at most one consume. | Fake race tests and DynamoDB conditions | TLA+ state search |
+| ML-INV-003 | Confirmation pairs consume and session creation. | Repository contract tests | TLA+ transaction model |
+| ML-INV-004 | Wrong bound data cannot authenticate. | Tamper tests | TLA+ guards |
+| ML-INV-005 | Disabled-user failures do not burn a challenge. | Fake transaction tests | TLA+ invariant |
+| SES-INV-001 | Revoked or expired sessions never validate. | Session boundary tests | TLA+ session model |
+| POW-INV-001 | Accepted proof has valid challenge metadata. | PoW vectors and tamper tests | TLA+ plus Kani |
+| POW-INV-002 | Country policy never lowers difficulty. | Not ready | TLA+ plus property tests |
+| POW-INV-003 | A proof cannot exceed its replay budget. | Not ready | TLA+ replay model |
+| BOUND-INV-001 | Parsers reject over-cap values safely. | Unit and property tests | Fuzzing and Kani |
 
-## Initial TLA+ models
+## Magic-link model
 
-### Magic-link authentication
-
-Abstract states:
+Use these abstract states:
 
 ```text
 Challenge = Absent | Issued | Consumed | Expired
@@ -36,22 +42,29 @@ Session   = Absent | Active | Revoked | Expired
 User      = Missing | Enabled | Disabled
 ```
 
-Actions:
+Use these actions:
 
-- `RequestLink`
-- `BeginLanding`
-- `Confirm`
-- `AtomicCommit`
-- `AmbiguousRetry`
-- `DisableUser`
-- `RevokeSession`
-- `AdvanceTime`
+- RequestLink
+- Landing
+- Confirm
+- AtomicCommit
+- AmbiguousRetry
+- DisableUser
+- RevokeSession
+- AdvanceTime
 
-Primary invariants are ML-INV-001 through ML-INV-005 and SES-INV-001. The model must include competing confirmations, disable-before-commit, session-ID conflict, ambiguous transaction result, replay, and expiry boundaries.
+The model must include these cases:
 
-### PoW admission
+1. Competing confirmations.
+2. Disable before commit.
+3. Session-ID conflict.
+4. Ambiguous transaction result.
+5. Replay.
+6. Expiry boundaries.
 
-Abstract states:
+## PoW model
+
+Use these abstract states:
 
 ```text
 Challenge = Absent | Issued | Expired
@@ -59,57 +72,93 @@ Proof     = Absent | Verified | Spent
 Admission = Rejected | Accepted
 ```
 
-The policy model defines:
+The policy model defines this rule:
 
 ```text
 EffectiveDifficulty(country) =
     Max(ProductionFloor, BaseDifficulty, CountryRequired(country))
 ```
 
-Actions include mint, country-policy update, solve, verify, consume proof, replay, and advance time. Invariant POW-INV-002 requires that an active flow's required difficulty never decreases after any policy/country transition.
+The model should include these actions:
 
-## Deterministic simulation testing
+- mint
+- country policy update
+- solve
+- verify
+- consume proof
+- replay
+- advance time
 
-After the state models stabilize, MVP-021 should add an executable model-based harness using injected clock, entropy, scheduler, and repository failpoints. It should generate:
+POW-INV-002 requires one rule. An active flow difficulty must not decrease after any policy or country transition.
 
-- concurrent confirmations and replays;
-- failures before/after each repository operation;
-- ambiguous transaction responses followed by exact retry;
-- user disable and session revoke races;
-- expiry at every inclusive/exclusive boundary;
-- proof replay and country-difficulty changes.
+## Deterministic simulation tests
 
-The harness compares implementation state with a small reference state machine. Live DynamoDB tests remain necessary because a simulation cannot prove AWS behavior.
+Add a model-based harness after the state models stabilize.
 
-## Bounded verification and fuzzing
+The harness should use injected clock, entropy, scheduler, and repository failpoints.
 
-Suggested first targets:
+It should generate these cases:
 
-- Kani: country difficulty monotonicity, expiry arithmetic, fixed flow-body framing, and pure transition helpers.
-- Cargo Fuzz: magic-link grammar, Branca/Base62 decode, flow/session cookie wrappers, Axum query/cookie/body parsers, and DynamoDB item decoding.
-- Creusot: evaluate only for small pure functions where proof cost is justified.
-- Tamarin: consider later for symbolic attacker correspondence (flow-cookie authenticity, confirmation binding, replay). Do not start here unless TLA+/DST reveals a protocol ambiguity.
+- concurrent confirmations and replays
+- failures before and after repository operations
+- ambiguous transaction responses with exact retry
+- user disable and session revoke races
+- expiry at each boundary
+- proof replay and country difficulty changes
+
+The harness compares implementation state with a small reference state machine. Live DynamoDB tests remain necessary.
+
+## Fuzzing and bounded checks
+
+Start with these targets:
+
+- Kani for country difficulty monotonicity.
+- Kani for expiry arithmetic.
+- Kani for fixed flow-body framing.
+- Kani for pure transition helpers.
+- Cargo Fuzz for magic-link grammar.
+- Cargo Fuzz for Branca and Base62 decode.
+- Cargo Fuzz for flow and session cookie wrappers.
+- Cargo Fuzz for Axum parsers.
+- Cargo Fuzz for DynamoDB item decoding.
+- Creusot only for small pure functions.
+- Tamarin later if protocol ambiguity appears.
 
 ## Proof boundaries
 
-A successful model check proves the model within configured bounds; it does not prove:
+A successful model check proves only the model within configured bounds.
 
-- the implementation conforms without traceability and conformance tests;
-- the cryptographic primitives themselves;
-- AWS, SES, proxy, browser, or network behavior;
-- email delivery liveness;
-- human recognition of the account confirmation page;
-- absence of token logging outside the handler.
+It does not prove these claims:
 
-Every formal claim must link model action, code path, test, tool/version, constants, explored state count, and any assumptions. Until those artifacts exist, the correct label remains **planned assurance**, not formally verified.
+- The implementation matches the model.
+- The crypto primitives are correct.
+- AWS behavior is correct.
+- SES behavior is correct.
+- Proxy behavior is correct.
+- Browser behavior is correct.
+- Email delivery is live.
+- A human recognizes the account page.
+- Logs outside the handler omit token material.
+
+Each formal claim must link these artifacts:
+
+1. Model action.
+2. Code path.
+3. Test.
+4. Tool version.
+5. Constants.
+6. Explored state count.
+7. Assumptions.
+
+Until those artifacts exist, call the work planned assurance.
 
 ## Planned deliverables
 
-| ID | Deliverable | Completion condition |
+| ID | Deliverable | Done when |
 | --- | --- | --- |
-| MVP-020 | TLA+ magic-link/session and PoW policy models | `tla` checks all listed invariants in CI with recorded bounds and no counterexample |
-| MVP-021 | Deterministic simulation and fault schedules | Reproducible seeded schedules cover concurrency and failure transitions |
-| MVP-022 | Fuzz and bounded-proof targets | Corpus and Kani reports are retained in CI artifacts |
-| MVP-023 | Claim-to-evidence report | Each claim links implementation, tests, models, assumptions, and residual risk |
+| MVP-020 | TLA+ magic-link and PoW models | CI checks all listed invariants. |
+| MVP-021 | Simulation and fault schedules | Seeded schedules cover failure transitions. |
+| MVP-022 | Fuzz and Kani targets | CI keeps corpus and proof reports. |
+| MVP-023 | Claim evidence report | Each claim links code, tests, models, and risk. |
 
-Current production onboarding requirements are tracked in [onboarding.md](onboarding.md).
+Current production requirements live in [onboarding.md](onboarding.md).
