@@ -7,6 +7,7 @@
 //! and caps the explicit expiry by the remaining magic-link lifetime.
 
 use core::fmt;
+use core::marker::PhantomData;
 
 use dd_auth_token_core::TokenError;
 use dd_auth_token_core::cookie::{MaxAge, mint_bound_cookie, parse_bound_cookie};
@@ -48,104 +49,86 @@ const FLOW_BODY_V1: u8 = 1;
 const CONFIRMATION_HEX_BYTES: usize = MAGIC_LINK_FLOW_NONCE_BYTES * 2;
 const FLOW_BODY_BYTES: usize = 133;
 
+/// Role marker giving each flow binding a distinct type and redacted `Debug`
+/// name. The roles exist so selector, verifier, and account bindings cannot be
+/// interchanged — the same marker-type pattern as `KeyPurpose`.
+pub trait FlowBindingRole {
+    /// Redacted `Debug` rendering for this role's binding.
+    const DEBUG_NAME: &'static str;
+}
+
+/// Role of the keyed selector identity binding.
+#[derive(Debug)]
+pub enum SelectorBindingRole {}
+
+impl FlowBindingRole for SelectorBindingRole {
+    const DEBUG_NAME: &'static str = "FlowSelectorBinding(..)";
+}
+
+/// Role of the keyed verifier proof binding.
+#[derive(Debug)]
+pub enum VerifierBindingRole {}
+
+impl FlowBindingRole for VerifierBindingRole {
+    const DEBUG_NAME: &'static str = "FlowVerifierBinding(..)";
+}
+
+/// Role of the keyed intended-account identity binding.
+#[derive(Debug)]
+pub enum AccountBindingRole {}
+
+impl FlowBindingRole for AccountBindingRole {
+    const DEBUG_NAME: &'static str = "FlowAccountBinding(..)";
+}
+
+/// Keyed 256-bit value bound into a magic-link confirmation flow, typed by
+/// [`FlowBindingRole`] so the three binding kinds cannot be interchanged.
+/// Bytes zeroize on drop; `Debug` is redacted per role.
+pub struct FlowBinding<Role: FlowBindingRole> {
+    bytes: [u8; MAGIC_LINK_FLOW_BINDING_BYTES],
+    _role: PhantomData<Role>,
+}
+
 /// Keyed selector identity bound into a magic-link confirmation flow.
-pub struct FlowSelectorBinding([u8; MAGIC_LINK_FLOW_BINDING_BYTES]);
-
-impl FlowSelectorBinding {
-    /// Wrap a purpose-separated 256-bit selector lookup binding.
-    #[must_use]
-    pub fn new(bytes: [u8; MAGIC_LINK_FLOW_BINDING_BYTES]) -> Self {
-        Self(bytes)
-    }
-
-    /// Compare two keyed selector bindings in constant time.
-    #[must_use]
-    pub fn matches_constant_time(&self, other: &Self) -> bool {
-        self.0.ct_eq(&other.0).unwrap_u8() == 1
-    }
-
-    /// Borrow the sensitive binding bytes to rebuild the canonical storage
-    /// form. Do not log or compare these bytes directly.
-    #[must_use]
-    pub(crate) fn as_sensitive_bytes(&self) -> &[u8; MAGIC_LINK_FLOW_BINDING_BYTES] {
-        &self.0
-    }
-}
-
-impl Drop for FlowSelectorBinding {
-    fn drop(&mut self) {
-        self.0.zeroize();
-    }
-}
-
-impl fmt::Debug for FlowSelectorBinding {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("FlowSelectorBinding(..)")
-    }
-}
-
+pub type FlowSelectorBinding = FlowBinding<SelectorBindingRole>;
 /// Keyed verifier proof bound into a magic-link confirmation flow.
-pub struct FlowVerifierBinding([u8; MAGIC_LINK_FLOW_BINDING_BYTES]);
+pub type FlowVerifierBinding = FlowBinding<VerifierBindingRole>;
+/// Keyed intended-account identity bound into a magic-link confirmation flow.
+pub type FlowAccountBinding = FlowBinding<AccountBindingRole>;
 
-impl FlowVerifierBinding {
-    /// Wrap a purpose-separated 256-bit verifier binding.
+impl<Role: FlowBindingRole> FlowBinding<Role> {
+    /// Wrap a purpose-separated 256-bit binding.
     #[must_use]
     pub fn new(bytes: [u8; MAGIC_LINK_FLOW_BINDING_BYTES]) -> Self {
-        Self(bytes)
+        Self {
+            bytes,
+            _role: PhantomData,
+        }
     }
 
-    /// Compare two keyed verifier bindings in constant time.
+    /// Compare two same-role bindings in constant time.
     #[must_use]
     pub fn matches_constant_time(&self, other: &Self) -> bool {
-        self.0.ct_eq(&other.0).unwrap_u8() == 1
+        self.bytes.ct_eq(&other.bytes).unwrap_u8() == 1
     }
 
     /// Borrow the sensitive binding bytes to rebuild the canonical storage
     /// form. Do not log or compare these bytes directly.
     #[must_use]
     pub(crate) fn as_sensitive_bytes(&self) -> &[u8; MAGIC_LINK_FLOW_BINDING_BYTES] {
-        &self.0
+        &self.bytes
     }
 }
 
-impl Drop for FlowVerifierBinding {
+impl<Role: FlowBindingRole> Drop for FlowBinding<Role> {
     fn drop(&mut self) {
-        self.0.zeroize();
+        self.bytes.zeroize();
     }
 }
 
-impl fmt::Debug for FlowVerifierBinding {
+impl<Role: FlowBindingRole> fmt::Debug for FlowBinding<Role> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("FlowVerifierBinding(..)")
-    }
-}
-
-/// Keyed intended-account identity bound into a magic-link confirmation flow.
-pub struct FlowAccountBinding([u8; MAGIC_LINK_FLOW_BINDING_BYTES]);
-
-impl FlowAccountBinding {
-    /// Wrap a purpose-separated 256-bit account binding.
-    #[must_use]
-    pub fn new(bytes: [u8; MAGIC_LINK_FLOW_BINDING_BYTES]) -> Self {
-        Self(bytes)
-    }
-
-    /// Compare two keyed account bindings in constant time.
-    #[must_use]
-    pub fn matches_constant_time(&self, other: &Self) -> bool {
-        self.0.ct_eq(&other.0).unwrap_u8() == 1
-    }
-}
-
-impl Drop for FlowAccountBinding {
-    fn drop(&mut self) {
-        self.0.zeroize();
-    }
-}
-
-impl fmt::Debug for FlowAccountBinding {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("FlowAccountBinding(..)")
+        f.write_str(Role::DEBUG_NAME)
     }
 }
 
@@ -421,9 +404,9 @@ fn encode_flow_body(
 ) -> Vec<u8> {
     let mut out = Vec::with_capacity(FLOW_BODY_BYTES);
     out.push(FLOW_BODY_V1);
-    out.extend_from_slice(&bindings.selector.0);
-    out.extend_from_slice(&bindings.verifier.0);
-    out.extend_from_slice(&bindings.account.0);
+    out.extend_from_slice(&bindings.selector.bytes);
+    out.extend_from_slice(&bindings.verifier.bytes);
+    out.extend_from_slice(&bindings.account.bytes);
     out.extend_from_slice(&confirmation.0);
     out.extend_from_slice(&bindings.expires_at_unix.to_be_bytes());
     out
