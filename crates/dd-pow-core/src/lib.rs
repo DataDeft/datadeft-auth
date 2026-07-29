@@ -1,10 +1,19 @@
 #![forbid(unsafe_code)]
 
-//! `dd-pow-core` — pure, IO-free proof-of-work challenge mint/verify.
+//! `dd-pow-core` — pure, IO-free proof-of-work challenge mint/verify plus the
+//! `ct_pow` proof cookie that records a successful solve.
 //!
-//! Deterministic: the caller injects clock, entropy, difficulty, max age, and
-//! secret. This crate never logs, never reads the clock, and never generates
-//! randomness, so every function is fully testable.
+//! Deterministic: the caller injects clock, entropy, difficulty, max age,
+//! secret, and (for the proof cookie) a CSPRNG and keyring. This crate never
+//! logs, never reads the clock, and never generates randomness on its own, so
+//! every function is fully testable.
+//!
+//! # Proof cookie
+//!
+//! [`mint_pow_proof_cookie`] / [`verify_pow_proof_cookie`] turn a
+//! [`Verified`] solve into the stateless, encrypted [`PowProofCookie`] value
+//! that upper layers set as `ct_pow`. The purpose separation and lifetime
+//! policy live on [`PowProofCookie`].
 //!
 //! # Wire contract
 //!
@@ -49,6 +58,7 @@
 mod challenge;
 mod error;
 mod ops;
+mod proof_cookie;
 mod secret;
 
 pub use challenge::{Challenge, Solution, Verified};
@@ -56,6 +66,11 @@ pub use error::PowError;
 pub use ops::{
     MAX_DIFFICULTY, MAX_FUTURE_SKEW_SECS, RECOMMENDED_PRODUCTION_MIN_DIFFICULTY, mint_challenge,
     verify_solution,
+};
+pub use proof_cookie::{
+    DEFAULT_POW_PROOF_TTL_SECS, HKDF_INFO_POW_PROOF_COOKIE_V1, POW_PROOF_MAX_AGE_SECS,
+    PowProofCookie, PowProofCookieValue, TOKEN_TYPE_POW_PROOF_COOKIE_V1, VerifiedPowProof,
+    mint_pow_proof_cookie, verify_pow_proof_cookie,
 };
 pub use secret::PowSecret;
 
