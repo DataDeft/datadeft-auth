@@ -604,6 +604,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "dd-pow-axum"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "blake3",
+ "dd-auth-token-core",
+ "dd-pow-core",
+ "hex",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "dd-pow-core"
 version = "0.1.0"
 dependencies = [
