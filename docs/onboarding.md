@@ -11,7 +11,7 @@
 | In-memory fakes | Ready for tests | Use `FakeDynamoDbAuthStore` and `FakeMagicLinkOutbox`. |
 | DynamoDB and SES | Ready for test deployment | Provision table, IAM, TTL, encryption, SES identity, and live tests. |
 | Session validation | Ready | Validate protected requests. Revoke server state on logout. |
-| PoW Rust core | Ready as a primitive | Build the endpoint, policy, replay store, and browser path. |
+| PoW Rust admission | Ready | Wire the `dd-pow-axum` challenge and validate glue into your routes. Build the browser path. |
 | Browser PoW client | Not ready | Build `dd-protect-client` or an app-owned solver. |
 | Country-aware PoW | Not ready | Build upstream policy. Never lower below the floor. |
 | Example app | Ready | Start with `examples/axum-magic-link`. |
@@ -62,8 +62,8 @@ PoW is optional app admission. Complete the PoW backlog before you require PoW.
 | MVP-006 | P1 | Decision needed | Choose durable outbox or document inline SES. |
 | MVP-007 | P1 | Decision needed | Accept plaintext email storage or add app encryption. |
 | MVP-010 | PoW | Not ready | Build and vector-test the browser worker. |
-| MVP-011 | PoW | Not ready | Build challenge endpoint and admission middleware. |
-| MVP-012 | PoW | Not ready | Build proof-cookie and replay lifecycle. |
+| MVP-011 | PoW | Ready | Wire the `dd-pow-axum` challenge and validate glue into routes. |
+| MVP-012 | PoW | Done | Ship the `ct_pow` proof cookie (`dd-pow-core`, `dd-pow-axum`). Stateless, reusable within its TTL. |
 | MVP-013 | PoW | Not ready | Define trusted country source and difficulty policy. |
 | MVP-014 | P1 | Done | Keep session country as an opportunistic lock. |
 | MVP-020 | Assurance | Future | Add TLA+ models and CI checks. |

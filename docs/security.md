@@ -126,7 +126,7 @@ Rules:
 | Magic-link flow cookie | Sensitive | 5 minutes |
 | PoW challenge token | MACed | 5 minutes |
 | PoW solution | No long-term secret | One request |
-| PoW proof cookie | Sensitive | 10 minutes |
+| PoW proof cookie | Sensitive | 3 hours (default) |
 | Session ID or token | Yes | Session TTL |
 | Session cookie | Yes | 24 hours idle, 30 days absolute |
 | Key ID | No | No independent TTL |
@@ -140,7 +140,7 @@ Rules:
 | `magic_link_ttl` | 10 minutes |
 | `magic_link_flow_ttl` | 5 minutes |
 | `pow_challenge_ttl` | 5 minutes |
-| `pow_proof_cookie_ttl` | 10 minutes |
+| `pow_proof_cookie_ttl` | 3 hours default, 24-hour ceiling |
 | `session_idle_ttl` | 24 hours |
 | `session_absolute_ttl` | 30 days |
 | `magic_link_cleanup_grace` | 24 hours after expiry |
@@ -170,8 +170,9 @@ Invalid token states include expired, consumed, missing, malformed, and invalid 
 - Bind proof cookies to the challenge and auth flow.
 - Keep PoW admission outside magic-link APIs.
 - Treat proof cookies as short-lived flow values.
-- Prefer single-use proof cookies.
-- Enforce a small use cap when reuse is necessary.
+- Bound the proof-cookie lifetime with a configurable TTL under a hard ceiling.
+- Reuse the proof cookie within its lifetime. The shipped cookie is stateless.
+- Add single-use replay capping only where a deployment needs it.
 - Clear proof cookies on auth success.
 - Clear proof cookies on terminal auth failure.
 
