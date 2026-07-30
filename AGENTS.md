@@ -62,7 +62,7 @@ examples/*             -> adapter and service crates as needed
 - Confirmation pages must identify the account, prevent framing, and submit same-origin `POST`; redirects after consume must be fixed, same-origin, or allowlisted.
 - Cookie helpers must default to normal lower `snake_case` names, `HttpOnly`, `Secure` outside explicit local development, conservative `SameSite`, host-only scope, explicit `Path=/` for primary session cookies, narrow auth paths for temporary helper cookies where practical, and explicit TTL.
 - Clear temporary magic-link flow cookies on successful authentication and terminal failures. Independent PoW middleware owns its own proof-cookie lifecycle.
-- Use the documented TTL baseline unless the consuming app explicitly configures stricter values: magic link 10m, flow 5m, PoW challenge 5m, PoW proof cookie 10m, session idle 24h, session absolute 30d, cleanup grace 24h.
+- Use the documented TTL baseline unless the consuming app explicitly configures stricter values: magic link 10m, flow 5m, PoW challenge 2m, PoW proof cookie 3h, session idle 24h, session absolute 30d, cleanup grace 24h.
 - Generate bearer secrets and nonces from CSPRNG entropy outside tests; enforce the documented entropy minimums for selectors, verifiers, session IDs/tokens, flow nonces, and PoW challenge nonces.
 - Magic-link selectors and verifiers are two independent CSPRNG draws; neither may be derived from the other.
 - The GET landing route is throttled by a keyed selector and does dummy work on miss like the consume path — no unthrottled read oracle.

@@ -124,7 +124,7 @@ Rules:
 | Magic-link selector | Lookup only | 10 minutes |
 | Magic-link verifier | Yes | 10 minutes |
 | Magic-link flow cookie | Sensitive | 5 minutes |
-| PoW challenge token | MACed | 5 minutes |
+| PoW challenge token | MACed | 2 minutes |
 | PoW solution | No long-term secret | One request |
 | PoW proof cookie | Sensitive | 3 hours (default) |
 | Session ID or token | Yes | Session TTL |
@@ -139,7 +139,7 @@ Rules:
 | --- | ---: |
 | `magic_link_ttl` | 10 minutes |
 | `magic_link_flow_ttl` | 5 minutes |
-| `pow_challenge_ttl` | 5 minutes |
+| `pow_challenge_ttl` | 2 minutes |
 | `pow_proof_cookie_ttl` | 3 hours default, 24-hour ceiling |
 | `session_idle_ttl` | 24 hours |
 | `session_absolute_ttl` | 30 days |
