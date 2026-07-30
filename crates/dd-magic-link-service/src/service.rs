@@ -7,14 +7,14 @@
 
 use dd_auth_token_core::cookie::mint_bound_cookie;
 use dd_auth_token_core::keyring::KeyRing;
-use dd_magic_link_core::flow_cookie::{
-    MagicLinkFlowBindings, MagicLinkFlowCookie, VerifiedMagicLinkFlow, mint_magic_link_flow,
-    verify_magic_link_flow,
+use dd_magic_link_core::confirm_cookie::{
+    MagicLinkConfirmBindings, MagicLinkConfirmCookie, VerifiedMagicLinkConfirm,
+    mint_magic_link_confirm, verify_magic_link_confirm,
 };
 use dd_magic_link_core::{
-    LookupHmac, LookupHmacKey, MagicLinkToken, VerifierHash, email_lookup_hmac,
-    flow_account_binding, flow_selector_binding, flow_verifier_binding, selector_lookup_hmac,
-    selector_lookup_hmac_from_flow_binding, verifier_hash, verifier_hash_from_flow_binding,
+    LookupHmac, LookupHmacKey, MagicLinkToken, VerifierHash, confirm_account_binding,
+    confirm_selector_binding, confirm_verifier_binding, email_lookup_hmac, selector_lookup_hmac,
+    selector_lookup_hmac_from_confirm_binding, verifier_hash, verifier_hash_from_confirm_binding,
 };
 use futures_util::future::join_all;
 use rand_core::{CryptoRng, RngCore};
@@ -130,7 +130,7 @@ pub struct MagicLinkFlowService<'a, Authentication, Sessions, Limiter, ServiceCl
     pub clock: &'a ServiceClock,
     pub rng: &'a mut Rng,
     pub lookup_hmac_key: &'a LookupHmacKey,
-    pub flow_keyring: &'a KeyRing<MagicLinkFlowCookie>,
+    pub confirm_keyring: &'a KeyRing<MagicLinkConfirmCookie>,
     pub session_keyring: &'a KeyRing<SessionCookie>,
     pub config: MagicLinkServiceConfig,
 }
@@ -193,34 +193,34 @@ where
 
         let email_lookup = email_lookup_hmac(self.lookup_hmac_key, &candidate.email)
             .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
-        let selector_binding = flow_selector_binding(&selector_lookup)
+        let selector_binding = confirm_selector_binding(&selector_lookup)
             .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
-        let verifier_binding = flow_verifier_binding(&presented_verifier_hash)
+        let verifier_binding = confirm_verifier_binding(&presented_verifier_hash)
             .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
-        let account_binding = flow_account_binding(&email_lookup)
+        let account_binding = confirm_account_binding(&email_lookup)
             .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
 
         let configured_expiry = now_unix
             .checked_add(self.config.magic_link_flow_ttl_secs)
             .ok_or_else(|| flow_error(MagicLinkServiceError::Internal))?;
-        let flow_expiry = candidate.expires_at_unix.min(configured_expiry);
-        if flow_expiry <= now_unix {
+        let confirm_expiry = candidate.expires_at_unix.min(configured_expiry);
+        if confirm_expiry <= now_unix {
             return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
         }
-        let flow_expiry_u32 =
-            u32::try_from(flow_expiry).map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
-        let cookie_max_age_secs = flow_expiry
+        let confirm_expiry_u32 = u32::try_from(confirm_expiry)
+            .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+        let cookie_max_age_secs = confirm_expiry
             .checked_sub(now_unix)
             .ok_or_else(|| flow_error(MagicLinkServiceError::Internal))?;
         let account_identity = MagicLinkAccountIdentity::from_normalized_email(&candidate.email);
-        let flow = mint_magic_link_flow(
-            MagicLinkFlowBindings::new(
+        let flow = mint_magic_link_confirm(
+            MagicLinkConfirmBindings::new(
                 selector_binding,
                 verifier_binding,
                 account_binding,
-                flow_expiry_u32,
+                confirm_expiry_u32,
             ),
-            self.flow_keyring,
+            self.confirm_keyring,
             self.rng,
             now_unix,
         )
@@ -248,17 +248,17 @@ where
         let country = mint_country(&self.config, command.request_country())
             .map_err(MagicLinkFlowError::from_public_error)?;
 
-        let verified = verify_magic_link_flow(
-            command.flow_cookie(),
+        let verified = verify_magic_link_confirm(
+            command.confirm_cookie(),
             command.confirmation(),
-            self.flow_keyring,
+            self.confirm_keyring,
             now_unix,
             self.config.magic_link_flow_ttl_secs,
         )
         .map_err(|_| flow_error(MagicLinkServiceError::MagicLinkUnavailable))?;
 
-        let selector_lookup = selector_lookup_hmac_from_flow_binding(verified.selector());
-        let presented_verifier_hash = verifier_hash_from_flow_binding(verified.verifier());
+        let selector_lookup = selector_lookup_hmac_from_confirm_binding(verified.selector());
+        let presented_verifier_hash = verifier_hash_from_confirm_binding(verified.verifier());
         if consume_limits_deny(
             self.limiter,
             &self.config,
@@ -378,7 +378,7 @@ async fn load_scanner_authentication_state<Authentication: MagicLinkAuthenticati
     config: &MagicLinkServiceConfig,
     selector_lookup: &LookupHmac,
     presented_verifier_hash: &VerifierHash,
-    expected_account: &dd_magic_link_core::flow_cookie::FlowAccountBinding,
+    expected_account: &dd_magic_link_core::confirm_cookie::ConfirmAccountBinding,
     now_unix: u64,
 ) -> Result<(MagicLinkAuthenticationCandidate, Option<UserRecord>), MagicLinkServiceError> {
     let candidate = authentication
@@ -389,7 +389,7 @@ async fn load_scanner_authentication_state<Authentication: MagicLinkAuthenticati
     let email_lookup = email_lookup_hmac(lookup_hmac_key, &candidate.email)
         .map_err(|_| MagicLinkServiceError::Internal)?;
     let candidate_account =
-        flow_account_binding(&email_lookup).map_err(|_| MagicLinkServiceError::Internal)?;
+        confirm_account_binding(&email_lookup).map_err(|_| MagicLinkServiceError::Internal)?;
     if !expected_account.matches_constant_time(&candidate_account) {
         return Err(MagicLinkServiceError::MagicLinkUnavailable);
     }
@@ -410,7 +410,7 @@ async fn authenticate_scanner_flow<Authentication, Rng>(
     config: &MagicLinkServiceConfig,
     selector_lookup: &LookupHmac,
     presented_verifier_hash: &VerifierHash,
-    verified: &VerifiedMagicLinkFlow,
+    verified: &VerifiedMagicLinkConfirm,
     now_unix: u64,
     country: Option<String>,
 ) -> Result<MagicLinkAuthenticationOutcome, MagicLinkServiceError>

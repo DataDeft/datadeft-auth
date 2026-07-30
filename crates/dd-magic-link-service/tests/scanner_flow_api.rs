@@ -52,7 +52,7 @@ fn final_scanner_flow_surface_is_available() {
     assert!(request.terms_accepted() && request.privacy_accepted());
     let landing = BeginMagicLinkLandingCommand::new("opaque-token-candidate".to_owned());
     let confirmation = ConfirmMagicLinkFlowCommand::new(
-        "opaque-flow-cookie".to_owned(),
+        "opaque-confirm-cookie".to_owned(),
         "opaque-confirmation".to_owned(),
         Some("HU".to_owned()),
     )

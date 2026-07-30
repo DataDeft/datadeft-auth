@@ -25,15 +25,15 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use dd_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
 use dd_magic_link_axum::{
-    APPLICATION_JSON, FlowCookieConfig, MagicLinkFlowResponseError, MagicLinkHttpError,
+    APPLICATION_JSON, ConfirmCookieConfig, MagicLinkFlowResponseError, MagicLinkHttpError,
     MagicLinkRequestJson, MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect,
     SessionCookieConfig, apply_magic_link_security_headers, authenticate_session,
-    clear_flow_cookie_header, clear_session_cookie_header, generic_accepted_response, guarded_body,
-    magic_link_confirmation, magic_link_landing, viewer_country_from,
+    clear_confirm_cookie_header, clear_session_cookie_header, generic_accepted_response,
+    guarded_body, magic_link_confirmation, magic_link_landing, viewer_country_from,
 };
 use dd_magic_link_service::{
     Clock, DependencyError, KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey,
-    MagicLinkFlowCookie, MagicLinkFlowService, MagicLinkRequestService, MagicLinkServiceConfig,
+    MagicLinkConfirmCookie, MagicLinkFlowService, MagicLinkRequestService, MagicLinkServiceConfig,
     RootSecret, SessionCookie, validate_session,
 };
 use dd_pow_core::{Challenge, PowSecret, Solution, mint_challenge, verify_solution};
@@ -94,7 +94,7 @@ struct AppState {
     config: MagicLinkServiceConfig,
     http_config: Arc<MagicLinkScannerFlowConfig>,
     lookup_hmac_key: Arc<LookupHmacKey>,
-    flow_keyring: Arc<KeyRing<MagicLinkFlowCookie>>,
+    confirm_keyring: Arc<KeyRing<MagicLinkConfirmCookie>>,
     session_keyring: Arc<KeyRing<SessionCookie>>,
     pow_secret: Arc<PowSecret>,
 }
@@ -115,7 +115,7 @@ fn build_state() -> AppResult<AppState> {
     config.validate()?;
 
     let lookup_hmac_key = Arc::new(LookupHmacKey::new(random_32()?));
-    let flow_keyring = Arc::new(development_keyring::<MagicLinkFlowCookie>(
+    let confirm_keyring = Arc::new(development_keyring::<MagicLinkConfirmCookie>(
         "ml_flow_active",
         now_unix,
     )?);
@@ -131,7 +131,7 @@ fn build_state() -> AppResult<AppState> {
             .map_err(|_| SetupError("invalid magic-link POST action"))?,
         SameOriginPostConfig::parse(LOCAL_ORIGIN)?,
         session_cookie,
-        FlowCookieConfig::local_development_defaults(),
+        ConfirmCookieConfig::local_development_defaults(),
     )?;
 
     Ok(AppState {
@@ -141,7 +141,7 @@ fn build_state() -> AppResult<AppState> {
         config,
         http_config: Arc::new(http_config),
         lookup_hmac_key,
-        flow_keyring,
+        confirm_keyring,
         session_keyring,
         pow_secret,
     })
@@ -252,7 +252,7 @@ async fn landing_route(State(state): State<AppState>, request: Request) -> Respo
             clock: &LocalClock,
             rng: &mut rng,
             lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-            flow_keyring: state.flow_keyring.as_ref(),
+            confirm_keyring: state.confirm_keyring.as_ref(),
             session_keyring: state.session_keyring.as_ref(),
             config: state.config.clone(),
         };
@@ -271,7 +271,7 @@ async fn landing_route(State(state): State<AppState>, request: Request) -> Respo
             let mut response = Html(page).into_response();
             response
                 .headers_mut()
-                .append(SET_COOKIE, landing.flow_cookie);
+                .append(SET_COOKIE, landing.confirm_cookie);
             apply_magic_link_security_headers(response.headers_mut());
             response
         }
@@ -305,7 +305,7 @@ async fn confirm_route(State(state): State<AppState>, request: Request) -> Respo
             clock: &LocalClock,
             rng: &mut rng,
             lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-            flow_keyring: state.flow_keyring.as_ref(),
+            confirm_keyring: state.confirm_keyring.as_ref(),
             session_keyring: state.session_keyring.as_ref(),
             config: state.config.clone(),
         };
@@ -325,15 +325,16 @@ async fn confirm_route(State(state): State<AppState>, request: Request) -> Respo
                 .append(SET_COOKIE, confirmed.session_cookie);
             response
                 .headers_mut()
-                .append(SET_COOKIE, confirmed.clear_flow_cookie);
+                .append(SET_COOKIE, confirmed.clear_confirm_cookie);
             apply_magic_link_security_headers(response.headers_mut());
             response
         }
         Err(MagicLinkFlowResponseError::Rejected) => {
             let mut response = scanner_page(StatusCode::BAD_REQUEST, "Invalid confirmation.");
-            response
-                .headers_mut()
-                .append(SET_COOKIE, clear_flow_cookie_header(config.flow_cookie()));
+            response.headers_mut().append(
+                SET_COOKIE,
+                clear_confirm_cookie_header(config.confirm_cookie()),
+            );
             response
         }
         Err(MagicLinkFlowResponseError::Unavailable) => scanner_page(
@@ -426,7 +427,7 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
         clock: &LocalClock,
         rng: &mut rng,
         lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-        flow_keyring: state.flow_keyring.as_ref(),
+        confirm_keyring: state.confirm_keyring.as_ref(),
         session_keyring: state.session_keyring.as_ref(),
         config: state.config.clone(),
     };

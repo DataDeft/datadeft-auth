@@ -47,8 +47,8 @@ PoW admission          -> dd-pow-core
 8. The landing route reads repository state.
 9. The landing route compares verifier material in constant time.
 10. The landing route does dummy work on a miss.
-11. The landing route mints a five-minute flow cookie.
-12. The flow cookie binds selector, verifier proof, account, expiry, and nonce.
+11. The landing route mints a five-minute confirm cookie.
+12. The confirm cookie binds selector, verifier proof, account, expiry, and nonce.
 13. The `GET` landing route never consumes the challenge.
 14. The page shows the account and asks for a same-origin `POST`.
 15. The `POST` route validates the flow state.
@@ -107,7 +107,7 @@ PoW stays independent from magic-link. Magic-link does not carry a PoW result, I
 
 | Purpose | Mechanism |
 | --- | --- |
-| Session and flow cookies | XChaCha20-Poly1305 |
+| Session and confirm cookies | XChaCha20-Poly1305 |
 | Key derivation | HKDF-SHA-256 with purpose and key ID |
 | Magic-link lookup | HMAC-SHA-256 |
 | Magic-link entropy | 128-bit selector and 256-bit verifier |

@@ -10,9 +10,11 @@ use sha2::Sha256;
 use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 
+use crate::confirm_cookie::{
+    ConfirmAccountBinding, ConfirmSelectorBinding, ConfirmVerifierBinding,
+};
 use crate::email::NormalizedEmail;
 use crate::error::MagicLinkError;
-use crate::flow_cookie::{FlowAccountBinding, FlowSelectorBinding, FlowVerifierBinding};
 use crate::magic_link::{MagicLinkSelector, MagicLinkVerifier, is_lower_hex_len};
 
 type HmacSha256 = Hmac<Sha256>;
@@ -145,16 +147,18 @@ pub fn verifier_hash(
 }
 
 /// Convert a canonical selector lookup HMAC into its flow binding.
-pub fn flow_selector_binding(lookup: &LookupHmac) -> Result<FlowSelectorBinding, MagicLinkError> {
+pub fn confirm_selector_binding(
+    lookup: &LookupHmac,
+) -> Result<ConfirmSelectorBinding, MagicLinkError> {
     let mut decoded = decode_canonical_hmac(lookup.as_storage_value(), SELECTOR_LOOKUP_PREFIX)?;
-    let binding = FlowSelectorBinding::new(decoded);
+    let binding = ConfirmSelectorBinding::new(decoded);
     decoded.zeroize();
     Ok(binding)
 }
 
-/// Reconstruct the canonical selector lookup HMAC authenticated by a flow cookie.
+/// Reconstruct the canonical selector lookup HMAC authenticated by a confirm cookie.
 #[must_use]
-pub fn selector_lookup_hmac_from_flow_binding(binding: &FlowSelectorBinding) -> LookupHmac {
+pub fn selector_lookup_hmac_from_confirm_binding(binding: &ConfirmSelectorBinding) -> LookupHmac {
     LookupHmac(format!(
         "{SELECTOR_LOOKUP_PREFIX}_{}",
         hex::encode(binding.as_sensitive_bytes())
@@ -162,16 +166,18 @@ pub fn selector_lookup_hmac_from_flow_binding(binding: &FlowSelectorBinding) -> 
 }
 
 /// Convert a canonical verifier hash into its flow binding.
-pub fn flow_verifier_binding(hash: &VerifierHash) -> Result<FlowVerifierBinding, MagicLinkError> {
+pub fn confirm_verifier_binding(
+    hash: &VerifierHash,
+) -> Result<ConfirmVerifierBinding, MagicLinkError> {
     let mut decoded = decode_canonical_hmac(hash.as_storage_value(), VERIFIER_HASH_PREFIX)?;
-    let binding = FlowVerifierBinding::new(decoded);
+    let binding = ConfirmVerifierBinding::new(decoded);
     decoded.zeroize();
     Ok(binding)
 }
 
-/// Reconstruct the canonical verifier hash authenticated by a flow cookie.
+/// Reconstruct the canonical verifier hash authenticated by a confirm cookie.
 #[must_use]
-pub fn verifier_hash_from_flow_binding(binding: &FlowVerifierBinding) -> VerifierHash {
+pub fn verifier_hash_from_confirm_binding(binding: &ConfirmVerifierBinding) -> VerifierHash {
     VerifierHash(format!(
         "{VERIFIER_HASH_PREFIX}_{}",
         hex::encode(binding.as_sensitive_bytes())
@@ -179,9 +185,11 @@ pub fn verifier_hash_from_flow_binding(binding: &FlowVerifierBinding) -> Verifie
 }
 
 /// Convert a canonical account lookup HMAC into its flow binding.
-pub fn flow_account_binding(lookup: &LookupHmac) -> Result<FlowAccountBinding, MagicLinkError> {
+pub fn confirm_account_binding(
+    lookup: &LookupHmac,
+) -> Result<ConfirmAccountBinding, MagicLinkError> {
     let mut decoded = decode_canonical_hmac(lookup.as_storage_value(), EMAIL_LOOKUP_PREFIX)?;
-    let binding = FlowAccountBinding::new(decoded);
+    let binding = ConfirmAccountBinding::new(decoded);
     decoded.zeroize();
     Ok(binding)
 }

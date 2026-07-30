@@ -8,7 +8,7 @@ use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::Response;
 use dd_auth_token_core::keyring::{KeyPurpose, KeyRing};
 use dd_auth_token_core::test_support::{CountingRng, test_keyring_with_windows};
-use dd_magic_link_core::{LookupHmac, LookupHmacKey, MagicLinkFlowCookie, NormalizedEmail};
+use dd_magic_link_core::{LookupHmac, LookupHmacKey, MagicLinkConfirmCookie, NormalizedEmail};
 use dd_magic_link_service::{
     BeginMagicLinkLandingCommand, Clock, CommitMagicLinkAuthentication,
     CommitMagicLinkAuthenticationError, DependencyError, MagicLinkAuthenticationCandidate,
@@ -18,7 +18,7 @@ use dd_magic_link_service::{
 };
 
 use crate::{
-    FlowCookieConfig, MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect,
+    ConfirmCookieConfig, MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect,
     SessionCookieConfig,
 };
 
@@ -31,7 +31,7 @@ pub(crate) fn scanner_config() -> MagicLinkScannerFlowConfig {
         SameOriginRedirect::parse("/auth/magic-link/confirm").expect("post action"),
         SameOriginPostConfig::parse("https://example.test").expect("origin"),
         SessionCookieConfig::production(&policy()).expect("session policy"),
-        FlowCookieConfig::production_defaults(),
+        ConfirmCookieConfig::production_defaults(),
     )
     .expect("scanner config")
 }
@@ -42,7 +42,7 @@ pub(crate) fn post_request(content_type: &'static str, body: impl Into<Body>) ->
         .uri("/auth/magic-link/confirm")
         .header(CONTENT_TYPE, content_type)
         .header(ORIGIN, "https://example.test")
-        .header(COOKIE, "dd_auth_flow=flow-cookie")
+        .header(COOKIE, "dd_auth_confirm=confirm-cookie")
         .body(body.into())
         .expect("request builds")
 }
@@ -144,7 +144,7 @@ pub(crate) async fn fixture_flow_error(kind: FixtureFlowError) -> MagicLinkFlowE
     };
     let mut rng = CountingRng::starting_at(0);
     let lookup_key = LookupHmacKey::new([0x24; 32]);
-    let flow_keyring = fixture_keyring::<MagicLinkFlowCookie>();
+    let confirm_keyring = fixture_keyring::<MagicLinkConfirmCookie>();
     let session_keyring = fixture_keyring::<SessionCookie>();
     let mut service_config = policy();
     if matches!(kind, FixtureFlowError::Internal) {
@@ -157,7 +157,7 @@ pub(crate) async fn fixture_flow_error(kind: FixtureFlowError) -> MagicLinkFlowE
         clock: &clock,
         rng: &mut rng,
         lookup_hmac_key: &lookup_key,
-        flow_keyring: &flow_keyring,
+        confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
         config: service_config,
     };

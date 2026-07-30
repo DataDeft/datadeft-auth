@@ -20,7 +20,7 @@ fn secret_json(kid: &str, base: u8, mint_until_unix: u64, verify_until_unix: u64
   "magic_link_lookup_hmac_b64": "{}",
   "aws_storage_hmac_b64": "{}",
   "session_cookie_root_b64": "{}",
-  "magic_link_flow_cookie_root_b64": "{}"
+  "magic_link_confirm_cookie_root_b64": "{}"
 }}"#,
         key(base),
         key(base + 1),
@@ -72,7 +72,7 @@ fn loaded_auth_secrets_builds_active_and_previous_cookie_keyrings() {
         .expect("active session key");
     assert_eq!(active_session.kid().as_str(), "active");
     let active_flow = loaded
-        .flow_keyring
+        .confirm_keyring
         .minting_key_at(1_000)
         .expect("active flow key");
     assert_eq!(active_flow.kid().as_str(), "active");
@@ -86,7 +86,7 @@ fn loaded_auth_secrets_builds_active_and_previous_cookie_keyrings() {
     );
     assert!(
         loaded
-            .flow_keyring
+            .confirm_keyring
             .verification_key_at(&previous_kid, 1_000)
             .is_ok()
     );

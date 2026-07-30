@@ -4,7 +4,7 @@ use core::fmt;
 
 use dd_auth_token_core::cookie::MaxAge;
 use dd_auth_token_core::keyring::KeyPurpose;
-use dd_magic_link_core::flow_cookie::MagicLinkFlowCookie;
+use dd_magic_link_core::confirm_cookie::MagicLinkConfirmCookie;
 
 use crate::types::SessionCookie;
 
@@ -126,7 +126,7 @@ impl MagicLinkServiceConfig {
             terms_version: terms_version.into(),
             privacy_version: privacy_version.into(),
             magic_link_ttl_secs: DEFAULT_MAGIC_LINK_TTL_SECS,
-            magic_link_flow_ttl_secs: MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS,
+            magic_link_flow_ttl_secs: MagicLinkConfirmCookie::MAX_ABSOLUTE_AGE_SECS,
             session_idle_secs: DEFAULT_SESSION_IDLE_SECS,
             session_absolute_secs: DEFAULT_SESSION_ABSOLUTE_SECS,
             enforce_country: false,
@@ -145,7 +145,7 @@ impl MagicLinkServiceConfig {
         if self.magic_link_flow_ttl_secs == 0 {
             return Err(MagicLinkConfigError::ZeroMagicLinkFlowTtl);
         }
-        if self.magic_link_flow_ttl_secs > MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS {
+        if self.magic_link_flow_ttl_secs > MagicLinkConfirmCookie::MAX_ABSOLUTE_AGE_SECS {
             return Err(MagicLinkConfigError::MagicLinkFlowTtlExceedsCookieCap);
         }
         self.session_max_age()?;

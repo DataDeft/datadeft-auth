@@ -1,11 +1,11 @@
-//! Outgoing `Set-Cookie` policy: validated session and flow cookie
+//! Outgoing `Set-Cookie` policy: validated session and confirm cookie
 //! configurations plus set/clear header construction.
 
 use core::fmt;
 
 use axum::http::HeaderValue;
 use dd_magic_link_service::{
-    KeyPurpose, MagicLinkConfigError, MagicLinkFlowCookie, MagicLinkServiceConfig,
+    KeyPurpose, MagicLinkConfigError, MagicLinkConfirmCookie, MagicLinkServiceConfig,
 };
 
 use crate::cookie_parse::{MAX_SELECTED_COOKIE_VALUE_BYTES, is_cookie_octet};
@@ -16,16 +16,16 @@ pub const DEFAULT_SESSION_COOKIE_NAME: &str = "dd_session";
 /// Primary session cookies are app-wide by default.
 pub const DEFAULT_SESSION_COOKIE_PATH: &str = "/";
 
-const DEFAULT_FLOW_COOKIE_NAME: &str = "dd_auth_flow";
-const DEFAULT_FLOW_COOKIE_PATH: &str = "/auth";
+const DEFAULT_CONFIRM_COOKIE_NAME: &str = "dd_auth_confirm";
+const DEFAULT_CONFIRM_COOKIE_PATH: &str = "/auth";
 const COOKIE_EPOCH: &str = "Thu, 01 Jan 1970 00:00:00 GMT";
 
 /// Precomputed clear headers for the default cookie shapes, so the infallible
 /// `*_defaults()` constructors need no fallible header build. Each must stay
 /// byte-for-byte in lockstep with [`cookie_header`] output — pinned by the
 /// `precomputed_clear_headers_match_freshly_built_ones` test.
-const DEFAULT_FLOW_CLEAR_HEADER: &str = "dd_auth_flow=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
-const DEFAULT_FLOW_CLEAR_HEADER_INSECURE: &str = "dd_auth_flow=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
+const DEFAULT_CONFIRM_CLEAR_HEADER: &str = "dd_auth_confirm=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
+const DEFAULT_CONFIRM_CLEAR_HEADER_INSECURE: &str = "dd_auth_confirm=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
 const DEFAULT_SESSION_CLEAR_HEADER: &str = "dd_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
 const DEFAULT_SESSION_CLEAR_HEADER_INSECURE: &str =
     "dd_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
@@ -68,9 +68,9 @@ impl fmt::Display for CookieConfigError {
 
 impl std::error::Error for CookieConfigError {}
 
-/// Validated host-only flow cookie policy.
+/// Validated host-only confirm cookie policy.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct FlowCookieConfig {
+pub struct ConfirmCookieConfig {
     name: String,
     path: String,
     secure: bool,
@@ -78,7 +78,7 @@ pub struct FlowCookieConfig {
     clear_header: HeaderValue,
 }
 
-impl FlowCookieConfig {
+impl ConfirmCookieConfig {
     pub fn production(
         name: impl Into<String>,
         path: impl Into<String>,
@@ -107,24 +107,24 @@ impl FlowCookieConfig {
         })
     }
 
-    /// Default production flow-cookie policy (`dd_auth_flow`, `/auth`, Secure).
+    /// Default production confirm-cookie policy (`dd_auth_confirm`, `/auth`, Secure).
     #[must_use]
     pub fn production_defaults() -> Self {
         Self {
-            name: DEFAULT_FLOW_COOKIE_NAME.to_owned(),
-            path: DEFAULT_FLOW_COOKIE_PATH.to_owned(),
+            name: DEFAULT_CONFIRM_COOKIE_NAME.to_owned(),
+            path: DEFAULT_CONFIRM_COOKIE_PATH.to_owned(),
             secure: true,
             same_site: SameSite::Lax,
-            clear_header: HeaderValue::from_static(DEFAULT_FLOW_CLEAR_HEADER),
+            clear_header: HeaderValue::from_static(DEFAULT_CONFIRM_CLEAR_HEADER),
         }
     }
 
-    /// Default local-HTTP flow-cookie policy (no `Secure` attribute).
+    /// Default local-HTTP confirm-cookie policy (no `Secure` attribute).
     #[must_use]
     pub fn local_development_defaults() -> Self {
         let mut defaults = Self::production_defaults();
         defaults.secure = false;
-        defaults.clear_header = HeaderValue::from_static(DEFAULT_FLOW_CLEAR_HEADER_INSECURE);
+        defaults.clear_header = HeaderValue::from_static(DEFAULT_CONFIRM_CLEAR_HEADER_INSECURE);
         defaults
     }
 
@@ -269,16 +269,16 @@ pub fn clear_session_cookie_header(config: &SessionCookieConfig) -> HeaderValue 
     config.clear_header.clone()
 }
 
-/// Create a flow-cookie set header with a lifetime in
-/// `1..=`[`MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS`] (the flow-cookie cap
+/// Create a confirm-cookie set header with a lifetime in
+/// `1..=`[`MagicLinkConfirmCookie::MAX_ABSOLUTE_AGE_SECS`] (the confirm-cookie cap
 /// owned by the service layer).
-pub fn set_flow_cookie_header(
-    config: &FlowCookieConfig,
+pub fn set_confirm_cookie_header(
+    config: &ConfirmCookieConfig,
     value: &str,
     max_age_secs: u64,
 ) -> Result<HeaderValue, MagicLinkHttpError> {
     if max_age_secs == 0
-        || max_age_secs > MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS
+        || max_age_secs > MagicLinkConfirmCookie::MAX_ABSOLUTE_AGE_SECS
         || !is_valid_cookie_value(value)
     {
         return Err(MagicLinkHttpError::Internal);
@@ -294,12 +294,12 @@ pub fn set_flow_cookie_header(
     )
 }
 
-/// The byte-for-byte attribute-parity flow-cookie clear header.
+/// The byte-for-byte attribute-parity confirm-cookie clear header.
 ///
 /// Precomputed when the config is constructed. This is a cheap refcounted
 /// clone, not a per-response format-and-parse.
 #[must_use]
-pub fn clear_flow_cookie_header(config: &FlowCookieConfig) -> HeaderValue {
+pub fn clear_confirm_cookie_header(config: &ConfirmCookieConfig) -> HeaderValue {
     config.clear_header.clone()
 }
 

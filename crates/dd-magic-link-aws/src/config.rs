@@ -9,7 +9,7 @@ use core::fmt;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use dd_magic_link_service::{
-    KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey, MagicLinkFlowCookie, RootSecret,
+    KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey, MagicLinkConfirmCookie, RootSecret,
     SessionCookie,
 };
 use serde::Deserialize;
@@ -251,7 +251,7 @@ impl fmt::Debug for AwsAuthConfig {
 pub struct LoadedAuthSecrets {
     pub lookup_hmac_key: LookupHmacKey,
     pub storage_hmac_key: StorageHmacKey,
-    pub flow_keyring: KeyRing<MagicLinkFlowCookie>,
+    pub confirm_keyring: KeyRing<MagicLinkConfirmCookie>,
     pub session_keyring: KeyRing<SessionCookie>,
 }
 
@@ -274,16 +274,17 @@ impl LoadedAuthSecrets {
                 .map_err(|_| AwsAdapterError::Internal)?;
         let storage_hmac_key =
             StorageHmacKey::from_slice(&decode_key(&active.aws_storage_hmac_b64)?)?;
-        let flow_keyring = build_keyring::<MagicLinkFlowCookie>(active, previous, |document| {
-            &document.magic_link_flow_cookie_root_b64
-        })?;
+        let confirm_keyring =
+            build_keyring::<MagicLinkConfirmCookie>(active, previous, |document| {
+                &document.magic_link_confirm_cookie_root_b64
+            })?;
         let session_keyring = build_keyring::<SessionCookie>(active, previous, |document| {
             &document.session_cookie_root_b64
         })?;
         Ok(Self {
             lookup_hmac_key,
             storage_hmac_key,
-            flow_keyring,
+            confirm_keyring,
             session_keyring,
         })
     }
@@ -343,7 +344,7 @@ struct AuthSecretDocument {
     magic_link_lookup_hmac_b64: String,
     aws_storage_hmac_b64: String,
     session_cookie_root_b64: String,
-    magic_link_flow_cookie_root_b64: String,
+    magic_link_confirm_cookie_root_b64: String,
 }
 
 impl AuthSecretDocument {
@@ -352,7 +353,7 @@ impl AuthSecretDocument {
         if parsed.magic_link_lookup_hmac_b64.len() > KEY_B64_BYTES
             || parsed.aws_storage_hmac_b64.len() > KEY_B64_BYTES
             || parsed.session_cookie_root_b64.len() > KEY_B64_BYTES
-            || parsed.magic_link_flow_cookie_root_b64.len() > KEY_B64_BYTES
+            || parsed.magic_link_confirm_cookie_root_b64.len() > KEY_B64_BYTES
         {
             return Err(AwsAdapterError::Internal);
         }
@@ -372,7 +373,7 @@ impl Drop for AuthSecretDocument {
         self.magic_link_lookup_hmac_b64.zeroize();
         self.aws_storage_hmac_b64.zeroize();
         self.session_cookie_root_b64.zeroize();
-        self.magic_link_flow_cookie_root_b64.zeroize();
+        self.magic_link_confirm_cookie_root_b64.zeroize();
     }
 }
 

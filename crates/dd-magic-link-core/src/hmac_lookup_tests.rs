@@ -1,15 +1,15 @@
 //! HMAC lookup tests.
 
 use super::*;
+use crate::confirm_cookie::MAGIC_LINK_CONFIRM_BINDING_BYTES;
 use crate::email::NormalizedEmail;
-use crate::flow_cookie::MAGIC_LINK_FLOW_BINDING_BYTES;
 use crate::magic_link::{MagicLinkSelector, MagicLinkVerifier};
 
 fn key() -> LookupHmacKey {
     LookupHmacKey::new([0x42; HMAC_KEY_BYTES])
 }
 
-fn binding_bytes(encoded: &str) -> [u8; MAGIC_LINK_FLOW_BINDING_BYTES] {
+fn binding_bytes(encoded: &str) -> [u8; MAGIC_LINK_CONFIRM_BINDING_BYTES] {
     let bytes = hex::decode(encoded).expect("binding vector is valid hex");
     bytes.try_into().expect("binding vector is 32 bytes")
 }
@@ -133,7 +133,7 @@ fn key_from_slice_rejects_wrong_length() {
 }
 
 #[test]
-fn flow_binding_vectors_are_pinned() {
+fn confirm_binding_vectors_are_pinned() {
     let selector_lookup = LookupHmac(
         "mlh_42fb608ee6ce2ac56bac6bb240a98c857a315afbb186159a59133b679d597a21".to_owned(),
     );
@@ -145,30 +145,30 @@ fn flow_binding_vectors_are_pinned() {
     );
 
     assert!(
-        flow_selector_binding(&selector_lookup)
+        confirm_selector_binding(&selector_lookup)
             .expect("selector binding")
-            .matches_constant_time(&FlowSelectorBinding::new(binding_bytes(
+            .matches_constant_time(&ConfirmSelectorBinding::new(binding_bytes(
                 "42fb608ee6ce2ac56bac6bb240a98c857a315afbb186159a59133b679d597a21",
             )))
     );
     assert!(
-        flow_verifier_binding(&verifier)
+        confirm_verifier_binding(&verifier)
             .expect("verifier binding")
-            .matches_constant_time(&FlowVerifierBinding::new(binding_bytes(
+            .matches_constant_time(&ConfirmVerifierBinding::new(binding_bytes(
                 "ae00fd0d4e973106d9bd55e5f219d530f554138c53327c07c81a7df8a1cbadae",
             )))
     );
     assert!(
-        flow_account_binding(&account_lookup)
+        confirm_account_binding(&account_lookup)
             .expect("account binding")
-            .matches_constant_time(&FlowAccountBinding::new(binding_bytes(
+            .matches_constant_time(&ConfirmAccountBinding::new(binding_bytes(
                 "7330b67f746ac427ff0777354000ca197fd1120ee6cf99371c484b92b8d517c8",
             )))
     );
 }
 
 #[test]
-fn selector_and_verifier_flow_bindings_round_trip_canonically() {
+fn selector_and_verifier_confirm_bindings_round_trip_canonically() {
     let selector =
         MagicLinkSelector::parse("000102030405060708090a0b0c0d0e0f").expect("selector vector");
     let verifier = MagicLinkVerifier::parse(
@@ -178,11 +178,11 @@ fn selector_and_verifier_flow_bindings_round_trip_canonically() {
     let selector_lookup = selector_lookup_hmac(&key(), &selector).expect("selector lookup");
     let verifier_lookup = verifier_hash(&key(), &verifier).expect("verifier hash");
 
-    let reconstructed_selector = selector_lookup_hmac_from_flow_binding(
-        &flow_selector_binding(&selector_lookup).expect("selector binding"),
+    let reconstructed_selector = selector_lookup_hmac_from_confirm_binding(
+        &confirm_selector_binding(&selector_lookup).expect("selector binding"),
     );
-    let reconstructed_verifier = verifier_hash_from_flow_binding(
-        &flow_verifier_binding(&verifier_lookup).expect("verifier binding"),
+    let reconstructed_verifier = verifier_hash_from_confirm_binding(
+        &confirm_verifier_binding(&verifier_lookup).expect("verifier binding"),
     );
 
     assert_eq!(
@@ -196,7 +196,7 @@ fn selector_and_verifier_flow_bindings_round_trip_canonically() {
 }
 
 #[test]
-fn flow_binding_conversions_reject_domain_confusion_and_noncanonical_values() {
+fn confirm_binding_conversions_reject_domain_confusion_and_noncanonical_values() {
     let digest = "42fb608ee6ce2ac56bac6bb240a98c857a315afbb186159a59133b679d597a21";
     let malformed = [
         format!("mlv_{digest}"),
@@ -210,72 +210,72 @@ fn flow_binding_conversions_reject_domain_confusion_and_noncanonical_values() {
     ];
     for value in malformed {
         assert_eq!(
-            flow_selector_binding(&LookupHmac(value)).unwrap_err(),
+            confirm_selector_binding(&LookupHmac(value)).unwrap_err(),
             MagicLinkError::InvalidToken
         );
     }
 
     assert_eq!(
-        flow_verifier_binding(&VerifierHash(format!("mlh_{digest}"))).unwrap_err(),
+        confirm_verifier_binding(&VerifierHash(format!("mlh_{digest}"))).unwrap_err(),
         MagicLinkError::InvalidToken
     );
     assert_eq!(
-        flow_account_binding(&LookupHmac(format!("mlh_{digest}"))).unwrap_err(),
+        confirm_account_binding(&LookupHmac(format!("mlh_{digest}"))).unwrap_err(),
         MagicLinkError::InvalidToken
     );
 }
 
 #[test]
-fn all_flow_binding_types_match_only_in_constant_time_api() {
-    let selector = flow_selector_binding(&LookupHmac(
+fn all_confirm_binding_types_match_only_in_constant_time_api() {
+    let selector = confirm_selector_binding(&LookupHmac(
         "mlh_42fb608ee6ce2ac56bac6bb240a98c857a315afbb186159a59133b679d597a21".to_owned(),
     ))
     .expect("selector");
-    let verifier = flow_verifier_binding(&VerifierHash(
+    let verifier = confirm_verifier_binding(&VerifierHash(
         "mlv_ae00fd0d4e973106d9bd55e5f219d530f554138c53327c07c81a7df8a1cbadae".to_owned(),
     ))
     .expect("verifier");
-    let account = flow_account_binding(&LookupHmac(
+    let account = confirm_account_binding(&LookupHmac(
         "emh_7330b67f746ac427ff0777354000ca197fd1120ee6cf99371c484b92b8d517c8".to_owned(),
     ))
     .expect("account");
 
     assert!(
-        selector.matches_constant_time(&FlowSelectorBinding::new(binding_bytes(
+        selector.matches_constant_time(&ConfirmSelectorBinding::new(binding_bytes(
             "42fb608ee6ce2ac56bac6bb240a98c857a315afbb186159a59133b679d597a21",
         )))
     );
-    assert!(!selector.matches_constant_time(&FlowSelectorBinding::new([0; 32])));
+    assert!(!selector.matches_constant_time(&ConfirmSelectorBinding::new([0; 32])));
     assert!(
-        verifier.matches_constant_time(&FlowVerifierBinding::new(binding_bytes(
+        verifier.matches_constant_time(&ConfirmVerifierBinding::new(binding_bytes(
             "ae00fd0d4e973106d9bd55e5f219d530f554138c53327c07c81a7df8a1cbadae",
         )))
     );
-    assert!(!verifier.matches_constant_time(&FlowVerifierBinding::new([0; 32])));
+    assert!(!verifier.matches_constant_time(&ConfirmVerifierBinding::new([0; 32])));
     assert!(
-        account.matches_constant_time(&FlowAccountBinding::new(binding_bytes(
+        account.matches_constant_time(&ConfirmAccountBinding::new(binding_bytes(
             "7330b67f746ac427ff0777354000ca197fd1120ee6cf99371c484b92b8d517c8",
         )))
     );
-    assert!(!account.matches_constant_time(&FlowAccountBinding::new([0; 32])));
+    assert!(!account.matches_constant_time(&ConfirmAccountBinding::new([0; 32])));
 }
 
 #[test]
-fn flow_binding_debug_output_is_redacted() {
-    let selector = flow_selector_binding(&LookupHmac(
+fn confirm_binding_debug_output_is_redacted() {
+    let selector = confirm_selector_binding(&LookupHmac(
         "mlh_42fb608ee6ce2ac56bac6bb240a98c857a315afbb186159a59133b679d597a21".to_owned(),
     ))
     .expect("selector");
-    let verifier = flow_verifier_binding(&VerifierHash(
+    let verifier = confirm_verifier_binding(&VerifierHash(
         "mlv_ae00fd0d4e973106d9bd55e5f219d530f554138c53327c07c81a7df8a1cbadae".to_owned(),
     ))
     .expect("verifier");
-    let account = flow_account_binding(&LookupHmac(
+    let account = confirm_account_binding(&LookupHmac(
         "emh_7330b67f746ac427ff0777354000ca197fd1120ee6cf99371c484b92b8d517c8".to_owned(),
     ))
     .expect("account");
 
-    assert_eq!(format!("{selector:?}"), "FlowSelectorBinding(..)");
-    assert_eq!(format!("{verifier:?}"), "FlowVerifierBinding(..)");
-    assert_eq!(format!("{account:?}"), "FlowAccountBinding(..)");
+    assert_eq!(format!("{selector:?}"), "ConfirmSelectorBinding(..)");
+    assert_eq!(format!("{verifier:?}"), "ConfirmVerifierBinding(..)");
+    assert_eq!(format!("{account:?}"), "ConfirmAccountBinding(..)");
 }

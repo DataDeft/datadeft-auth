@@ -5,7 +5,7 @@ use std::sync::Arc;
 use dd_auth_token_core::keyring::{KeyPurpose, KeyRing};
 use dd_auth_token_core::test_support::{CountingRng, test_keyring_with_windows};
 use dd_magic_link_core::{
-    LookupHmac, LookupHmacKey, MagicLinkFlowCookie, MagicLinkToken, NormalizedEmail,
+    LookupHmac, LookupHmacKey, MagicLinkConfirmCookie, MagicLinkToken, NormalizedEmail,
     selector_lookup_hmac, verifier_hash,
 };
 use dd_magic_link_service::{
@@ -85,7 +85,7 @@ fn session_keyring() -> KeyRing<SessionCookie> {
     )
 }
 
-fn flow_keyring() -> KeyRing<MagicLinkFlowCookie> {
+fn confirm_keyring() -> KeyRing<MagicLinkConfirmCookie> {
     test_keyring_with_windows(0x22, "flow-active", 10_000, 10_300)
 }
 
@@ -109,7 +109,7 @@ where
     Limiter: RateLimiter,
 {
     let lookup_key = LookupHmacKey::new([0x42; 32]);
-    let flow_keyring = flow_keyring();
+    let confirm_keyring = confirm_keyring();
     let session_keyring = session_keyring();
     let mut service = MagicLinkFlowService {
         authentication,
@@ -118,7 +118,7 @@ where
         clock: &FixedClock,
         rng,
         lookup_hmac_key: &lookup_key,
-        flow_keyring: &flow_keyring,
+        confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
         config,
     };
@@ -126,7 +126,7 @@ where
         .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(raw_token))
         .await?;
     Ok(TestFlowState {
-        cookie: landing.flow_cookie_value().to_owned(),
+        cookie: landing.confirm_cookie_value().to_owned(),
         confirmation: landing.confirmation_value().to_owned(),
     })
 }
@@ -145,7 +145,7 @@ where
     Limiter: RateLimiter,
 {
     let lookup_key = LookupHmacKey::new([0x42; 32]);
-    let flow_keyring = flow_keyring();
+    let confirm_keyring = confirm_keyring();
     let session_keyring = session_keyring();
     let mut service = MagicLinkFlowService {
         authentication,
@@ -154,7 +154,7 @@ where
         clock: &FixedClock,
         rng,
         lookup_hmac_key: &lookup_key,
-        flow_keyring: &flow_keyring,
+        confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
         config,
     };

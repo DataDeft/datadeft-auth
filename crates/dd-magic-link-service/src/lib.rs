@@ -35,7 +35,7 @@ pub mod types;
 pub use config::{MagicLinkConfigError, MagicLinkServiceConfig, RateLimitConfig};
 pub use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 pub use dd_magic_link_core::{
-    LookupHmac, LookupHmacKey, MagicLinkFlowCookie, NormalizedEmail, VerifierHash,
+    LookupHmac, LookupHmacKey, MagicLinkConfirmCookie, NormalizedEmail, VerifierHash,
     contains_magic_link_token_marker, domain_separated_lookup_hmac,
 };
 pub use error::{

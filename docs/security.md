@@ -76,9 +76,9 @@ The consuming application must follow these rules:
 3. Keep the landing `GET` side-effect-free and repeatable.
 4. Return uniform landing and confirmation failures.
 5. Use the same status for rejected landing and successful landing.
-6. Clear the flow cookie on rejected confirmation.
-7. Clear the flow cookie on internal confirmation failure.
-8. Preserve the flow cookie on dependency failure.
+6. Clear the confirm cookie on rejected confirmation.
+7. Clear the confirm cookie on internal confirmation failure.
+8. Preserve the confirm cookie on dependency failure.
 9. Add `no-store`, CSP, and frame-denial headers.
 10. Never echo the raw token into a body.
 11. Never log the raw token.
@@ -94,11 +94,11 @@ All bearer secrets and anti-guessing nonces must come from a CSPRNG. Test fixtur
 | --- | ---: | --- |
 | Magic-link selector | 128 bits | Must resist online enumeration. |
 | Magic-link verifier | 256 bits | Primary bearer secret. |
-| Magic-link flow nonce | 128 bits | Use 256 bits when cheap. |
+| Magic-link confirm nonce | 128 bits | Use 256 bits when cheap. |
 | Session ID | 256 bits | Applies to server-side IDs. |
 | Session token random part | 256 bits | Applies to encrypted tokens. |
 | PoW challenge nonce | 128 bits | MAC the challenge. |
-| CSRF confirmation nonce | 128 bits | May share the bound flow nonce. |
+| CSRF confirmation nonce | 128 bits | May share the bound confirm nonce. |
 
 Rules:
 
@@ -123,7 +123,7 @@ Rules:
 | Magic-link token | Yes | 10 minutes |
 | Magic-link selector | Lookup only | 10 minutes |
 | Magic-link verifier | Yes | 10 minutes |
-| Magic-link flow cookie | Sensitive | 5 minutes |
+| Magic-link confirm cookie | Sensitive | 5 minutes |
 | PoW challenge token | MACed | 2 minutes |
 | PoW solution | No long-term secret | One request |
 | PoW proof cookie | Sensitive | 3 hours (default) |
@@ -363,7 +363,7 @@ The four secret fields separate these purposes:
 - magic-link lookup HMAC
 - AWS storage HMAC
 - session-cookie root
-- flow-cookie root
+- confirm-cookie root
 
 ## Rotation cadence
 
@@ -411,8 +411,8 @@ Rules:
 - Clear cookies on logout.
 - Clear cookies on invalid session.
 - Clear cookies on expired session responses.
-- Clear flow cookies after auth success.
-- Clear flow cookies on terminal auth failure.
+- Clear confirm cookies after auth success.
+- Clear confirm cookies on terminal auth failure.
 - Document CSRF expectations for cookie routes.
 - Protect unsafe methods from CSRF.
 
@@ -477,7 +477,7 @@ Implementation rules:
 - Do not log token-bearing query strings.
 - Scrub token route fields before metrics.
 - Scrub token route fields before traces.
-- Prefer an `HttpOnly` flow cookie.
+- Prefer an `HttpOnly` confirm cookie.
 - Never render raw token material in forms.
 - Never place tokens in `Location` headers.
 - Never place tokens in JavaScript.
@@ -489,7 +489,7 @@ Implementation rules:
 - Prevent framing with CSP.
 - Add `X-Frame-Options: DENY` for old clients.
 - Set `Referrer-Policy: no-referrer`.
-- Clear flow cookies on terminal consume failure.
+- Clear confirm cookies on terminal consume failure.
 
 Scanner safety protects against GET-only scanners. Active scanners that submit forms rely on TTL, binding, one-time consume, and generic failures.
 

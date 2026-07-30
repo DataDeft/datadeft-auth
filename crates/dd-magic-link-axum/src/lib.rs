@@ -34,8 +34,8 @@
 //!   [`MagicLinkFlowResponseError::Rejected`] with the **same HTTP status you
 //!   use for success** so an attacker cannot probe whether a link is
 //!   valid/expired. Only genuine `Unavailable`/`Internal` failures use a 5xx.
-//! - **Clear the flow cookie** on a rejected/internal confirmation
-//!   ([`clear_flow_cookie_header`]). Preserve it on `Unavailable` so the
+//! - **Clear the confirm cookie** on a rejected/internal confirmation
+//!   ([`clear_confirm_cookie_header`]). Preserve it on `Unavailable` so the
 //!   user can retry.
 //! - **Stamp security headers** ([`apply_magic_link_security_headers`]:
 //!   `no-store`, `no-referrer`, CSP, frame-deny) on every landing/confirmation
@@ -58,11 +58,11 @@
 //! use dd_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
 //! use dd_magic_link_axum::{
 //!     MagicLinkFlowResponseError, MagicLinkScannerFlowConfig, SameOriginPostConfig,
-//!     SameOriginRedirect, SessionCookieConfig, FlowCookieConfig, magic_link_landing,
+//!     SameOriginRedirect, SessionCookieConfig, ConfirmCookieConfig, magic_link_landing,
 //! };
 //! use dd_magic_link_service::{
 //!     Clock, DependencyError, KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey,
-//!     MagicLinkFlowCookie, MagicLinkFlowService, MagicLinkServiceConfig, RootSecret,
+//!     MagicLinkConfirmCookie, MagicLinkFlowService, MagicLinkServiceConfig, RootSecret,
 //!     SessionCookie,
 //! };
 //! use rand_core::{OsRng, RngCore};
@@ -99,7 +99,7 @@
 //!     config: MagicLinkServiceConfig,
 //!     http_config: Arc<MagicLinkScannerFlowConfig>,
 //!     lookup_hmac_key: Arc<LookupHmacKey>,
-//!     flow_keyring: Arc<KeyRing<MagicLinkFlowCookie>>,
+//!     confirm_keyring: Arc<KeyRing<MagicLinkConfirmCookie>>,
 //!     session_keyring: Arc<KeyRing<SessionCookie>>,
 //! }
 //!
@@ -111,7 +111,7 @@
 //!         SameOriginRedirect::parse("/auth/magic-link/consume").expect("post action"),
 //!         SameOriginPostConfig::parse("https://example.test").expect("origin"),
 //!         SessionCookieConfig::production(&config).expect("session cookie"),
-//!         FlowCookieConfig::production_defaults(),
+//!         ConfirmCookieConfig::production_defaults(),
 //!     )
 //!     .expect("scanner config");
 //!     let mut storage_key = [0u8; 32];
@@ -122,13 +122,13 @@
 //!         config,
 //!         http_config: Arc::new(http_config),
 //!         lookup_hmac_key: Arc::new(LookupHmacKey::new(key)),
-//!         flow_keyring: Arc::new(dev_keyring("flow-active", now_unix)),
+//!         confirm_keyring: Arc::new(dev_keyring("flow-active", now_unix)),
 //!         session_keyring: Arc::new(dev_keyring("session-active", now_unix)),
 //!     }
 //! }
 //!
 //! /// One route: the side-effect-free landing. It returns the account and
-//! /// confirmation value plus the flow cookie. The app renders JSON or HTML
+//! /// confirmation value plus the confirm cookie. The app renders JSON or HTML
 //! /// and lets the browser POST the confirmation back. Confirmation, request,
 //! /// and session authentication wire up the same way — see the example app.
 //! async fn landing(State(state): State<AppState>, request: Request) -> Response {
@@ -142,7 +142,7 @@
 //!             clock: &SystemClock,
 //!             rng: &mut rng,
 //!             lookup_hmac_key: &state.lookup_hmac_key,
-//!             flow_keyring: &state.flow_keyring,
+//!             confirm_keyring: &state.confirm_keyring,
 //!             session_keyring: &state.session_keyring,
 //!             config: state.config.clone(),
 //!         };
@@ -157,7 +157,7 @@
 //!                 "confirmation": landing.outcome.confirmation_value(),
 //!             }))
 //!             .into_response();
-//!             response.headers_mut().append(axum::http::header::SET_COOKIE, landing.flow_cookie);
+//!             response.headers_mut().append(axum::http::header::SET_COOKIE, landing.confirm_cookie);
 //!             response
 //!         }
 //!         // Respond uniformly so link validity is not enumerable.
@@ -183,9 +183,9 @@ mod session_auth;
 pub(crate) mod test_fixtures;
 
 pub use cookie::{
-    CookieConfigError, DEFAULT_SESSION_COOKIE_NAME, DEFAULT_SESSION_COOKIE_PATH, FlowCookieConfig,
-    SameSite, SessionCookieConfig, clear_flow_cookie_header, clear_session_cookie_header,
-    session_set_cookie_header, set_flow_cookie_header,
+    ConfirmCookieConfig, CookieConfigError, DEFAULT_SESSION_COOKIE_NAME,
+    DEFAULT_SESSION_COOKIE_PATH, SameSite, SessionCookieConfig, clear_confirm_cookie_header,
+    clear_session_cookie_header, session_set_cookie_header, set_confirm_cookie_header,
 };
 pub use error::{ErrorBody, GenericAcceptedBody, MagicLinkHttpError, generic_accepted_response};
 pub use extract::{

@@ -7,7 +7,7 @@ use axum::http::header::{CONTENT_TYPE, COOKIE, ORIGIN};
 use axum::http::{Method, StatusCode};
 use dd_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
 use dd_magic_link_service::{
-    Clock, DependencyError, LookupHmacKey, MagicLinkFlowCookie, MagicLinkFlowService,
+    Clock, DependencyError, LookupHmacKey, MagicLinkConfirmCookie, MagicLinkFlowService,
     MagicLinkRequestService, MagicLinkServiceConfig, RequestMagicLinkCommand, SessionCookie,
 };
 use rand_core::OsRng;
@@ -157,13 +157,13 @@ async fn origin_rejection_precedes_cookie_body_and_service() {
 async fn malformed_cookie_and_body_are_rejected_uniformly_without_service() {
     let config = scanner_config();
 
-    // Malformed / missing / duplicate flow cookie, valid body — all Rejected
+    // Malformed / missing / duplicate confirm cookie, valid body — all Rejected
     // before the service runs.
     for cookie in [
         None,
-        Some("dd_auth_flow="),
+        Some("dd_auth_confirm="),
         Some("malformed"),
-        Some("dd_auth_flow=one; dd_auth_flow=two"),
+        Some("dd_auth_confirm=one; dd_auth_confirm=two"),
     ] {
         let mut builder = Request::builder()
             .method(Method::POST)
@@ -270,7 +270,7 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
     let outbox = FakeMagicLinkOutbox::default();
     let lookup_key = LookupHmacKey::new([0x42; 32]);
-    let flow_keyring = fixture_keyring::<MagicLinkFlowCookie>();
+    let confirm_keyring = fixture_keyring::<MagicLinkConfirmCookie>();
     let session_keyring = fixture_keyring::<SessionCookie>();
     let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
     let scanner = scanner_config();
@@ -314,10 +314,10 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
         .body(Body::empty())
         .expect("landing request");
     let landing = magic_link_landing(landing_request, &scanner, |command| {
-        let (store, lookup_key, flow_keyring, session_keyring, config) = (
+        let (store, lookup_key, confirm_keyring, session_keyring, config) = (
             &store,
             &lookup_key,
-            &flow_keyring,
+            &confirm_keyring,
             &session_keyring,
             &config,
         );
@@ -330,7 +330,7 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
                 clock: &FlowClock,
                 rng: &mut rng,
                 lookup_hmac_key: lookup_key,
-                flow_keyring,
+                confirm_keyring,
                 session_keyring,
                 config: config.clone(),
             };
@@ -343,12 +343,12 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
     assert_eq!(store.session_count().expect("sessions"), 0);
     assert!(
         landing
-            .flow_cookie
+            .confirm_cookie
             .to_str()
             .expect("ascii")
-            .starts_with("dd_auth_flow=")
+            .starts_with("dd_auth_confirm=")
     );
-    let flow_cookie = cookie_value(&landing.flow_cookie, "dd_auth_flow");
+    let confirm_cookie = cookie_value(&landing.confirm_cookie, "dd_auth_confirm");
     let confirmation = landing.outcome.confirmation_value().to_owned();
 
     // Confirmation (same-origin POST) consumes the link and mints the session.
@@ -357,16 +357,16 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
         .uri("/auth/magic-link/confirm")
         .header(ORIGIN, "https://example.test")
         .header(CONTENT_TYPE, APPLICATION_JSON)
-        .header(COOKIE, format!("dd_auth_flow={flow_cookie}"))
+        .header(COOKIE, format!("dd_auth_confirm={confirm_cookie}"))
         .body(Body::from(format!(
             r#"{{"confirmation":"{confirmation}"}}"#
         )))
         .expect("confirm request");
     let confirmed = magic_link_confirmation(confirm_request, &scanner, |command| {
-        let (store, lookup_key, flow_keyring, session_keyring, config) = (
+        let (store, lookup_key, confirm_keyring, session_keyring, config) = (
             &store,
             &lookup_key,
-            &flow_keyring,
+            &confirm_keyring,
             &session_keyring,
             &config,
         );
@@ -379,7 +379,7 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
                 clock: &FlowClock,
                 rng: &mut rng,
                 lookup_hmac_key: lookup_key,
-                flow_keyring,
+                confirm_keyring,
                 session_keyring,
                 config: config.clone(),
             };
@@ -399,9 +399,9 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
     );
     assert!(
         confirmed
-            .clear_flow_cookie
+            .clear_confirm_cookie
             .to_str()
             .expect("ascii")
-            .starts_with("dd_auth_flow=;")
+            .starts_with("dd_auth_confirm=;")
     );
 }

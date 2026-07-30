@@ -22,18 +22,18 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
     let session = SessionCookieConfig::production(&policy()).expect("session");
 
     for path in ["/auth/confirm", "/auth/", "/auth"] {
-        let flow_cookie = FlowCookieConfig::production("flow", path).expect("flow");
+        let confirm_cookie = ConfirmCookieConfig::production("flow", path).expect("flow");
         assert!(
             MagicLinkScannerFlowConfig::new(
                 post.clone(),
                 origin.clone(),
                 session.clone(),
-                flow_cookie,
+                confirm_cookie,
             )
             .is_ok()
         );
     }
-    let false_prefix = FlowCookieConfig::production("flow", "/aut").expect("flow");
+    let false_prefix = ConfirmCookieConfig::production("flow", "/aut").expect("flow");
     assert_eq!(
         MagicLinkScannerFlowConfig::new(
             post.clone(),
@@ -42,13 +42,13 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
             false_prefix,
         )
         .unwrap_err(),
-        MagicLinkScannerFlowConfigError::FlowCookiePathDoesNotCoverPostAction
+        MagicLinkScannerFlowConfigError::ConfirmCookiePathDoesNotCoverPostAction
     );
 
     let session_flow = session.clone().with_name("flow").expect("session name");
-    let flow_cookie = FlowCookieConfig::production("flow", "/auth").expect("flow");
+    let confirm_cookie = ConfirmCookieConfig::production("flow", "/auth").expect("flow");
     assert_eq!(
-        MagicLinkScannerFlowConfig::new(post.clone(), origin.clone(), session_flow, flow_cookie,)
+        MagicLinkScannerFlowConfig::new(post.clone(), origin.clone(), session_flow, confirm_cookie,)
             .unwrap_err(),
         MagicLinkScannerFlowConfigError::DuplicateCookieName
     );

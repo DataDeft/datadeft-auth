@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use dd_auth_token_core::keyring::{KeyPurpose, KeyRing};
 use dd_auth_token_core::test_support::{CountingRng, test_keyring_with_windows};
 use dd_magic_link_core::{
-    LookupHmac, LookupHmacKey, MagicLinkFlowCookie, MagicLinkToken, NormalizedEmail,
+    LookupHmac, LookupHmacKey, MagicLinkConfirmCookie, MagicLinkToken, NormalizedEmail,
     selector_lookup_hmac, verifier_hash,
 };
 
@@ -326,7 +326,7 @@ fn session_keyring() -> KeyRing<SessionCookie> {
     session_keyring_with_mint_until(20_000)
 }
 
-fn flow_keyring() -> KeyRing<MagicLinkFlowCookie> {
+fn confirm_keyring() -> KeyRing<MagicLinkConfirmCookie> {
     test_keyring_with_windows(0x33, "flow-active", 20_000, 20_300)
 }
 
@@ -391,7 +391,7 @@ async fn begin_flow(
     config: MagicLinkServiceConfig,
 ) -> Result<BeginMagicLinkLandingOutcome, MagicLinkFlowError> {
     let key = lookup_key();
-    let flow_keyring = flow_keyring();
+    let confirm_keyring = confirm_keyring();
     let session_keyring = session_keyring();
     let mut service = MagicLinkFlowService {
         authentication: repository,
@@ -400,7 +400,7 @@ async fn begin_flow(
         clock,
         rng,
         lookup_hmac_key: &key,
-        flow_keyring: &flow_keyring,
+        confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
         config,
     };
@@ -415,13 +415,13 @@ async fn confirm_flow(
     limiter: &AllowLimiter,
     clock: &FixedClock,
     rng: &mut CountingRng,
-    flow_cookie: String,
+    confirm_cookie: String,
     confirmation: String,
     country: Option<String>,
     config: MagicLinkServiceConfig,
 ) -> Result<ConfirmMagicLinkFlowOutcome, MagicLinkFlowError> {
     let key = lookup_key();
-    let flow_keyring = flow_keyring();
+    let confirm_keyring = confirm_keyring();
     let session_keyring = session_keyring();
     let mut service = MagicLinkFlowService {
         authentication: repository,
@@ -430,11 +430,11 @@ async fn confirm_flow(
         clock,
         rng,
         lookup_hmac_key: &key,
-        flow_keyring: &flow_keyring,
+        confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
         config,
     };
-    let command = ConfirmMagicLinkFlowCommand::new(flow_cookie, confirmation, country)?;
+    let command = ConfirmMagicLinkFlowCommand::new(confirm_cookie, confirmation, country)?;
     service.confirm_magic_link_flow(command).await
 }
 
@@ -496,7 +496,7 @@ async fn valid_landing_is_bounded_non_mutating_and_caps_expiry_to_record() {
     assert_eq!(outcome.cookie_max_age_secs(), 100);
     assert_eq!(outcome.account_identity().as_str(), "account@example.test");
     let debug = format!("{outcome:?}");
-    assert!(!debug.contains(outcome.flow_cookie_value()));
+    assert!(!debug.contains(outcome.confirm_cookie_value()));
     assert!(!debug.contains(outcome.confirmation_value()));
     assert!(!debug.contains("account@example.test"));
 }
@@ -612,7 +612,7 @@ async fn confirmation_accepts_authenticated_expiry_then_rejects_post_expiry() {
             &AllowLimiter::default(),
             &FixedClock::at(NOW + elapsed),
             &mut rng,
-            landing.flow_cookie_value().to_owned(),
+            landing.confirm_cookie_value().to_owned(),
             landing.confirmation_value().to_owned(),
             Some("HU".to_owned()),
             policy,
@@ -665,7 +665,7 @@ async fn confirmation_accepts_authenticated_expiry_then_rejects_post_expiry() {
         &AllowLimiter::default(),
         &FixedClock::at(NOW + 100),
         &mut rng,
-        landing.flow_cookie_value().to_owned(),
+        landing.confirm_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
         Some("HU".to_owned()),
         config(),
@@ -834,7 +834,7 @@ async fn scanner_confirmation_atomically_authenticates_and_replay_clears() {
     )
     .await
     .expect("landing");
-    let cookie = landing.flow_cookie_value().to_owned();
+    let cookie = landing.confirm_cookie_value().to_owned();
     let confirmation = landing.confirmation_value().to_owned();
 
     let outcome = confirm_flow(
@@ -907,7 +907,7 @@ async fn confirmation_rejects_cookie_nonce_verifier_account_and_stale_mismatches
         )
         .await
         .expect("landing");
-        let mut cookie = landing.flow_cookie_value().to_owned();
+        let mut cookie = landing.confirm_cookie_value().to_owned();
         let mut confirmation = landing.confirmation_value().to_owned();
         let mut confirm_now = NOW;
         match case {
@@ -1009,7 +1009,7 @@ async fn scanner_confirmation_disabled_user_is_generic_and_does_not_burn_link() 
         &AllowLimiter::default(),
         &FixedClock::at(NOW),
         &mut rng,
-        landing.flow_cookie_value().to_owned(),
+        landing.confirm_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
         Some("HU".to_owned()),
         config(),
@@ -1077,7 +1077,7 @@ async fn scanner_confirmation_dependency_preserves_and_internal_clears() {
             &AllowLimiter::default(),
             &FixedClock::at(NOW),
             &mut rng,
-            landing.flow_cookie_value().to_owned(),
+            landing.confirm_cookie_value().to_owned(),
             landing.confirmation_value().to_owned(),
             Some("HU".to_owned()),
             config(),
@@ -1121,7 +1121,7 @@ async fn confirmation_selector_miss_performs_one_dummy_comparison() {
         &AllowLimiter::default(),
         &FixedClock::at(NOW),
         &mut rng,
-        landing.flow_cookie_value().to_owned(),
+        landing.confirm_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
         Some("HU".to_owned()),
         config(),
@@ -1164,7 +1164,7 @@ async fn scanner_confirmation_preserves_exact_retry_and_replan_behavior() {
         &AllowLimiter::default(),
         &FixedClock::at(NOW),
         &mut rng,
-        landing.flow_cookie_value().to_owned(),
+        landing.confirm_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
         Some("HU".to_owned()),
         config(),
@@ -1202,7 +1202,7 @@ async fn scanner_confirmation_retries_ambiguous_commit_without_replanning() {
         &AllowLimiter::default(),
         &FixedClock::at(NOW),
         &mut rng,
-        landing.flow_cookie_value().to_owned(),
+        landing.confirm_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
         Some("HU".to_owned()),
         config(),
@@ -1245,7 +1245,7 @@ async fn scanner_confirmation_replans_session_conflict_with_fresh_cookie_and_att
         &AllowLimiter::default(),
         &FixedClock::at(NOW),
         &mut rng,
-        landing.flow_cookie_value().to_owned(),
+        landing.confirm_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
         Some("HU".to_owned()),
         config(),
@@ -1433,7 +1433,7 @@ async fn scanner_confirmation_malformed_and_selector_limits_are_generic_and_non_
         &malformed_limiter,
         &FixedClock::at(NOW),
         &mut CountingRng::starting_at(0),
-        "malformed-flow-cookie".to_owned(),
+        "malformed-confirm-cookie".to_owned(),
         "malformed-confirmation".to_owned(),
         Some("HU".to_owned()),
         config(),
@@ -1466,7 +1466,7 @@ async fn scanner_confirmation_malformed_and_selector_limits_are_generic_and_non_
         &selector_limiter,
         &FixedClock::at(NOW),
         &mut rng,
-        landing.flow_cookie_value().to_owned(),
+        landing.confirm_cookie_value().to_owned(),
         landing.confirmation_value().to_owned(),
         Some("HU".to_owned()),
         config(),
@@ -1487,7 +1487,7 @@ async fn revoke_session_still_delegates_to_the_session_repository() {
     let limiter = AllowLimiter::default();
     let clock = FixedClock::at(NOW);
     let key = lookup_key();
-    let flow_keyring = flow_keyring();
+    let confirm_keyring = confirm_keyring();
     let session_keyring = session_keyring();
     let mut rng = CountingRng::starting_at(0);
     let service = MagicLinkFlowService {
@@ -1497,7 +1497,7 @@ async fn revoke_session_still_delegates_to_the_session_repository() {
         clock: &clock,
         rng: &mut rng,
         lookup_hmac_key: &key,
-        flow_keyring: &flow_keyring,
+        confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
         config: config(),
     };

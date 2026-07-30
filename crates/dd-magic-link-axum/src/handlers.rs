@@ -12,7 +12,9 @@ use dd_magic_link_service::{
     RequestMagicLinkCommand, RequestMagicLinkOutcome, TemporaryAuthStateAction,
 };
 
-use crate::cookie::{clear_flow_cookie_header, session_set_cookie_header, set_flow_cookie_header};
+use crate::cookie::{
+    clear_confirm_cookie_header, session_set_cookie_header, set_confirm_cookie_header,
+};
 use crate::cookie_parse::extract_target_cookie;
 use crate::error::{MagicLinkHttpError, generic_accepted_response};
 use crate::extract::{
@@ -57,14 +59,14 @@ where
 /// Successful scanner-safe landing.
 ///
 /// Carries the validated flow state to present (account identity + confirmation
-/// value) and the `Set-Cookie` header for the short-lived flow cookie. The
-/// caller renders the page/JSON and attaches [`flow_cookie`](Self::flow_cookie).
+/// value) and the `Set-Cookie` header for the short-lived confirm cookie. The
+/// caller renders the page/JSON and attaches [`confirm_cookie`](Self::confirm_cookie).
 pub struct MagicLinkLanding {
     /// The validated landing outcome (account identity, confirmation value).
     pub outcome: BeginMagicLinkLandingOutcome,
-    /// `Set-Cookie` value for the encrypted, short-lived flow cookie. Attach it
+    /// `Set-Cookie` value for the encrypted, short-lived confirm cookie. Attach it
     /// to the landing response.
-    pub flow_cookie: HeaderValue,
+    pub confirm_cookie: HeaderValue,
 }
 
 /// Why a scanner-safe landing or confirmation did not succeed.
@@ -75,11 +77,11 @@ pub struct MagicLinkLanding {
 ///   invalid/expired/already-used. Respond **uniformly** so link validity is
 ///   not enumerable — for a landing, use the **same HTTP status you return on
 ///   success**. For a confirmation, use a single generic failure. On confirmation,
-///   clear the flow cookie with [`clear_flow_cookie_header`].
+///   clear the confirm cookie with [`clear_confirm_cookie_header`].
 /// - [`Unavailable`](Self::Unavailable): a dependency was down. Respond 503 and
-///   **preserve** the flow cookie so the user can retry.
+///   **preserve** the confirm cookie so the user can retry.
 /// - [`Internal`](Self::Internal): an internal error. Respond 500. Clearing the
-///   flow cookie on confirmation is fine.
+///   confirm cookie on confirmation is fine.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MagicLinkFlowResponseError {
     Rejected,
@@ -88,11 +90,11 @@ pub enum MagicLinkFlowResponseError {
 }
 
 /// Run the scanner-safe landing: extract the token, validate it via `begin`,
-/// and prepare the flow cookie. **The landing is side-effect-free** — it does
+/// and prepare the confirm cookie. **The landing is side-effect-free** — it does
 /// not consume the magic link or create a session, so email security scanners
 /// may fetch the landing URL repeatedly without burning the link. The caller
 /// owns the response: a typical API returns JSON `{ account, confirmation }`
-/// with [`flow_cookie`](MagicLinkLanding::flow_cookie) attached and lets the
+/// with [`confirm_cookie`](MagicLinkLanding::confirm_cookie) attached and lets the
 /// browser POST the confirmation back same-origin.
 ///
 /// On [`MagicLinkFlowResponseError::Rejected`], respond with the **same HTTP
@@ -112,15 +114,15 @@ where
     let outcome = begin(BeginMagicLinkLandingCommand::new(raw_token))
         .await
         .map_err(map_flow_error)?;
-    let flow_cookie = set_flow_cookie_header(
-        config.flow_cookie(),
-        outcome.flow_cookie_value(),
+    let confirm_cookie = set_confirm_cookie_header(
+        config.confirm_cookie(),
+        outcome.confirm_cookie_value(),
         outcome.cookie_max_age_secs(),
     )
     .map_err(|_| MagicLinkFlowResponseError::Internal)?;
     Ok(MagicLinkLanding {
         outcome,
-        flow_cookie,
+        confirm_cookie,
     })
 }
 
@@ -134,12 +136,12 @@ pub struct MagicLinkConfirmed {
     pub outcome: ConfirmMagicLinkFlowOutcome,
     /// `Set-Cookie` value that installs the session cookie.
     pub session_cookie: HeaderValue,
-    /// `Set-Cookie` value that clears the now-spent flow cookie. Attach it too.
-    pub clear_flow_cookie: HeaderValue,
+    /// `Set-Cookie` value that clears the now-spent confirm cookie. Attach it too.
+    pub clear_confirm_cookie: HeaderValue,
 }
 
 /// Run the scanner-safe confirmation checks: enforce same-origin, extract the
-/// flow cookie, bound and parse the body, read the trusted-edge country, then
+/// confirm cookie, bound and parse the body, read the trusted-edge country, then
 /// consume the link via `confirm`. **This is the only step that consumes the
 /// magic link and mints a session, and it only runs for a same-origin POST.**
 /// The caller maps the result to its own response and attaches the cookie
@@ -157,7 +159,7 @@ where
         return Err(MagicLinkFlowResponseError::Rejected);
     }
 
-    let flow_cookie = extract_target_cookie(request.headers(), config.flow_cookie().name())
+    let confirm_cookie = extract_target_cookie(request.headers(), config.confirm_cookie().name())
         .map_err(|_| MagicLinkFlowResponseError::Rejected)?;
 
     let guarded = guarded_body(
@@ -179,7 +181,7 @@ where
     // request bodies (client-controlled).
     let country = viewer_country_from(&guarded.headers, config.country_header());
     let confirmation = core::mem::take(&mut body.confirmation);
-    let command = ConfirmMagicLinkFlowCommand::new(flow_cookie, confirmation, country)
+    let command = ConfirmMagicLinkFlowCommand::new(confirm_cookie, confirmation, country)
         .map_err(|_| MagicLinkFlowResponseError::Rejected)?;
 
     let outcome = confirm(command).await.map_err(map_flow_error)?;
@@ -189,12 +191,12 @@ where
         outcome.authentication().session_cookie_value(),
     )
     .map_err(|_| MagicLinkFlowResponseError::Internal)?;
-    let clear_flow_cookie = clear_flow_cookie_header(config.flow_cookie());
+    let clear_confirm_cookie = clear_confirm_cookie_header(config.confirm_cookie());
 
     Ok(MagicLinkConfirmed {
         outcome,
         session_cookie,
-        clear_flow_cookie,
+        clear_confirm_cookie,
     })
 }
 

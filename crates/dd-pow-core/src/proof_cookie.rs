@@ -3,7 +3,7 @@
 //!
 //! Minted and verified with the generic bound-cookie primitives in
 //! `dd-auth-token-core` — the same Branca/keyring machinery that backs the
-//! session and magic-link flow cookies — but under a distinct key purpose
+//! session and magic-link confirm cookies — but under a distinct key purpose
 //! (`pow-proof-v1`) so a proof cookie can never validate as a session or flow
 //! cookie, and vice versa, even under the same root secret.
 //!

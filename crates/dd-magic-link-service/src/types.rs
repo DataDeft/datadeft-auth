@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use dd_magic_link_core::flow_cookie::MintedMagicLinkFlow;
+use dd_magic_link_core::confirm_cookie::MintedMagicLinkConfirm;
 use dd_magic_link_core::{LookupHmac, MagicLinkToken, NormalizedEmail, VerifierHash};
 use zeroize::Zeroize;
 
@@ -486,14 +486,14 @@ impl Drop for MagicLinkAccountIdentity {
 
 /// Successful non-mutating scanner landing result.
 pub struct BeginMagicLinkLandingOutcome {
-    pub(crate) flow: MintedMagicLinkFlow,
+    pub(crate) flow: MintedMagicLinkConfirm,
     pub(crate) account_identity: MagicLinkAccountIdentity,
     pub(crate) cookie_max_age_secs: u64,
 }
 
 impl BeginMagicLinkLandingOutcome {
     #[must_use]
-    pub fn flow_cookie_value(&self) -> &str {
+    pub fn confirm_cookie_value(&self) -> &str {
         self.flow.cookie().as_secret_value()
     }
 
@@ -521,33 +521,33 @@ impl fmt::Debug for BeginMagicLinkLandingOutcome {
 
 /// Scanner-safe confirmation command. It contains no raw magic-link token.
 pub struct ConfirmMagicLinkFlowCommand {
-    flow_cookie: String,
+    confirm_cookie: String,
     confirmation: String,
     request_country: Option<String>,
 }
 
 impl ConfirmMagicLinkFlowCommand {
     pub fn new(
-        mut flow_cookie: String,
+        mut confirm_cookie: String,
         mut confirmation: String,
         request_country: Option<String>,
     ) -> Result<Self, MagicLinkFlowError> {
         if let Some(country) = request_country.as_deref()
             && let Err(error) = validate_country(country)
         {
-            flow_cookie.zeroize();
+            confirm_cookie.zeroize();
             confirmation.zeroize();
             return Err(MagicLinkFlowError::from_public_error(error));
         }
         Ok(Self {
-            flow_cookie,
+            confirm_cookie,
             confirmation,
             request_country,
         })
     }
 
-    pub(crate) fn flow_cookie(&self) -> &str {
-        &self.flow_cookie
+    pub(crate) fn confirm_cookie(&self) -> &str {
+        &self.confirm_cookie
     }
 
     pub(crate) fn confirmation(&self) -> &str {
@@ -567,7 +567,7 @@ impl fmt::Debug for ConfirmMagicLinkFlowCommand {
 
 impl Drop for ConfirmMagicLinkFlowCommand {
     fn drop(&mut self) {
-        self.flow_cookie.zeroize();
+        self.confirm_cookie.zeroize();
         self.confirmation.zeroize();
     }
 }

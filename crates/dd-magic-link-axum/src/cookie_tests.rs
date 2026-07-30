@@ -54,9 +54,9 @@ fn precomputed_clear_headers_match_freshly_built_ones() {
     // The from_static default constants and every construction path must stay
     // byte-for-byte in lockstep with cookie_header's wire format.
     let cases = [
-        (FlowCookieConfig::production_defaults()),
-        (FlowCookieConfig::local_development_defaults()),
-        (FlowCookieConfig::production("custom_flow", "/custom").expect("custom flow")),
+        (ConfirmCookieConfig::production_defaults()),
+        (ConfirmCookieConfig::local_development_defaults()),
+        (ConfirmCookieConfig::production("custom_flow", "/custom").expect("custom flow")),
     ];
     for flow in cases {
         let fresh = cookie_header(
@@ -69,7 +69,7 @@ fn precomputed_clear_headers_match_freshly_built_ones() {
             true,
         )
         .expect("fresh clear header builds");
-        assert_eq!(clear_flow_cookie_header(&flow), fresh);
+        assert_eq!(clear_confirm_cookie_header(&flow), fresh);
     }
 
     let sessions = [
@@ -100,35 +100,35 @@ fn precomputed_clear_headers_match_freshly_built_ones() {
 }
 
 #[test]
-fn flow_cookie_defaults_lifetime_and_clear_are_strict() {
-    let production = FlowCookieConfig::production_defaults();
+fn confirm_cookie_defaults_lifetime_and_clear_are_strict() {
+    let production = ConfirmCookieConfig::production_defaults();
     let flow = &production;
-    assert_eq!(flow.name(), "dd_auth_flow");
+    assert_eq!(flow.name(), "dd_auth_confirm");
     assert_eq!(flow.path(), "/auth");
     assert!(flow.secure());
     assert_eq!(flow.same_site(), SameSite::Lax);
 
-    let set = set_flow_cookie_header(flow, "flow-value", 300)
+    let set = set_confirm_cookie_header(flow, "flow-value", 300)
         .expect("set")
         .to_str()
         .expect("ascii")
         .to_owned();
-    let clear = clear_flow_cookie_header(flow)
+    let clear = clear_confirm_cookie_header(flow)
         .to_str()
         .expect("ascii")
         .to_owned();
     assert_eq!(
         set,
-        "dd_auth_flow=flow-value; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=300"
+        "dd_auth_confirm=flow-value; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=300"
     );
     assert_eq!(
         clear,
-        "dd_auth_flow=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+        "dd_auth_confirm=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
     );
-    assert!(set_flow_cookie_header(flow, "flow-value", 0).is_err());
-    assert!(set_flow_cookie_header(flow, "flow-value", 301).is_err());
+    assert!(set_confirm_cookie_header(flow, "flow-value", 0).is_err());
+    assert!(set_confirm_cookie_header(flow, "flow-value", 301).is_err());
 
-    let local = FlowCookieConfig::local_development_defaults();
+    let local = ConfirmCookieConfig::local_development_defaults();
     assert!(!local.secure());
 }
 
@@ -138,7 +138,7 @@ fn cookie_setup_rejects_invalid_paths() {
         "auth", "/auth?x", "/auth#x", "/auth%x", "/auth\\x", "/auth;x",
     ] {
         assert_eq!(
-            FlowCookieConfig::production("flow", path).unwrap_err(),
+            ConfirmCookieConfig::production("flow", path).unwrap_err(),
             CookieConfigError::InvalidPath
         );
     }

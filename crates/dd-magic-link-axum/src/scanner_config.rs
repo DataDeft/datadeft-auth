@@ -5,7 +5,7 @@ use core::fmt;
 
 use axum::http::HeaderName;
 
-use crate::cookie::{FlowCookieConfig, SessionCookieConfig, cookie_path_covers};
+use crate::cookie::{ConfirmCookieConfig, SessionCookieConfig, cookie_path_covers};
 use crate::extract::CLOUDFRONT_VIEWER_COUNTRY;
 use crate::origin::{SameOriginPostConfig, SameOriginRedirect};
 
@@ -13,15 +13,15 @@ use crate::origin::{SameOriginPostConfig, SameOriginRedirect};
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MagicLinkScannerFlowConfigError {
     DuplicateCookieName,
-    FlowCookiePathDoesNotCoverPostAction,
+    ConfirmCookiePathDoesNotCoverPostAction,
 }
 
 impl fmt::Display for MagicLinkScannerFlowConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::DuplicateCookieName => "flow cookie names must be pairwise distinct",
-            Self::FlowCookiePathDoesNotCoverPostAction => {
-                "flow cookie path does not cover confirmation action"
+            Self::DuplicateCookieName => "confirm cookie names must be pairwise distinct",
+            Self::ConfirmCookiePathDoesNotCoverPostAction => {
+                "confirm cookie path does not cover confirmation action"
             }
         })
     }
@@ -32,7 +32,7 @@ impl std::error::Error for MagicLinkScannerFlowConfigError {}
 /// Fully validated scanner-safe HTTP configuration.
 ///
 /// `post_action` is the same-origin path the confirmation form/POST targets.
-/// The caller renders it, and the config validates it against the flow-cookie
+/// The caller renders it, and the config validates it against the confirm-cookie
 /// path. The post-login redirect is the caller's concern in the headless
 /// helpers, so it is not part of this config.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -40,7 +40,7 @@ pub struct MagicLinkScannerFlowConfig {
     post_action: SameOriginRedirect,
     same_origin_post: SameOriginPostConfig,
     session_cookie: SessionCookieConfig,
-    flow_cookie: FlowCookieConfig,
+    confirm_cookie: ConfirmCookieConfig,
     country_header: HeaderName,
 }
 
@@ -49,9 +49,9 @@ impl MagicLinkScannerFlowConfig {
         post_action: SameOriginRedirect,
         same_origin_post: SameOriginPostConfig,
         session_cookie: SessionCookieConfig,
-        flow_cookie: FlowCookieConfig,
+        confirm_cookie: ConfirmCookieConfig,
     ) -> Result<Self, MagicLinkScannerFlowConfigError> {
-        let flow_name = flow_cookie.name();
+        let flow_name = confirm_cookie.name();
         if session_cookie.name() == flow_name {
             return Err(MagicLinkScannerFlowConfigError::DuplicateCookieName);
         }
@@ -59,14 +59,14 @@ impl MagicLinkScannerFlowConfig {
             .as_str()
             .split_once('?')
             .map_or(post_action.as_str(), |(path, _)| path);
-        if !cookie_path_covers(flow_cookie.path(), request_path) {
-            return Err(MagicLinkScannerFlowConfigError::FlowCookiePathDoesNotCoverPostAction);
+        if !cookie_path_covers(confirm_cookie.path(), request_path) {
+            return Err(MagicLinkScannerFlowConfigError::ConfirmCookiePathDoesNotCoverPostAction);
         }
         Ok(Self {
             post_action,
             same_origin_post,
             session_cookie,
-            flow_cookie,
+            confirm_cookie,
             country_header: HeaderName::from_static(CLOUDFRONT_VIEWER_COUNTRY),
         })
     }
@@ -106,8 +106,8 @@ impl MagicLinkScannerFlowConfig {
     }
 
     #[must_use]
-    pub fn flow_cookie(&self) -> &FlowCookieConfig {
-        &self.flow_cookie
+    pub fn confirm_cookie(&self) -> &ConfirmCookieConfig {
+        &self.confirm_cookie
     }
 }
 
