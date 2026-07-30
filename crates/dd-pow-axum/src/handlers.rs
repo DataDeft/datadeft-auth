@@ -41,7 +41,7 @@ pub struct PowPolicy {
 pub enum PowPolicyError {
     /// Difficulty must be in `1..=MAX_DIFFICULTY`.
     InvalidDifficulty,
-    /// The challenge lifetime must be non-zero.
+    /// The challenge lifetime must be nonzero.
     InvalidChallengeMaxAge,
 }
 
@@ -49,7 +49,7 @@ impl fmt::Display for PowPolicyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::InvalidDifficulty => "PoW difficulty must be in 1..=MAX_DIFFICULTY",
-            Self::InvalidChallengeMaxAge => "PoW challenge max age must be non-zero",
+            Self::InvalidChallengeMaxAge => "PoW challenge max age must be nonzero",
         })
     }
 }
@@ -58,7 +58,7 @@ impl std::error::Error for PowPolicyError {}
 
 impl PowPolicy {
     /// Build a validated policy. `difficulty` must be in `1..=MAX_DIFFICULTY`
-    /// and `challenge_max_age_secs` non-zero.
+    /// and `challenge_max_age_secs` nonzero.
     pub fn new(difficulty: u8, challenge_max_age_secs: u64) -> Result<Self, PowPolicyError> {
         if difficulty == 0 || difficulty > MAX_DIFFICULTY {
             return Err(PowPolicyError::InvalidDifficulty);
@@ -153,7 +153,7 @@ pub fn mint_pow_challenge(
         .map_err(|_| PowFlowError::Internal)
 }
 
-/// Verify a posted solution and, on success, mint the `ct_pow` proof cookie.
+/// Verify a posted solution and, on success, mint the `dd_pow` proof cookie.
 ///
 /// Returns the `Set-Cookie` header to append to the response. The client never
 /// sends `dif`; it is supplied from `policy` and bound by the HMAC tag.

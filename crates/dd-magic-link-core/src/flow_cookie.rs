@@ -323,7 +323,7 @@ where
 
 /// Verify an encrypted flow cookie and its separately submitted confirmation value.
 ///
-/// The caller must state a non-zero maximum age no greater than five minutes.
+/// The caller must state a nonzero maximum age no greater than five minutes.
 /// Cookie age, authenticated explicit expiry, canonical confirmation syntax, and
 /// confirmation equality are enforced together. Every verification failure is
 /// collapsed to [`TokenError::InvalidToken`].

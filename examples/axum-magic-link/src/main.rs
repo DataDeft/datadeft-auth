@@ -25,11 +25,11 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use dd_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
 use dd_magic_link_axum::{
-    APPLICATION_JSON, MagicLinkFlowResponseError, MagicLinkHttpError, MagicLinkRequestJson,
-    MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect, SessionCookieConfig,
-    TemporaryCookieConfig, apply_magic_link_security_headers, authenticate_session,
-    clear_session_cookie_header, clear_temporary_cookie_header, generic_accepted_response,
-    guarded_body, magic_link_confirmation, magic_link_landing, viewer_country_from,
+    APPLICATION_JSON, FlowCookieConfig, MagicLinkFlowResponseError, MagicLinkHttpError,
+    MagicLinkRequestJson, MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect,
+    SessionCookieConfig, apply_magic_link_security_headers, authenticate_session,
+    clear_flow_cookie_header, clear_session_cookie_header, generic_accepted_response, guarded_body,
+    magic_link_confirmation, magic_link_landing, viewer_country_from,
 };
 use dd_magic_link_service::{
     Clock, DependencyError, KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey,
@@ -131,7 +131,7 @@ fn build_state() -> AppResult<AppState> {
             .map_err(|_| SetupError("invalid magic-link POST action"))?,
         SameOriginPostConfig::parse(LOCAL_ORIGIN)?,
         session_cookie,
-        TemporaryCookieConfig::local_development_defaults(),
+        FlowCookieConfig::local_development_defaults(),
     )?;
 
     Ok(AppState {
@@ -331,10 +331,9 @@ async fn confirm_route(State(state): State<AppState>, request: Request) -> Respo
         }
         Err(MagicLinkFlowResponseError::Rejected) => {
             let mut response = scanner_page(StatusCode::BAD_REQUEST, "Invalid confirmation.");
-            response.headers_mut().append(
-                SET_COOKIE,
-                clear_temporary_cookie_header(config.temporary_cookies()),
-            );
+            response
+                .headers_mut()
+                .append(SET_COOKIE, clear_flow_cookie_header(config.flow_cookie()));
             response
         }
         Err(MagicLinkFlowResponseError::Unavailable) => scanner_page(

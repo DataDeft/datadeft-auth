@@ -24,7 +24,7 @@ pub const MAX_FUTURE_SKEW_SECS: u64 = 60;
 pub const MAX_DIFFICULTY: u8 = 64;
 /// Recommended production minimum. Difficulty 1–3 is useful for tests only;
 /// production should tune for roughly 1–3 seconds in target browsers, typically
-/// around 5–6 leading zero nibbles for this simple SHA-256 loop.
+/// around 5–6 leading zero hex characters for this simple SHA-256 loop.
 pub const RECOMMENDED_PRODUCTION_MIN_DIFFICULTY: u8 = 5;
 
 const CHG_HEX_BYTES: usize = 64;

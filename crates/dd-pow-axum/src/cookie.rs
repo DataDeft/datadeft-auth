@@ -1,4 +1,4 @@
-//! Outgoing `Set-Cookie` policy for the `ct_pow` proof cookie: a validated
+//! Outgoing `Set-Cookie` policy for the `dd_pow` proof cookie: a validated
 //! host-only cookie configuration plus set/clear header construction.
 //!
 //! Self-contained on purpose — PoW admission is independent of the magic-link
@@ -12,7 +12,7 @@ use axum::http::HeaderValue;
 use dd_pow_core::{DEFAULT_POW_PROOF_TTL_SECS, POW_PROOF_MAX_AGE_SECS};
 
 /// Conservative default proof-cookie name.
-pub const DEFAULT_POW_PROOF_COOKIE_NAME: &str = "ct_pow";
+pub const DEFAULT_POW_PROOF_COOKIE_NAME: &str = "dd_pow";
 /// Proof cookies gate the whole app, so they default to the root path.
 pub const DEFAULT_POW_PROOF_COOKIE_PATH: &str = "/";
 
@@ -59,7 +59,7 @@ impl fmt::Display for PowCookieConfigError {
 
 impl std::error::Error for PowCookieConfigError {}
 
-/// Validated host-only `ct_pow` proof-cookie policy.
+/// Validated host-only `dd_pow` proof-cookie policy.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PowProofCookieConfig {
     name: String,
@@ -91,7 +91,7 @@ impl PowProofCookieConfig {
         Self::build(name.into(), path.into(), false, ttl_secs)
     }
 
-    /// Default production policy (`ct_pow`, `/`, Secure, 3 h).
+    /// Default production policy (`dd_pow`, `/`, Secure, 3 h).
     #[must_use]
     pub fn production_defaults() -> Self {
         Self::production(

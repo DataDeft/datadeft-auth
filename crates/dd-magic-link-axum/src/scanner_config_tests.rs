@@ -22,18 +22,18 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
     let session = SessionCookieConfig::production(&policy()).expect("session");
 
     for path in ["/auth/confirm", "/auth/", "/auth"] {
-        let temporary = TemporaryCookieConfig::production("flow", path).expect("flow");
+        let flow_cookie = FlowCookieConfig::production("flow", path).expect("flow");
         assert!(
             MagicLinkScannerFlowConfig::new(
                 post.clone(),
                 origin.clone(),
                 session.clone(),
-                temporary,
+                flow_cookie,
             )
             .is_ok()
         );
     }
-    let false_prefix = TemporaryCookieConfig::production("flow", "/aut").expect("flow");
+    let false_prefix = FlowCookieConfig::production("flow", "/aut").expect("flow");
     assert_eq!(
         MagicLinkScannerFlowConfig::new(
             post.clone(),
@@ -46,9 +46,9 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
     );
 
     let session_flow = session.clone().with_name("flow").expect("session name");
-    let temporary = TemporaryCookieConfig::production("flow", "/auth").expect("flow");
+    let flow_cookie = FlowCookieConfig::production("flow", "/auth").expect("flow");
     assert_eq!(
-        MagicLinkScannerFlowConfig::new(post.clone(), origin.clone(), session_flow, temporary,)
+        MagicLinkScannerFlowConfig::new(post.clone(), origin.clone(), session_flow, flow_cookie,)
             .unwrap_err(),
         MagicLinkScannerFlowConfigError::DuplicateCookieName
     );

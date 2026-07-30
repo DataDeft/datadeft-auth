@@ -143,7 +143,7 @@ pub fn verifier_hash(
     hmac_prefixed(key, VERIFIER_HASH_PREFIX, verifier.as_secret_value()).map(VerifierHash)
 }
 
-/// Convert a canonical selector lookup HMAC into its scanner-flow binding.
+/// Convert a canonical selector lookup HMAC into its flow binding.
 pub fn flow_selector_binding(lookup: &LookupHmac) -> Result<FlowSelectorBinding, MagicLinkError> {
     let mut decoded = decode_canonical_hmac(lookup.as_storage_value(), SELECTOR_LOOKUP_PREFIX)?;
     let binding = FlowSelectorBinding::new(decoded);
@@ -160,7 +160,7 @@ pub fn selector_lookup_hmac_from_flow_binding(binding: &FlowSelectorBinding) -> 
     ))
 }
 
-/// Convert a canonical verifier hash into its scanner-flow binding.
+/// Convert a canonical verifier hash into its flow binding.
 pub fn flow_verifier_binding(hash: &VerifierHash) -> Result<FlowVerifierBinding, MagicLinkError> {
     let mut decoded = decode_canonical_hmac(hash.as_storage_value(), VERIFIER_HASH_PREFIX)?;
     let binding = FlowVerifierBinding::new(decoded);
@@ -177,7 +177,7 @@ pub fn verifier_hash_from_flow_binding(binding: &FlowVerifierBinding) -> Verifie
     ))
 }
 
-/// Convert a canonical account lookup HMAC into its scanner-flow binding.
+/// Convert a canonical account lookup HMAC into its flow binding.
 pub fn flow_account_binding(lookup: &LookupHmac) -> Result<FlowAccountBinding, MagicLinkError> {
     let mut decoded = decode_canonical_hmac(lookup.as_storage_value(), EMAIL_LOOKUP_PREFIX)?;
     let binding = FlowAccountBinding::new(decoded);

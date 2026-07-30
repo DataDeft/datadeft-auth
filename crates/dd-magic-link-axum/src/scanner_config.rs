@@ -5,7 +5,7 @@ use core::fmt;
 
 use axum::http::HeaderName;
 
-use crate::cookie::{SessionCookieConfig, TemporaryCookieConfig, cookie_path_covers};
+use crate::cookie::{FlowCookieConfig, SessionCookieConfig, cookie_path_covers};
 use crate::extract::CLOUDFRONT_VIEWER_COUNTRY;
 use crate::origin::{SameOriginPostConfig, SameOriginRedirect};
 
@@ -19,7 +19,7 @@ pub enum MagicLinkScannerFlowConfigError {
 impl fmt::Display for MagicLinkScannerFlowConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::DuplicateCookieName => "scanner cookie names must be pairwise distinct",
+            Self::DuplicateCookieName => "flow cookie names must be pairwise distinct",
             Self::FlowCookiePathDoesNotCoverPostAction => {
                 "flow cookie path does not cover confirmation action"
             }
@@ -40,7 +40,7 @@ pub struct MagicLinkScannerFlowConfig {
     post_action: SameOriginRedirect,
     same_origin_post: SameOriginPostConfig,
     session_cookie: SessionCookieConfig,
-    temporary_cookies: TemporaryCookieConfig,
+    flow_cookie: FlowCookieConfig,
     country_header: HeaderName,
 }
 
@@ -49,9 +49,9 @@ impl MagicLinkScannerFlowConfig {
         post_action: SameOriginRedirect,
         same_origin_post: SameOriginPostConfig,
         session_cookie: SessionCookieConfig,
-        temporary_cookies: TemporaryCookieConfig,
+        flow_cookie: FlowCookieConfig,
     ) -> Result<Self, MagicLinkScannerFlowConfigError> {
-        let flow_name = temporary_cookies.name();
+        let flow_name = flow_cookie.name();
         if session_cookie.name() == flow_name {
             return Err(MagicLinkScannerFlowConfigError::DuplicateCookieName);
         }
@@ -59,14 +59,14 @@ impl MagicLinkScannerFlowConfig {
             .as_str()
             .split_once('?')
             .map_or(post_action.as_str(), |(path, _)| path);
-        if !cookie_path_covers(temporary_cookies.path(), request_path) {
+        if !cookie_path_covers(flow_cookie.path(), request_path) {
             return Err(MagicLinkScannerFlowConfigError::FlowCookiePathDoesNotCoverPostAction);
         }
         Ok(Self {
             post_action,
             same_origin_post,
             session_cookie,
-            temporary_cookies,
+            flow_cookie,
             country_header: HeaderName::from_static(CLOUDFRONT_VIEWER_COUNTRY),
         })
     }
@@ -105,8 +105,8 @@ impl MagicLinkScannerFlowConfig {
     }
 
     #[must_use]
-    pub fn temporary_cookies(&self) -> &TemporaryCookieConfig {
-        &self.temporary_cookies
+    pub fn flow_cookie(&self) -> &FlowCookieConfig {
+        &self.flow_cookie
     }
 }
 

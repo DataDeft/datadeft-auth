@@ -40,14 +40,14 @@ pub enum MagicLinkConfigError {
 impl fmt::Display for MagicLinkConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ZeroMagicLinkTtl => f.write_str("magic-link lifetime must be non-zero"),
-            Self::ZeroMagicLinkFlowTtl => f.write_str("magic-link flow lifetime must be non-zero"),
+            Self::ZeroMagicLinkTtl => f.write_str("magic-link lifetime must be nonzero"),
+            Self::ZeroMagicLinkFlowTtl => f.write_str("magic-link flow lifetime must be nonzero"),
             Self::MagicLinkFlowTtlExceedsCookieCap => {
                 f.write_str("magic-link flow lifetime exceeds cookie cap")
             }
-            Self::ZeroSessionIdleTtl => f.write_str("session idle lifetime must be non-zero"),
+            Self::ZeroSessionIdleTtl => f.write_str("session idle lifetime must be nonzero"),
             Self::ZeroSessionAbsoluteTtl => {
-                f.write_str("session absolute lifetime must be non-zero")
+                f.write_str("session absolute lifetime must be nonzero")
             }
             Self::SessionIdleExceedsAbsolute => {
                 f.write_str("session idle lifetime exceeds absolute lifetime")
@@ -55,8 +55,8 @@ impl fmt::Display for MagicLinkConfigError {
             Self::SessionAbsoluteExceedsCookieCap => {
                 f.write_str("session absolute lifetime exceeds cookie cap")
             }
-            Self::ZeroRateLimit => f.write_str("rate-limit threshold must be non-zero"),
-            Self::ZeroRateLimitWindow => f.write_str("rate-limit window must be non-zero"),
+            Self::ZeroRateLimit => f.write_str("rate-limit threshold must be nonzero"),
+            Self::ZeroRateLimitWindow => f.write_str("rate-limit window must be nonzero"),
         }
     }
 }

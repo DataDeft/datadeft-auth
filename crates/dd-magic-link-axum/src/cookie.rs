@@ -1,4 +1,4 @@
-//! Outgoing `Set-Cookie` policy: validated session and temporary auth cookie
+//! Outgoing `Set-Cookie` policy: validated session and flow cookie
 //! configurations plus set/clear header construction.
 
 use core::fmt;
@@ -17,7 +17,7 @@ pub const DEFAULT_SESSION_COOKIE_NAME: &str = "dd_session";
 pub const DEFAULT_SESSION_COOKIE_PATH: &str = "/";
 
 const DEFAULT_FLOW_COOKIE_NAME: &str = "dd_auth_flow";
-const DEFAULT_TEMPORARY_COOKIE_PATH: &str = "/auth";
+const DEFAULT_FLOW_COOKIE_PATH: &str = "/auth";
 const COOKIE_EPOCH: &str = "Thu, 01 Jan 1970 00:00:00 GMT";
 
 /// Precomputed clear headers for the default cookie shapes, so the infallible
@@ -68,9 +68,9 @@ impl fmt::Display for CookieConfigError {
 
 impl std::error::Error for CookieConfigError {}
 
-/// Validated host-only temporary auth cookie policy.
+/// Validated host-only flow cookie policy.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct TemporaryCookieConfig {
+pub struct FlowCookieConfig {
     name: String,
     path: String,
     secure: bool,
@@ -78,7 +78,7 @@ pub struct TemporaryCookieConfig {
     clear_header: HeaderValue,
 }
 
-impl TemporaryCookieConfig {
+impl FlowCookieConfig {
     pub fn production(
         name: impl Into<String>,
         path: impl Into<String>,
@@ -112,7 +112,7 @@ impl TemporaryCookieConfig {
     pub fn production_defaults() -> Self {
         Self {
             name: DEFAULT_FLOW_COOKIE_NAME.to_owned(),
-            path: DEFAULT_TEMPORARY_COOKIE_PATH.to_owned(),
+            path: DEFAULT_FLOW_COOKIE_PATH.to_owned(),
             secure: true,
             same_site: SameSite::Lax,
             clear_header: HeaderValue::from_static(DEFAULT_FLOW_CLEAR_HEADER),
@@ -269,11 +269,11 @@ pub fn clear_session_cookie_header(config: &SessionCookieConfig) -> HeaderValue 
     config.clear_header.clone()
 }
 
-/// Create a temporary auth-cookie set header with a lifetime in
+/// Create a flow-cookie set header with a lifetime in
 /// `1..=`[`MagicLinkFlowCookie::MAX_ABSOLUTE_AGE_SECS`] (the flow-cookie cap
 /// owned by the service layer).
-pub fn set_temporary_cookie_header(
-    config: &TemporaryCookieConfig,
+pub fn set_flow_cookie_header(
+    config: &FlowCookieConfig,
     value: &str,
     max_age_secs: u64,
 ) -> Result<HeaderValue, MagicLinkHttpError> {
@@ -294,12 +294,12 @@ pub fn set_temporary_cookie_header(
     )
 }
 
-/// The byte-for-byte attribute-parity temporary auth-cookie clear header.
+/// The byte-for-byte attribute-parity flow-cookie clear header.
 ///
 /// Precomputed when the config is constructed; this is a cheap refcounted
 /// clone, not a per-response format-and-parse.
 #[must_use]
-pub fn clear_temporary_cookie_header(config: &TemporaryCookieConfig) -> HeaderValue {
+pub fn clear_flow_cookie_header(config: &FlowCookieConfig) -> HeaderValue {
     config.clear_header.clone()
 }
 

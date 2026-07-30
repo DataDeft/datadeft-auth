@@ -18,8 +18,8 @@ use dd_magic_link_service::{
 };
 
 use crate::{
-    MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect, SessionCookieConfig,
-    TemporaryCookieConfig,
+    FlowCookieConfig, MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect,
+    SessionCookieConfig,
 };
 
 pub(crate) fn policy() -> MagicLinkServiceConfig {
@@ -31,7 +31,7 @@ pub(crate) fn scanner_config() -> MagicLinkScannerFlowConfig {
         SameOriginRedirect::parse("/auth/magic-link/confirm").expect("post action"),
         SameOriginPostConfig::parse("https://example.test").expect("origin"),
         SessionCookieConfig::production(&policy()).expect("session policy"),
-        TemporaryCookieConfig::production_defaults(),
+        FlowCookieConfig::production_defaults(),
     )
     .expect("scanner config")
 }

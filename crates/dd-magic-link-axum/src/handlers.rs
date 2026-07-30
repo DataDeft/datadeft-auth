@@ -12,9 +12,7 @@ use dd_magic_link_service::{
     RequestMagicLinkCommand, RequestMagicLinkOutcome, TemporaryAuthStateAction,
 };
 
-use crate::cookie::{
-    clear_temporary_cookie_header, session_set_cookie_header, set_temporary_cookie_header,
-};
+use crate::cookie::{clear_flow_cookie_header, session_set_cookie_header, set_flow_cookie_header};
 use crate::cookie_parse::extract_target_cookie;
 use crate::error::{MagicLinkHttpError, generic_accepted_response};
 use crate::extract::{
@@ -77,7 +75,7 @@ pub struct MagicLinkLanding {
 ///   invalid/expired/already-used. Respond **uniformly** so link validity is
 ///   not enumerable — for a landing, use the **same HTTP status you return on
 ///   success**; for a confirmation, a single generic failure. On confirmation,
-///   clear the flow cookie with [`clear_temporary_cookie_header`].
+///   clear the flow cookie with [`clear_flow_cookie_header`].
 /// - [`Unavailable`](Self::Unavailable): a dependency was down. Respond 503 and
 ///   **preserve** the flow cookie so the user can retry.
 /// - [`Internal`](Self::Internal): an internal error. Respond 500; clearing the
@@ -114,8 +112,8 @@ where
     let outcome = begin(BeginMagicLinkLandingCommand::new(raw_token))
         .await
         .map_err(map_flow_error)?;
-    let flow_cookie = set_temporary_cookie_header(
-        config.temporary_cookies(),
+    let flow_cookie = set_flow_cookie_header(
+        config.flow_cookie(),
         outcome.flow_cookie_value(),
         outcome.cookie_max_age_secs(),
     )
@@ -159,7 +157,7 @@ where
         return Err(MagicLinkFlowResponseError::Rejected);
     }
 
-    let flow_cookie = extract_target_cookie(request.headers(), config.temporary_cookies().name())
+    let flow_cookie = extract_target_cookie(request.headers(), config.flow_cookie().name())
         .map_err(|_| MagicLinkFlowResponseError::Rejected)?;
 
     let guarded = guarded_body(
@@ -191,7 +189,7 @@ where
         outcome.authentication().session_cookie_value(),
     )
     .map_err(|_| MagicLinkFlowResponseError::Internal)?;
-    let clear_flow_cookie = clear_temporary_cookie_header(config.temporary_cookies());
+    let clear_flow_cookie = clear_flow_cookie_header(config.flow_cookie());
 
     Ok(MagicLinkConfirmed {
         outcome,

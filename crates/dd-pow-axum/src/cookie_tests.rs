@@ -12,7 +12,7 @@ fn production_defaults_are_host_only_secure_and_three_hours() {
         .expect("ascii")
         .to_owned();
 
-    assert!(header.starts_with("ct_pow=v1.kid.token;"));
+    assert!(header.starts_with("dd_pow=v1.kid.token;"));
     assert!(header.contains("Path=/"));
     assert!(header.contains("HttpOnly"));
     assert!(header.contains("Secure"));
@@ -44,15 +44,15 @@ fn invalid_name_path_and_ttl_are_rejected() {
         Some(PowCookieConfigError::InvalidName)
     );
     assert_eq!(
-        PowProofCookieConfig::production("ct_pow", "auth", 10).err(),
+        PowProofCookieConfig::production("dd_pow", "auth", 10).err(),
         Some(PowCookieConfigError::InvalidPath)
     );
     assert_eq!(
-        PowProofCookieConfig::production("ct_pow", "/", 0).err(),
+        PowProofCookieConfig::production("dd_pow", "/", 0).err(),
         Some(PowCookieConfigError::InvalidTtl)
     );
     assert_eq!(
-        PowProofCookieConfig::production("ct_pow", "/", dd_pow_core::POW_PROOF_MAX_AGE_SECS + 1)
+        PowProofCookieConfig::production("dd_pow", "/", dd_pow_core::POW_PROOF_MAX_AGE_SECS + 1)
             .err(),
         Some(PowCookieConfigError::InvalidTtl)
     );

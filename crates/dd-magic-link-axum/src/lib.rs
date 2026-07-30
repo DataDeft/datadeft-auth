@@ -35,7 +35,7 @@
 //!   use for success** so an attacker cannot probe whether a link is
 //!   valid/expired. Only genuine `Unavailable`/`Internal` failures use a 5xx.
 //! - **Clear the flow cookie** on a rejected/internal confirmation
-//!   ([`clear_temporary_cookie_header`]); preserve it on `Unavailable` so the
+//!   ([`clear_flow_cookie_header`]); preserve it on `Unavailable` so the
 //!   user can retry.
 //! - **Stamp security headers** ([`apply_magic_link_security_headers`]:
 //!   `no-store`, `no-referrer`, CSP, frame-deny) on every landing/confirmation
@@ -58,7 +58,7 @@
 //! use dd_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
 //! use dd_magic_link_axum::{
 //!     MagicLinkFlowResponseError, MagicLinkScannerFlowConfig, SameOriginPostConfig,
-//!     SameOriginRedirect, SessionCookieConfig, TemporaryCookieConfig, magic_link_landing,
+//!     SameOriginRedirect, SessionCookieConfig, FlowCookieConfig, magic_link_landing,
 //! };
 //! use dd_magic_link_service::{
 //!     Clock, DependencyError, KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey,
@@ -111,7 +111,7 @@
 //!         SameOriginRedirect::parse("/auth/magic-link/consume").expect("post action"),
 //!         SameOriginPostConfig::parse("https://example.test").expect("origin"),
 //!         SessionCookieConfig::production(&config).expect("session cookie"),
-//!         TemporaryCookieConfig::production_defaults(),
+//!         FlowCookieConfig::production_defaults(),
 //!     )
 //!     .expect("scanner config");
 //!     let mut storage_key = [0u8; 32];
@@ -183,9 +183,9 @@ mod session_auth;
 pub(crate) mod test_fixtures;
 
 pub use cookie::{
-    CookieConfigError, DEFAULT_SESSION_COOKIE_NAME, DEFAULT_SESSION_COOKIE_PATH, SameSite,
-    SessionCookieConfig, TemporaryCookieConfig, clear_session_cookie_header,
-    clear_temporary_cookie_header, session_set_cookie_header, set_temporary_cookie_header,
+    CookieConfigError, DEFAULT_SESSION_COOKIE_NAME, DEFAULT_SESSION_COOKIE_PATH, FlowCookieConfig,
+    SameSite, SessionCookieConfig, clear_flow_cookie_header, clear_session_cookie_header,
+    session_set_cookie_header, set_flow_cookie_header,
 };
 pub use error::{ErrorBody, GenericAcceptedBody, MagicLinkHttpError, generic_accepted_response};
 pub use extract::{

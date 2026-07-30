@@ -12,7 +12,7 @@ fn test_rng_error() -> rand_core::Error {
     // Any nonzero code will do; fixtures only need the call to fail.
     rand_core::Error::from(
         core::num::NonZeroU32::new(rand_core::Error::CUSTOM_START)
-            .expect("rand_core custom error code is non-zero"),
+            .expect("rand_core custom error code is nonzero"),
     )
 }
 

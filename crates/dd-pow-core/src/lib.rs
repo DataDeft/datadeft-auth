@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 //! `dd-pow-core` — pure, IO-free proof-of-work challenge mint/verify plus the
-//! `ct_pow` proof cookie that records a successful solve.
+//! `dd_pow` proof cookie that records a successful solve.
 //!
 //! Deterministic: the caller injects clock, entropy, difficulty, max age,
 //! secret, and (for the proof cookie) a CSPRNG and keyring. This crate never
@@ -12,7 +12,7 @@
 //!
 //! [`mint_pow_proof_cookie`] / [`verify_pow_proof_cookie`] turn a
 //! [`Verified`] solve into the stateless, encrypted [`PowProofCookie`] value
-//! that upper layers set as `ct_pow`. The purpose separation and lifetime
+//! that upper layers set as `dd_pow`. The purpose separation and lifetime
 //! policy live on [`PowProofCookie`].
 //!
 //! # Wire contract
@@ -38,7 +38,7 @@
 //! Difficulty 1–3 is for deterministic tests and local development only. A
 //! production deployment should tune for a target solve time (usually about 1–3
 //! seconds in supported browsers); for this simple SHA-256 loop that usually
-//! starts around 5–6 leading zero hex nibbles.
+//! starts around 5–6 leading zero hex characters.
 //!
 //! # Secret rotation
 //!

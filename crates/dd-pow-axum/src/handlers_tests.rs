@@ -81,11 +81,11 @@ fn create_then_validate_round_trips_into_a_parseable_proof_cookie() {
     .expect("solution accepted");
 
     let header = set_cookie.to_str().expect("ascii");
-    assert!(header.starts_with("ct_pow=v1."));
+    assert!(header.starts_with("dd_pow=v1."));
     assert!(header.contains("Max-Age=10800"));
 
     let cookie_value = header
-        .strip_prefix("ct_pow=")
+        .strip_prefix("dd_pow=")
         .and_then(|rest| rest.split_once(';').map(|(token, _)| token))
         .expect("cookie value present");
     let verified = verify_pow_proof_cookie(cookie_value, &keyring, TIM_UNIX + 1, config.ttl_secs())

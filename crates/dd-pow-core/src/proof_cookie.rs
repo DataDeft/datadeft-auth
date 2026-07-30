@@ -1,4 +1,4 @@
-//! `ct_pow` proof cookie: evidence that this browser recently solved a PoW
+//! `dd_pow` proof cookie: evidence that this browser recently solved a PoW
 //! challenge.
 //!
 //! Minted and verified with the generic bound-cookie primitives in
@@ -31,7 +31,7 @@ pub const TOKEN_TYPE_POW_PROOF_COOKIE_V1: &str = "pow-proof-v1";
 /// never validate a proof cookie older than this bound.
 pub const POW_PROOF_MAX_AGE_SECS: u64 = 24 * 60 * 60;
 /// Documented default proof-cookie lifetime: 3 hours. Matches the shipped
-/// `ct_pow` cookie. Override per deployment within `1..=POW_PROOF_MAX_AGE_SECS`.
+/// `dd_pow` cookie. Override per deployment within `1..=POW_PROOF_MAX_AGE_SECS`.
 pub const DEFAULT_POW_PROOF_TTL_SECS: u64 = 3 * 60 * 60;
 
 /// `tid` is `hex(BLAKE3(chg))`: exactly 64 lowercase hex characters.
@@ -109,7 +109,7 @@ fn is_valid_tid(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
-/// Mint an encrypted `ct_pow` proof cookie for a verified solve identity.
+/// Mint an encrypted `dd_pow` proof cookie for a verified solve identity.
 ///
 /// The lifetime is enforced at verification time from the caller's configured
 /// max age, so minting only stamps the current time. Fails closed if `tid` is
@@ -142,7 +142,7 @@ where
     Ok(PowProofCookieValue(cookie?))
 }
 
-/// Verify a `ct_pow` proof-cookie value and recover the solve identity.
+/// Verify a `dd_pow` proof-cookie value and recover the solve identity.
 ///
 /// `max_age_secs` is the deployment's configured lifetime and must be in
 /// `1..=POW_PROOF_MAX_AGE_SECS`. Both freshness bounds (last activity and first
