@@ -53,8 +53,8 @@ impl MagicLinkHttpError {
                 "Invalid request."
             }
             Self::Forbidden => "Forbidden.",
-            Self::MagicLinkUnavailable => "This magic link cannot be used. Request a new one.",
-            Self::Unavailable => "Service temporarily unavailable. Try again later.",
+            Self::MagicLinkUnavailable => "You cannot use this magic link. Request a new one.",
+            Self::Unavailable => "The service is temporarily unavailable. Try again later.",
             Self::Internal => "Internal server error.",
         }
     }

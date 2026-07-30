@@ -30,7 +30,8 @@ pub const SELECTOR_LOOKUP_PREFIX: &str = "mlh";
 /// Storage prefix for magic-link verifier HMACs.
 pub const VERIFIER_HASH_PREFIX: &str = "mlv";
 
-/// Loaded HMAC key/pepper material. Debug is redacted; bytes zeroize on drop.
+/// Loaded HMAC key/pepper material. The `Debug` impl redacts it. The bytes
+/// zeroize on drop.
 pub struct LookupHmacKey([u8; HMAC_KEY_BYTES]);
 
 impl LookupHmacKey {

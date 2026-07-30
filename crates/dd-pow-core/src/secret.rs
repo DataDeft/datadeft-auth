@@ -4,9 +4,10 @@ use zeroize::Zeroize;
 
 /// 32-byte secret key for the challenge HMAC.
 ///
-/// Zeroed on drop via the audited `zeroize` crate so key material does not
-/// linger in memory. This is best-effort hygiene: like any in-process key, the
-/// HMAC implementation and the OS may transiently hold copies elsewhere.
+/// The `Drop` impl uses the audited `zeroize` crate to zero the key on drop, so
+/// key material does not linger in memory. This is best-effort hygiene: like any
+/// in-process key, the HMAC implementation and the OS may briefly hold copies
+/// elsewhere.
 pub struct PowSecret([u8; 32]);
 
 impl PowSecret {

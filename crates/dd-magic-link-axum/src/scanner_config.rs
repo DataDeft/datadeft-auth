@@ -31,10 +31,10 @@ impl std::error::Error for MagicLinkScannerFlowConfigError {}
 
 /// Fully validated scanner-safe HTTP configuration.
 ///
-/// `post_action` is the same-origin path the confirmation form/POST targets;
-/// the caller renders it and it is validated against the flow-cookie path. The
-/// post-login redirect is the caller's concern in the headless helpers, so it
-/// is not part of this config.
+/// `post_action` is the same-origin path the confirmation form/POST targets.
+/// The caller renders it, and the config validates it against the flow-cookie
+/// path. The post-login redirect is the caller's concern in the headless
+/// helpers, so it is not part of this config.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MagicLinkScannerFlowConfig {
     post_action: SameOriginRedirect,
@@ -73,8 +73,9 @@ impl MagicLinkScannerFlowConfig {
 
     /// Use a different trusted-edge country header (for example Cloudflare's
     /// `cf-ipcountry`). Country binding is opportunistic: when the header is
-    /// present it is validated and bound into the session; when absent the
-    /// flow proceeds without a country. The header is only trustworthy if the
+    /// present, the flow validates it and binds it into the session. When it is
+    /// absent, the flow proceeds without a country. The header is only
+    /// trustworthy if the
     /// edge strips or overwrites it on every request and the origin is not
     /// directly reachable.
     #[must_use]

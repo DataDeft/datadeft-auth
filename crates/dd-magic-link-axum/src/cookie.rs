@@ -262,7 +262,7 @@ pub fn session_set_cookie_header(
 
 /// The byte-for-byte attribute-parity session clear header.
 ///
-/// Precomputed when the config is constructed; this is a cheap refcounted
+/// Precomputed when the config is constructed. This is a cheap refcounted
 /// clone, not a per-response format-and-parse.
 #[must_use]
 pub fn clear_session_cookie_header(config: &SessionCookieConfig) -> HeaderValue {
@@ -296,7 +296,7 @@ pub fn set_flow_cookie_header(
 
 /// The byte-for-byte attribute-parity flow-cookie clear header.
 ///
-/// Precomputed when the config is constructed; this is a cheap refcounted
+/// Precomputed when the config is constructed. This is a cheap refcounted
 /// clone, not a per-response format-and-parse.
 #[must_use]
 pub fn clear_flow_cookie_header(config: &FlowCookieConfig) -> HeaderValue {
@@ -348,7 +348,7 @@ fn is_valid_cookie_value(value: &str) -> bool {
 }
 
 /// Build the byte-for-byte clear header for a validated cookie shape. Runs at
-/// config-construction time only; responses clone the stored value.
+/// config-construction time only. Responses clone the stored value.
 fn build_clear_cookie_header(
     name: &str,
     path: &str,
@@ -356,7 +356,7 @@ fn build_clear_cookie_header(
     same_site: SameSite,
 ) -> Result<HeaderValue, CookieConfigError> {
     // A validated name/path always forms a legal header value, so this error
-    // path is unreachable; it maps to the fallible inputs rather than panicking.
+    // path is unreachable. It maps to the fallible inputs rather than panicking.
     cookie_header(name, "", path, secure, same_site, Some(0), true)
         .map_err(|_| CookieConfigError::InvalidName)
 }

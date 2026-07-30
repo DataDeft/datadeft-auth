@@ -24,7 +24,7 @@ pub enum MagicLinkServiceError {
     /// Magic link could not be consumed. This intentionally covers missing,
     /// expired, already-consumed, throttled, and wrong-verifier cases.
     MagicLinkUnavailable,
-    /// Dependency is unavailable; callers may retry later.
+    /// Dependency is unavailable. Callers may retry later.
     Unavailable,
     /// Internal configuration or invariant failure.
     Internal,

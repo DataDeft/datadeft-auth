@@ -75,7 +75,7 @@ impl MagicLinkOutbox for FakeMagicLinkOutbox {
     }
 }
 
-/// SES-backed outbox. The renderer owns URL/template details; this adapter only
+/// SES-backed outbox. The renderer owns URL/template details. This adapter only
 /// sends the rendered content.
 #[cfg(feature = "aws")]
 pub struct SesMagicLinkOutbox<R> {

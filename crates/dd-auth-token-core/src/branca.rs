@@ -13,8 +13,8 @@
 //! [`encode`] draws the 24-byte nonce internally from the caller-supplied
 //! [`CryptoRng`]. This is API hygiene, not a proof that callers cannot build a
 //! deterministic RNG: `CryptoRng` is a marker trait. Production callers MUST use
-//! an OS-backed CSPRNG. Fixed raw nonce bytes are additionally hidden from the
-//! default public API; `encode_with_nonce` is available only for crate tests and
+//! an OS-backed CSPRNG. The default public API also hides fixed raw nonce
+//! bytes. `encode_with_nonce` is available only for crate tests and
 //! the explicit `test-support` feature. CI guards that gate so the fixed-nonce
 //! helper cannot accidentally enter the default public API.
 
@@ -82,7 +82,7 @@ impl fmt::Debug for Jti {
 /// handle for the token (see the malleability note on [`decode`]).
 pub struct Verified {
     /// Mint time in unix seconds (authenticated as AAD). TTL is the caller's
-    /// responsibility; this function performs no clock check.
+    /// responsibility. This function performs no clock check.
     pub timestamp: u32,
     /// The 24-byte per-token nonce from the authenticated header. Use
     /// [`Verified::jti`] to key revocation / replay on it.
@@ -106,7 +106,7 @@ impl Verified {
 }
 
 impl fmt::Debug for Verified {
-    // Redact the payload; it is plaintext and may be secret.
+    // Redact the payload. It is plaintext and may be secret.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Verified")
             .field("timestamp", &self.timestamp)
@@ -125,7 +125,7 @@ impl fmt::Debug for Verified {
 /// seconds (stored big-endian and authenticated as AAD). Production callers
 /// MUST pass an OS-backed CSPRNG. Nonce reuse under the same key is
 /// catastrophic. The public API draws nonce bytes internally for hygiene, but
-/// callers still control the RNG object; production code must pass a reviewed
+/// callers still control the RNG object. Production code must pass a reviewed
 /// OS-backed CSPRNG, not a deterministic fixture RNG.
 pub fn encode<R: RngCore + CryptoRng + ?Sized>(
     data: &[u8],
@@ -228,8 +228,8 @@ pub fn max_token_chars_for_payload(payload_bytes: usize) -> usize {
 /// base62 is a big-integer encoding, so leading `'0'` digits carry no weight:
 /// without a check, `token`, `"0"+token`, `"00"+token`, … would all decode to
 /// the same blob and authenticate identically, giving one token unboundedly many
-/// valid spellings (token *malleability* — not forgery; the AEAD payload is
-/// unchanged). This function rejects every non-canonical spelling so the token
+/// valid spellings. This is token *malleability*, not forgery — the AEAD payload
+/// is unchanged. This function rejects every non-canonical spelling so the token
 /// string is a unique handle. Prefer keying revocation / replay on
 /// [`Verified::jti`] regardless.
 pub fn decode(token: &str, key: &[u8]) -> Result<Verified, TokenError> {
@@ -263,7 +263,7 @@ pub fn decode(token: &str, key: &[u8]) -> Result<Verified, TokenError> {
     // leading '0' digits (rejected above, before decoding) and bytes outside
     // the alphabet, which `base62::decode` rejects rather than skips (embedded
     // newlines included). So every token that reaches this point is already
-    // the unique spelling of `blob`; re-encoding to compare would be O(n²)
+    // the unique spelling of `blob`. Re-encoding to compare would be O(n²)
     // work that can never fail. Debug builds re-verify the equivalence.
     debug_assert_eq!(
         base62::encode(&blob),
@@ -273,7 +273,7 @@ pub fn decode(token: &str, key: &[u8]) -> Result<Verified, TokenError> {
 
     // The version byte is a public constant, not secret, so a plain compare
     // leaks nothing a constant-time compare would hide. The distinct error is
-    // kept for logs/tests; the cookie edge funnels it to a generic failure.
+    // kept for logs/tests. The cookie edge funnels it to a generic failure.
     if blob[0] != VERSION {
         return Err(TokenError::InvalidTokenVersion);
     }

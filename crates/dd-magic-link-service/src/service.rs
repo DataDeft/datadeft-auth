@@ -39,7 +39,7 @@ use crate::types::{
 };
 
 /// Request-flow-only service. It does not require user/session repositories or a
-/// session-cookie keyring. Construct with a struct literal; every field is a
+/// session-cookie keyring. Construct with a struct literal. Every field is a
 /// required dependency.
 pub struct MagicLinkRequestService<'a, MagicLinks, Limiter, Outbox, ServiceClock, Rng> {
     pub magic_links: &'a MagicLinks,
@@ -122,7 +122,7 @@ where
 }
 
 /// Canonical scanner-safe landing, confirmation, and revocation service.
-/// Construct with a struct literal; every field is a required dependency.
+/// Construct with a struct literal. Every field is a required dependency.
 pub struct MagicLinkFlowService<'a, Authentication, Sessions, Limiter, ServiceClock, Rng> {
     pub authentication: &'a Authentication,
     pub sessions: &'a Sessions,
@@ -501,7 +501,7 @@ where
 }
 
 /// Request-path limits: the request and outbox email buckets, checked as one
-/// concurrent batch — with a network-backed limiter each check is a round
+/// concurrent batch. With a network-backed limiter each check is a round
 /// trip, so sequential awaits would serialize four of them per request.
 async fn request_and_outbox_limits_deny<Limiter: RateLimiter>(
     limiter: &Limiter,
@@ -549,13 +549,13 @@ async fn consume_limits_deny<Limiter: RateLimiter>(
     any_limit_denied(limiter, checks, now_unix).await
 }
 
-/// Run every `(key, limit, window_secs)` check concurrently; report whether
+/// Run every `(key, limit, window_secs)` check concurrently. Report whether
 /// any bucket denied.
 ///
-/// Concurrency is an accounting choice as well as a latency one: every bucket
-/// is consulted (and its counter advanced) even when another bucket denies,
-/// where the previous sequential form stopped at the first denial. A denied
-/// request therefore still consumes quota in every bucket, which only
+/// Concurrency is an accounting choice as well as a latency one. The limiter
+/// consults every bucket (and advances its counter) even when another bucket
+/// denies, where the previous sequential form stopped at the first denial. A
+/// denied request therefore still consumes quota in every bucket, which only
 /// tightens limiting. A dependency error takes precedence over a denial —
 /// limiter state is unknown, so the request fails closed as unavailable.
 async fn any_limit_denied<Limiter: RateLimiter>(

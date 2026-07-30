@@ -67,8 +67,8 @@ fn flow_purpose_constants_are_pinned() {
 #[test]
 fn flow_hkdf_vector_is_pinned() {
     // HKDF-SHA256 with salt=None, IKM=[0x11; 32], L=32,
-    // info = HKDF_INFO || 0x00 || kid. This vector pins the exact info framing;
-    // changing it invalidates every flow cookie minted under the previous key.
+    // info = HKDF_INFO || 0x00 || kid. This vector pins the exact info framing.
+    // Changing it invalidates every flow cookie minted under the previous key.
     let root = RootSecret::new([0x11; KEY_BYTES]);
     let flow = root
         .derive_key::<MagicLinkFlowCookie>(&kid("flow-active"))

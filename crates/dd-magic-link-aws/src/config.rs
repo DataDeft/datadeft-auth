@@ -40,8 +40,8 @@ impl fmt::Debug for SupportedSecretManager {
     }
 }
 
-/// Secret version selector. Values are operational metadata and are redacted in
-/// parent config `Debug` output.
+/// Secret version selector. Values are operational metadata, and the parent
+/// config `Debug` output redacts them.
 #[derive(Clone, Eq, PartialEq)]
 pub enum SecretVersionRef {
     /// Resolve by provider version stage, for example `AWSCURRENT` or
@@ -257,8 +257,8 @@ pub struct LoadedAuthSecrets {
 
 impl LoadedAuthSecrets {
     /// Parse active and optional previous secret JSON payloads. Previous cookie
-    /// roots become verify-only keyring slots; previous HMAC material is not used
-    /// for new lookups.
+    /// roots become verify-only keyring slots. New lookups do not use previous
+    /// HMAC material.
     pub fn from_json(active: &str, previous: Option<&str>) -> Result<Self, AwsAdapterError> {
         let active = AuthSecretDocument::parse(active)?;
         let previous = previous.map(AuthSecretDocument::parse).transpose()?;
@@ -296,7 +296,7 @@ impl fmt::Debug for LoadedAuthSecrets {
 }
 
 /// Resolve configured AWS Secrets Manager references into loaded auth secret
-/// material. Callers provide the AWS client; this function does not read global
+/// material. Callers provide the AWS client. This function does not read global
 /// config or environment variables.
 #[cfg(feature = "aws")]
 pub async fn resolve_auth_secrets(

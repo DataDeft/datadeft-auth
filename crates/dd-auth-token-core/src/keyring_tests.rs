@@ -94,7 +94,7 @@ fn root_secret_derives_deterministic_kid_and_purpose_separated_keys() {
 fn hkdf_vector_is_pinned() {
     // HKDF-SHA256 with salt=None, IKM=[0x11; 32], L=32,
     // info = HKDF_INFO || 0x00 || kid. This vector pins the exact info framing
-    // (purpose + kid) and output length; changing the framing invalidates every
+    // (purpose + kid) and output length. Changing the framing invalidates every
     // token minted under previously derived keys. Downstream crates that own a
     // purpose pin their own product vectors on top of this one.
     let root = RootSecret::new([0x11; KEY_BYTES]);
@@ -226,7 +226,7 @@ fn key_id_debug_redacts_attacker_input() {
 #[test]
 fn retired_keys_are_absent_and_return_unknown_key() {
     // There is intentionally no KeyStatus::Retired. Once a key should no
-    // longer verify, remove the slot; holding retired material in memory is
+    // longer verify, remove the slot. Holding retired material in memory is
     // needless liability.
     let root = RootSecret::new([0x55; KEY_BYTES]);
     let active = root

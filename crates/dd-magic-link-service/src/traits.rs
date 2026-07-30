@@ -28,19 +28,19 @@ pub trait MagicLinkRepository {
 ///
 /// Authentication planning uses strongly consistent reads where the backing
 /// store supports them. The service derives and compares the presented verifier
-/// hash locally in constant time; adapters must never receive or compare the raw
+/// hash locally in constant time. Adapters must never receive or compare the raw
 /// token or verifier.
 ///
 /// A successful [`commit_magic_link_authentication`](Self::commit_magic_link_authentication)
 /// is one atomic transaction that:
 ///
 /// - transitions exactly the expected, unconsumed and unexpired challenge with
-///   nonzero consent to consumed;
+///   nonzero consent to consumed
 /// - for an existing user, conditions both immutable email linkage and profile
 ///   on the planned user id and expected email, requires `disabled == false`, and
-///   preserves stored consent;
+///   preserves stored consent
 /// - for a created user, derives an enabled profile and immutable email linkage
-///   solely from the planned user id and expected email and consent fields;
+///   solely from the planned user id and expected email and consent fields
 /// - derives an unrevoked session solely from the command's session id, planned
 ///   user id, expected email, and `now_unix`, then creates it and its user index.
 ///
@@ -51,7 +51,7 @@ pub trait MagicLinkRepository {
 /// `Rejected`, `UserConflict`, and `SessionConflict` are confirmed transaction
 /// cancellations and must leave every item unchanged. A confirmed conflict may
 /// be replanned, but every changed transaction payload requires a new attempt id.
-/// `DependencyUnavailable` may have an ambiguous outcome; callers may retry only
+/// `DependencyUnavailable` may have an ambiguous outcome. Callers may retry only
 /// the identical command with the same attempt id and must not read, generate
 /// entropy, or replan while its result may be ambiguous. If the original attempt
 /// committed, an immediate exact-command retry with that attempt id must return
@@ -87,7 +87,7 @@ pub trait SessionRepository {
     /// Find the requested live session at `now_unix`.
     ///
     /// Implementations must return `None` for missing, revoked, or server-expired
-    /// records. Service validation additionally checks identity, revocation, and
+    /// records. Service validation also checks identity, revocation, and
     /// authenticated lifetime invariants as defense in depth.
     fn find_session(
         &self,
@@ -110,7 +110,7 @@ pub enum RateLimitDecision {
 }
 
 /// Rate limiter dependency. Returning [`RateLimitDecision::Denied`] is a normal
-/// policy outcome and is mapped to generic public behavior by the service.
+/// policy outcome, and the service maps it to generic public behavior.
 pub trait RateLimiter {
     fn check_rate_limit(
         &self,

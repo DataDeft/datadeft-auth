@@ -275,7 +275,7 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
     let config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");
     let scanner = scanner_config();
 
-    // Seed a magic link via the request service; recover the token from the
+    // Seed a magic link via the request service. Recover the token from the
     // fake outbox (stands in for the delivered email).
     {
         let mut rng = OsRng;

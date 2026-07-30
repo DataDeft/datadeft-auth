@@ -87,7 +87,7 @@ fn landing_query_parser_is_raw_exact_and_bounded() {
         }
     }
     // The raw-token length cap is owned by the service command, not this
-    // extractor; only the outer query-size guard applies here.
+    // extractor. Only the outer query-size guard applies here.
     let over_query = "a".repeat(MAX_MAGIC_LINK_LANDING_QUERY_BYTES + 1);
     assert!(extract_landing_token(Some(&over_query)).is_err());
 }
@@ -165,7 +165,7 @@ async fn guarded_body_and_country_regressions_remain_strict() {
     assert_eq!(viewer_country(&headers), None);
 
     // A configured non-CloudFront edge header works through the same
-    // validation; the CloudFront helper ignores it.
+    // validation. The CloudFront helper ignores it.
     let cf_ipcountry = HeaderName::from_static("cf-ipcountry");
     let mut cloudflare_headers = HeaderMap::new();
     cloudflare_headers.insert(cf_ipcountry.clone(), HeaderValue::from_static("DE"));

@@ -2,7 +2,7 @@
 //!
 //! Deterministic: same secret/difficulty/time/entropy always produce the same
 //! challenge, and verification is a pure pipeline. The caller injects time and
-//! entropy; this module never reads the clock or generates randomness.
+//! entropy. This module never reads the clock or generates randomness.
 
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
@@ -17,13 +17,13 @@ use crate::secret::PowSecret;
 type HmacSha256 = Hmac<Sha256>;
 
 /// How many seconds a solution's `tim` may lie in the future of `now` before
-/// it is rejected. Covers small clock skew between server instances; aligned
+/// it is rejected. Covers small clock skew between server instances. It aligns
 /// with the token-cookie layer so one auth path has one skew policy.
 pub const MAX_FUTURE_SKEW_SECS: u64 = 60;
 /// Maximum useful difficulty for a 64-character lowercase hex SHA-256 digest.
 pub const MAX_DIFFICULTY: u8 = 64;
-/// Recommended production minimum. Difficulty 1–3 is useful for tests only;
-/// production should tune for roughly 1–3 seconds in target browsers, typically
+/// Recommended production minimum. Difficulty 1–3 is useful for tests only.
+/// Production should tune for roughly 1–3 seconds in target browsers, typically
 /// around 5–6 leading zero hex characters for this simple SHA-256 loop.
 pub const RECOMMENDED_PRODUCTION_MIN_DIFFICULTY: u8 = 5;
 
@@ -33,14 +33,14 @@ const TAG_HEX_BYTES: usize = 64;
 const MAX_NON_BYTES: usize = 20;
 const MAX_TIM_BYTES: usize = 32;
 
-/// Domain/version separator prefixed to every authenticated tag message,
-/// satisfying the versioned + domain-separated challenge requirement
+/// Domain/version separator. The server prefixes it to every authenticated tag
+/// message. It satisfies the versioned + domain-separated challenge requirement
 /// (`docs/security.md`). The string is library-level and role-unique
 /// ("this is the PoW *tag* message") rather than product-specific, so the
-/// crate stays reusable; consumers that want product-unique domain strings
+/// crate stays reusable. Consumers that want product-unique domain strings
 /// should fork or override the constant. The browser client never computes
-/// the tag — it only echoes it — so this prefix is a server-side concern;
-/// bumping it cleanly invalidates every previously minted challenge.
+/// the tag — it only echoes it — so this prefix is a server-side concern. A
+/// bump to it cleanly invalidates every previously minted challenge.
 pub(crate) const TAG_DOMAIN: &str = "pow-tag-v1";
 
 /// Mint a challenge. Deterministic: same secret/difficulty/time/entropy
@@ -83,7 +83,7 @@ pub fn mint_challenge(
 /// 4. Difficulty floor: `dif >= max(min_difficulty, 1)` — proof-of-work must
 ///    always require at least one leading zero, so a misconfigured
 ///    `min_difficulty = 0` can never yield a zero-work pass. The client/API
-///    echoes the minted `dif`; the tag prevents lowering it, while this floor
+///    echoes the minted `dif`. The tag prevents lowering it, while this floor
 ///    lets callers reject still-authentic in-flight challenges after raising
 ///    their minimum.
 /// 5. Work: `sol` has `dif` leading `'0'` hex chars and equals
@@ -106,8 +106,8 @@ pub fn verify_solution(
         &tag_message(&solution.chg, solution.dif, &solution.tim),
     );
     // The shape check above guarantees `tag` is exactly 64 lowercase hex
-    // chars, so this decodes into the stack buffer without allocating; the
-    // error mapping is kept as a defensive backstop.
+    // chars, so this decodes into the stack buffer without allocating. The
+    // code keeps the error mapping as a defensive backstop.
     let mut client_tag = [0u8; 32];
     hex::decode_to_slice(&solution.tag, &mut client_tag).map_err(|_| PowError::InvalidTag)?;
     if expected_tag.ct_eq(&client_tag).unwrap_u8() != 1 {
@@ -130,7 +130,7 @@ pub fn verify_solution(
     // 3. Difficulty floor. The effective minimum is at least 1, so a
     //    misconfigured `min_difficulty = 0` (or a directly injected `dif = 0`)
     //    can never produce a zero-work pass. NOTE: this floor is a defensive
-    //    backstop; primary downgrade protection comes from the tag binding the
+    //    backstop. Primary downgrade protection comes from the tag binding the
     //    echoed minted difficulty, while the caller's current `min_difficulty`
     //    can still reject old-but-authentic in-flight challenges.
     let floor = min_difficulty.max(1);

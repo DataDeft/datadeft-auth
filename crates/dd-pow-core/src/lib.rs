@@ -21,10 +21,9 @@
 //!
 //! - Challenge JSON: `{ chg, dif, tim, tag }`.
 //! - Solution JSON as the client posts it: `{ chg, sol, non, dif, tim, tag }`.
-//!   The client/API must echo the minted `dif`; the HMAC tag binds that value,
-//!   preventing a client from lowering it, while the server's `min_difficulty`
-//!   check can reject still-authentic in-flight challenges after a difficulty
-//!   bump.
+//!   The client/API must echo the minted `dif`. The HMAC tag binds that value
+//!   and stops a client from lowering it. The server's `min_difficulty` check
+//!   can reject still-authentic in-flight challenges after a difficulty bump.
 //! - The worker hashes `SHA-256(chg + String(nonce))` (UTF-8, decimal nonce),
 //!   hex-encodes lowercase, and requires `dif` leading zero hex characters
 //!   (checked nibble-by-nibble).
@@ -37,15 +36,15 @@
 //!
 //! Difficulty 1–3 is for deterministic tests and local development only. A
 //! production deployment should tune for a target solve time (usually about 1–3
-//! seconds in supported browsers); for this simple SHA-256 loop that usually
+//! seconds in supported browsers). For this simple SHA-256 loop that usually
 //! starts around 5–6 leading zero hex characters.
 //!
 //! # Secret rotation
 //!
 //! `PowSecret` is intentionally a single loaded secret, not a full keyring. A
-//! consuming service that needs smooth rotation should hold current plus
-//! verify-only previous secrets and try verification against both for at most
-//! the configured challenge `max_age`. Rotating the only secret, or changing the
+//! consuming service that needs rotation without downtime should hold current
+//! plus verify-only previous secrets. It tries verification against both for at
+//! most the configured challenge `max_age`. Rotating the only secret, or changing the
 //! tag domain/framing, deliberately invalidates in-flight challenges for that
 //! short window.
 //!

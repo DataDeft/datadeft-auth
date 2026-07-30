@@ -9,7 +9,7 @@
 //! `selector` is 128 bits of CSPRNG entropy encoded as 32 lowercase hex
 //! characters. `verifier` is 256 bits encoded as 64 lowercase hex characters.
 //! The `mlv1` prefix is the explicit wire-format version marker. `selector` is
-//! the lower-value lookup half; the verifier is the bearer secret. Store only
+//! the lower-value lookup half. The verifier is the bearer secret. Store only
 //! keyed lookup/HMAC material for both halves.
 
 use core::fmt;

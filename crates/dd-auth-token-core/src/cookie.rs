@@ -9,14 +9,14 @@
 //!
 //! # Freshness is mandatory
 //!
-//! Validation entry points require a [`MaxAge`]; a caller cannot obtain a
+//! Validation entry points require a [`MaxAge`]. A caller cannot obtain a
 //! [`VerifiedCookie`] without stating a TTL. Two clocks are checked: the Branca
 //! timestamp is *last activity* (idle bound) and the payload `iat` is *first
 //! issue* (absolute bound), so a re-minted sliding session cannot outlive its
 //! absolute lifetime. Future-dated timestamps (a skewed or rewound minting host)
 //! are rejected beyond [`CLOCK_SKEW_TOLERANCE_SECS`]. All verification failures
-//! funnel to the single generic [`TokenError::InvalidToken`] at the public edge;
-//! mint/configuration failures remain distinct so operators can alarm on them.
+//! funnel to the single generic [`TokenError::InvalidToken`] at the public edge.
+//! Mint/configuration failures remain distinct so operators can alarm on them.
 //!
 //! # Payload sizing
 //!
@@ -46,7 +46,7 @@ const PAYLOAD_V1: u8 = 1;
 
 /// Freshness bounds every cookie validation MUST supply.
 ///
-/// `idle_secs` bounds time since last activity (the Branca timestamp);
+/// `idle_secs` bounds time since last activity (the Branca timestamp).
 /// `absolute_secs` bounds time since first issue (`iat`). For cookies with a
 /// single TTL (e.g. PoW proof cookies), use [`MaxAge::fixed`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -213,15 +213,15 @@ impl fmt::Debug for VerifiedCookie {
 /// Mint a `v1.{kid}.{branca}` value with `typ`, `kid`, and `iat` bound inside the
 /// encrypted payload.
 ///
-/// `timestamp` is the last-activity/mint time (stored in the Branca header);
+/// `timestamp` is the last-activity/mint time (stored in the Branca header).
 /// `iat` is the first-issue anchor for the absolute lifetime. On a first mint
-/// pass `iat == timestamp`; on a sliding re-mint carry the original `iat` forward
+/// pass `iat == timestamp`. On a sliding re-mint carry the original `iat` forward
 /// with a fresh `timestamp`. `timestamp` must be within
 /// [`CLOCK_SKEW_TOLERANCE_SECS`] of `now_unix`, and `iat` must not postdate
 /// `timestamp`.
 ///
 /// Unlike verification, minting does not funnel keyring/configuration failures
-/// into [`TokenError::InvalidToken`]; rotation faults must be visible to
+/// into [`TokenError::InvalidToken`]. Rotation faults must be visible to
 /// operators as distinct errors.
 pub fn mint_bound_cookie<P, R>(
     body: &[u8],
@@ -333,7 +333,7 @@ fn check_mint_timestamp(timestamp: u32, now_unix: u64) -> Result<(), TokenError>
 }
 
 /// Idle-bound freshness on the Branca timestamp (last activity). Returns
-/// [`TokenError::Expired`] internally; callers funnel it to the generic error.
+/// [`TokenError::Expired`] internally. Callers funnel it to the generic error.
 fn check_timestamp_fresh(
     timestamp: u32,
     now_unix: u64,
@@ -396,8 +396,8 @@ fn encode_bound_payload<P: KeyPurpose>(
 
     let typ = typ.as_bytes();
     let kid = kid.as_bytes();
-    // `typ` is a small crate constant and `kid` is <= 64 bytes via KeyId::parse;
-    // the length prefixes are single bytes, so both must fit in a u8.
+    // `typ` is a small crate constant and `kid` is <= 64 bytes via KeyId::parse.
+    // The length prefixes are single bytes, so both must fit in a u8.
     if typ.len() > usize::from(u8::MAX) || kid.len() > usize::from(u8::MAX) {
         return Err(TokenError::Internal);
     }
@@ -415,7 +415,7 @@ fn encode_bound_payload<P: KeyPurpose>(
     Ok(out)
 }
 
-/// Parse the fixed binary framing. Every field is bounds-checked; any short or
+/// Parse the fixed binary framing. Every field is bounds-checked. Any short or
 /// malformed buffer is a generic failure. The buffer is authenticated by the
 /// AEAD before it reaches here, so this only guards against our own invariants.
 fn decode_bound_payload(buf: &[u8]) -> Result<DecodedPayload<'_>, TokenError> {

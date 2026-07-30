@@ -8,7 +8,8 @@ use zeroize::Zeroize;
 
 use crate::error::{MagicLinkFlowError, MagicLinkServiceError};
 // The session-cookie purpose lives with the session-cookie framing in
-// `session_body`; re-exported here so `types::SessionCookie` paths keep working.
+// `session_body`. This module re-exports it here so `types::SessionCookie`
+// paths keep working.
 pub use crate::session_body::{
     DEFAULT_SESSION_ABSOLUTE_SECS, DEFAULT_SESSION_IDLE_SECS, HKDF_INFO_SESSION_COOKIE_V1,
     SessionCookie, TOKEN_TYPE_SESSION_COOKIE_V1,
@@ -35,7 +36,7 @@ impl RateLimitKey {
 
     /// Wrap a key the service itself assembled from validated components,
     /// without re-scanning or re-allocating it. Debug builds re-check the
-    /// canonical form; untrusted input must go through [`Self::parse`].
+    /// canonical form. Untrusted input must go through [`Self::parse`].
     pub(crate) fn from_service_built(value: String) -> Self {
         debug_assert!(
             is_valid_key_component(&value, 256),
@@ -71,7 +72,7 @@ impl UserId {
 
     /// Wrap an id the service generated itself (`usr_` + 32 lowercase hex),
     /// without re-scanning or re-allocating it. Debug builds re-check the
-    /// canonical form; untrusted input must go through [`Self::parse`].
+    /// canonical form. Untrusted input must go through [`Self::parse`].
     pub(crate) fn from_service_built(value: String) -> Self {
         debug_assert!(
             is_prefixed_hex_id(&value, "usr_", 32),
@@ -93,7 +94,7 @@ impl fmt::Debug for UserId {
 }
 
 /// Server-side session id. This is bearer-equivalent while a cookie containing
-/// it is valid; storage should use keyed lookup material, not raw ids.
+/// it is valid. Storage should use keyed lookup material, not raw ids.
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct SessionId(String);
 
@@ -108,7 +109,7 @@ impl SessionId {
 
     /// Wrap an id the service generated itself (`sid_` + 64 lowercase hex),
     /// without re-scanning or re-allocating it. Debug builds re-check the
-    /// canonical form; untrusted input must go through [`Self::parse`].
+    /// canonical form. Untrusted input must go through [`Self::parse`].
     pub(crate) fn from_service_built(value: String) -> Self {
         debug_assert!(
             is_prefixed_hex_id(&value, "sid_", 64),
@@ -314,7 +315,7 @@ impl AuthenticationAttemptId {
 
     /// Wrap an id the service generated itself (`aid_` + 32 lowercase hex),
     /// without re-scanning or re-allocating it. Debug builds re-check the
-    /// canonical form; untrusted input must go through [`Self::parse`].
+    /// canonical form. Untrusted input must go through [`Self::parse`].
     pub(crate) fn from_service_built(value: String) -> Self {
         debug_assert!(
             is_prefixed_hex_id(&value, "aid_", 32),
@@ -337,10 +338,11 @@ impl fmt::Debug for AuthenticationAttemptId {
 
 /// Complete all-or-nothing magic-link authentication transaction.
 ///
-/// Before submitting this command, the service owns token parsing, presented
-/// verifier HMAC derivation, constant-time comparison, policy/consent checks,
-/// identity and session-id generation, checked session expiry calculation, and
-/// complete browser-cookie minting. The command contains no raw token, selector,
+/// Before submitting this command, the service completes several steps. It owns
+/// token parsing, presented verifier HMAC derivation, constant-time comparison,
+/// and policy/consent checks. It also owns identity and session-id generation,
+/// checked session expiry calculation, and complete browser-cookie minting.
+/// The command contains no raw token, selector,
 /// verifier, presented verifier hash, or redundant persisted record fields.
 /// See [`MagicLinkAuthenticationRepository`](crate::traits::MagicLinkAuthenticationRepository)
 /// for the full atomic commit and retry contract.
@@ -372,8 +374,9 @@ impl fmt::Debug for CommitMagicLinkAuthentication {
 
 /// Request command. Debug redacts the target account.
 ///
-/// The library is language-agnostic: email rendering (and any locale) is owned
-/// entirely by the [`MagicLinkOutbox`](crate::MagicLinkOutbox) implementation.
+/// The library is language-agnostic: the
+/// [`MagicLinkOutbox`](crate::MagicLinkOutbox) implementation owns email
+/// rendering (and any locale) entirely.
 #[derive(Clone, Eq, PartialEq)]
 pub struct RequestMagicLinkCommand {
     email: NormalizedEmail,
@@ -569,7 +572,7 @@ impl Drop for ConfirmMagicLinkFlowCommand {
     }
 }
 
-/// Email outbox request. The contained token is bearer material; Debug redacts
+/// Email outbox request. The contained token is bearer material. Debug redacts
 /// it. The outbox owns URL construction, template, and language — this carries
 /// only the recipient, the token, and the token's expiry.
 #[derive(Clone, Eq, PartialEq)]

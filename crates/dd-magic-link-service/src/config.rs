@@ -110,11 +110,11 @@ pub struct MagicLinkServiceConfig {
     /// opportunistically.
     ///
     /// Country handling is presence-based by default: when the trusted-edge
-    /// header supplies one it is validated and bound into the session; when
-    /// absent the flow proceeds without a country. Enable this only when the
-    /// deployment edge guarantees the header on every request (for example
-    /// CloudFront with direct-origin access blocked) — with it enabled,
-    /// confirmations without a country fail generically.
+    /// header supplies one the service validates it and binds it into the
+    /// session. When absent the flow proceeds without a country. Enable this
+    /// only when the deployment edge guarantees the header on every request
+    /// (for example CloudFront with direct-origin access blocked) — with it
+    /// enabled, confirmations without a country fail generically.
     pub enforce_country: bool,
     pub rate_limits: RateLimitConfig,
 }

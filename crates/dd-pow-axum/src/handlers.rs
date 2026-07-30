@@ -1,6 +1,6 @@
 //! Headless proof-of-work admission glue.
 //!
-//! The library runs the PoW gauntlet and returns structured results; the
+//! The library runs the PoW checks and returns structured results. The
 //! consuming app owns routing, body extraction, `Content-Type`, and origin
 //! checks (its admission concern) and renders the response. Two steps:
 //!
@@ -104,7 +104,7 @@ impl From<Challenge> for PowChallengeResponse {
 }
 
 /// Solution exactly as the browser client posts it: `{ chg, sol, non, tim,
-/// tag }`. The client never sends `dif`; the server fills it from policy and
+/// tag }`. The client never sends `dif`. The server fills it from policy, and
 /// the HMAC tag makes a mismatch fail closed. Unknown fields are rejected.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -140,8 +140,8 @@ impl std::error::Error for PowFlowError {}
 /// Mint a stateless challenge. The caller injects the current time as RFC3339
 /// and 16 bytes of fresh entropy from its CSPRNG.
 ///
-/// Fails [`PowFlowError::Internal`] only on a malformed server-supplied time;
-/// the difficulty is already bounded by [`PowPolicy`].
+/// Fails [`PowFlowError::Internal`] only on a malformed server-supplied time.
+/// The difficulty is already bounded by [`PowPolicy`].
 pub fn mint_pow_challenge(
     secret: &PowSecret,
     policy: PowPolicy,

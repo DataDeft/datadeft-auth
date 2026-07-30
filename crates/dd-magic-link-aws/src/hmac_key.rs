@@ -22,10 +22,10 @@ const STORAGE_HMAC_DOMAIN: &[u8] = b"magic-link-aws-storage-v1";
 
 /// Loaded storage lookup HMAC key/pepper, bound to the adapter storage domain.
 ///
-/// Wraps magic-link-core's key type and its shared keyed-lookup framing; only
+/// Wraps magic-link-core's key type and its shared keyed-lookup framing. Only
 /// the `magic-link-aws-storage-v1` domain binding lives here, so the framing
-/// cannot drift from the lookup HMACs the service derives. Debug is redacted;
-/// bytes zeroize on drop via the wrapped key type.
+/// cannot drift from the lookup HMACs the service derives. The `Debug` impl
+/// redacts the key. The bytes zeroize on drop via the wrapped key type.
 pub struct StorageHmacKey(LookupHmacKey);
 
 impl StorageHmacKey {

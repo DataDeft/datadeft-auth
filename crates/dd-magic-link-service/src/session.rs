@@ -25,7 +25,7 @@ use crate::types::{SessionCookie, SessionRecord};
 pub enum SessionValidationError {
     /// Cookie, body, repository record, freshness, expiry, or revocation failed.
     InvalidSession,
-    /// A dependency is temporarily unavailable; callers may retry.
+    /// A dependency is temporarily unavailable. Callers may retry.
     Unavailable,
     /// Service configuration or a dependency invariant is invalid.
     Internal,
@@ -79,7 +79,7 @@ impl fmt::Debug for ValidatedSession {
 ///
 /// # Country pinning
 ///
-/// A session issued with a trusted-edge country is locked to that country:
+/// A session issued with a trusted-edge country locks to that country:
 /// `request_country` (the current request's trusted-edge signal, never
 /// client-supplied input) must match it on every validation, and an absent
 /// signal does not satisfy the lock — fail closed. Sessions issued without a

@@ -1,4 +1,4 @@
-//! The session cookie, owned end to end by the service crate: its key purpose
+//! The service crate owns the session cookie end to end: its key purpose
 //! (HKDF derivation constants and lifetime policy) and its encrypted body
 //! framing.
 
@@ -16,7 +16,7 @@ pub const TOKEN_TYPE_SESSION_COOKIE_V1: &str = "session-v1";
 
 /// Session-cookie key purpose.
 ///
-/// Owned in this module together with the session-cookie body framing, so the
+/// This module owns it together with the session-cookie body framing, so the
 /// 30-day lifetime policy and the versioned derivation constants live with the
 /// feature, not in the generic token crate.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

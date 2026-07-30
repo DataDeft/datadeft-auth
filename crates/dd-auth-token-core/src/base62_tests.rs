@@ -110,8 +110,8 @@ fn shared_static_matches_fresh_encoding() {
 #[test]
 fn integer_codec_limitations_are_pinned() {
     // Documented limitation: base62 is a big-INTEGER codec, not a byte-string
-    // codec. These behaviors are intentional and relied upon by branca's
-    // canonicality gate; pin them so a refactor cannot silently change them.
+    // codec. These behaviors are intentional, and branca's canonicality gate
+    // relies on them. Pin them so a refactor cannot silently change them.
     let enc = Encoding::std();
 
     // 1. A leading 0x00 byte is dropped on a round trip.

@@ -136,7 +136,7 @@ fn leading_zero_prefix_matches_repeat_reference() {
 fn secret_debug_redacts_and_error_display_is_stable() {
     // A logged PowSecret must never show key bytes.
     assert_eq!(format!("{:?}", secret()), "PowSecret(..)");
-    // Display strings are the caller's log vocabulary; pin them.
+    // Display strings are the caller's log vocabulary. Pin them.
     let cases = [
         (PowError::InvalidTag, "HMAC tag verification failed"),
         (
@@ -472,7 +472,7 @@ fn oversized_max_age_is_rejected_explicitly() {
 //
 // Time is injected as data (fixed TIM/TIM_UNIX constants + a generated
 // age), so generation is deterministic apart from proptest's own seeded
-// RNG; case counts are fixed and modest to keep `verify` fast.
+// RNG. Case counts are fixed and modest to keep `verify` fast.
 
 use proptest::prelude::*;
 
@@ -524,7 +524,7 @@ proptest! {
     /// solution always fails verification, with the exact error of the layer
     /// that owns the field: chg/dif/tim/tag are HMAC-bound => InvalidTag
     /// (authenticity is checked FIRST, so even dif=0 downgrades or garbage
-    /// tim die there); sol/non are work-bound => InvalidSolution.
+    /// tim die there). The sol/non fields are work-bound => InvalidSolution.
     #[test]
     fn prop_single_field_tamper_rejected(
         entropy in prop::array::uniform16(any::<u8>()),
@@ -574,8 +574,8 @@ proptest! {
                 };
                 PowError::InvalidSolution
             }
-            // dif: supported alternate difficulties break the tag; values above
-            // the digest width are rejected by the cheap shape/config gate.
+            // dif: supported alternate difficulties break the tag. The cheap
+            // shape/config gate rejects values above the digest width.
             3 => {
                 sol.dif = sol.dif.wrapping_add(dif_delta);
                 if sol.dif > MAX_DIFFICULTY {
@@ -649,7 +649,7 @@ fn blake3_matches_official_empty_kat() {
 
 /// Robustness: `verify_solution` must never panic on hostile, fully
 /// attacker-controlled input — only return Ok or Err. Curated cases
-/// (arbitrary-input coverage lives in the proptest below); this one is
+/// (arbitrary-input coverage lives in the proptest below). This one is
 /// diagnosis-friendly and fast.
 #[test]
 #[allow(clippy::type_complexity)]
@@ -723,7 +723,7 @@ fn verify_never_panics_on_hostile_inputs() {
             *age,
             *min,
         );
-        // Invariant: returned Ok or Err; reaching here means no panic.
+        // Invariant: returned Ok or Err. Reaching here means no panic.
     }
 }
 

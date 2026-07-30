@@ -13,12 +13,12 @@
 //! templates and never retain raw request targets, route captures, query fields,
 //! tokens, confirmations, or cookies. Representative production-like probes must
 //! verify the emitted logs and telemetry. These handlers prove non-reflection only
-//! after handler entry; they cannot make an unreviewed outer HTTP stack safe.
+//! after handler entry. They cannot make an unreviewed outer HTTP stack safe.
 //!
 //! # Response contract
 //!
 //! The scanner-safe flow is headless: [`magic_link_landing`] and
-//! [`magic_link_confirmation`] run the input gauntlet and hand back structured
+//! [`magic_link_confirmation`] run the input checks and hand back structured
 //! results (plus prepared cookie headers), and the application renders the
 //! responses (JSON for an API, HTML for a server-rendered page). The caller
 //! MUST uphold these invariants — they are the scanner-safety and
@@ -27,7 +27,7 @@
 //! - **Consumption is POST-only.** Only the same-origin confirmation POST
 //!   consumes the magic link and mints a session. Never consume on a GET.
 //! - **The landing GET is side-effect-free and repeatable.** Email security
-//!   scanners fetch link URLs; the landing must be safe to fetch any number of
+//!   scanners fetch link URLs. The landing must be safe to fetch any number of
 //!   times without burning the link. [`magic_link_landing`] guarantees this on
 //!   the library side — do not add consuming side effects in your handler.
 //! - **Respond uniformly (non-enumeration).** Return
@@ -35,7 +35,7 @@
 //!   use for success** so an attacker cannot probe whether a link is
 //!   valid/expired. Only genuine `Unavailable`/`Internal` failures use a 5xx.
 //! - **Clear the flow cookie** on a rejected/internal confirmation
-//!   ([`clear_flow_cookie_header`]); preserve it on `Unavailable` so the
+//!   ([`clear_flow_cookie_header`]). Preserve it on `Unavailable` so the
 //!   user can retry.
 //! - **Stamp security headers** ([`apply_magic_link_security_headers`]:
 //!   `no-store`, `no-referrer`, CSP, frame-deny) on every landing/confirmation
@@ -47,7 +47,7 @@
 //!
 //! Construct the configs and keyrings once at startup, then call the handler
 //! helpers from your own routes. This compiles against the SDK-free in-memory
-//! fakes from `dd-magic-link-aws`; the complete runnable integration is
+//! fakes from `dd-magic-link-aws`. The complete runnable integration is
 //! `examples/axum-magic-link` in the repository.
 //!
 //! ```no_run
@@ -67,7 +67,7 @@
 //! };
 //! use rand_core::{OsRng, RngCore};
 //!
-//! /// The application owns the clock; the library never reads it directly.
+//! /// The application owns the clock. The library never reads it directly.
 //! struct SystemClock;
 //!
 //! impl Clock for SystemClock {
@@ -79,7 +79,7 @@
 //!     }
 //! }
 //!
-//! /// Development-only keyring; production loads real secrets (see
+//! /// Development-only keyring. Production loads real secrets (see
 //! /// `resolve_auth_secrets` in dd-magic-link-aws and docs/security.md).
 //! fn dev_keyring<P: KeyPurpose>(kid: &str, now_unix: u64) -> KeyRing<P> {
 //!     let mut root = [0u8; 32];
@@ -128,7 +128,7 @@
 //! }
 //!
 //! /// One route: the side-effect-free landing. It returns the account and
-//! /// confirmation value plus the flow cookie; the app renders JSON or HTML
+//! /// confirmation value plus the flow cookie. The app renders JSON or HTML
 //! /// and lets the browser POST the confirmation back. Confirmation, request,
 //! /// and session authentication wire up the same way — see the example app.
 //! async fn landing(State(state): State<AppState>, request: Request) -> Response {

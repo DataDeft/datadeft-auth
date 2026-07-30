@@ -26,7 +26,7 @@ use crate::window::fixed_window_index;
 
 /// Default TTL grace applied to spent auth artifacts: 24 hours past their
 /// logical expiry. DynamoDB TTL deletion is asynchronous and best-effort, so
-/// the grace keeps a row queryable slightly past expiry; it is garbage
+/// the grace keeps a row queryable slightly past expiry. The grace is garbage
 /// collection, not a validity window (record fields gate validity).
 pub const DEFAULT_CLEANUP_GRACE_SECS: u64 = 24 * 60 * 60;
 

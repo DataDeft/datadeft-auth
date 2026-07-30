@@ -1,15 +1,15 @@
 //! Deterministic fixtures shared by the workspace's test suites.
 //!
 //! Available under `cfg(test)` and the explicit `test-support` feature only —
-//! never in default production builds. Deterministic RNGs are test fixtures;
-//! production code must inject an OS-backed CSPRNG (see the crate docs).
+//! never in default production builds. Deterministic RNGs are test fixtures.
+//! Production code must inject an OS-backed CSPRNG (see the crate docs).
 
 use rand_core::{CryptoRng, RngCore};
 
 use crate::keyring::{KEY_BYTES, KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 
 fn test_rng_error() -> rand_core::Error {
-    // Any nonzero code will do; fixtures only need the call to fail.
+    // Any nonzero code will do. Fixtures only need the call to fail.
     rand_core::Error::from(
         core::num::NonZeroU32::new(rand_core::Error::CUSTOM_START)
             .expect("rand_core custom error code is nonzero"),

@@ -74,11 +74,11 @@ pub struct MagicLinkLanding {
 /// - [`Rejected`](Self::Rejected): the request was malformed, or the link was
 ///   invalid/expired/already-used. Respond **uniformly** so link validity is
 ///   not enumerable — for a landing, use the **same HTTP status you return on
-///   success**; for a confirmation, a single generic failure. On confirmation,
+///   success**. For a confirmation, use a single generic failure. On confirmation,
 ///   clear the flow cookie with [`clear_flow_cookie_header`].
 /// - [`Unavailable`](Self::Unavailable): a dependency was down. Respond 503 and
 ///   **preserve** the flow cookie so the user can retry.
-/// - [`Internal`](Self::Internal): an internal error. Respond 500; clearing the
+/// - [`Internal`](Self::Internal): an internal error. Respond 500. Clearing the
 ///   flow cookie on confirmation is fine.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MagicLinkFlowResponseError {
@@ -126,7 +126,7 @@ where
 
 /// Successful scanner-safe confirmation.
 ///
-/// The magic link is consumed and the session is minted. Attach both cookie
+/// The confirmation consumes the magic link and mints the session. Attach both cookie
 /// headers to the response, then respond however the app prefers (a 303 to a
 /// post-login page, a 200/204 for an SPA, etc.).
 pub struct MagicLinkConfirmed {
@@ -138,7 +138,7 @@ pub struct MagicLinkConfirmed {
     pub clear_flow_cookie: HeaderValue,
 }
 
-/// Run the scanner-safe confirmation gauntlet: enforce same-origin, extract the
+/// Run the scanner-safe confirmation checks: enforce same-origin, extract the
 /// flow cookie, bound and parse the body, read the trusted-edge country, then
 /// consume the link via `confirm`. **This is the only step that consumes the
 /// magic link and mints a session, and it only runs for a same-origin POST.**

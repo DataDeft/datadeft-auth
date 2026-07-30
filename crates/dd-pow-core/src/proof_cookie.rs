@@ -11,7 +11,7 @@
 //! (hex BLAKE3 of the challenge). The cookie is a stateless "recently solved"
 //! proof: it stays valid for its whole configured lifetime and is not
 //! single-use. The admission layer treats a valid proof cookie as permission
-//! to skip re-challenging this browser; it never treats `tid` as a capability.
+//! to skip re-challenging this browser. It never treats `tid` as a capability.
 
 use core::fmt;
 
@@ -27,7 +27,7 @@ pub const HKDF_INFO_POW_PROOF_COOKIE_V1: &[u8] = b"auth/pow-proof-v1";
 pub const TOKEN_TYPE_POW_PROOF_COOKIE_V1: &str = "pow-proof-v1";
 
 /// Hard ceiling on a proof cookie's lifetime: 24 hours. A deployment tunes the
-/// runtime lifetime down from here (see [`DEFAULT_POW_PROOF_TTL_SECS`]); it can
+/// runtime lifetime down from here (see [`DEFAULT_POW_PROOF_TTL_SECS`]). It can
 /// never validate a proof cookie older than this bound.
 pub const POW_PROOF_MAX_AGE_SECS: u64 = 24 * 60 * 60;
 /// Documented default proof-cookie lifetime: 3 hours. Matches the shipped
@@ -57,7 +57,7 @@ impl KeyPurpose for PowProofCookie {
     const MAX_ABSOLUTE_AGE_SECS: u64 = POW_PROOF_MAX_AGE_SECS;
 }
 
-/// Opaque encrypted proof-cookie value. `Debug` is always redacted.
+/// Opaque encrypted proof-cookie value. The `Debug` impl always redacts it.
 pub struct PowProofCookieValue(String);
 
 impl PowProofCookieValue {
@@ -111,9 +111,9 @@ fn is_valid_tid(value: &str) -> bool {
 
 /// Mint an encrypted `dd_pow` proof cookie for a verified solve identity.
 ///
-/// The lifetime is enforced at verification time from the caller's configured
-/// max age, so minting only stamps the current time. Fails closed if `tid` is
-/// not a canonical 64-character lowercase-hex value.
+/// Verification enforces the lifetime from the caller's configured max age, so
+/// minting only stamps the current time. Fails closed if `tid` is not a
+/// canonical 64-character lowercase-hex value.
 pub fn mint_pow_proof_cookie<R>(
     tid: &str,
     keyring: &KeyRing<PowProofCookie>,

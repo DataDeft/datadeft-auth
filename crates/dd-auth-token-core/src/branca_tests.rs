@@ -201,7 +201,7 @@ fn non_canonical_zero_prefixed_tokens_are_rejected() {
         );
     }
 
-    // A different token (different nonce) yields a different Jti; keying
+    // A different token (different nonce) yields a different Jti. Keying
     // revocation on Jti is stable across spellings and unique across tokens.
     let other = encode_with_nonce(b"Hello world!", &key, &[0x23u8; NONCE_BYTES], 123_206_400)
         .expect("encode");

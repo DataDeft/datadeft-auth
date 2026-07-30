@@ -9,7 +9,7 @@
 //! Two consequences follow, and callers MUST account for both:
 //!
 //! - **Leading `0x00` bytes are lost.** A blob starting with `0x00` does not
-//!   survive `encode` → `decode`; the leading zero carries no digit weight.
+//!   survive `encode` → `decode`. The leading zero carries no digit weight.
 //!   Branca is unaffected because every blob starts with the fixed `0xBA`
 //!   version byte, but code that round-trips arbitrary bytes (hashes, IDs,
 //!   serialized blobs) will silently corrupt them. Frame the length yourself, or
@@ -23,7 +23,7 @@
 //!   leading-`'0'` family — see the canonicality gate in
 //!   [`crate::branca::decode`].
 //!
-//! There is no length bound here; callers on untrusted input must cap the input
+//! There is no length bound here. Callers on untrusted input must cap the input
 //! size themselves (the [`crate::branca`] layer does).
 
 use std::error::Error;

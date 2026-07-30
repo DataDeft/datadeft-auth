@@ -17,8 +17,8 @@ fn session_purpose_constants_are_pinned() {
 #[test]
 fn session_hkdf_vector_is_pinned() {
     // HKDF-SHA256 with salt=None, IKM=[0x11; 32], L=32,
-    // info = HKDF_INFO || 0x00 || kid. This vector pins the exact info framing;
-    // changing it invalidates every session cookie minted under the previous key.
+    // info = HKDF_INFO || 0x00 || kid. This vector pins the exact info framing.
+    // Changing it invalidates every session cookie minted under the previous key.
     let root = RootSecret::new([0x11; KEY_BYTES]);
     let session = root
         .derive_key::<SessionCookie>(&KeyId::parse("session-active").expect("kid parses"))

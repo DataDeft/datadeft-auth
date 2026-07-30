@@ -148,9 +148,9 @@ pub fn parse_magic_link_request_json(
 /// Extract a unique trusted-edge viewer country (ISO 3166-1 alpha-2) from the
 /// given header.
 ///
-/// Country is opportunistic: when the edge supplies the header it is validated
-/// and bound into the session; when absent, the flow proceeds without a
-/// country. The header is only meaningful if the CDN/edge strips or overwrites
+/// Country is opportunistic: when the edge supplies the header, the flow
+/// validates it and binds it into the session. When absent, the flow proceeds
+/// without a country. The header is only meaningful if the CDN/edge strips or overwrites
 /// it on every request and the origin is not directly reachable — otherwise a
 /// caller can omit it. Never source country from request bodies.
 #[must_use]

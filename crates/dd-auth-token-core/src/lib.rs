@@ -21,7 +21,7 @@
 //! Core APIs never read the system clock, environment, filesystem, network, or a
 //! random number generator directly. Callers inject `now_unix`, TTLs, loaded key
 //! material/keyrings, and RNG objects. Branca minting draws nonce bytes from the
-//! caller-supplied [`rand_core::CryptoRng`]; production callers must pass an
+//! caller-supplied [`rand_core::CryptoRng`]. Production callers must pass an
 //! OS-CSPRNG-backed RNG and never reuse a `(key, nonce)` pair. The marker trait
 //! is API hygiene, not runtime enforcement, so deterministic RNGs remain test
 //! fixtures only. Fixed raw nonce bytes are hidden behind crate tests / the
@@ -32,9 +32,9 @@
 //! Key material wrappers zeroize their in-process byte arrays on drop on a
 //! best-effort basis. Cookie-owned plaintext buffers are redacted in `Debug` and
 //! zeroized where this crate owns their lifetime, but raw [`branca::Verified`]
-//! payloads are ordinary `Vec<u8>` values returned to callers; callers that put
-//! session identifiers or other sensitive plaintext there own any additional
-//! zeroization policy.
+//! payloads are ordinary `Vec<u8>` values returned to callers. A caller that
+//! puts session identifiers or other sensitive plaintext there owns any
+//! additional zeroization policy.
 
 #![forbid(unsafe_code)]
 

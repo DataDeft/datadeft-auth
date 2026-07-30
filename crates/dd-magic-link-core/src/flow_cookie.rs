@@ -83,7 +83,7 @@ impl FlowBindingRole for AccountBindingRole {
 
 /// Keyed 256-bit value bound into a magic-link confirmation flow, typed by
 /// [`FlowBindingRole`] so the three binding kinds cannot be interchanged.
-/// Bytes zeroize on drop; `Debug` is redacted per role.
+/// The bytes zeroize on drop. The `Debug` impl redacts each role.
 pub struct FlowBinding<Role: FlowBindingRole> {
     bytes: [u8; MAGIC_LINK_FLOW_BINDING_BYTES],
     _role: PhantomData<Role>,
@@ -448,7 +448,7 @@ fn take_array<const N: usize>(body: &[u8], offset: &mut usize) -> Result<[u8; N]
 }
 
 fn parse_confirmation(value: &str) -> Result<MagicLinkFlowNonce, TokenError> {
-    // `hex::decode_to_slice` alone would accept uppercase spellings; the
+    // `hex::decode_to_slice` alone would accept uppercase spellings. The
     // canonical-form check must stay charset-strict.
     if !is_lower_hex_len(value, CONFIRMATION_HEX_BYTES) {
         return Err(TokenError::InvalidToken);

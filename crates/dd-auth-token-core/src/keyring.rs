@@ -85,8 +85,8 @@ pub trait KeyPurpose {
 /// Loaded root secret material.
 ///
 /// Adapter/setup code loads this from a secret manager or local development
-/// config, then core code derives purpose-specific keys from it. `Debug` is
-/// redacted; bytes are zeroized on drop on a best-effort basis.
+/// config, then core code derives purpose-specific keys from it. The `Debug`
+/// impl redacts it. The bytes zeroize on drop on a best-effort basis.
 pub struct RootSecret([u8; KEY_BYTES]);
 
 impl RootSecret {
@@ -98,8 +98,8 @@ impl RootSecret {
 
     /// Derive a purpose- and `kid`-specific Branca key with HKDF-SHA256.
     ///
-    /// AWS/adapters load only the root bytes; separation is enforced by the KDF
-    /// `info` string, not a runtime flag. The `info` binds both the purpose and
+    /// AWS/adapters load only the root bytes. The KDF `info` string enforces
+    /// separation, not a runtime flag. The `info` binds both the purpose and
     /// the key id (`purpose || 0x00 || kid`), so two kids derived from the same
     /// root are cryptographically independent keys — rotation is real, not two
     /// labels on one key. `KeyId` charset excludes `0x00`, so the separator is
@@ -118,7 +118,7 @@ impl RootSecret {
             return Err(TokenError::Internal);
         }
         let key = BrancaKey::new(out);
-        // `out` is a Copy array, so `BrancaKey::new` took a copy; wipe this stack
+        // `out` is a Copy array, so `BrancaKey::new` took a copy. Wipe this stack
         // copy too (best-effort, per the module note).
         out.zeroize();
         Ok(key)
@@ -143,7 +143,7 @@ impl fmt::Debug for RootSecret {
 
 /// A derived 32-byte Branca key for purpose marker `P`.
 ///
-/// `Debug` is redacted; bytes are zeroized on drop on a best-effort basis.
+/// The `Debug` impl redacts it. The bytes zeroize on drop on a best-effort basis.
 pub struct BrancaKey<P = ()> {
     bytes: [u8; KEY_BYTES],
     _purpose: PhantomData<P>,
@@ -192,7 +192,7 @@ impl<P> fmt::Debug for BrancaKey<P> {
 pub enum KeyStatus {
     /// May mint new tokens and verify existing ones while inside its windows.
     Active,
-    /// May verify existing tokens only; never used for minting.
+    /// May verify existing tokens only. Never used for minting.
     VerifyOnly,
 }
 
