@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
   <title id="title">Scanner-safe magic-link sequence</title>
-  <desc id="desc">A request creates and emails a challenge. A non-consuming GET validates it and creates bound flow state. An explicit same-origin POST atomically consumes the challenge and creates a server-side session.</desc>
+  <desc id="desc">A request creates and emails a challenge. A non-consuming GET validates it and creates bound confirm state. An explicit same-origin POST atomically consumes the challenge and creates a server-side session.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker>
     <style>.title{font:700 24px system-ui,sans-serif;fill:#0f172a}.head{font:700 15px system-ui,sans-serif;fill:#0f172a}.text{font:13px system-ui,sans-serif;fill:#334155}.note{font:12px system-ui,sans-serif;fill:#7c2d12}.box{fill:#e0f2fe;stroke:#334155;stroke-width:2;rx:8}.life{stroke:#94a3b8;stroke-width:2;stroke-dasharray:6 5}.msg{stroke:#334155;stroke-width:2;marker-end:url(#arrow)}.return{stroke:#2563eb;stroke-width:2;stroke-dasharray:6 4;marker-end:url(#arrow)}.phase{fill:#f8fafc;stroke:#cbd5e1;rx:8}</style>
@@ -22,7 +22,7 @@
   <line x1="610" y1="465" x2="880" y2="465" class="msg"/><text x="745" y="457" text-anchor="middle" class="text">selector limit + consistent read</text>
   <line x1="880" y1="495" x2="610" y2="495" class="return"/><text x="745" y="487" text-anchor="middle" class="text">candidate or miss</text>
   <text x="620" y="522" class="note">constant-time real/dummy verifier work. GET never consumes</text>
-  <line x1="610" y1="545" x2="102" y2="545" class="return"/><text x="356" y="537" text-anchor="middle" class="text">flow cookie + account page + confirmation nonce</text>
+  <line x1="610" y1="545" x2="102" y2="545" class="return"/><text x="356" y="537" text-anchor="middle" class="text">confirm cookie + account page + confirmation nonce</text>
 
   <rect x="20" y="595" width="1360" height="270" class="phase"/><text x="35" y="618" class="head">3. Explicit confirmation and session</text>
   <line x1="102" y1="645" x2="340" y2="645" class="msg"/><text x="221" y="637" text-anchor="middle" class="text">same-origin POST confirmation</text>
@@ -31,5 +31,5 @@
   <line x1="610" y1="730" x2="880" y2="730" class="msg"/><text x="745" y="722" text-anchor="middle" class="text">consistent reads + atomic 5-action commit</text>
   <line x1="880" y1="765" x2="1315" y2="765" class="msg"/><text x="1097" y="757" text-anchor="middle" class="text">challenge consumed + session record created</text>
   <line x1="880" y1="800" x2="610" y2="800" class="return"/><text x="745" y="792" text-anchor="middle" class="text">committed exactly once</text>
-  <line x1="610" y1="835" x2="102" y2="835" class="return"/><text x="356" y="827" text-anchor="middle" class="text">session cookie + clear flow cookie + fixed 303</text>
+  <line x1="610" y1="835" x2="102" y2="835" class="return"/><text x="356" y="827" text-anchor="middle" class="text">session cookie + clear confirm cookie + fixed 303</text>
 </svg>
