@@ -1,6 +1,6 @@
 //! Service orchestration tests.
 
-use std::cell::{Cell, RefCell};
+use crate::test_shared::Shared;
 use std::collections::VecDeque;
 
 use dd_auth_token_core::keyring::{KeyPurpose, KeyRing};
@@ -28,14 +28,14 @@ const OTHER_VERIFIER: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffff
 
 struct FixedClock {
     now: u64,
-    calls: Cell<usize>,
+    calls: Shared<usize>,
 }
 
 impl FixedClock {
     fn at(now: u64) -> Self {
         Self {
             now,
-            calls: Cell::new(0),
+            calls: Shared::new(0),
         }
     }
 }
@@ -49,10 +49,10 @@ impl Clock for FixedClock {
 
 #[derive(Default)]
 struct AllowLimiter {
-    calls: Cell<usize>,
-    checked: RefCell<Vec<String>>,
-    denied_prefixes: RefCell<Vec<String>>,
-    next_error: Cell<Option<DependencyError>>,
+    calls: Shared<usize>,
+    checked: Shared<Vec<String>>,
+    denied_prefixes: Shared<Vec<String>>,
+    next_error: Shared<Option<DependencyError>>,
 }
 
 impl AllowLimiter {
@@ -93,20 +93,20 @@ impl RateLimiter for AllowLimiter {
 
 #[derive(Default)]
 struct FakeRepository {
-    candidate: RefCell<Option<MagicLinkAuthenticationCandidate>>,
-    user: RefCell<Option<UserRecord>>,
-    commands: RefCell<Vec<CommitMagicLinkAuthentication>>,
-    commit_results: RefCell<VecDeque<CommitMagicLinkAuthenticationError>>,
-    successful_command: RefCell<Option<CommitMagicLinkAuthentication>>,
-    apply_then_unavailable_once: Cell<bool>,
-    sessions: RefCell<Vec<SessionRecord>>,
-    request_records: RefCell<Vec<MagicLinkRecord>>,
-    candidate_reads: Cell<usize>,
-    candidate_lookup_keys: RefCell<Vec<LookupHmac>>,
-    user_reads: Cell<usize>,
-    user_lookup_emails: RefCell<Vec<NormalizedEmail>>,
-    revoked: RefCell<Vec<SessionId>>,
-    install_winner_on_user_conflict: Cell<bool>,
+    candidate: Shared<Option<MagicLinkAuthenticationCandidate>>,
+    user: Shared<Option<UserRecord>>,
+    commands: Shared<Vec<CommitMagicLinkAuthentication>>,
+    commit_results: Shared<VecDeque<CommitMagicLinkAuthenticationError>>,
+    successful_command: Shared<Option<CommitMagicLinkAuthentication>>,
+    apply_then_unavailable_once: Shared<bool>,
+    sessions: Shared<Vec<SessionRecord>>,
+    request_records: Shared<Vec<MagicLinkRecord>>,
+    candidate_reads: Shared<usize>,
+    candidate_lookup_keys: Shared<Vec<LookupHmac>>,
+    user_reads: Shared<usize>,
+    user_lookup_emails: Shared<Vec<NormalizedEmail>>,
+    revoked: Shared<Vec<SessionId>>,
+    install_winner_on_user_conflict: Shared<bool>,
 }
 
 impl MagicLinkRepository for FakeRepository {
@@ -285,8 +285,8 @@ impl SessionRepository for FakeRepository {
 
 #[derive(Default)]
 struct FakeOutbox {
-    messages: RefCell<Vec<MagicLinkEmail>>,
-    next_error: Cell<Option<DependencyError>>,
+    messages: Shared<Vec<MagicLinkEmail>>,
+    next_error: Shared<Option<DependencyError>>,
 }
 
 impl FakeOutbox {
@@ -336,6 +336,39 @@ fn config() -> MagicLinkServiceConfig {
     config.session_absolute_secs = 300;
     config.enforce_country = true;
     config
+}
+
+/// Locks the `Send` policy from `crate::traits`: the service's composed call
+/// future must stay `Send` so it can run on multi-threaded executors (Axum's
+/// default Tokio runtime). This fails to compile if the service ever holds a
+/// non-`Send` value across an await, independent of the per-trait bounds.
+#[test]
+fn service_call_futures_are_send() {
+    fn assert_send<T: Send>(_: &T) {}
+
+    let repository = FakeRepository::default();
+    let limiter = AllowLimiter::default();
+    let clock = FixedClock::at(NOW);
+    let mut rng = CountingRng::starting_at(0);
+    let key = lookup_key();
+    let confirm_keyring = confirm_keyring();
+    let session_keyring = session_keyring();
+    let mut service = MagicLinkFlowService {
+        authentication: &repository,
+        sessions: &repository,
+        limiter: &limiter,
+        clock: &clock,
+        rng: &mut rng,
+        lookup_hmac_key: &key,
+        confirm_keyring: &confirm_keyring,
+        session_keyring: &session_keyring,
+        config: config(),
+    };
+    assert_send(
+        &service.begin_magic_link_landing(BeginMagicLinkLandingCommand::new(
+            "mlv1.deadbeef.token".to_owned(),
+        )),
+    );
 }
 
 fn token(verifier: &str) -> MagicLinkToken {

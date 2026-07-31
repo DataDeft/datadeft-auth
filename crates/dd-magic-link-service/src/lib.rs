@@ -32,6 +32,9 @@ pub mod session_body;
 pub mod traits;
 pub mod types;
 
+#[cfg(test)]
+mod test_shared;
+
 pub use config::{MagicLinkConfigError, MagicLinkServiceConfig, RateLimitConfig};
 pub use dd_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 pub use dd_magic_link_core::{

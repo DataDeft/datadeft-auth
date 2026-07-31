@@ -106,7 +106,7 @@ impl<R> fmt::Debug for SesMagicLinkOutbox<R> {
 #[cfg(feature = "aws")]
 impl<R> MagicLinkOutbox for SesMagicLinkOutbox<R>
 where
-    R: MagicLinkEmailRenderer,
+    R: MagicLinkEmailRenderer + Sync,
 {
     async fn enqueue_magic_link(&self, email: MagicLinkEmail) -> Result<(), DependencyError> {
         use aws_sdk_sesv2::types::{Body, Content, Destination, EmailContent, Message};

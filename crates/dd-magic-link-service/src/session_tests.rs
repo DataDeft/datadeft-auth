@@ -1,6 +1,6 @@
 //! Complete session-validation tests.
 
-use std::cell::{Cell, RefCell};
+use crate::test_shared::Shared;
 
 use dd_auth_token_core::cookie::mint_bound_cookie;
 use dd_auth_token_core::keyring::{KeyPurpose, KeyRing};
@@ -13,21 +13,21 @@ use crate::types::{SessionId, UserId};
 
 struct TestClock {
     result: Result<u64, DependencyError>,
-    calls: Cell<usize>,
+    calls: Shared<usize>,
 }
 
 impl TestClock {
     fn at(now_unix: u64) -> Self {
         Self {
             result: Ok(now_unix),
-            calls: Cell::new(0),
+            calls: Shared::new(0),
         }
     }
 
     fn failing(error: DependencyError) -> Self {
         Self {
             result: Err(error),
-            calls: Cell::new(0),
+            calls: Shared::new(0),
         }
     }
 }
@@ -41,18 +41,18 @@ impl Clock for TestClock {
 
 #[derive(Default)]
 struct TestSessions {
-    record: RefCell<Option<SessionRecord>>,
-    storage_expires_at_unix: Cell<Option<u64>>,
-    next_error: Cell<Option<DependencyError>>,
-    return_mismatched_record: Cell<bool>,
-    find_calls: Cell<usize>,
-    revoke_calls: Cell<usize>,
+    record: Shared<Option<SessionRecord>>,
+    storage_expires_at_unix: Shared<Option<u64>>,
+    next_error: Shared<Option<DependencyError>>,
+    return_mismatched_record: Shared<bool>,
+    find_calls: Shared<usize>,
+    revoke_calls: Shared<usize>,
 }
 
 impl TestSessions {
     fn with_record(record: SessionRecord) -> Self {
         Self {
-            record: RefCell::new(Some(record)),
+            record: Shared::new(Some(record)),
             ..Self::default()
         }
     }

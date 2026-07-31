@@ -58,7 +58,7 @@ PoW is optional app admission. Complete the PoW backlog before you require PoW.
 | MVP-002 | P0 | Per deployment | Attest token-safe logging. |
 | MVP-003 | P0 | AWS users | Validate live DynamoDB behavior. |
 | MVP-004 | P0 | Planned | Publish crates or provide an immutable private tag. |
-| MVP-005 | P1 | Planned | Set `Future + Send` and dyn-safety policy. |
+| MVP-005 | P1 | Done | Trait futures require `+ Send`, static dispatch only (no `dyn`). |
 | MVP-006 | P1 | Decision needed | Choose durable outbox or document inline SES. |
 | MVP-007 | P1 | Decision needed | Accept plaintext email storage or add app encryption. |
 | MVP-010 | PoW | Not ready | Build and vector-test the browser worker. |

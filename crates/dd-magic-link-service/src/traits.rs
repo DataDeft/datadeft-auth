@@ -1,4 +1,18 @@
 //! Service dependency traits.
+//!
+//! # Dispatch and `Send` policy
+//!
+//! These traits are consumed by static dispatch only. The service is generic
+//! over the concrete adapter types. The library does not support `dyn` trait
+//! objects. RPITIT async methods are not object-safe, and boxing the futures
+//! would add a per-call allocation and a macro. A consumer that needs a trait
+//! object wraps these traits in its own boxed adapter.
+//!
+//! Every async method returns a `Send` future. The service runs inside
+//! multi-threaded executors such as the default Tokio runtime behind Axum,
+//! which move a task across worker threads at each await point. An adapter that
+//! returns a non-`Send` future fails to compile at its own `impl`, not deep
+//! inside a consumer handler.
 
 use core::future::Future;
 
@@ -21,7 +35,7 @@ pub trait MagicLinkRepository {
     fn put_magic_link_if_absent(
         &self,
         record: MagicLinkRecord,
-    ) -> impl Future<Output = Result<(), DependencyError>>;
+    ) -> impl Future<Output = Result<(), DependencyError>> + Send;
 }
 
 /// Aggregate repository for all-or-nothing magic-link authentication.
@@ -68,17 +82,17 @@ pub trait MagicLinkAuthenticationRepository {
     fn find_magic_link_for_authentication(
         &self,
         selector_lookup_hmac: &LookupHmac,
-    ) -> impl Future<Output = Result<Option<MagicLinkAuthenticationCandidate>, DependencyError>>;
+    ) -> impl Future<Output = Result<Option<MagicLinkAuthenticationCandidate>, DependencyError>> + Send;
 
     fn find_user_for_authentication(
         &self,
         email: &NormalizedEmail,
-    ) -> impl Future<Output = Result<Option<UserRecord>, DependencyError>>;
+    ) -> impl Future<Output = Result<Option<UserRecord>, DependencyError>> + Send;
 
     fn commit_magic_link_authentication(
         &self,
         command: &CommitMagicLinkAuthentication,
-    ) -> impl Future<Output = Result<(), CommitMagicLinkAuthenticationError>>;
+    ) -> impl Future<Output = Result<(), CommitMagicLinkAuthenticationError>> + Send;
 }
 
 /// Server-side session repository. This supports lookup and revocation for
@@ -93,13 +107,13 @@ pub trait SessionRepository {
         &self,
         session_id: &SessionId,
         now_unix: u64,
-    ) -> impl Future<Output = Result<Option<SessionRecord>, DependencyError>>;
+    ) -> impl Future<Output = Result<Option<SessionRecord>, DependencyError>> + Send;
 
     fn revoke_session(
         &self,
         session_id: &SessionId,
         revoked_at_unix: u64,
-    ) -> impl Future<Output = Result<(), DependencyError>>;
+    ) -> impl Future<Output = Result<(), DependencyError>> + Send;
 }
 
 /// Rate limiter result.
@@ -118,7 +132,7 @@ pub trait RateLimiter {
         limit: u32,
         window_secs: u64,
         now_unix: u64,
-    ) -> impl Future<Output = Result<RateLimitDecision, DependencyError>>;
+    ) -> impl Future<Output = Result<RateLimitDecision, DependencyError>> + Send;
 }
 
 /// Magic-link email outbox.
@@ -126,5 +140,5 @@ pub trait MagicLinkOutbox {
     fn enqueue_magic_link(
         &self,
         email: MagicLinkEmail,
-    ) -> impl Future<Output = Result<(), DependencyError>>;
+    ) -> impl Future<Output = Result<(), DependencyError>> + Send;
 }
