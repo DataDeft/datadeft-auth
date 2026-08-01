@@ -29,6 +29,8 @@ spec/
     README.md        how to run each model and read the results
     MagicLink.tla    magic-link authentication state machine
     MagicLink.cfg    constants and invariants for MagicLink
+    MagicLinkRace.tla  two confirmations racing over one challenge
+    MagicLinkRace.cfg  constants and invariants for MagicLinkRace
     Session.tla      session validation lifecycle
     Session.cfg      constants and invariants for Session
     Pow.tla          proof-of-work admission difficulty
@@ -67,6 +69,15 @@ from the formal-methods roadmap.
 | ML-INV-004 | Only a correct selector, verifier, and account binding authenticates. A wrong binding is rejected before any consume. | flow-cookie constant-time binding checks |
 | ML-INV-005 | A disabled-user confirm does not burn the challenge. It stays reusable and works after re-enable. | `~userDisabled` guard on the atomic commit |
 
+### MagicLinkRace.tla
+
+Two confirmations race over one challenge. It covers the atomic transaction, an
+ambiguous transaction result, and an exact-command retry.
+
+| Invariant | Claim | Code anchor |
+| --- | --- | --- |
+| ML-INV-002 (concurrent) | At most one session per challenge under racing confirmations and an ambiguous-then-retried commit. No double-spend. | atomic conditional transaction plus the attempt-id retry contract |
+
 ### Session.tla
 
 One session record and a moving clock. Validation interleaves with revoke and
@@ -87,15 +98,15 @@ One challenge and a mutable country policy. It checks the difficulty guard.
 
 ## What we still need to model
 
-The models cover ML-INV-001..005, SES-INV-001, and POW-INV-001..002. The next
-work items, in rough order:
+The models cover ML-INV-001..005 (including the concurrent double-spend case),
+SES-INV-001, and POW-INV-001..002. The next work items, in rough order:
 
-1. Concurrency: two racing confirmations over the same challenge. Model an
-   ambiguous transaction result with an exact retry, and check idempotency.
-2. Country policy: risk classes and the `EffectiveDifficulty` rule across many
+1. Country policy: risk classes and the `EffectiveDifficulty` rule across many
    country transitions.
-3. Liveness: a solved challenge under a fair schedule reaches an accepted
+2. Liveness: a solved challenge under a fair schedule reaches an accepted
    session. Run with `--check-liveness`.
+3. Scale the race model to three or more attempts and confirm the state count
+   stays tractable.
 
 Each new invariant should link a model action, a code path, and a test, per the
 MVP-023 evidence rule.

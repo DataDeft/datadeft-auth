@@ -45,6 +45,7 @@ if ! command -v tla >/dev/null 2>&1; then
   exit 1
 fi
 tla spec/tla/MagicLink.tla --allow-deadlock
+tla spec/tla/MagicLinkRace.tla --allow-deadlock
 tla spec/tla/Session.tla --allow-deadlock
 tla spec/tla/Pow.tla --allow-deadlock
 """

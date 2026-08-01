@@ -6,10 +6,12 @@ See [../README.md](../README.md) for the plan and the invariant catalog.
 
 ```sh
 tla MagicLink.tla --allow-deadlock
+tla MagicLinkRace.tla --allow-deadlock
+tla Session.tla --allow-deadlock
 tla Pow.tla --allow-deadlock
 ```
 
-Each command auto-loads the matching `.cfg` (`MagicLink.cfg`, `Pow.cfg`). A
+Each command auto-loads the matching `.cfg`. A
 clean run ends with "Model checking complete. No errors found." and a state
 count. A violation prints a numbered trace from the initial state to the bad
 state.
@@ -51,8 +53,11 @@ guard and the run is clean again.
 ## Constants
 
 | Spec | Constant | Value | Meaning |
-| --- | --- | ---: | --- |
+| --- | --- | --- | --- |
 | MagicLink | `MaxTime` | 2 | Bounded clock for expiry. |
+| MagicLinkRace | `Attempts` | `{a1, a2}` | Confirm attempts racing over one challenge. |
+| Session | `TTL` | 1 | Session absolute lifetime. |
+| Session | `MaxTime` | 3 | Bounded clock. |
 | Pow | `Floor` | 1 | Production difficulty floor. |
 | Pow | `Base` | 1 | Configured base difficulty. |
 | Pow | `MaxDiff` | 2 | Upper bound on difficulty values. |
