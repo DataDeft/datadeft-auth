@@ -63,6 +63,7 @@ from the formal-methods roadmap.
 | ML-INV-002 | At most one session per challenge. | atomic commit guard on `Issued` |
 | ML-INV-003 | Consume and session creation are one atomic pair. | `commit_magic_link_authentication` transaction |
 | ML-INV-004 | Only a correct selector, verifier, and account binding authenticates. A wrong binding is rejected before any consume. | flow-cookie constant-time binding checks |
+| ML-INV-005 | A disabled-user confirm does not burn the challenge. It stays reusable and works after re-enable. | `~userDisabled` guard on the atomic commit |
 
 ### Pow.tla
 
@@ -75,17 +76,15 @@ One challenge and a mutable country policy. It checks the difficulty guard.
 
 ## What we still need to model
 
-The models cover ML-INV-001..004 and POW-INV-001..002. The next work items, in
+The models cover ML-INV-001..005 and POW-INV-001..002. The next work items, in
 rough order:
 
-1. ML-INV-005: a disabled user does not burn the challenge. Add a re-enable
-   action and check the challenge stays reusable after a disabled attempt.
-2. SES-INV-001: a revoked or expired session never validates.
-3. Concurrency: two racing confirmations over the same challenge. Model an
+1. SES-INV-001: a revoked or expired session never validates.
+2. Concurrency: two racing confirmations over the same challenge. Model an
    ambiguous transaction result with an exact retry, and check idempotency.
-4. Country policy: risk classes and the `EffectiveDifficulty` rule across many
+3. Country policy: risk classes and the `EffectiveDifficulty` rule across many
    country transitions.
-5. Liveness: a solved challenge under a fair schedule reaches an accepted
+4. Liveness: a solved challenge under a fair schedule reaches an accepted
    session. Run with `--check-liveness`.
 
 Each new invariant should link a model action, a code path, and a test, per the
