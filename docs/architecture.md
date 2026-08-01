@@ -17,7 +17,7 @@ The repository provides reusable authentication libraries. The consuming applica
 | `dd-magic-link-axum` | Parse HTTP input and create safe responses. | Ready |
 | `dd-magic-link-aws` | Store data in DynamoDB and send email with SES. | Ready for test deployment |
 | Consuming application | Configure routes, secrets, templates, logs, and edge policy. | Required |
-| `dd-protect-client` | Solve PoW in the browser. | Planned |
+| `dd-protect-client` | Solve PoW in the browser. | Ready |
 | Example app | Show a full fake-backed Axum flow. | Available |
 
 The dependency direction stays one-way.
@@ -83,11 +83,8 @@ effective_difficulty = max(
 The repository does not yet include these PoW parts:
 
 - country-to-difficulty policy
-- challenge HTTP endpoint
 - upstream PoW middleware
-- proof-cookie lifecycle
 - replay lifecycle
-- production browser worker
 - end-to-end PoW integration
 
 PoW stays independent from magic-link. Magic-link does not carry a PoW result, IP address, or client key.
@@ -114,7 +111,7 @@ PoW stays independent from magic-link. Magic-link does not carry a PoW result, I
 | Flow state | AEAD body plus confirmation nonce |
 | PoW challenge identity | BLAKE3 over time and entropy |
 | PoW challenge tag | HMAC-SHA-256 |
-| PoW work | SHA-256 with leading zero nibbles |
+| PoW work | SHA-256 with leading zero hex characters |
 | PoW replay identity | BLAKE3 challenge digest |
 | Constant-time checks | `subtle::ConstantTimeEq` |
 | One-time auth | DynamoDB transaction or matching repository action |
@@ -124,7 +121,7 @@ PoW stays independent from magic-link. Magic-link does not carry a PoW result, I
 
 ## Complexity
 
-Input sizes have bounds before expensive work starts. Let `n` mean bounded input length. Let `d` mean required zero nibbles.
+Input sizes have bounds before expensive work starts. Let `n` mean bounded input length. Let `d` mean required zero hex characters.
 
 | Operation | Time | Memory | Note |
 | --- | ---: | ---: | --- |

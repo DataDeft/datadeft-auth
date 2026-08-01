@@ -17,7 +17,7 @@
 | `dd-magic-link-service` | Request, confirmation, session, and repository logic. |
 | `dd-magic-link-axum` | Optional Axum HTTP helpers. |
 | `dd-magic-link-aws` | Optional DynamoDB and SES adapters. |
-| `dd-protect-client` | Planned browser PoW client. |
+| `dd-protect-client` | Browser PoW client. |
 
 ## Contributor documents
 

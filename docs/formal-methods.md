@@ -28,7 +28,7 @@ This document does not install or configure them. CI will pin tool versions when
 | SES-INV-001 | Revoked or expired sessions never validate. | Session boundary tests | TLA+ session model |
 | POW-INV-001 | Accepted proof has valid challenge metadata. | PoW vectors and tamper tests | TLA+ plus Kani |
 | POW-INV-002 | Country policy never lowers difficulty. | Not ready | TLA+ plus property tests |
-| POW-INV-003 | A proof cannot exceed its replay budget. | Not ready | TLA+ replay model |
+| POW-INV-003 | An opt-in single-use proof cannot be replayed. | Not ready | TLA+ replay model |
 | BOUND-INV-001 | Parsers reject over-cap values safely. | Unit and property tests | Fuzzing and Kani |
 
 ## Magic-link model

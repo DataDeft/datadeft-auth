@@ -453,7 +453,7 @@ Email identity uses exact match on an app-provided normalized email value.
 
 ### Normalized email at rest
 
-The normalized email is stored in readable form. The atomic authentication
+The store keeps the normalized email in readable form. The atomic authentication
 transaction needs that value for its equality checks, and lookups key on
 `HMAC(email)` so no index holds a raw address.
 
@@ -599,7 +599,7 @@ Before phase acceptance, confirm these items:
 16. Scanner flow tests prove `GET` is non-consuming.
 17. Scanner flow tests prove `POST` requires bound state.
 18. Confirmation pages prevent framing.
-19. Terminal failures clear temporary cookies.
+19. Terminal failures clear confirm cookies.
 20. Redirects stay fixed or allowlisted.
 21. Cookie helpers use secure defaults.
 22. Logout revokes server state before cookie clearing.
