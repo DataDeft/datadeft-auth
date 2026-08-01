@@ -1,0 +1,74 @@
+# Workspace task runner. Run `mise tasks` to list tasks.
+
+[tasks.fmt]
+description = "Format all Rust code"
+run = "cargo fmt --all"
+
+[tasks.fmt-check]
+description = "Check formatting without writing"
+run = "cargo fmt --all --check"
+
+[tasks.check]
+description = "Type-check the workspace"
+run = "cargo check --workspace --all-targets --all-features"
+
+[tasks.clippy]
+description = "Lint with Clippy and fail on warnings"
+run = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
+
+[tasks.test]
+description = "Run all tests"
+run = "cargo test --workspace --all-features"
+
+[tasks.docs]
+description = "Build documentation"
+run = "cargo doc --workspace --all-features --no-deps"
+
+[tasks.audit]
+description = "Run dependency and advisory checks"
+run = """
+if command -v cargo-deny >/dev/null 2>&1; then
+  cargo deny check
+elif command -v cargo-audit >/dev/null 2>&1; then
+  cargo audit
+else
+  echo "Neither cargo-deny nor cargo-audit is installed. Install one to run audit." >&2
+  exit 1
+fi
+"""
+
+[tasks.spec]
+description = "Run the TLA+ safety models"
+run = """
+if ! command -v tla >/dev/null 2>&1; then
+  echo "tla is not installed. Run 'cargo install tla-checker --version 0.3.9'." >&2
+  exit 1
+fi
+tla spec/tla/MagicLink.tla --allow-deadlock
+tla spec/tla/Pow.tla --allow-deadlock
+"""
+
+[tasks.ts-verify]
+description = "Verify the dd-protect-client TypeScript package"
+dir = "packages/dd-protect-client"
+run = """
+if ! command -v bun >/dev/null 2>&1; then
+  echo "bun is not installed. Install bun to verify packages/dd-protect-client." >&2
+  exit 1
+fi
+bun install
+bun run lint
+bun run typecheck
+bun test ts/
+"""
+
+[tasks.verify]
+description = "Run full verification"
+run = [
+  { task = "fmt-check" },
+  { task = "clippy" },
+  { task = "test" },
+  { task = "docs" },
+  { task = "audit" },
+  { task = "ts-verify" },
+]
