@@ -380,7 +380,7 @@ struct DecodedPayload<'a> {
 
 /// Encode the bound payload with a fixed binary framing. This payload is
 /// internal and never parsed by a client, so it uses a compact length-prefixed
-/// layout rather than JSON — no byte-array expansion and no self-describing
+/// layout rather than JSON: no byte-array expansion and no self-describing
 /// codec surface:
 ///
 /// `v(1) || iat(4 BE) || typ_len(1) || typ || kid_len(1) || kid || body`

@@ -68,7 +68,7 @@ application-specific domains. Deterministic and fully testable.
 
 Reusable Branca / base62 / keyring / session-cookie / PoW-cookie primitives.
 Cookie name, issuer, audience, TTLs, key IDs, and key material are all
-**configurable** — there are no baked-in product values. `Debug` is redacted
+**configurable**: there are no baked-in product values. `Debug` is redacted
 for keys, cookies, session IDs, and secret-bearing types. Core APIs never
 read the environment or the clock directly.
 
@@ -82,8 +82,8 @@ database access, rate limiting, Axum, AWS, or application copy.
 ### `dd-magic-link-service`
 
 Framework-neutral orchestration for magic-link requests, scanner-safe
-confirmation, and server-revocable sessions. Depends on traits — not concrete
-infrastructure — for storage, rate limiting, an email delivery hook (named
+confirmation, and server-revocable sessions. It depends on traits for storage,
+rate limiting, an email delivery hook (named
 `MagicLinkOutbox`, but not necessarily durable), clock, and randomness.
 Implements the reusable core of:
 
@@ -109,7 +109,7 @@ Optional Axum integration. Owns bounded request guards, strict same-origin
 confirmation, secure flow/session cookie helpers, scanner-safe account
 confirmation pages, generic session `401` handling with cookie clearing, and
 safe HTTP error mapping. It does **not** own token/session cryptography or
-storage transactions, and it does **not** force a router — consumers call the
+storage transactions, and it does **not** force a router: consumers call the
 library functions from their own routes. Production deployments must also
 scrub token-bearing request targets from proxy, access, trace, and error logs.
 
@@ -183,7 +183,7 @@ consume alternative.
 ## Which crates do I depend on?
 
 For the common case (Axum HTTP + DynamoDB storage) the recipe is **three
-crates** — the service crate re-exports the keyring and lookup-key types, so
+crates**: the service crate re-exports the keyring and lookup-key types, so
 the core crates are not direct dependencies:
 
 ```toml
@@ -196,14 +196,14 @@ dd-pow-core           = { path = "../datadeft-auth/crates/dd-pow-core" }
 ```
 
 For development and tests, `dd-magic-link-aws` **without** the `aws` feature
-is SDK-free and provides `FakeDynamoDbAuthStore` / `FakeMagicLinkOutbox` —
+is SDK-free. It provides `FakeDynamoDbAuthStore` and `FakeMagicLinkOutbox`,
 in-memory implementations of every storage trait that mirror the DynamoDB
 adapter's semantics. For a different backend (for example Postgres), depend on
 `dd-magic-link-service` + `dd-magic-link-axum` and implement the repository
 traits.
 
-The complete integration — request, scanner-safe landing, confirmation,
-authenticated session, and logout, wired on the shipped fakes — is
+The complete integration includes request, scanner-safe landing, confirmation,
+authenticated session, and logout, wired on the shipped fakes. It is
 [`examples/axum-magic-link`](examples/axum-magic-link/src/main.rs). Start
 there. A compiling quickstart also lives in the `dd-magic-link-axum` crate
 docs.

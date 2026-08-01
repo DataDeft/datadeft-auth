@@ -25,7 +25,7 @@ pub const TOKEN_TYPE_MAGIC_LINK_CONFIRM_COOKIE_V1: &str = "ml-confirm-v1";
 
 /// Short-lived magic-link confirmation cookie key purpose.
 ///
-/// Owned here — next to the flow that uses it — so the five-minute policy and
+/// Owned here: next to the flow that uses it: so the five-minute policy and
 /// the versioned derivation constants live with the feature, not in the
 /// generic token crate.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -51,7 +51,7 @@ const CONFIRM_BODY_BYTES: usize = 133;
 
 /// Role marker giving each confirm binding a distinct type and redacted `Debug`
 /// name. The roles exist so selector, verifier, and account bindings cannot be
-/// interchanged — the same marker-type pattern as `KeyPurpose`.
+/// interchanged: the same marker-type pattern as `KeyPurpose`.
 pub trait ConfirmBindingRole {
     /// Redacted `Debug` rendering for this role's binding.
     const DEBUG_NAME: &'static str;

@@ -1,4 +1,4 @@
-//! `dd-magic-link-axum` — optional Axum HTTP integration.
+//! `dd-magic-link-axum`: optional Axum HTTP integration.
 //!
 //! This crate owns bounded HTTP decoding, scanner-safe magic-link handlers,
 //! cookie response helpers, and generic public errors. It does not own token or
@@ -21,7 +21,7 @@
 //! [`magic_link_confirmation`] run the input checks and hand back structured
 //! results (plus prepared cookie headers), and the application renders the
 //! responses (JSON for an API, HTML for a server-rendered page). The caller
-//! MUST uphold these invariants — they are the scanner-safety and
+//! MUST uphold these invariants: they are the scanner-safety and
 //! non-enumeration guarantees:
 //!
 //! - **Consumption is POST-only.** Only the same-origin confirmation POST
@@ -29,7 +29,7 @@
 //! - **The landing GET is side-effect-free and repeatable.** Email security
 //!   scanners fetch link URLs. The landing must be safe to fetch any number of
 //!   times without burning the link. [`magic_link_landing`] guarantees this on
-//!   the library side — do not add consuming side effects in your handler.
+//!   the library side: do not add consuming side effects in your handler.
 //! - **Respond uniformly (non-enumeration).** Return
 //!   [`MagicLinkFlowResponseError::Rejected`] with the **same HTTP status you
 //!   use for success** so an attacker cannot probe whether a link is
@@ -130,7 +130,7 @@
 //! /// One route: the side-effect-free landing. It returns the account and
 //! /// confirmation value plus the confirm cookie. The app renders JSON or HTML
 //! /// and lets the browser POST the confirmation back. Confirmation, request,
-//! /// and session authentication wire up the same way — see the example app.
+//! /// and session authentication wire up the same way: see the example app.
 //! async fn landing(State(state): State<AppState>, request: Request) -> Response {
 //!     let config = state.http_config.clone();
 //!     let result = magic_link_landing(request, config.as_ref(), move |command| async move {

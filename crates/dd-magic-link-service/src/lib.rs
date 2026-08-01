@@ -1,4 +1,4 @@
-//! `dd-magic-link-service` — framework-neutral magic-link orchestration.
+//! `dd-magic-link-service`: framework-neutral magic-link orchestration.
 //!
 //! Request, scanner-safe landing (`begin_magic_link_landing`), explicit
 //! confirmation (`confirm_magic_link_flow`), session validation, and revocation.
@@ -15,9 +15,9 @@
 //! default SDK-free build ships in-memory fakes for every trait here. This
 //! crate re-exports the keyring and lookup-key types, so the core crates are
 //! not direct dependencies. A compiling quickstart lives in the
-//! `dd-magic-link-axum` crate docs. The complete runnable integration —
+//! `dd-magic-link-axum` crate docs. The complete runnable integration includes
 //! request, scanner-safe landing, confirmation, authenticated session, and
-//! logout — is `examples/axum-magic-link` in the repository. Implementors of
+//! logout. See `examples/axum-magic-link` in the repository. Implementors of
 //! a non-AWS backend start from the trait contracts in [`traits`]
 //! (particularly the atomic-commit contract on
 //! [`traits::MagicLinkAuthenticationRepository`]).

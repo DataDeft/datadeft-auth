@@ -157,7 +157,7 @@ async fn origin_rejection_precedes_cookie_body_and_service() {
 async fn malformed_cookie_and_body_are_rejected_uniformly_without_service() {
     let config = scanner_config();
 
-    // Malformed / missing / duplicate confirm cookie, valid body — all Rejected
+    // Malformed / missing / duplicate confirm cookie, valid body: all Rejected
     // before the service runs.
     for cookie in [
         None,
@@ -183,7 +183,7 @@ async fn malformed_cookie_and_body_are_rejected_uniformly_without_service() {
         assert_eq!(result.err(), Some(MagicLinkFlowResponseError::Rejected));
     }
 
-    // Bad content-type / empty / non-JSON / unknown field / body country — all
+    // Bad content-type / empty / non-JSON / unknown field / body country: all
     // Rejected before the service runs.
     for (content_type, body) in [
         ("text/plain", Body::from("bad")),

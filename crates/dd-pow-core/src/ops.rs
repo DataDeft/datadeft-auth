@@ -39,7 +39,7 @@ const MAX_TIM_BYTES: usize = 32;
 /// ("this is the PoW *tag* message") rather than product-specific, so the
 /// crate stays reusable. Consumers that want product-unique domain strings
 /// should fork or override the constant. The browser client never computes
-/// the tag — it only echoes it — so this prefix is a server-side concern. A
+/// the tag: it only echoes it: so this prefix is a server-side concern. A
 /// bump to it cleanly invalidates every previously minted challenge.
 pub(crate) const TAG_DOMAIN: &str = "pow-tag-v1";
 
@@ -80,7 +80,7 @@ pub fn mint_challenge(
 /// 3. Freshness: `tim` parses as RFC3339, is not more than
 ///    [`MAX_FUTURE_SKEW_SECS`] ahead of `now_unix`, and
 ///    `now_unix - tim <= max_age_secs` (boundary accepted).
-/// 4. Difficulty floor: `dif >= max(min_difficulty, 1)` — proof-of-work must
+/// 4. Difficulty floor: `dif >= max(min_difficulty, 1)`: proof-of-work must
 ///    always require at least one leading zero, so a misconfigured
 ///    `min_difficulty = 0` can never yield a zero-work pass. The client/API
 ///    echoes the minted `dif`. The tag prevents lowering it, while this floor
@@ -207,7 +207,7 @@ fn append_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
     out.extend_from_slice(bytes);
 }
 
-/// True when `sol` begins with at least `dif` `'0'` bytes — the leading-zero
+/// True when `sol` begins with at least `dif` `'0'` bytes: the leading-zero
 /// work check. Allocation-free equivalent of
 /// `sol.starts_with(&"0".repeat(usize::from(dif)))`: `'0'` is single-byte
 /// ASCII, so a byte-prefix comparison matches the `&str` prefix exactly.

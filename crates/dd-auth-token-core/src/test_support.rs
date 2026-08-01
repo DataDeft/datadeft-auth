@@ -1,7 +1,7 @@
 //! Deterministic fixtures shared by the workspace's test suites.
 //!
-//! Available under `cfg(test)` and the explicit `test-support` feature only —
-//! never in default production builds. Deterministic RNGs are test fixtures.
+//! Available under `cfg(test)` and the explicit `test-support` feature only.
+//! Never use it in default production builds. Deterministic RNGs are test fixtures.
 //! Production code must inject an OS-backed CSPRNG (see the crate docs).
 
 use rand_core::{CryptoRng, RngCore};

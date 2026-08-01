@@ -1,12 +1,12 @@
 #![forbid(unsafe_code)]
 
-//! `dd-pow-axum` — optional Axum HTTP glue for the `dd-pow-core` proof-of-work
+//! `dd-pow-axum`: optional Axum HTTP glue for the `dd-pow-core` proof-of-work
 //! admission gate.
 //!
 //! Proof-of-work is an admission gate that stands in front of the rest of
 //! auth: a client solves a challenge, and the `dd_pow` proof cookie records
 //! that solve so the edge does not re-challenge a browser that recently
-//! passed. This crate is deliberately headless — it validates and mints, and
+//! passed. This crate is deliberately headless: it validates and mints, and
 //! returns structured values and `Set-Cookie` headers for the app to send. The
 //! app owns the router, body limits, `Content-Type`, and origin checks.
 //!

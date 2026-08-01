@@ -1,4 +1,4 @@
-//! `dd-auth-token-core` — reusable token, keyring, and cookie primitives.
+//! `dd-auth-token-core`: reusable token, keyring, and cookie primitives.
 //!
 //! The crate currently owns the low-level Phase 2 authentication-token building
 //! blocks:

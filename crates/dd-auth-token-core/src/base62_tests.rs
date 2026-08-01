@@ -155,7 +155,7 @@ proptest! {
     }
 
     /// PROPERTY (injectivity): for any digit string without a leading `'0'`,
-    /// `encode(decode(t)) == t` — the string IS the canonical spelling of its
+    /// `encode(decode(t)) == t`: the string IS the canonical spelling of its
     /// bytes. Together with the leading-`'0'` reject at the token layer, this
     /// is exactly the guarantee that used to require an O(n²) re-encode
     /// comparison in `branca::decode`.

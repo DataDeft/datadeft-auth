@@ -75,7 +75,7 @@ pub struct MagicLinkLanding {
 ///
 /// - [`Rejected`](Self::Rejected): the request was malformed, or the link was
 ///   invalid/expired/already-used. Respond **uniformly** so link validity is
-///   not enumerable — for a landing, use the **same HTTP status you return on
+///   not enumerable. For a landing, use the **same HTTP status you return on
 ///   success**. For a confirmation, use a single generic failure. On confirmation,
 ///   clear the confirm cookie with [`clear_confirm_cookie_header`].
 /// - [`Unavailable`](Self::Unavailable): a dependency was down. Respond 503 and
@@ -90,7 +90,7 @@ pub enum MagicLinkFlowResponseError {
 }
 
 /// Run the scanner-safe landing: extract the token, validate it via `begin`,
-/// and prepare the confirm cookie. **The landing is side-effect-free** — it does
+/// and prepare the confirm cookie. **The landing is side-effect-free**: it does
 /// not consume the magic link or create a session, so email security scanners
 /// may fetch the landing URL repeatedly without burning the link. The caller
 /// owns the response: a typical API returns JSON `{ account, confirmation }`
@@ -177,7 +177,7 @@ where
             .map_err(|_| MagicLinkFlowResponseError::Rejected)?
     };
 
-    // Country comes only from the configured trusted-edge header — never from
+    // Country comes only from the configured trusted-edge header: never from
     // request bodies (client-controlled).
     let country = viewer_country_from(&guarded.headers, config.country_header());
     let confirmation = core::mem::take(&mut body.confirmation);

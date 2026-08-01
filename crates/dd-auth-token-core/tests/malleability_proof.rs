@@ -2,7 +2,7 @@
 //!
 //! base62 is a big-integer codec, so `"0"+token`, `"00"+token`, … all decode to
 //! the same blob. Before the canonicality gate in `branca::decode`, every such
-//! spelling authenticated identically — one token had unboundedly many valid
+//! spelling authenticated identically: one token had unboundedly many valid
 //! strings (malleability, not forgery: the AEAD payload is unchanged). This test
 //! pins the fix: only the canonical spelling authenticates.
 

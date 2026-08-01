@@ -23,7 +23,7 @@ First tagged release. Stamp the release date when the `v0.1.0` tag is cut.
   headless `pow/create` and `pow/validate` glue. Proof-cookie lifetime is
   configurable (3 h default, 24 h ceiling) and stateless (reusable within its
   lifetime).
-- **`dd-protect-client`** — a zero-dependency TypeScript browser client that
+- **`dd-protect-client`**: a zero-dependency TypeScript browser client that
   solves challenges in Web Workers, matching the `dd-pow-core` wire contract
   byte for byte. Shipped as TypeScript source.
 - **Axum integration** (`dd-magic-link-axum`): headless landing/confirmation

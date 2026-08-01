@@ -1,4 +1,4 @@
-// protect.ts — dd-protect-client
+// protect.ts: dd-protect-client
 //
 // One function for proof-of-work admission. No UI code, no hardcoded routes.
 //
@@ -25,10 +25,10 @@
 /**
  * Failure category for {@link ProtectError}.
  *
- * - `"network"` — Fetch failed (offline, DNS, CORS).
- * - `"timeout"` — Request or proof-of-work solve exceeded its time limit.
- * - `"server"`  — Admission API returned non-2xx. Read `.status` for the code.
- * - `"solve"`   — Worker crashed, CSP blocked the worker, or the nonce space ran out.
+ * - `"network"`: Fetch failed (offline, DNS, CORS).
+ * - `"timeout"`: Request or proof-of-work solve exceeded its time limit.
+ * - `"server"`: Admission API returned non-2xx. Read `.status` for the code.
+ * - `"solve"`: Worker crashed, CSP blocked the worker, or the nonce space ran out.
  */
 export type ProtectErrorCode = "network" | "timeout" | "server" | "solve";
 

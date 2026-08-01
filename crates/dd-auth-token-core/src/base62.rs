@@ -20,7 +20,7 @@
 //!   included) is rejected, so on inputs without a leading `'0'` decoding is
 //!   injective and `encode(decode(t)) == t`. Token layers that need a unique
 //!   string (so that revocation / replay keys are stable) MUST reject the
-//!   leading-`'0'` family — see the canonicality gate in
+//!   leading-`'0'` family: see the canonicality gate in
 //!   [`crate::branca::decode`].
 //!
 //! There is no length bound here. Callers on untrusted input must cap the input
@@ -35,7 +35,7 @@ pub const ENCODE_STD: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
 
 /// A base62 decode / encode failure.
 ///
-/// Carries only the offending byte and position — never secret data.
+/// Carries only the offending byte and position: never secret data.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Base62Error {
     /// An input byte is not in the alphabet.
@@ -156,7 +156,7 @@ impl Encoding {
     /// Every byte must be an alphabet digit: embedded `\n` / `\r` (or any
     /// other byte outside the alphabet) is rejected as
     /// [`Base62Error::InvalidByte`], never skipped. This strictness is what
-    /// makes decoding injective for inputs without a leading `'0'` digit —
+    /// makes decoding injective for inputs without a leading `'0'` digit.
     /// token layers rely on it for canonical, non-malleable spellings.
     ///
     /// Schoolbook radix conversion, chunked: digits are consumed five at a
@@ -223,7 +223,7 @@ impl Encoding {
 }
 
 /// Shared standard-alphabet encoding. The 62-byte encode array and 256-byte
-/// decode map are built once here instead of per call — Branca encode/decode
+/// decode map are built once here instead of per call: Branca encode/decode
 /// sits on the auth hot path.
 static STD_ENCODING: LazyLock<Encoding> = LazyLock::new(Encoding::std);
 

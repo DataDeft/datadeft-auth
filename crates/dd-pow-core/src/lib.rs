@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! `dd-pow-core` — pure, IO-free proof-of-work challenge mint/verify plus the
+//! `dd-pow-core`: pure, IO-free proof-of-work challenge mint/verify plus the
 //! `dd_pow` proof cookie that records a successful solve.
 //!
 //! Deterministic: the caller injects clock, entropy, difficulty, max age,

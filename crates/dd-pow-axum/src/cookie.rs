@@ -1,7 +1,7 @@
 //! Outgoing `Set-Cookie` policy for the `dd_pow` proof cookie: a validated
 //! host-only cookie configuration plus set/clear header construction.
 //!
-//! Self-contained on purpose — PoW admission is independent of the magic-link
+//! Self-contained on purpose: PoW admission is independent of the magic-link
 //! flow, so this crate does not depend on the magic-link integration. The
 //! cookie grammar (lower-snake name, absolute path, RFC 6265 cookie-octet
 //! value) matches the rest of the workspace.

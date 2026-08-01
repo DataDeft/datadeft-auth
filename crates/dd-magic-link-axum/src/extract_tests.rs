@@ -54,7 +54,7 @@ fn request_and_confirmation_dto_debug_are_redacted() {
         )
         .is_err()
     );
-    // Country is never accepted from the body — it is a trusted-edge header
+    // Country is never accepted from the body: it is a trusted-edge header
     // concern only, so a body-supplied country is an unknown field.
     assert!(
         serde_json::from_str::<MagicLinkConfirmationBody>(

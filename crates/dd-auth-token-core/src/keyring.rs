@@ -101,7 +101,7 @@ impl RootSecret {
     /// AWS/adapters load only the root bytes. The KDF `info` string enforces
     /// separation, not a runtime flag. The `info` binds both the purpose and
     /// the key id (`purpose || 0x00 || kid`), so two kids derived from the same
-    /// root are cryptographically independent keys — rotation is real, not two
+    /// root are cryptographically independent keys: rotation is real, not two
     /// labels on one key. `KeyId` charset excludes `0x00`, so the separator is
     /// unambiguous. Two purposes, or two kids, are unrelated AEAD keys.
     pub fn derive_key<P: KeyPurpose>(&self, kid: &KeyId) -> Result<BrancaKey<P>, TokenError> {
@@ -331,7 +331,7 @@ impl<P: KeyPurpose> KeyRing<P> {
     /// Build a ring with exactly one active key, no duplicate `kid`s, and
     /// coherent rotation windows. Active slots must verify through the full
     /// maximum absolute lifetime after their final minting instant. The active
-    /// slot is identified by its status — there is no separate active-kid
+    /// slot is identified by its status: there is no separate active-kid
     /// parameter to keep in sync.
     pub fn new(keys: Vec<KeySlot<P>>) -> Result<Self, TokenError> {
         if keys.is_empty() || has_duplicate_key_ids(&keys) || has_incoherent_windows(&keys) {

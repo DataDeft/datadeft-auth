@@ -113,7 +113,7 @@ pub struct MagicLinkServiceConfig {
     /// header supplies one the service validates it and binds it into the
     /// session. When absent the flow proceeds without a country. Enable this
     /// only when the deployment edge guarantees the header on every request
-    /// (for example CloudFront with direct-origin access blocked) — with it
+    /// (for example CloudFront with direct-origin access blocked): with it
     /// enabled, confirmations without a country fail generically.
     pub enforce_country: bool,
     pub rate_limits: RateLimitConfig,

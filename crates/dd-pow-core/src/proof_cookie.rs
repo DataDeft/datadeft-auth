@@ -2,8 +2,8 @@
 //! challenge.
 //!
 //! Minted and verified with the generic bound-cookie primitives in
-//! `dd-auth-token-core` — the same Branca/keyring machinery that backs the
-//! session and magic-link confirm cookies — but under a distinct key purpose
+//! `dd-auth-token-core`: the same Branca/keyring machinery that backs the
+//! session and magic-link confirm cookies: but under a distinct key purpose
 //! (`pow-proof-v1`) so a proof cookie can never validate as a session or flow
 //! cookie, and vice versa, even under the same root secret.
 //!
@@ -44,7 +44,7 @@ const POW_PROOF_BODY_BYTES: usize = 1 + TID_BYTES;
 
 /// PoW proof-cookie key purpose.
 ///
-/// Owned here — next to the challenge/verify logic it protects — so the
+/// Owned here: next to the challenge/verify logic it protects: so the
 /// versioned derivation constants and the lifetime ceiling live with the
 /// feature, not in the generic token crate.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

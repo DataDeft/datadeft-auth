@@ -82,7 +82,7 @@ impl fmt::Debug for ValidatedSession {
 /// A session issued with a trusted-edge country locks to that country:
 /// `request_country` (the current request's trusted-edge signal, never
 /// client-supplied input) must match it on every validation, and an absent
-/// signal does not satisfy the lock — fail closed. Sessions issued without a
+/// signal does not satisfy the lock: fail closed. Sessions issued without a
 /// country are unlocked and skip the check, so deployments without an edge
 /// country header are unaffected.
 ///

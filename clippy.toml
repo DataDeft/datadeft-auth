@@ -1,5 +1,5 @@
 # Shared clippy configuration for the workspace.
-# Tests may unwrap/expect/panic freely — production code may not.
+# Tests may unwrap/expect/panic freely: production code may not.
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true

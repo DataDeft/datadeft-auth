@@ -65,7 +65,7 @@ examples/*             -> adapter and service crates as needed
 - Use the documented TTL baseline unless the consuming app explicitly configures stricter values: magic link 10m, flow 5m, PoW challenge 2m, PoW proof cookie 3h, session idle 24h, session absolute 30d, cleanup grace 24h.
 - Generate bearer secrets and nonces from CSPRNG entropy outside tests; enforce the documented entropy minimums for selectors, verifiers, session IDs/tokens, flow nonces, and PoW challenge nonces.
 - Magic-link selectors and verifiers are two independent CSPRNG draws; neither may be derived from the other.
-- The GET landing route is throttled by a keyed selector and does dummy work on miss like the consume path — no unthrottled read oracle.
+- The GET landing route is throttled by a keyed selector and does dummy work on miss like the consume path: no unthrottled read oracle.
 - Login CSRF is mitigated by account identification on the confirm page (UX-dependent); logout is a CSRF-protected unsafe method.
 - Use purpose-separated keys/peppers; do not reuse one secret across token, cookie, HMAC, and PoW contexts.
 - Production secret storage uses the thin supported-manager enum with `AwsSecretsManager` for v1; core crates receive loaded keyrings only and must not resolve secrets or depend on AWS SDK.

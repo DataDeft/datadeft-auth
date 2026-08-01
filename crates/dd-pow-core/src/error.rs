@@ -1,4 +1,4 @@
-//! Typed verification error. Pure data — the caller decides what to log and
+//! Typed verification error. Pure data: the caller decides what to log and
 //! which HTTP status to map each variant to.
 
 /// Everything that can go wrong in [`crate::verify_solution`].

@@ -3,8 +3,8 @@
 //!
 //! This whole file compiles to nothing unless `test-support` is enabled, so it
 //! proves the symbol *exists and works* under the feature. The CI "public API
-//! guard" job proves the complementary half — that the symbol is gated and the
-//! crate builds without it — since Rust cannot assert a symbol's *absence* from
+//! guard" job proves the complementary half: that the symbol is gated and the
+//! crate builds without it: since Rust cannot assert a symbol's *absence* from
 //! within a normal test.
 
 #![cfg(feature = "test-support")]

@@ -556,8 +556,8 @@ async fn consume_limits_deny<Limiter: RateLimiter>(
 /// consults every bucket (and advances its counter) even when another bucket
 /// denies, where the previous sequential form stopped at the first denial. A
 /// denied request therefore still consumes quota in every bucket, which only
-/// tightens limiting. A dependency error takes precedence over a denial —
-/// limiter state is unknown, so the request fails closed as unavailable.
+/// tightens limiting. A dependency error takes precedence over a denial.
+/// Limiter state is unknown, so the request fails closed as unavailable.
 async fn any_limit_denied<Limiter: RateLimiter>(
     limiter: &Limiter,
     checks: impl IntoIterator<Item = (String, u32, u64)>,
@@ -646,7 +646,7 @@ fn plan_user<Rng: RngCore + CryptoRng + ?Sized>(
 }
 
 /// The user id and whether the account was created, derived from the planned
-/// user branch — the single source of truth, so no parallel state can drift.
+/// user branch: the single source of truth, so no parallel state can drift.
 fn user_outcome(user: &MagicLinkAuthenticationUser) -> (UserId, bool) {
     match user {
         MagicLinkAuthenticationUser::Existing { user_id } => (user_id.clone(), false),
@@ -794,7 +794,7 @@ where
     .map_err(MagicLinkServiceError::from)
 }
 
-/// Draw `BYTES` random bytes and render `{prefix}_{lowercase hex}` — the
+/// Draw `BYTES` random bytes and render `{prefix}_{lowercase hex}`: the
 /// canonical id shape the typed wrappers' service-built constructors expect.
 fn generate_prefixed_hex_id<R: RngCore + CryptoRng + ?Sized, const BYTES: usize>(
     rng: &mut R,

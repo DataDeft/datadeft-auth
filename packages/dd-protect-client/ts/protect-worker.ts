@@ -1,4 +1,4 @@
-// protect-worker.ts — proof-of-work solver Web Worker.
+// protect-worker.ts: proof-of-work solver Web Worker.
 //
 // Matches the dd-pow-core wire contract: SHA-256(challenge + nonce), lowercase
 // hex, with `difficulty` leading zero hex characters (checked nibble by nibble).

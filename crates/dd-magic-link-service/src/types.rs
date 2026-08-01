@@ -573,7 +573,7 @@ impl Drop for ConfirmMagicLinkFlowCommand {
 }
 
 /// Email outbox request. The contained token is bearer material. Debug redacts
-/// it. The outbox owns URL construction, template, and language — this carries
+/// it. The outbox owns URL construction, template, and language: this carries
 /// only the recipient, the token, and the token's expiry.
 #[derive(Clone, Eq, PartialEq)]
 pub struct MagicLinkEmail {

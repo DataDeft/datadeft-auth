@@ -1,4 +1,4 @@
-//! `dd-magic-link-aws` — optional AWS infrastructure adapters.
+//! `dd-magic-link-aws`: optional AWS infrastructure adapters.
 //!
 //! DynamoDB implementations for the service traits and SES outbox helpers live
 //! here and only here. The default build provides in-memory fakes useful for

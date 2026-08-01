@@ -22,7 +22,7 @@ const COOKIE_EPOCH: &str = "Thu, 01 Jan 1970 00:00:00 GMT";
 
 /// Precomputed clear headers for the default cookie shapes, so the infallible
 /// `*_defaults()` constructors need no fallible header build. Each must stay
-/// byte-for-byte in lockstep with [`cookie_header`] output — pinned by the
+/// byte-for-byte in lockstep with [`cookie_header`] output: pinned by the
 /// `precomputed_clear_headers_match_freshly_built_ones` test.
 const DEFAULT_CONFIRM_CLEAR_HEADER: &str = "dd_auth_confirm=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
 const DEFAULT_CONFIRM_CLEAR_HEADER_INSECURE: &str = "dd_auth_confirm=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";

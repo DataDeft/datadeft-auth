@@ -1,4 +1,4 @@
-//! Branca v1 tokens — authenticated encryption over arbitrary payloads.
+//! Branca v1 tokens: authenticated encryption over arbitrary payloads.
 //!
 //! Wire format:
 //! ```text
@@ -78,7 +78,7 @@ impl fmt::Debug for Jti {
 /// A decrypted, authenticated Branca token.
 ///
 /// Returned by [`decode`] instead of a bare tuple so callers key on typed,
-/// canonical fields — never on the raw token string, which is not a unique
+/// canonical fields: never on the raw token string, which is not a unique
 /// handle for the token (see the malleability note on [`decode`]).
 pub struct Verified {
     /// Mint time in unix seconds (authenticated as AAD). TTL is the caller's
@@ -228,7 +228,7 @@ pub fn max_token_chars_for_payload(payload_bytes: usize) -> usize {
 /// base62 is a big-integer encoding, so leading `'0'` digits carry no weight:
 /// without a check, `token`, `"0"+token`, `"00"+token`, … would all decode to
 /// the same blob and authenticate identically, giving one token unboundedly many
-/// valid spellings. This is token *malleability*, not forgery — the AEAD payload
+/// valid spellings. This is token *malleability*, not forgery: the AEAD payload
 /// is unchanged. This function rejects every non-canonical spelling so the token
 /// string is a unique handle. Prefer keying revocation / replay on
 /// [`Verified::jti`] regardless.
@@ -259,7 +259,7 @@ pub fn decode(token: &str, key: &[u8]) -> Result<Verified, TokenError> {
         return Err(TokenError::PayloadTooLarge);
     }
 
-    // Canonicality: base62 decoding is many-to-one in exactly two ways —
+    // Canonicality: base62 decoding is many-to-one in exactly two ways.
     // leading '0' digits (rejected above, before decoding) and bytes outside
     // the alphabet, which `base62::decode` rejects rather than skips (embedded
     // newlines included). So every token that reaches this point is already

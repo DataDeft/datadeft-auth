@@ -1,4 +1,4 @@
-//! `dd-magic-link-core` — IO-free magic-link primitives.
+//! `dd-magic-link-core`: IO-free magic-link primitives.
 //!
 //! Owns the token grammar, selector/verifier types, parsing, generation,
 //! normalized-email boundary, keyed lookup/verifier HMAC helpers, the

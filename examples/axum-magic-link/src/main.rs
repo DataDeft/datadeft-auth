@@ -85,7 +85,7 @@ impl Error for SetupError {}
 #[derive(Clone)]
 struct AppState {
     /// Crate-shipped in-memory fake implementing every repository trait plus
-    /// the rate limiter — mirroring the DynamoDB adapter's storage shape.
+    /// the rate limiter, mirroring the DynamoDB adapter's storage shape.
     auth: FakeDynamoDbAuthStore,
     outbox: FakeMagicLinkOutbox,
     /// App-owned PoW replay set (tid -> expiry). PoW admission is outside the
@@ -239,7 +239,7 @@ async fn request_magic_link_inner(
 // The landing GET is side-effect-free (the library guarantees it never
 // consumes the link), so this application owns the interstitial page. It
 // renders the account and a form that POSTs the confirmation back same-origin
-// — the only step that consumes the link. Errors are returned with the SAME
+// This step consumes the link. Errors are returned with the SAME
 // 200 status as success so link validity is not enumerable.
 async fn landing_route(State(state): State<AppState>, request: Request) -> Response {
     let config = state.http_config.clone();

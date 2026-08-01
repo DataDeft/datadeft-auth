@@ -151,7 +151,7 @@ pub fn parse_magic_link_request_json(
 /// Country is opportunistic: when the edge supplies the header, the flow
 /// validates it and binds it into the session. When absent, the flow proceeds
 /// without a country. The header is only meaningful if the CDN/edge strips or overwrites
-/// it on every request and the origin is not directly reachable — otherwise a
+/// it on every request and the origin is not directly reachable: otherwise a
 /// caller can omit it. Never source country from request bodies.
 #[must_use]
 pub fn viewer_country_from(headers: &HeaderMap, name: &HeaderName) -> Option<String> {
@@ -173,7 +173,7 @@ pub fn viewer_country(headers: &HeaderMap) -> Option<String> {
 /// the outer query-size guard. The service command
 /// ([`BeginMagicLinkLandingCommand`](dd_magic_link_service::BeginMagicLinkLandingCommand))
 /// owns the raw-token cap and its zeroization, and the core parser owns the
-/// grammar — so the candidate travels as a plain string.
+/// grammar: so the candidate travels as a plain string.
 pub(crate) fn extract_landing_token(query: Option<&str>) -> Result<String, MagicLinkHttpError> {
     let query = query.ok_or(MagicLinkHttpError::BadRequest)?;
     if query.is_empty()

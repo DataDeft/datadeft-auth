@@ -8,7 +8,7 @@ hex, `difficulty` leading zero hex characters, decimal nonce), so the two are
 interoperable by construction.
 
 De-branded: no CeleraTax/Panzerotti naming, copy, or hardcoded routes. Zero
-runtime dependencies — only browser built-ins (`fetch`, `Worker`,
+runtime dependencies: only browser built-ins (`fetch`, `Worker`,
 `crypto.subtle`).
 
 ## Distribution
@@ -41,7 +41,7 @@ try {
 }
 ```
 
-`createUrl` and `validateUrl` are required — the library never hardcodes routes.
+`createUrl` and `validateUrl` are required: the library never hardcodes routes.
 Optional knobs: `workerCount` (default `navigator.hardwareConcurrency`),
 `solveTimeoutMs` (default 30000), `fetchTimeoutMs` (default 10000).
 

@@ -1,7 +1,7 @@
 //! Typed errors for token / session / cookie operations.
 //!
 //! This is a closed enum. No variant carries token bytes, keys, nonces, or
-//! session identifiers — errors are safe to log and surface generically.
+//! session identifiers: errors are safe to log and surface generically.
 
 use std::fmt;
 

@@ -4,8 +4,8 @@
 //! consuming app owns routing, body extraction, `Content-Type`, and origin
 //! checks (its admission concern) and renders the response. Two steps:
 //!
-//! 1. [`mint_pow_challenge`] — stateless challenge mint for `pow/create`.
-//! 2. [`verify_pow_solution`] — verify a posted solution for `pow/validate`
+//! 1. [`mint_pow_challenge`]: stateless challenge mint for `pow/create`.
+//! 2. [`verify_pow_solution`]: verify a posted solution for `pow/validate`
 //!    and, on success, return the `Set-Cookie` header that admits the browser.
 //!
 //! Every verification failure collapses into [`PowFlowError::Rejected`] so the

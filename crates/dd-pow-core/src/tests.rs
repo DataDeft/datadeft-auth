@@ -478,7 +478,7 @@ use proptest::prelude::*;
 
 /// Replace the hex character at `pos` with a DIFFERENT hex character
 /// (nibble XOR with a nonzero delta), preserving length and the lowercase
-/// hex alphabet — the smallest possible tamper on a hex-encoded field.
+/// hex alphabet: the smallest possible tamper on a hex-encoded field.
 fn mutate_hex(s: &str, pos: prop::sample::Index, nibble_delta: u8) -> String {
     let i = pos.index(s.len());
     let nibble = (s.as_bytes()[i] as char).to_digit(16).expect("hex input") as u8;
@@ -494,7 +494,7 @@ proptest! {
     /// PROPERTY (round trip): for ANY secret, entropy, difficulty 1..=2 and
     /// age within the freshness window, mint -> worker-solve -> verify
     /// succeeds, and the tid is stable across re-verification and equal to
-    /// BLAKE3(chg) — the replay-safe token identity.
+    /// BLAKE3(chg): the replay-safe token identity.
     #[test]
     fn prop_mint_solve_verify_round_trip(
         secret_bytes in prop::array::uniform32(any::<u8>()),
@@ -584,7 +584,7 @@ proptest! {
                     PowError::InvalidTag
                 }
             }
-            // tim: a shifted valid timestamp or garbage — tag dies first.
+            // tim: a shifted valid timestamp or garbage: tag dies first.
             4 => {
                 sol.tim = match variant {
                     0 => "2026-07-09T12:00:01Z".to_string(),
@@ -648,7 +648,7 @@ fn blake3_matches_official_empty_kat() {
 }
 
 /// Robustness: `verify_solution` must never panic on hostile, fully
-/// attacker-controlled input — only return Ok or Err. Curated cases
+/// attacker-controlled input: only return Ok or Err. Curated cases
 /// (arbitrary-input coverage lives in the proptest below). This one is
 /// diagnosis-friendly and fast.
 #[test]
@@ -815,7 +815,7 @@ proptest! {
     #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
 
     /// PROPERTY (robustness / no-panic): for ANY strings in every field and
-    /// any parameter values, `verify_solution` is total — it returns Ok or
+    /// any parameter values, `verify_solution` is total: it returns Ok or
     /// Err and never panics. Covers the u64 conversion branches
     /// (`now_unix`/`max_age` at full range) and pure garbage in every text
     /// field. Untrusted input must not be a DoS/oracle.
