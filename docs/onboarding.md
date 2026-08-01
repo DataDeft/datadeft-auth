@@ -63,7 +63,7 @@ PoW is optional app admission. Complete the PoW backlog before you require PoW.
 | MVP-007 | P1 | Decided | Store the normalized email at rest, protected by DynamoDB KMS and IAM. No app-side field encryption. |
 | MVP-010 | PoW | Not ready | Build and vector-test the browser worker. |
 | MVP-011 | PoW | Ready | Wire the `dd-pow-axum` challenge and validate glue into routes. |
-| MVP-012 | PoW | Done | Ship the `ct_pow` proof cookie (`dd-pow-core`, `dd-pow-axum`). Stateless, reusable within its TTL. |
+| MVP-012 | PoW | Done | Ship the `dd_pow` proof cookie (`dd-pow-core`, `dd-pow-axum`). Stateless, reusable within its TTL. |
 | MVP-013 | PoW | Not ready | Define trusted country source and difficulty policy. |
 | MVP-014 | P1 | Done | Keep session country as an opportunistic lock. |
 | MVP-020 | Assurance | Future | Add TLA+ models and CI checks. |
