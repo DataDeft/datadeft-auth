@@ -37,6 +37,17 @@ else
 fi
 """
 
+[tasks.spec]
+description = "Run the TLA+ safety models (MVP-020, tla-checker 0.3.9)"
+run = """
+if ! command -v tla >/dev/null 2>&1; then
+  echo "tla not installed; run 'cargo install tla-checker --version 0.3.9'" >&2
+  exit 1
+fi
+tla spec/tla/MagicLink.tla --allow-deadlock
+tla spec/tla/Pow.tla --allow-deadlock
+"""
+
 [tasks.ts-verify]
 description = "Verify the dd-protect-client TypeScript package: install, lint, type-check, test"
 dir = "packages/dd-protect-client"

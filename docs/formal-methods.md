@@ -8,13 +8,15 @@ Production work comes first. Formal methods will add evidence later. They do not
 
 The development environment has these tools:
 
-- Rust `tla` checker
+- Rust `tla` checker: `tla-checker` 0.3.9 from crates.io (the `tla` binary)
 - Kani
 - Cargo Fuzz
 - Quint
 - Creusot
 
-This document does not install or configure them. CI will pin tool versions when each MVP starts.
+The first TLA+ models live in [../spec/tla](../spec/tla). Run them with `mise
+run spec`. This document does not install the other tools. CI will pin their
+versions when each MVP starts.
 
 ## Claims to model
 

@@ -1,0 +1,99 @@
+# Formal specifications
+
+TLA+ models for the datadeft-auth safety invariants. This is the concrete
+start of **MVP-020** in [docs/formal-methods.md](../docs/formal-methods.md).
+
+The models are non-normative. A model check proves a property of the model
+within its bounds. It does not prove that the Rust code matches the model, that
+the crypto primitives are correct, or that AWS, SES, or browser behavior is
+correct.
+
+## Tool
+
+The checker is `tla-checker` 0.3.9 from crates.io. It installs the `tla` binary.
+
+```sh
+cargo install tla-checker --version 0.3.9
+```
+
+`tla` is a native-Rust explicit-state TLA+ model checker. It reads a `.tla`
+spec and an auto-loaded `Spec.cfg` (TLC-style). It checks safety invariants by
+default and liveness under `--check-liveness`.
+
+## Layout
+
+```text
+spec/
+  README.md          this plan
+  tla/
+    README.md        how to run each model and read the results
+    MagicLink.tla    magic-link authentication state machine
+    MagicLink.cfg    constants and invariants for MagicLink
+    Pow.tla          proof-of-work admission difficulty
+    Pow.cfg          constants and invariants for Pow
+```
+
+## How to run
+
+Each spec deadlocks at a terminal state (a consumed challenge, an expired
+challenge), so pass `--allow-deadlock`.
+
+```sh
+tla spec/tla/MagicLink.tla --allow-deadlock
+tla spec/tla/Pow.tla --allow-deadlock
+```
+
+Both report "No errors found" today.
+
+## What each model covers
+
+The abstraction models control flow and the atomic transaction. It does not
+model the token grammar, selector, verifier, HMAC, or Branca. The model assumes
+the crypto checks are correct and asks whether the state machine around them is
+safe.
+
+### MagicLink.tla
+
+One magic-link challenge and one browser session. It checks these invariants
+from the formal-methods roadmap.
+
+| Invariant | Claim | Code anchor |
+| --- | --- | --- |
+| ML-INV-001 | A consumed challenge was consumed by a POST, never a GET landing. | `begin_magic_link_landing` is side-effect-free |
+| ML-INV-002 | At most one session per challenge. | atomic commit guard on `Issued` |
+| ML-INV-003 | Consume and session creation are one atomic pair. | `commit_magic_link_authentication` transaction |
+
+### Pow.tla
+
+One challenge and a mutable country policy. It checks the difficulty guard.
+
+| Invariant | Claim | Code anchor |
+| --- | --- | --- |
+| POW-INV-001 | An accepted proof met the production floor. | `verify_solution` difficulty floor |
+| POW-INV-002 | An accepted proof met the difficulty bound into its challenge. A policy decrease after mint cannot lower the bar. | tag-bound `dif`, `min_difficulty` check |
+
+## What we still need to model
+
+The current models are a first slice. The next work items, in rough order:
+
+1. ML-INV-004: wrong bound data (selector, verifier, account) cannot
+   authenticate. Add binding identities to the state.
+2. ML-INV-005: a disabled user does not burn the challenge. Add a re-enable
+   action and check the challenge stays reusable.
+3. SES-INV-001: a revoked or expired session never validates.
+4. Concurrency: two racing confirmations over the same challenge. Model an
+   ambiguous transaction result with an exact retry, and check idempotency.
+5. Country policy: risk classes and the `EffectiveDifficulty` rule across many
+   country transitions.
+6. Liveness: a solved challenge under a fair schedule reaches an accepted
+   session. Run with `--check-liveness`.
+
+Each new invariant should link a model action, a code path, and a test, per the
+MVP-023 evidence rule.
+
+## Bounds
+
+The constants stay small on purpose. Explicit-state checking explores every
+reachable state, so a small bound gives fast, exhaustive coverage of the
+interleavings that matter (`MaxTime = 2`, `MaxDiff = 2`). Raise a bound only
+when a new action needs more range to show a case.
