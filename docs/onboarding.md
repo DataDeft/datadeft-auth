@@ -33,7 +33,7 @@ A magic-link deployment can run in production after the app completes this list.
 8. Use the DynamoDB transaction shape for AWS.
 9. Configure DynamoDB TTL, encryption, backups, and IAM.
 10. Use strong reads for session and authentication records.
-11. Decide whether inline SES delivery is acceptable.
+11. Confirm inline SES delivery fits your service level.
 12. Use a durable outbox if inline delivery is not acceptable.
 13. Configure exact same-origin confirmation.
 14. Configure fixed or same-origin redirects.
@@ -43,7 +43,7 @@ A magic-link deployment can run in production after the app completes this list.
 18. Scrub cookies and confirmation values from logs.
 19. Test replay, concurrent confirmation, rollback, and logout.
 20. Test post-revocation visibility.
-21. Document normalized-email storage controls.
+21. Follow the normalized-email storage controls in [security.md](security.md).
 22. Run `mise run verify`.
 23. Run the consuming app integration tests.
 24. Pin an immutable commit or tag.
@@ -71,21 +71,20 @@ PoW is optional app admission. Complete the PoW backlog before you require PoW.
 
 ## PoW decisions
 
-Define these values before you implement MVP-010 through MVP-013.
+Define these values before you implement MVP-013 (country-aware PoW). The
+shipped defaults already set the challenge lifetime (2 minutes), the
+proof-cookie lifetime (3 hours), and stateless replay behavior. See the backlog
+and [security.md](security.md).
 
 1. Select the trusted country source.
 2. Select behavior when country is absent.
 3. Define country risk classes.
 4. Set required difficulty for each class.
 5. Decide when difficulty becomes fixed.
-6. Set challenge lifetime.
-7. Set proof-cookie lifetime.
-8. Select replay store behavior.
-9. Set proof use cap.
-10. Define generic public errors.
-11. Define challenge issuance controls.
-12. Set browser performance targets.
-13. Define accessibility fallback.
+6. Define generic public errors.
+7. Define challenge issuance controls.
+8. Set browser performance targets.
+9. Define accessibility fallback.
 
 Use this minimum invariant.
 
