@@ -613,8 +613,8 @@ proptest! {
 // --- Tier 1: robustness, official vectors, frozen corpus ----------------
 
 /// Official HMAC-SHA-256 vectors (RFC 4231 §4) validate the primitive
-/// independent of our own golden pipeline — a wrong `hmac`/`sha2` version or
-/// feature flag can't pass this.
+/// independent of our own golden pipeline. A wrong `hmac`/`sha2` version or
+/// feature flag cannot pass this.
 #[test]
 fn hmac_matches_rfc_4231_vectors() {
     // Test Case 1: key = 0x0b * 20 (padded to 32), data = "Hi There".

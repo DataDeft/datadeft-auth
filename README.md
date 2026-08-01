@@ -7,7 +7,7 @@ framework and cloud adapters.
 
 > **Status:** unpublished `0.1.0` workspace. APIs are not yet stable.
 > Start with [`docs/architecture.md`](docs/architecture.md) and
-> [`docs/onboarding.md`](docs/onboarding.md);
+> [`docs/onboarding.md`](docs/onboarding.md).
 > [`docs/security.md`](docs/security.md) is the normative security policy.
 
 ## What this is
@@ -47,7 +47,7 @@ dd-magic-link-axum     (optional)
 dd-magic-link-aws      (optional)
 ```
 
-Dependency direction (adapters are siblings; neither depends on the other):
+Dependency direction (the adapters are siblings and neither depends on the other):
 
 ```
 dd-auth-token-core      -> (no workspace crates)
@@ -117,8 +117,8 @@ scrub token-bearing request targets from proxy, access, trace, and error logs.
 
 Optional AWS adapter. Owns DynamoDB implementations for the
 magic-link/session/user/rate-counter traits and an SES sending adapter if
-desired. AWS SDK dependencies live here and **only** here. Adapter errors
-are scrubbed before crossing the public boundary.
+desired. AWS SDK dependencies live here and **only** here. The adapter scrubs its
+errors before they cross the public boundary.
 
 ### `packages/dd-protect-client`
 
@@ -157,7 +157,7 @@ handlers.
 The request path constructs `MagicLinkRequestService` and calls
 `request_magic_link(...)`. The service applies request and delivery limits,
 stores the challenge, and passes the token only to the application-provided
-`MagicLinkOutbox` implementation; that trait does not itself guarantee durable
+`MagicLinkOutbox` implementation. That trait does not itself guarantee durable
 queueing. The public response remains generic.
 
 The only login path is scanner-safe:
@@ -167,7 +167,7 @@ The only login path is scanner-safe:
    consuming, identifies the exact account, and returns a short-lived encrypted
    flow cookie plus a separate confirmation value.
 2. The confirmation page shows the account and submits the confirmation value
-   by same-origin `POST`; it never embeds the raw magic-link token.
+   by same-origin `POST`. It never embeds the raw magic-link token.
 3. The POST handler calls `confirm_magic_link_flow(...)`, which verifies state
    bound to the selector, verifier proof, exact account, expiry, and independent
    nonce, mints the encrypted session cookie value, and asks the authentication
@@ -205,7 +205,7 @@ traits.
 The complete integration — request, scanner-safe landing, confirmation,
 authenticated session, and logout, wired on the shipped fakes — is
 [`examples/axum-magic-link`](examples/axum-magic-link/src/main.rs). Start
-there; a compiling quickstart also lives in the `dd-magic-link-axum` crate
+there. A compiling quickstart also lives in the `dd-magic-link-axum` crate
 docs.
 
 ## Local development
@@ -235,13 +235,13 @@ See [`docs/operating.md`](docs/operating.md) for the full operating model.
 
 ## Current delivery focus
 
-The core, service, Axum, and AWS library surfaces are implemented, and the
+The core, service, Axum, and AWS library surfaces are complete, and the
 runnable integration example ships in
-[`examples/axum-magic-link`](examples/axum-magic-link/src/main.rs). Remaining
-work is production evidence: deployment logging attestation, live DynamoDB
-validation, and an immutable release reference. Browser PoW and country-aware
-PoW admission remain planned application integration; see the status and MVP
-IDs in `docs/onboarding.md`.
+[`examples/axum-magic-link`](examples/axum-magic-link/src/main.rs). The
+remaining work is production evidence: deployment logging attestation, live
+DynamoDB validation, and an immutable release reference. Browser PoW and
+country-aware PoW admission remain planned application integration. See the
+status and MVP IDs in `docs/onboarding.md`.
 
 ## Documentation
 

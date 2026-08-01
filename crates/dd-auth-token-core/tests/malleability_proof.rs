@@ -84,7 +84,7 @@ proptest! {
         let key = [0x11u8; branca::KEY_BYTES];
         let token = encode_with_fixed_nonce(&payload, &key, nonce, timestamp);
 
-        // Canonical token authenticates to the minted fields; Jti tracks the nonce.
+        // The canonical token authenticates to the minted fields. Jti tracks the nonce.
         let v = branca::decode(&token, &key).unwrap();
         prop_assert_eq!(v.timestamp, timestamp);
         prop_assert_eq!(&v.payload, &payload);
