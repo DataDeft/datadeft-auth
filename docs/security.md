@@ -451,6 +451,17 @@ Email identity uses exact match on an app-provided normalized email value.
 - Redact normalized email in `Debug`.
 - Redact normalized email in errors, logs, fixtures, and snapshots.
 
+### Normalized email at rest
+
+The normalized email is stored in readable form. The atomic authentication
+transaction needs that value for its equality checks, and lookups key on
+`HMAC(email)` so no index holds a raw address.
+
+- Store the normalized email at rest in readable form.
+- Protect it with provider encryption at rest (DynamoDB KMS) and least-privilege IAM.
+- Do not add application-layer email field encryption.
+- Keep raw tokens, selectors, and verifiers out of storage. Store keyed HMAC and verifier hashes only.
+
 ## Magic-link URL handling
 
 Magic-link tokens often appear in URLs. Treat them as log-sensitive secrets.

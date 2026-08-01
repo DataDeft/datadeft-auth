@@ -59,8 +59,8 @@ PoW is optional app admission. Complete the PoW backlog before you require PoW.
 | MVP-003 | P0 | AWS users | Validate live DynamoDB behavior. |
 | MVP-004 | P0 | Planned | Publish crates or provide an immutable private tag. |
 | MVP-005 | P1 | Done | Trait futures require `+ Send`, static dispatch only (no `dyn`). |
-| MVP-006 | P1 | Decision needed | Choose durable outbox or document inline SES. |
-| MVP-007 | P1 | Decision needed | Accept plaintext email storage or add app encryption. |
+| MVP-006 | P1 | Decided | Inline SES delivery accepted. Implement the `MagicLinkOutbox` trait against a durable queue only if a deployment needs it. |
+| MVP-007 | P1 | Decided | Store the normalized email at rest, protected by DynamoDB KMS and IAM. No app-side field encryption. |
 | MVP-010 | PoW | Not ready | Build and vector-test the browser worker. |
 | MVP-011 | PoW | Ready | Wire the `dd-pow-axum` challenge and validate glue into routes. |
 | MVP-012 | PoW | Done | Ship the `ct_pow` proof cookie (`dd-pow-core`, `dd-pow-axum`). Stateless, reusable within its TTL. |
