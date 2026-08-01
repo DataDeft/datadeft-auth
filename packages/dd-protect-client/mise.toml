@@ -1,0 +1,22 @@
+[tools]
+bun = "latest"
+
+[tasks.install]
+description = "Install JS dev dependencies"
+run = "bun install"
+
+[tasks.lint]
+description = "Lint TypeScript with ESLint (security plugin)"
+run = "bun run lint"
+
+[tasks.typecheck]
+description = "Type-check client (DOM) and worker (WebWorker) separately"
+run = "bun run typecheck"
+
+[tasks.test]
+description = "Run unit and worker integration tests"
+run = "bun test ts/"
+
+[tasks.verify]
+description = "Full gate: lint, type-check, test"
+depends = ["lint", "typecheck", "test"]

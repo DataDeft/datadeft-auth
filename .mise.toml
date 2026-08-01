@@ -37,6 +37,20 @@ else
 fi
 """
 
+[tasks.ts-verify]
+description = "Verify the dd-protect-client TypeScript package: install, lint, type-check, test"
+dir = "packages/dd-protect-client"
+run = """
+if ! command -v bun >/dev/null 2>&1; then
+  echo "bun not installed; install bun to verify packages/dd-protect-client" >&2
+  exit 1
+fi
+bun install
+bun run lint
+bun run typecheck
+bun test ts/
+"""
+
 [tasks.verify]
-description = "Full verification: fmt-check + clippy + test + docs + audit"
-depends = ["fmt-check", "clippy", "test", "docs", "audit"]
+description = "Full verification: fmt-check + clippy + test + docs + audit + ts-verify"
+depends = ["fmt-check", "clippy", "test", "docs", "audit", "ts-verify"]
