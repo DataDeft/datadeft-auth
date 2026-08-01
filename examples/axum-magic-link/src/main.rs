@@ -99,7 +99,7 @@ struct AppState {
     pow_secret: Arc<PowSecret>,
 }
 
-/// Wall clock for the example. The library never reads the clock itself; the
+/// Wall clock for the example. The library never reads the clock itself. The
 /// application supplies it.
 struct LocalClock;
 
@@ -293,7 +293,7 @@ async fn landing_route(State(state): State<AppState>, request: Request) -> Respo
 
 // The confirmation POST is the only step that consumes the link and mints the
 // session. On success this app 303-redirects to /auth/complete with the session
-// cookie; an SPA would return JSON instead.
+// cookie. An SPA would return JSON instead.
 async fn confirm_route(State(state): State<AppState>, request: Request) -> Response {
     let config = state.http_config.clone();
     let result = magic_link_confirmation(request, config.as_ref(), move |command| async move {
@@ -361,7 +361,7 @@ async fn auth_complete() -> Html<&'static str> {
 
 async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let auth_state = state.clone();
-    // Country pinning: pass the trusted-edge signal for this request; sessions
+    // Country pinning: pass the trusted-edge signal for this request. Sessions
     // issued without a country are unlocked and ignore it.
     let country = viewer_country_from(&headers, state.http_config.country_header());
     match authenticate_session(

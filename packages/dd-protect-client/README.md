@@ -34,7 +34,7 @@ try {
     switch (e.code) {
       case "network": // offline, DNS, or CORS
       case "timeout": // request or solve exceeded its limit
-      case "server":  // non-2xx from the admission API; see e.status
+      case "server":  // non-2xx from the admission API. See e.status
       case "solve":   // worker crash, CSP block, or nonce exhaustion
     }
   }
