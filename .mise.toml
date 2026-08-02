@@ -66,5 +66,5 @@ bun test ts/
 """
 
 [tasks.verify]
-description = "Full verification: fmt-check + clippy + test + docs + audit + ts-verify"
-depends = ["fmt-check", "clippy", "test", "docs", "audit", "ts-verify"]
+description = "Full verification: fmt-check + clippy + test + docs + audit + ts-verify + spec"
+depends = ["fmt-check", "clippy", "test", "docs", "audit", "ts-verify", "spec"]

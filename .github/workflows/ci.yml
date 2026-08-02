@@ -28,6 +28,23 @@ jobs:
       - name: Docs
         run: cargo doc --workspace --all-features --no-deps
 
+  formal-spec:
+    name: TLA+ safety models
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install tla-checker
+        run: cargo install tla-checker --version 0.3.9 --locked
+      - name: Check TLA+ safety models
+        run: |
+          tla spec/tla/MagicLink.tla --allow-deadlock
+          tla spec/tla/MagicLinkRace.tla --allow-deadlock
+          tla spec/tla/Session.tla --allow-deadlock
+          tla spec/tla/Pow.tla --allow-deadlock
+          tla spec/tla/Liveness.tla --check-liveness --allow-deadlock
+
   token-core-api-guard:
     name: token-core public API guard
     runs-on: ubuntu-latest
