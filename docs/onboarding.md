@@ -19,6 +19,8 @@
 
 Do not use fake secrets, fake clocks, or fake entropy in production.
 
+To wire the libraries into your application, follow [integration.md](integration.md).
+
 ## Production checklist
 
 A magic-link deployment can run in production after the app completes this list.

@@ -2,6 +2,7 @@
 
 ## Start here
 
+- [Integration](integration.md): wire the libraries into your application.
 - [Architecture](architecture.md): current parts, flows, and limits.
 - [Onboarding](onboarding.md): production checklist and backlog.
 - [Security rules](security.md): required security behavior.
