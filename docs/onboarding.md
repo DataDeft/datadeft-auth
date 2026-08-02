@@ -1,6 +1,6 @@
 # Onboarding
 
-**Status:** Current checklist and live backlog.
+**Status:** Released as `v0.1.0` (2026-08-02). Bug fixes only from here.
 
 ## Can a customer use this today?
 
@@ -15,7 +15,7 @@
 | Browser PoW client | Ready | Serve the built worker and call `protect()` from your login page. |
 | Country-aware PoW | Not ready | Build upstream policy. Never lower below the floor. |
 | Example app | Ready | Start with `examples/axum-magic-link`. |
-| Published crates | Not ready | Use a pinned path or Git revision. |
+| Published crates | Tagged | Pin to the `v0.1.0` tag or a Git revision. crates.io publish deferred. |
 
 Do not use fake secrets, fake clocks, or fake entropy in production.
 
@@ -57,7 +57,7 @@ PoW is optional app admission. Complete the PoW backlog before you require PoW.
 | MVP-001 | P0 | Done | Keep the fake-backed Axum example runnable. |
 | MVP-002 | P0 | Per deployment | Attest token-safe logging. |
 | MVP-003 | P0 | AWS users | Validate live DynamoDB behavior. |
-| MVP-004 | P0 | Planned | Publish crates or provide an immutable private tag. |
+| MVP-004 | P0 | Done | `v0.1.0` tag cut. Consume by the `v0.1.0` tag or a Git revision. crates.io publish deferred. |
 | MVP-005 | P1 | Done | Trait futures require `+ Send`, static dispatch only (no `dyn`). |
 | MVP-006 | P1 | Decided | Inline SES delivery accepted. Implement the `MagicLinkOutbox` trait against a durable queue only if a deployment needs it. |
 | MVP-007 | P1 | Decided | Store the normalized email at rest, protected by DynamoDB KMS and IAM. No app-side field encryption. |
@@ -66,7 +66,7 @@ PoW is optional app admission. Complete the PoW backlog before you require PoW.
 | MVP-012 | PoW | Done | Ship the `dd_pow` proof cookie (`dd-pow-core`, `dd-pow-axum`). Stateless, reusable within its TTL. |
 | MVP-013 | PoW | Not ready | Define trusted country source and difficulty policy. |
 | MVP-014 | P1 | Done | Keep session country as an opportunistic lock. |
-| MVP-020 | Assurance | Started | TLA+ models cover the safety invariants and happy-path progress (`mise run spec`). CI wiring and fairness-based liveness pending. |
+| MVP-020 | Assurance | Done | TLA+ safety models gated in CI (`formal-spec` job, `mise run spec`). Fairness-based liveness needs a checker with `WF` support. |
 | MVP-021 | Assurance | Future | Add simulation, fuzzing, and bounded checks. |
 
 ## PoW decisions
