@@ -4,6 +4,26 @@ All notable changes to this workspace are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crates follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-08-02
+
+Housekeeping patch. No behavioral change to any crate: the two source edits are
+lint-driven refactors that preserve behavior.
+
+### Changed
+
+- **CI is one mise-driven job.** `ci.yml` collapses to checkout, toolchain,
+  cache, and `mise run verify`, so local and CI run the same gate. The root
+  config now lives at `mise.toml`, and `scripts/api-guard.ts` fails the build if
+  a hidden `.mise.toml` reappears. Shell guards and the awk API checks are gone.
+- Behavior-preserving clippy refactors in `dd-pow-core` (`ops.rs`) and
+  `dd-magic-link-aws` (`window.rs`) to satisfy stable 1.97.
+
+### Documentation
+
+- Add `docs/integration.md`, a consumer entry point for implementation agents.
+- Mark modeled claims as covered in `docs/formal-methods.md`, and freeze the
+  MVP status at the release in `docs/onboarding.md`.
+
 ## [0.1.0] - 2026-08-02
 
 First tagged release.

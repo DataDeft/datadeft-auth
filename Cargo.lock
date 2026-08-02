@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "axum-magic-link"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "dd-magic-link-aws",
@@ -528,7 +528,7 @@ dependencies = [
 
 [[package]]
 name = "dd-auth-token-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chacha20poly1305",
  "hex",
@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "dd-magic-link-aws"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aws-sdk-dynamodb",
  "aws-sdk-secretsmanager",
@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "dd-magic-link-axum"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "dd-auth-token-core",
@@ -579,7 +579,7 @@ dependencies = [
 
 [[package]]
 name = "dd-magic-link-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dd-auth-token-core",
  "hex",
@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "dd-magic-link-service"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dd-auth-token-core",
  "dd-magic-link-core",
@@ -605,7 +605,7 @@ dependencies = [
 
 [[package]]
 name = "dd-pow-axum"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "blake3",
@@ -620,7 +620,7 @@ dependencies = [
 
 [[package]]
 name = "dd-pow-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "dd-auth-token-core",
