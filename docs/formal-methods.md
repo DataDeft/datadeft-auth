@@ -29,9 +29,14 @@ versions when each MVP starts.
 | ML-INV-005 | Disabled-user failures do not burn a challenge. | Fake transaction tests | TLA+ invariant |
 | SES-INV-001 | Revoked or expired sessions never validate. | Session boundary tests | TLA+ session model |
 | POW-INV-001 | Accepted proof has valid challenge metadata. | PoW vectors and tamper tests | TLA+ plus Kani |
-| POW-INV-002 | Country policy never lowers difficulty. | Not ready | TLA+ plus property tests |
+| POW-INV-002 | Country policy never lowers difficulty. | TLA+ model (`Pow.tla`) | TLA+ plus property tests |
 | POW-INV-003 | An opt-in single-use proof cannot be replayed. | Not ready | TLA+ replay model |
 | BOUND-INV-001 | Parsers reject over-cap values safely. | Unit and property tests | Fuzzing and Kani |
+
+ML-INV-001..005, SES-INV-001, and POW-INV-001..002 now have TLA+ models in
+[../spec/tla](../spec/tla), gated by the `formal-spec` CI job (`mise run spec`).
+POW-INV-003 and BOUND-INV-001 remain future work. Replay is opt-in, and parser
+bounds belong to fuzzing and Kani.
 
 ## Magic-link model
 
