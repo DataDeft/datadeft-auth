@@ -52,32 +52,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # `encode_with_nonce` is a nonce-reuse footgun; it must never appear in the
-      # default public API. Assert the cfg gate is still on it.
-      - name: encode_with_nonce must stay gated behind test-support
-        run: |
-          f=crates/dd-auth-token-core/src/branca.rs
-          gate=$(awk '/pub fn encode_with_nonce/ {print prev} {prev=$0}' "$f")
-          echo "line above fn: $gate"
-          echo "$gate" | grep -q 'cfg(any(test, feature = "test-support"))' \
-            || { echo "::error::encode_with_nonce is not gated behind test-support"; exit 1; }
-      # A same-line inline dependency enabling test-support would pull the footgun
-      # into a normal build via feature unification. Flag it for review.
-      - name: no crate may enable dd-auth-token-core/test-support outside [dev-dependencies]
-        run: |
-          # test-support is a footgun only when enabled as a NORMAL dependency
-          # feature (feature unification pulls it into a default build). It is
-          # fine in [dev-dependencies]. Track the current section, flag only
-          # non-dev enables.
-          hits=$(awk '
-            FNR==1 { dev=0 }
-            /^\[/ { dev = ($0 ~ /dev-dependencies/) ? 1 : 0 }
-            /dd-auth-token-core/ && /test-support/ { if (!dev) print FILENAME":"FNR": "$0 }
-          ' $(git ls-files "*Cargo.toml"))
-          if [ -n "$hits" ]; then
-            echo "$hits"
-            echo "::error::a crate enables dd-auth-token-core/test-support outside [dev-dependencies]"; exit 1
-          fi
+      # API hygiene (encode_with_nonce gating and test-support dev-only), in
+      # TypeScript instead of awk. See scripts/api-guard.ts.
+      - uses: jdx/mise-action@v2
+      - name: dd-auth-token-core API hygiene
+        run: mise run api-guard
       # The crate must build with no features, proving encode_with_nonce is
       # genuinely test-only and nothing in the default API depends on it.
       - name: crate builds with no features (default public API)

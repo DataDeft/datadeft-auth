@@ -1,5 +1,12 @@
 # Workspace task runner. Run `mise tasks` to list tasks.
 
+[tools]
+bun = "latest"
+
+[tasks.api-guard]
+description = "Assert dd-auth-token-core API hygiene (encode_with_nonce gating, test-support dev-only)"
+run = "bun scripts/api-guard.ts"
+
 [tasks.fmt]
 description = "Format all Rust code"
 run = "cargo fmt --all"
@@ -66,5 +73,5 @@ bun test ts/
 """
 
 [tasks.verify]
-description = "Full verification: fmt-check + clippy + test + docs + audit + ts-verify + spec"
-depends = ["fmt-check", "clippy", "test", "docs", "audit", "ts-verify", "spec"]
+description = "Full verification: fmt-check + clippy + test + docs + audit + api-guard + ts-verify + spec"
+depends = ["fmt-check", "clippy", "test", "docs", "audit", "api-guard", "ts-verify", "spec"]
