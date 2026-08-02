@@ -15,47 +15,8 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: cargo-deny (advisories/licenses/bans)
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          arguments: --all-features
-      - name: Format
-        run: cargo fmt --all --check
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-      - name: Test
-        run: cargo test --workspace --all-features
-      - name: Docs
-        run: cargo doc --workspace --all-features --no-deps
-
-  formal-spec:
-    name: TLA+ safety models
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: jdx/mise-action@v2
-      # mise installs tla-checker (per-task tool) and runs the models.
-      - name: Check TLA+ safety models
-        run: mise run spec
-
-  token-core-api-guard:
-    name: token-core public API guard
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      # API hygiene (encode_with_nonce gating and test-support dev-only), in
-      # TypeScript instead of awk. See scripts/api-guard.ts.
-      - uses: jdx/mise-action@v2
-      - name: dd-auth-token-core API hygiene
-        run: mise run api-guard
-      # The crate must build with no features, proving encode_with_nonce is
-      # genuinely test-only and nothing in the default API depends on it.
-      - name: crate builds with no features (default public API)
-        run: cargo build -p dd-auth-token-core --no-default-features
-      # And the symbol must exist and work when the feature is on.
-      - name: test-support surface test runs only with the feature
-        run: cargo test -p dd-auth-token-core --features test-support --test encode_with_nonce_gated
+      # One gate. mise runs fmt-check, clippy, test, docs, audit,
+      # token-core-guard, ts-verify, and spec in parallel, and installs the
+      # tools it needs (bun, cargo-deny, tla-checker). See .mise.toml.
+      - run: mise run verify
