@@ -35,6 +35,8 @@ spec/
     Session.cfg      constants and invariants for Session
     Pow.tla          proof-of-work admission difficulty
     Pow.cfg          constants and invariants for Pow
+    Liveness.tla     happy-path progress (leads-to)
+    Liveness.cfg     properties for Liveness
 ```
 
 ## How to run
@@ -98,14 +100,27 @@ difficulty guard and the mint-time monotonicity.
 | POW-INV-001 | An accepted proof met the production floor. | `verify_solution` difficulty floor |
 | POW-INV-002 | An accepted proof met the difficulty bound into its challenge. A policy decrease after mint cannot lower the bar. | tag-bound `dif`, `min_difficulty` check |
 
+### Liveness.tla
+
+Happy-path progress. `tla-checker` 0.3.9 supports the leads-to operator (`~>`)
+but not raw `<>`, `[]`, or `WF` fairness, so this model uses leads-to. It has no
+expiry and no disable.
+
+| Property | Claim | Kind |
+| --- | --- | --- |
+| Live_ReachesSession | From the start, the flow always reaches a session, including through an ambiguous commit and its retry. | leads-to |
+
+Run it with `--check-liveness`.
+
 ## What we still need to model
 
 The models cover ML-INV-001..005 (including the concurrent double-spend case),
-SES-INV-001, and POW-INV-001..002 (across country risk classes). The next work
-items, in rough order:
+SES-INV-001, POW-INV-001..002 (across country risk classes), and happy-path
+progress. The next work items, in rough order:
 
-1. Liveness: a solved challenge under a fair schedule reaches an accepted
-   session. Run with `--check-liveness`.
+1. Conditional liveness under expiry and disable. This needs `WF` fairness,
+   which `tla-checker` 0.3.9 does not support. Run the same specs under TLC for
+   that, or a checker version that adds fairness.
 2. Scale the race model to three or more attempts and confirm the state count
    stays tractable.
 

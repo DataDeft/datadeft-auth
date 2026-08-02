@@ -9,6 +9,7 @@ tla MagicLink.tla --allow-deadlock
 tla MagicLinkRace.tla --allow-deadlock
 tla Session.tla --allow-deadlock
 tla Pow.tla --allow-deadlock
+tla Liveness.tla --check-liveness --allow-deadlock
 ```
 
 Each command auto-loads the matching `.cfg`. A

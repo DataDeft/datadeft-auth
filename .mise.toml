@@ -48,6 +48,7 @@ tla spec/tla/MagicLink.tla --allow-deadlock
 tla spec/tla/MagicLinkRace.tla --allow-deadlock
 tla spec/tla/Session.tla --allow-deadlock
 tla spec/tla/Pow.tla --allow-deadlock
+tla spec/tla/Liveness.tla --check-liveness --allow-deadlock
 """
 
 [tasks.ts-verify]
