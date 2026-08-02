@@ -1,13 +1,16 @@
 #!/usr/bin/env bun
-// API-hygiene guard for dd-auth-token-core. Run with `mise run api-guard`.
+// API and repo-hygiene guard. Run with `mise run api-guard`.
 //
-// Replaces the awk/grep checks that used to live inline in ci.yml. Two
+// Replaces the awk/grep checks that used to live inline in ci.yml. Three
 // invariants:
 //   1. `encode_with_nonce` stays gated behind `test`/`test-support`. It is a
 //      nonce-reuse footgun and must never appear in the default public API.
 //   2. No crate enables `dd-auth-token-core/test-support` outside
 //      `[dev-dependencies]`. As a normal dependency feature it would unify into
 //      a default build and pull the footgun in.
+//   3. The root mise config lives at `mise.toml`, not `.mise.toml`. A stale
+//      hidden copy silently merges with the real one and drifts, so the hidden
+//      name must never come back.
 
 import { Glob } from "bun";
 
@@ -51,6 +54,11 @@ for await (const path of cargoFiles.scan({ onlyFiles: true })) {
     });
 }
 
+// -- Check 3: no hidden .mise.toml -----------------------------------------
+if (await Bun.file(".mise.toml").exists()) {
+    errors.push(".mise.toml exists: root mise config must live at mise.toml, not the hidden name");
+}
+
 // -- Report ----------------------------------------------------------------
 if (errors.length > 0) {
     console.error("api-guard failed:");
@@ -58,4 +66,4 @@ if (errors.length > 0) {
     process.exit(1);
 }
 
-console.log("api-guard ok: encode_with_nonce gated, test-support is dev-only.");
+console.log("api-guard ok: encode_with_nonce gated, test-support is dev-only, no hidden .mise.toml.");
