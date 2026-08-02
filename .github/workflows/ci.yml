@@ -35,15 +35,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Install tla-checker
-        run: cargo install tla-checker --version 0.3.9 --locked
+      - uses: jdx/mise-action@v2
+      # mise installs tla-checker (per-task tool) and runs the models.
       - name: Check TLA+ safety models
-        run: |
-          tla spec/tla/MagicLink.tla --allow-deadlock
-          tla spec/tla/MagicLinkRace.tla --allow-deadlock
-          tla spec/tla/Session.tla --allow-deadlock
-          tla spec/tla/Pow.tla --allow-deadlock
-          tla spec/tla/Liveness.tla --check-liveness --allow-deadlock
+        run: mise run spec
 
   token-core-api-guard:
     name: token-core public API guard

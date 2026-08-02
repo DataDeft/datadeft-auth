@@ -32,25 +32,14 @@ description = "Build documentation"
 run = "cargo doc --workspace --all-features --no-deps"
 
 [tasks.audit]
-description = "Dependency/advisory check (cargo-deny if present, else cargo audit)"
-run = """
-if command -v cargo-deny >/dev/null 2>&1; then
-  cargo deny check
-elif command -v cargo-audit >/dev/null 2>&1; then
-  cargo audit
-else
-  echo "Neither cargo-deny nor cargo-audit installed; install one to run audit" >&2
-  exit 1
-fi
-"""
+description = "Dependency advisory and license check (cargo-deny, mise-managed)"
+tools = { "cargo:cargo-deny" = "latest" }
+run = "cargo deny check"
 
 [tasks.spec]
-description = "Run the TLA+ safety models (MVP-020, tla-checker 0.3.9)"
+description = "Run the TLA+ safety models (MVP-020)"
+tools = { "cargo:tla-checker" = "0.3.9" }
 run = """
-if ! command -v tla >/dev/null 2>&1; then
-  echo "tla not installed; run 'cargo install tla-checker --version 0.3.9'" >&2
-  exit 1
-fi
 tla spec/tla/MagicLink.tla --allow-deadlock
 tla spec/tla/MagicLinkRace.tla --allow-deadlock
 tla spec/tla/Session.tla --allow-deadlock
@@ -62,10 +51,6 @@ tla spec/tla/Liveness.tla --check-liveness --allow-deadlock
 description = "Verify the dd-protect-client TypeScript package: install, lint, type-check, test"
 dir = "packages/dd-protect-client"
 run = """
-if ! command -v bun >/dev/null 2>&1; then
-  echo "bun not installed; install bun to verify packages/dd-protect-client" >&2
-  exit 1
-fi
 bun install
 bun run lint
 bun run typecheck
