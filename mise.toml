@@ -1,5 +1,20 @@
 # Workspace task runner. Run `mise tasks` to list tasks.
 
+[tools]
+bun = "latest"
+
+[tasks.api-guard]
+description = "Assert dd-auth-token-core API hygiene (encode_with_nonce gating, test-support dev-only)"
+run = "bun scripts/api-guard.ts"
+
+[tasks.token-core-guard]
+description = "dd-auth-token-core guard: API hygiene, no-features build, gated surface test"
+depends = ["api-guard"]
+run = """
+cargo build -p dd-auth-token-core --no-default-features
+cargo test -p dd-auth-token-core --features test-support --test encode_with_nonce_gated
+"""
+
 [tasks.fmt]
 description = "Format all Rust code"
 run = "cargo fmt --all"
@@ -13,7 +28,7 @@ description = "Type-check the workspace"
 run = "cargo check --workspace --all-targets --all-features"
 
 [tasks.clippy]
-description = "Lint with Clippy and fail on warnings"
+description = "Lint with Clippy, failing on warnings"
 run = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 
 [tasks.test]
@@ -25,37 +40,25 @@ description = "Build documentation"
 run = "cargo doc --workspace --all-features --no-deps"
 
 [tasks.audit]
-description = "Run dependency and advisory checks"
-run = """
-if command -v cargo-deny >/dev/null 2>&1; then
-  cargo deny check
-elif command -v cargo-audit >/dev/null 2>&1; then
-  cargo audit
-else
-  echo "Neither cargo-deny nor cargo-audit is installed. Install one to run audit." >&2
-  exit 1
-fi
-"""
+description = "Dependency advisory and license check (cargo-deny, mise-managed prebuilt)"
+tools = { "ubi:EmbarkStudios/cargo-deny" = "latest" }
+run = "cargo-deny check"
 
 [tasks.spec]
-description = "Run the TLA+ safety models"
+description = "Run the TLA+ safety models (MVP-020)"
+tools = { "cargo:tla-checker" = "0.3.9" }
 run = """
-if ! command -v tla >/dev/null 2>&1; then
-  echo "tla is not installed. Run 'cargo install tla-checker --version 0.3.9'." >&2
-  exit 1
-fi
 tla spec/tla/MagicLink.tla --allow-deadlock
+tla spec/tla/MagicLinkRace.tla --allow-deadlock
+tla spec/tla/Session.tla --allow-deadlock
 tla spec/tla/Pow.tla --allow-deadlock
+tla spec/tla/Liveness.tla --check-liveness --allow-deadlock
 """
 
 [tasks.ts-verify]
-description = "Verify the dd-protect-client TypeScript package"
+description = "Verify the dd-protect-client TypeScript package: install, lint, type-check, test"
 dir = "packages/dd-protect-client"
 run = """
-if ! command -v bun >/dev/null 2>&1; then
-  echo "bun is not installed. Install bun to verify packages/dd-protect-client." >&2
-  exit 1
-fi
 bun install
 bun run lint
 bun run typecheck
@@ -63,12 +66,5 @@ bun test ts/
 """
 
 [tasks.verify]
-description = "Run full verification"
-run = [
-  { task = "fmt-check" },
-  { task = "clippy" },
-  { task = "test" },
-  { task = "docs" },
-  { task = "audit" },
-  { task = "ts-verify" },
-]
+description = "Full verification: fmt-check + clippy + test + docs + audit + token-core-guard + ts-verify + spec"
+depends = ["fmt-check", "clippy", "test", "docs", "audit", "token-core-guard", "ts-verify", "spec"]
