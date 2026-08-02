@@ -199,10 +199,7 @@ pub(crate) fn tag_message(chg: &str, dif: u8, tim: &str) -> Vec<u8> {
 }
 
 fn append_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
-    let len = match u16::try_from(bytes.len()) {
-        Ok(len) => len,
-        Err(_) => u16::MAX,
-    };
+    let len = u16::try_from(bytes.len()).unwrap_or(u16::MAX);
     out.extend_from_slice(&len.to_be_bytes());
     out.extend_from_slice(bytes);
 }

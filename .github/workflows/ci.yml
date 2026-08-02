@@ -63,10 +63,20 @@ jobs:
             || { echo "::error::encode_with_nonce is not gated behind test-support"; exit 1; }
       # A same-line inline dependency enabling test-support would pull the footgun
       # into a normal build via feature unification. Flag it for review.
-      - name: no crate may enable dd-auth-token-core/test-support as a dependency feature
+      - name: no crate may enable dd-auth-token-core/test-support outside [dev-dependencies]
         run: |
-          if grep -rnE 'dd-auth-token-core.*test-support|test-support.*dd-auth-token-core' --include=Cargo.toml . ; then
-            echo "::error::a crate enables dd-auth-token-core/test-support; confirm it is a dev-dependency only"; exit 1
+          # test-support is a footgun only when enabled as a NORMAL dependency
+          # feature (feature unification pulls it into a default build). It is
+          # fine in [dev-dependencies]. Track the current section, flag only
+          # non-dev enables.
+          hits=$(awk '
+            FNR==1 { dev=0 }
+            /^\[/ { dev = ($0 ~ /dev-dependencies/) ? 1 : 0 }
+            /dd-auth-token-core/ && /test-support/ { if (!dev) print FILENAME":"FNR": "$0 }
+          ' $(git ls-files "*Cargo.toml"))
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::a crate enables dd-auth-token-core/test-support outside [dev-dependencies]"; exit 1
           fi
       # The crate must build with no features, proving encode_with_nonce is
       # genuinely test-only and nothing in the default API depends on it.
