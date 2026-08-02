@@ -61,3 +61,4 @@ guard and the run is clean again.
 | Pow | `Floor` | 1 | Production difficulty floor. |
 | Pow | `Base` | 1 | Configured base difficulty. |
 | Pow | `MaxDiff` | 2 | Upper bound on difficulty values. |
+| Pow | `Countries` | `{c1, c2}` | Country risk classes. |

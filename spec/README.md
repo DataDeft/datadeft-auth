@@ -89,7 +89,9 @@ expiry.
 
 ### Pow.tla
 
-One challenge and a mutable country policy. It checks the difficulty guard.
+One challenge across a set of countries with mutable risk classes. The policy
+raises or lowers a country's required difficulty over time. It checks the
+difficulty guard and the mint-time monotonicity.
 
 | Invariant | Claim | Code anchor |
 | --- | --- | --- |
@@ -99,13 +101,12 @@ One challenge and a mutable country policy. It checks the difficulty guard.
 ## What we still need to model
 
 The models cover ML-INV-001..005 (including the concurrent double-spend case),
-SES-INV-001, and POW-INV-001..002. The next work items, in rough order:
+SES-INV-001, and POW-INV-001..002 (across country risk classes). The next work
+items, in rough order:
 
-1. Country policy: risk classes and the `EffectiveDifficulty` rule across many
-   country transitions.
-2. Liveness: a solved challenge under a fair schedule reaches an accepted
+1. Liveness: a solved challenge under a fair schedule reaches an accepted
    session. Run with `--check-liveness`.
-3. Scale the race model to three or more attempts and confirm the state count
+2. Scale the race model to three or more attempts and confirm the state count
    stays tractable.
 
 Each new invariant should link a model action, a code path, and a test, per the

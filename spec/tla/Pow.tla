@@ -1,60 +1,69 @@
 ------------------------------- MODULE Pow -------------------------------
 (*
- Abstract model of the datadeft-auth proof-of-work admission difficulty.
+ Abstract model of datadeft-auth proof-of-work admission difficulty, with
+ country risk classes.
 
  Checks POW-INV-001 and POW-INV-002 from docs/formal-methods.md.
 
- Key property: the difficulty is bound into the challenge at mint time. A
- country or policy change after mint cannot lower the bar for that challenge.
- The server verifies a solution against the bound difficulty, never against
- the current effective difficulty.
+ Each country has a required difficulty (its risk class), which the policy can
+ raise or lower over time. A challenge minted for a country binds the effective
+ difficulty at mint time. The server verifies a solution against that bound
+ difficulty, never against the current effective difficulty. A later policy
+ change, up or down, cannot lower the bar for an already-minted challenge.
 *)
 EXTENDS Naturals
 
-CONSTANTS Floor, Base, MaxDiff
+CONSTANTS Floor, Base, MaxDiff, Countries
 
 Max2(a, b) == IF a >= b THEN a ELSE b
 Max3(a, b, c) == Max2(Max2(a, b), c)
 
 VARIABLES
+    countryDiff,  \* [Countries -> 0..MaxDiff], the risk class per country
     challenge,    \* "Absent" | "Issued" | "Expired"
-    countryReq,   \* 0..MaxDiff, policy can raise or lower it for new challenges
+    mintCountry,  \* country the challenge was minted for, or "none"
     mintedDiff,   \* difficulty bound into the challenge at mint (immutable)
     admission,    \* "Pending" | "Accepted"
-    acceptedWork  \* leading-zero work of the accepted solution
+    acceptedWork
 
-vars == << challenge, countryReq, mintedDiff, admission, acceptedWork >>
+vars == << countryDiff, challenge, mintCountry, mintedDiff, admission,
+           acceptedWork >>
 
-Effective == Max3(Floor, Base, countryReq)
+Effective(c) == Max3(Floor, Base, countryDiff[c])
 
 TypeOK ==
+    /\ countryDiff \in [Countries -> 0..MaxDiff]
     /\ challenge \in {"Absent", "Issued", "Expired"}
-    /\ countryReq \in 0..MaxDiff
+    /\ mintCountry \in (Countries \cup {"none"})
     /\ mintedDiff \in 0..MaxDiff
     /\ admission \in {"Pending", "Accepted"}
     /\ acceptedWork \in 0..MaxDiff
 
 Init ==
+    /\ countryDiff = [c \in Countries |-> 0]
     /\ challenge = "Absent"
-    /\ countryReq = 0
+    /\ mintCountry = "none"
     /\ mintedDiff = 0
     /\ admission = "Pending"
     /\ acceptedWork = 0
 
-\* Country/policy update. It may raise or lower the requirement for new mints.
+\* Policy update. Raise or lower one country's required difficulty.
 PolicyUpdate ==
-    /\ countryReq' \in 0..MaxDiff
-    /\ UNCHANGED << challenge, mintedDiff, admission, acceptedWork >>
+    /\ \E c \in Countries, v \in 0..MaxDiff :
+         countryDiff' = [countryDiff EXCEPT ![c] = v]
+    /\ UNCHANGED << challenge, mintCountry, mintedDiff, admission, acceptedWork >>
 
-\* Mint binds the current effective difficulty into the challenge.
+\* Mint binds the effective difficulty for the chosen country at mint time.
 Mint ==
     /\ challenge = "Absent"
-    /\ challenge' = "Issued"
-    /\ mintedDiff' = Effective
-    /\ UNCHANGED << countryReq, admission, acceptedWork >>
+    /\ \E c \in Countries :
+         /\ challenge' = "Issued"
+         /\ mintCountry' = c
+         /\ mintedDiff' = Effective(c)
+    /\ UNCHANGED << countryDiff, admission, acceptedWork >>
 
 \* Verify a solution against the BOUND minted difficulty. A later policy change
-\* cannot lower this bar. The server accepts only work >= mintedDiff.
+\* cannot lower this bar.
 SolveVerify ==
     /\ challenge = "Issued"
     /\ admission = "Pending"
@@ -62,12 +71,12 @@ SolveVerify ==
          /\ w >= mintedDiff
          /\ acceptedWork' = w
     /\ admission' = "Accepted"
-    /\ UNCHANGED << challenge, countryReq, mintedDiff >>
+    /\ UNCHANGED << countryDiff, challenge, mintCountry, mintedDiff >>
 
 Expire ==
     /\ challenge = "Issued"
     /\ challenge' = "Expired"
-    /\ UNCHANGED << countryReq, mintedDiff, admission, acceptedWork >>
+    /\ UNCHANGED << countryDiff, mintCountry, mintedDiff, admission, acceptedWork >>
 
 Next ==
     \/ PolicyUpdate
@@ -83,11 +92,11 @@ Inv001_AcceptedMeetsFloor ==
     (admission = "Accepted") => (acceptedWork >= Floor)
 
 \* POW-INV-002: an accepted proof met the difficulty bound into its challenge.
-\* This is the monotonicity guard. A policy decrease after mint cannot lower it.
+\* A policy change after mint, for any country, cannot lower this bar.
 Inv002_AcceptedMeetsMint ==
     (admission = "Accepted") => (acceptedWork >= mintedDiff)
 
 \* Every minted challenge sits at or above the production floor.
-Inv002_MintMeetsFloor ==
+Inv003_MintMeetsFloor ==
     (challenge # "Absent") => (mintedDiff >= Floor)
 ==========================================================================
