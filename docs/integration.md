@@ -126,6 +126,10 @@ unreviewed outer stack safe. See the "Mandatory deployment gate" section in
 
 Proof-of-work is the primary defense against dumb bots. It is recommended.
 
+Migrating an existing consumer from v0.1.x? Follow
+[migration-v0.2.0.md](migration-v0.2.0.md); it is written to be handed to an
+implementation agent as-is.
+
 Wire the `dd-pow-axum` glue. `POST` to `mint_pow_challenge` for `pow/create`,
 and `POST` to `verify_pow_solution` for `pow/validate`, which returns a
 `PowAdmission`: the `dd_pow` `Set-Cookie` header plus the server-derived
