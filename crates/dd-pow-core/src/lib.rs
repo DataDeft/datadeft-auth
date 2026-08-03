@@ -19,7 +19,9 @@
 //!
 //! The browser client and this crate must agree byte-for-byte:
 //!
-//! - Challenge JSON: `{ chg, dif, tim, tag }`.
+//! - Challenge JSON: `{ chg, dif, tim, tag }`. `tim` is RFC3339 with
+//!   millisecond precision, minted from the caller-injected [`UnixMillis`]
+//!   clock; the client echoes it back byte-for-byte.
 //! - Solution JSON as the client posts it: `{ chg, sol, non, dif, tim, tag }`.
 //!   The client/API must echo the minted `dif`. The HMAC tag binds that value
 //!   and stops a client from lowering it. The server's `min_difficulty` check
@@ -53,14 +55,24 @@
 //! There is no server-side replay counter in this crate. [`Verified::tid`] is
 //! a stable hash of `chg`, so the caller gets a replay-safe identity for
 //! idempotency and per-tid budgets.
+//!
+//! # Solve timing
+//!
+//! [`Verified::mint_to_verify_ms`] reports how long after mint a solution
+//! arrived, computed entirely from the server's own clock (`tim` is
+//! HMAC-bound, so a client cannot backdate it). The value is inflatable but
+//! not deflatable: use it as a soft bot-detection signal and a
+//! difficulty-tuning instrument, never as a hard block on slow solves.
 
 mod challenge;
+mod clock;
 mod error;
 mod ops;
 mod proof_cookie;
 mod secret;
 
 pub use challenge::{Challenge, Solution, Verified};
+pub use clock::UnixMillis;
 pub use error::PowError;
 pub use ops::{
     MAX_DIFFICULTY, MAX_FUTURE_SKEW_SECS, RECOMMENDED_PRODUCTION_MIN_DIFFICULTY, mint_challenge,

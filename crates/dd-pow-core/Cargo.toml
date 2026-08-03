@@ -20,7 +20,7 @@ hmac = "0.12"
 rand_core = "0.6"
 sha2 = "0.10"
 subtle = "2"
-time = { version = "0.3.47", default-features = false, features = ["parsing"] }
+time = { version = "0.3.47", default-features = false, features = ["formatting", "parsing"] }
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]

@@ -8,7 +8,8 @@ pub struct Challenge {
     pub chg: String,
     /// Number of leading zero hex characters the solution hash must have.
     pub dif: u8,
-    /// Mint time, RFC3339 (the client echoes it back unchanged).
+    /// Mint time, RFC3339 with millisecond precision (the client echoes it
+    /// back unchanged).
     pub tim: String,
     /// Hex HMAC-SHA256 over the framed `(domain, chg, dif, tim)` tuple.
     pub tag: String,
@@ -53,4 +54,18 @@ pub struct Verified {
     /// it under a server-held secret (e.g. a signed/encrypted proof cookie)
     /// in an upper layer.
     pub tid: String,
+    /// Server-derived mint→verify delta in milliseconds: verify-time `now`
+    /// minus the challenge mint time `tim`, clamped at zero. Both instants
+    /// are the server's own clock (`tim` is HMAC-bound in the tag, so the
+    /// client cannot backdate it), which makes the delta *inflatable but not
+    /// deflatable*: a client can look slower than it is by sitting on a
+    /// solved challenge, but can never look faster than its true solve. An
+    /// implausibly small value is therefore definitive evidence of a fast
+    /// (native-speed) solver.
+    ///
+    /// The delta includes network round trips and any client-side delay
+    /// before submission, not pure solve time. Because slow values are
+    /// spoofable, treat this as a soft risk signal (tagging, triage,
+    /// difficulty tuning) — never a hard block on "too slow".
+    pub mint_to_verify_ms: u64,
 }

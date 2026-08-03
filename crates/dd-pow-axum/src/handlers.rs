@@ -17,7 +17,7 @@ use core::fmt;
 use axum::http::HeaderValue;
 use dd_auth_token_core::keyring::KeyRing;
 use dd_pow_core::{
-    Challenge, MAX_DIFFICULTY, PowProofCookie, PowSecret, Solution, mint_challenge,
+    Challenge, MAX_DIFFICULTY, PowProofCookie, PowSecret, Solution, UnixMillis, mint_challenge,
     mint_pow_proof_cookie, verify_solution,
 };
 use rand_core::{CryptoRng, RngCore};
@@ -137,37 +137,62 @@ impl fmt::Display for PowFlowError {
 
 impl std::error::Error for PowFlowError {}
 
-/// Mint a stateless challenge. The caller injects the current time as RFC3339
-/// and 16 bytes of fresh entropy from its CSPRNG.
+/// Mint a stateless challenge. The caller injects the current time as
+/// [`UnixMillis`] and 16 bytes of fresh entropy from its CSPRNG.
 ///
-/// Fails [`PowFlowError::Internal`] only on a malformed server-supplied time.
-/// The difficulty is already bounded by [`PowPolicy`].
+/// Fails [`PowFlowError::Internal`] only on a server clock outside the
+/// RFC3339-formattable range. The difficulty is already bounded by
+/// [`PowPolicy`].
 pub fn mint_pow_challenge(
     secret: &PowSecret,
     policy: PowPolicy,
-    now_rfc3339: &str,
+    now: UnixMillis,
     entropy: [u8; 16],
 ) -> Result<PowChallengeResponse, PowFlowError> {
-    mint_challenge(secret, policy.difficulty, now_rfc3339, entropy)
+    mint_challenge(secret, policy.difficulty, now, entropy)
         .map(PowChallengeResponse::from)
         .map_err(|_| PowFlowError::Internal)
 }
 
+/// Successful admission: the proof cookie to set, plus the server-derived
+/// solve-timing signal.
+#[derive(Debug, Clone)]
+pub struct PowAdmission {
+    /// `Set-Cookie` header to append to the response.
+    pub set_cookie: HeaderValue,
+    /// Mint→verify delta in milliseconds ([`dd_pow_core::Verified::mint_to_verify_ms`]):
+    /// inflatable but not deflatable, so an implausibly small value is
+    /// definitive evidence of a native-speed solver. Use for risk tagging,
+    /// histograms, and difficulty tuning — never for hard blocking of slow
+    /// solves.
+    pub mint_to_verify_ms: u64,
+}
+
 /// Verify a posted solution and, on success, mint the `dd_pow` proof cookie.
 ///
-/// Returns the `Set-Cookie` header to append to the response. The client never
-/// sends `dif`; it is supplied from `policy` and bound by the HMAC tag.
-pub fn verify_pow_solution<R>(
+/// Returns the `Set-Cookie` header to append to the response together with
+/// the mint→verify timing signal. The client never sends `dif`; it is
+/// supplied from `policy` and bound by the HMAC tag.
+///
+/// `classify_solve` maps the server-derived mint→verify delta to the opaque
+/// solve-class byte stamped into the proof cookie's encrypted body, making
+/// the app's classification available statelessly at later
+/// `verify_pow_proof_cookie` gate checks. Quantization policy is the app's;
+/// return `None` (e.g. `|_| None`) to mint the v1 body without a class.
+#[allow(clippy::too_many_arguments)] // Headless glue: every dependency is injected.
+pub fn verify_pow_solution<R, C>(
     secret: &PowSecret,
     policy: PowPolicy,
     request: &PowSolutionRequest,
     keyring: &KeyRing<PowProofCookie>,
     cookie_config: &PowProofCookieConfig,
     rng: &mut R,
-    now_unix: u64,
-) -> Result<HeaderValue, PowFlowError>
+    now: UnixMillis,
+    classify_solve: C,
+) -> Result<PowAdmission, PowFlowError>
 where
     R: RngCore + CryptoRng + ?Sized,
+    C: FnOnce(u64) -> Option<u8>,
 {
     let solution = Solution {
         chg: request.chg.clone(),
@@ -180,17 +205,23 @@ where
     let verified = verify_solution(
         secret,
         &solution,
-        now_unix,
+        now,
         policy.challenge_max_age_secs,
         policy.difficulty,
     )
     .map_err(|_| PowFlowError::Rejected)?;
 
-    let cookie = mint_pow_proof_cookie(&verified.tid, keyring, rng, now_unix)
+    // The proof-cookie layer stamps whole seconds.
+    let solve_class = classify_solve(verified.mint_to_verify_ms);
+    let cookie = mint_pow_proof_cookie(&verified.tid, solve_class, keyring, rng, now.as_secs())
         .map_err(|_| PowFlowError::Internal)?;
-    cookie_config
+    let set_cookie = cookie_config
         .set_header(cookie.as_secret_value())
-        .map_err(|_| PowFlowError::Internal)
+        .map_err(|_| PowFlowError::Internal)?;
+    Ok(PowAdmission {
+        set_cookie,
+        mint_to_verify_ms: verified.mint_to_verify_ms,
+    })
 }
 
 #[cfg(test)]

@@ -36,11 +36,9 @@ use dd_magic_link_service::{
     MagicLinkConfirmCookie, MagicLinkFlowService, MagicLinkRequestService, MagicLinkServiceConfig,
     RootSecret, SessionCookie, validate_session,
 };
-use dd_pow_core::{Challenge, PowSecret, Solution, mint_challenge, verify_solution};
+use dd_pow_core::{Challenge, PowSecret, Solution, UnixMillis, mint_challenge, verify_solution};
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 
 const LOCAL_ORIGIN: &str = "http://127.0.0.1:3000";
 const LISTEN_ADDR: &str = "127.0.0.1:3000";
@@ -183,16 +181,9 @@ async fn pow_challenge(State(state): State<AppState>) -> Result<Json<PowChalleng
     OsRng.try_fill_bytes(&mut entropy).map_err(|_| {
         (StatusCode::SERVICE_UNAVAILABLE, "randomness unavailable\n").into_response()
     })?;
-    let now_unix = current_unix()
+    let now = current_unix_millis()
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "clock unavailable\n").into_response())?;
-    let now =
-        OffsetDateTime::from_unix_timestamp(i64::try_from(now_unix).map_err(|_| {
-            (StatusCode::INTERNAL_SERVER_ERROR, "clock unavailable\n").into_response()
-        })?)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "clock unavailable\n").into_response())?
-        .format(&Rfc3339)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "clock unavailable\n").into_response())?;
-    let challenge = mint_challenge(&state.pow_secret, POW_DIFFICULTY, &now, entropy)
+    let challenge = mint_challenge(&state.pow_secret, POW_DIFFICULTY, now, entropy)
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "pow unavailable\n").into_response())?;
     Ok(Json(PowChallengeJson::from(challenge)))
 }
@@ -466,14 +457,16 @@ fn verify_pow_solution(
     state: &AppState,
     body: PowSolutionJson,
 ) -> Result<(), dd_pow_core::PowError> {
-    let now_unix = current_unix().map_err(|_| dd_pow_core::PowError::InvalidTimestamp)?;
+    let now = current_unix_millis().map_err(|_| dd_pow_core::PowError::InvalidTimestamp)?;
     let verified = verify_solution(
         &state.pow_secret,
         &body.into_solution(),
-        now_unix,
+        now,
         POW_CHALLENGE_TTL_SECS,
         POW_DIFFICULTY,
     )?;
+    // The replay table keeps whole-second bookkeeping.
+    let now_unix = now.as_secs();
     let expires_at_unix = now_unix
         .checked_add(POW_CHALLENGE_TTL_SECS)
         .ok_or(dd_pow_core::PowError::InvalidTimestamp)?;
@@ -495,6 +488,15 @@ fn current_unix() -> Result<u64, DependencyError> {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .map_err(|_| DependencyError::Internal)
+}
+
+fn current_unix_millis() -> Result<UnixMillis, DependencyError> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+        .map(UnixMillis::from_millis)
+        .ok_or(DependencyError::Internal)
 }
 
 #[derive(Debug, Deserialize)]

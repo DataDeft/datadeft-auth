@@ -7,9 +7,13 @@
 //! (`pow-proof-v1`) so a proof cookie can never validate as a session or flow
 //! cookie, and vice versa, even under the same root secret.
 //!
-//! The payload carries only the replay-safe solve identity [`crate::Verified::tid`]
-//! (hex BLAKE3 of the challenge). The cookie is a stateless "recently solved"
-//! proof: it stays valid for its whole configured lifetime and is not
+//! The payload carries the replay-safe solve identity [`crate::Verified::tid`]
+//! (hex BLAKE3 of the challenge) and, in the v2 body, one optional
+//! app-supplied solve-class byte (typically a quantized
+//! [`crate::Verified::mint_to_verify_ms`]). The library assigns the byte no
+//! meaning: classification policy stays in the app, the cookie only carries
+//! it statelessly to later gate checks. The cookie is a stateless "recently
+//! solved" proof: it stays valid for its whole configured lifetime and is not
 //! single-use. The admission layer treats a valid proof cookie as permission
 //! to skip re-challenging this browser. It never treats `tid` as a capability.
 
@@ -40,7 +44,9 @@ const TID_HEX_LEN: usize = 64;
 const TID_BYTES: usize = 32;
 
 const POW_PROOF_BODY_V1: u8 = 1;
-const POW_PROOF_BODY_BYTES: usize = 1 + TID_BYTES;
+const POW_PROOF_BODY_V2: u8 = 2;
+const POW_PROOF_BODY_V1_BYTES: usize = 1 + TID_BYTES;
+const POW_PROOF_BODY_V2_BYTES: usize = POW_PROOF_BODY_V1_BYTES + 1;
 
 /// PoW proof-cookie key purpose.
 ///
@@ -53,7 +59,11 @@ pub enum PowProofCookie {}
 impl KeyPurpose for PowProofCookie {
     const HKDF_INFO: &'static [u8] = HKDF_INFO_POW_PROOF_COOKIE_V1;
     const TOKEN_TYPE: &'static str = TOKEN_TYPE_POW_PROOF_COOKIE_V1;
-    const MAX_BODY_BYTES: usize = 64;
+    // The budget covers payload framing (7 bytes), the 12-byte `typ`, the
+    // kid, and the body. At 64, the 34-byte v2 body squeezed the kid budget
+    // from 12 bytes (the v1 contract, relied on by deployments) down to 11;
+    // 65 restores it. v2 body (34) + framing (7) + typ (12) + kid (12) = 65.
+    const MAX_BODY_BYTES: usize = 65;
     const MAX_ABSOLUTE_AGE_SECS: u64 = POW_PROOF_MAX_AGE_SECS;
 }
 
@@ -84,6 +94,7 @@ impl fmt::Debug for PowProofCookieValue {
 #[derive(Clone, Eq, PartialEq)]
 pub struct VerifiedPowProof {
     tid: String,
+    solve_class: Option<u8>,
 }
 
 impl VerifiedPowProof {
@@ -92,6 +103,16 @@ impl VerifiedPowProof {
     #[must_use]
     pub fn tid(&self) -> &str {
         &self.tid
+    }
+
+    /// The app-supplied solve-class byte stamped at mint, or `None` for a v1
+    /// cookie minted without one. Authenticated: it is inside the encrypted
+    /// body, so a client cannot alter it. The library assigns it no meaning;
+    /// the minting app defines the quantization and the reading app the
+    /// policy.
+    #[must_use]
+    pub fn solve_class(&self) -> Option<u8> {
+        self.solve_class
     }
 }
 
@@ -111,11 +132,18 @@ fn is_valid_tid(value: &str) -> bool {
 
 /// Mint an encrypted `dd_pow` proof cookie for a verified solve identity.
 ///
+/// `solve_class` is an optional opaque app-defined byte (typically a
+/// quantized [`crate::Verified::mint_to_verify_ms`]) carried inside the
+/// encrypted body. `None` mints the v1 body, byte-identical to cookies minted
+/// before the field existed; `Some` mints the versioned v2 body. The library
+/// assigns the byte no meaning.
+///
 /// Verification enforces the lifetime from the caller's configured max age, so
 /// minting only stamps the current time. Fails closed if `tid` is not a
 /// canonical 64-character lowercase-hex value.
 pub fn mint_pow_proof_cookie<R>(
     tid: &str,
+    solve_class: Option<u8>,
     keyring: &KeyRing<PowProofCookie>,
     rng: &mut R,
     now_unix: u64,
@@ -130,9 +158,15 @@ where
 
     let mut tid_bytes = [0u8; TID_BYTES];
     hex::decode_to_slice(tid, &mut tid_bytes).map_err(|_| TokenError::InvalidToken)?;
-    let mut body = Vec::with_capacity(POW_PROOF_BODY_BYTES);
-    body.push(POW_PROOF_BODY_V1);
+    let mut body = Vec::with_capacity(POW_PROOF_BODY_V2_BYTES);
+    body.push(match solve_class {
+        None => POW_PROOF_BODY_V1,
+        Some(_) => POW_PROOF_BODY_V2,
+    });
     body.extend_from_slice(&tid_bytes);
+    if let Some(class) = solve_class {
+        body.push(class);
+    }
     tid_bytes.zeroize();
 
     let cookie =
@@ -166,13 +200,19 @@ pub fn verify_pow_proof_cookie(
     )
     .map_err(|_| TokenError::InvalidToken)?;
 
+    // Exact version/length pairing: a v1 tag with a trailing byte or a v2
+    // tag without one is malformed, not "close enough".
     let body = verified.body();
-    if body.len() != POW_PROOF_BODY_BYTES || body[0] != POW_PROOF_BODY_V1 {
-        return Err(TokenError::InvalidToken);
-    }
-    let tid = hex::encode(&body[1..]);
+    let (tid_bytes, solve_class) = match (body.first(), body.len()) {
+        (Some(&POW_PROOF_BODY_V1), POW_PROOF_BODY_V1_BYTES) => (&body[1..], None),
+        (Some(&POW_PROOF_BODY_V2), POW_PROOF_BODY_V2_BYTES) => {
+            (&body[1..=TID_BYTES], Some(body[1 + TID_BYTES]))
+        }
+        _ => return Err(TokenError::InvalidToken),
+    };
+    let tid = hex::encode(tid_bytes);
 
-    Ok(VerifiedPowProof { tid })
+    Ok(VerifiedPowProof { tid, solve_class })
 }
 
 #[cfg(test)]

@@ -2,15 +2,20 @@
 
 use dd_auth_token_core::keyring::KeyRing;
 use dd_auth_token_core::test_support::{PerCallRng, test_keyring};
-use dd_pow_core::{PowProofCookie, PowSecret, verify_pow_proof_cookie};
+use dd_pow_core::{PowProofCookie, PowSecret, UnixMillis, verify_pow_proof_cookie};
 use sha2::{Digest, Sha256};
 
 use super::*;
 use crate::cookie::PowProofCookieConfig;
 
-const TIM: &str = "2026-07-09T12:00:00Z";
+/// Unix timestamp of the fixture mint instant (2026-07-09T12:00:00Z).
 const TIM_UNIX: u64 = 1_783_598_400;
 const DIFFICULTY: u8 = 1;
+
+/// Millisecond clock at a whole-second unix instant.
+fn at(unix_secs: u64) -> UnixMillis {
+    UnixMillis::from_millis(unix_secs * 1000)
+}
 
 fn secret() -> PowSecret {
     PowSecret::new([0x11; 32])
@@ -65,22 +70,29 @@ fn create_then_validate_round_trips_into_a_parseable_proof_cookie() {
     let config = PowProofCookieConfig::production_defaults();
     let mut rng = PerCallRng::starting_at(0xa0);
 
-    let challenge = mint_pow_challenge(&secret, policy(), TIM, [7; 16]).expect("challenge mints");
+    let challenge =
+        mint_pow_challenge(&secret, policy(), at(TIM_UNIX), [7; 16]).expect("challenge mints");
     assert_eq!(challenge.dif, DIFFICULTY);
 
     let solution = solve(&challenge);
-    let set_cookie = verify_pow_solution(
+    // App-side classifier: quantize the delta into an opaque class byte that
+    // is stamped into the proof cookie.
+    let admission = verify_pow_solution(
         &secret,
         policy(),
         &solution,
         &keyring,
         &config,
         &mut rng,
-        TIM_UNIX + 1,
+        at(TIM_UNIX + 1),
+        |ms| Some(u8::from(ms >= 300)),
     )
     .expect("solution accepted");
 
-    let header = set_cookie.to_str().expect("ascii");
+    // Server-derived solve timing: verified one second after mint.
+    assert_eq!(admission.mint_to_verify_ms, 1000);
+
+    let header = admission.set_cookie.to_str().expect("ascii");
     assert!(header.starts_with("dd_pow=v1."));
     assert!(header.contains("Max-Age=10800"));
 
@@ -95,6 +107,9 @@ fn create_then_validate_round_trips_into_a_parseable_proof_cookie() {
         verified.tid(),
         blake3::hash(challenge.chg.as_bytes()).to_string()
     );
+    // The classifier's byte (1000 ms >= 300) survives the stateless round
+    // trip through the encrypted v2 body.
+    assert_eq!(verified.solve_class(), Some(1));
 }
 
 #[test]
@@ -104,7 +119,8 @@ fn tampered_solution_is_rejected_generically() {
     let config = PowProofCookieConfig::production_defaults();
     let mut rng = PerCallRng::starting_at(0xa0);
 
-    let challenge = mint_pow_challenge(&secret, policy(), TIM, [7; 16]).expect("challenge mints");
+    let challenge =
+        mint_pow_challenge(&secret, policy(), at(TIM_UNIX), [7; 16]).expect("challenge mints");
     let mut solution = solve(&challenge);
     solution.tag = "00".repeat(32);
 
@@ -116,7 +132,8 @@ fn tampered_solution_is_rejected_generically() {
             &keyring,
             &config,
             &mut rng,
-            TIM_UNIX + 1,
+            at(TIM_UNIX + 1),
+            |_| None,
         )
         .err(),
         Some(PowFlowError::Rejected)
@@ -130,11 +147,12 @@ fn expired_challenge_is_rejected() {
     let config = PowProofCookieConfig::production_defaults();
     let mut rng = PerCallRng::starting_at(0xa0);
 
-    let challenge = mint_pow_challenge(&secret, policy(), TIM, [7; 16]).expect("challenge mints");
+    let challenge =
+        mint_pow_challenge(&secret, policy(), at(TIM_UNIX), [7; 16]).expect("challenge mints");
     let solution = solve(&challenge);
 
     // One second past the challenge max age.
-    let now = TIM_UNIX + DEFAULT_POW_CHALLENGE_MAX_AGE_SECS + 1;
+    let now = at(TIM_UNIX + DEFAULT_POW_CHALLENGE_MAX_AGE_SECS + 1);
     assert_eq!(
         verify_pow_solution(
             &secret,
@@ -143,7 +161,8 @@ fn expired_challenge_is_rejected() {
             &keyring,
             &config,
             &mut rng,
-            now
+            now,
+            |_| None,
         )
         .err(),
         Some(PowFlowError::Rejected)

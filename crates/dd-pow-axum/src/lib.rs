@@ -15,9 +15,11 @@
 //! - `POST /…/pow/create` → [`mint_pow_challenge`], serialize the
 //!   [`PowChallengeResponse`] as JSON.
 //! - `POST /…/pow/validate` → deserialize a [`PowSolutionRequest`], call
-//!   [`verify_pow_solution`], and on `Ok` append the returned `Set-Cookie`
-//!   header. Map [`PowFlowError::Rejected`] to a generic `403` and
-//!   [`PowFlowError::Internal`] to `500`.
+//!   [`verify_pow_solution`], and on `Ok` append the returned
+//!   [`PowAdmission::set_cookie`] header. Map [`PowFlowError::Rejected`] to a
+//!   generic `403` and [`PowFlowError::Internal`] to `500`.
+//!   [`PowAdmission::mint_to_verify_ms`] is the server-derived solve-timing
+//!   signal for the app's metrics and risk tagging.
 
 mod cookie;
 mod handlers;
@@ -27,6 +29,6 @@ pub use cookie::{
     PowCookieError, PowProofCookieConfig, SameSite,
 };
 pub use handlers::{
-    DEFAULT_POW_CHALLENGE_MAX_AGE_SECS, PowChallengeResponse, PowFlowError, PowPolicy,
-    PowPolicyError, PowSolutionRequest, mint_pow_challenge, verify_pow_solution,
+    DEFAULT_POW_CHALLENGE_MAX_AGE_SECS, PowAdmission, PowChallengeResponse, PowFlowError,
+    PowPolicy, PowPolicyError, PowSolutionRequest, mint_pow_challenge, verify_pow_solution,
 };

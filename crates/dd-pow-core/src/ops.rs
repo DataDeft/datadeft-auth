@@ -11,6 +11,7 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::challenge::{Challenge, Solution, Verified};
+use crate::clock::UnixMillis;
 use crate::error::PowError;
 use crate::secret::PowSecret;
 
@@ -44,31 +45,44 @@ const MAX_TIM_BYTES: usize = 32;
 pub(crate) const TAG_DOMAIN: &str = "pow-tag-v1";
 
 /// Mint a challenge. Deterministic: same secret/difficulty/time/entropy
-/// always produce the same challenge. The caller supplies `now_rfc3339`
-/// (e.g. `OffsetDateTime::now_utc().format(&Rfc3339)`) and 16 bytes of
-/// fresh entropy.
+/// always produce the same challenge. The caller supplies the current time
+/// as [`UnixMillis`] and 16 bytes of fresh entropy.
+///
+/// `tim` is formatted here, RFC3339 with millisecond precision, so every
+/// minted challenge carries a sub-second mint time and the verify-side
+/// mint→verify delta ([`Verified::mint_to_verify_ms`]) is never quantized by
+/// the mint path. A whole-second value formats without a fraction, matching
+/// challenges minted before millisecond resolution.
 pub fn mint_challenge(
     secret: &PowSecret,
     difficulty: u8,
-    now_rfc3339: &str,
+    now: UnixMillis,
     entropy: [u8; 16],
 ) -> Result<Challenge, PowError> {
     if difficulty > MAX_DIFFICULTY {
         return Err(PowError::DifficultyTooHigh);
     }
-    if now_rfc3339.len() > MAX_TIM_BYTES {
-        return Err(PowError::InvalidTimestamp);
-    }
+    let tim = rfc3339_from_millis(now)?;
     // `chg` is a hash of entropy + time only (no IP/client binding).
-    let chg_raw = format!("Time={now_rfc3339}:Nonce={}", hex::encode(entropy));
+    let chg_raw = format!("Time={tim}:Nonce={}", hex::encode(entropy));
     let chg = blake3::hash(chg_raw.as_bytes()).to_string();
-    let tag = hmac_tag_hex(secret, &tag_message(&chg, difficulty, now_rfc3339));
+    let tag = hmac_tag_hex(secret, &tag_message(&chg, difficulty, &tim));
     Ok(Challenge {
         chg,
         dif: difficulty,
-        tim: now_rfc3339.to_string(),
+        tim,
         tag,
     })
+}
+
+/// RFC3339 `tim` for a millisecond clock value. Fails only when the value
+/// falls outside the formattable calendar range (year 10000+).
+fn rfc3339_from_millis(now: UnixMillis) -> Result<String, PowError> {
+    let nanos = i128::from(now.as_millis()) * 1_000_000;
+    OffsetDateTime::from_unix_timestamp_nanos(nanos)
+        .map_err(|_| PowError::InvalidTimestamp)?
+        .format(&Rfc3339)
+        .map_err(|_| PowError::InvalidTimestamp)
 }
 
 /// Verify a proof-of-work solution.
@@ -77,9 +91,9 @@ pub fn mint_challenge(
 /// 1. Shape caps: reject hostile overlong fields before any HMAC or hash work.
 /// 2. Authenticity: `tag == HMAC-SHA256(secret, framed(TAG_DOMAIN, chg, dif, tim))`,
 ///    constant-time compare.
-/// 3. Freshness: `tim` parses as RFC3339, is not more than
-///    [`MAX_FUTURE_SKEW_SECS`] ahead of `now_unix`, and
-///    `now_unix - tim <= max_age_secs` (boundary accepted).
+/// 3. Freshness, in milliseconds: `tim` parses as RFC3339, is not more than
+///    [`MAX_FUTURE_SKEW_SECS`] ahead of `now`, and
+///    `now - tim <= max_age_secs * 1000` (boundary accepted).
 /// 4. Difficulty floor: `dif >= max(min_difficulty, 1)`: proof-of-work must
 ///    always require at least one leading zero, so a misconfigured
 ///    `min_difficulty = 0` can never yield a zero-work pass. The client/API
@@ -88,11 +102,12 @@ pub fn mint_challenge(
 ///    their minimum.
 /// 5. Work: `sol` has `dif` leading `'0'` hex chars and equals
 ///
-/// On success returns [`Verified`] with the stable `tid`.
+/// On success returns [`Verified`] with the stable `tid` and the
+/// server-derived mint→verify delta in milliseconds.
 pub fn verify_solution(
     secret: &PowSecret,
     solution: &Solution,
-    now_unix: u64,
+    now: UnixMillis,
     max_age_secs: u64,
     min_difficulty: u8,
 ) -> Result<Verified, PowError> {
@@ -114,16 +129,20 @@ pub fn verify_solution(
         return Err(PowError::InvalidTag);
     }
 
-    // 2. Freshness. `tim` is authenticated by the tag at this point.
-    let tim_unix = OffsetDateTime::parse(&solution.tim, &Rfc3339)
+    // 2. Freshness, in milliseconds. `tim` is authenticated by the tag at
+    //    this point. All arithmetic is i128: every u64 clock value and every
+    //    parseable RFC3339 instant fits with headroom, so nothing saturates.
+    let tim_ms = OffsetDateTime::parse(&solution.tim, &Rfc3339)
         .map_err(|_| PowError::InvalidTimestamp)?
-        .unix_timestamp();
-    let now = i64::try_from(now_unix).map_err(|_| PowError::InvalidTimestamp)?;
-    let skew = i64::try_from(MAX_FUTURE_SKEW_SECS).map_err(|_| PowError::InvalidTimestamp)?;
-    if tim_unix > now.saturating_add(skew) {
+        .unix_timestamp_nanos()
+        .div_euclid(1_000_000);
+    let now_ms = i128::from(now.as_millis());
+    let skew_ms = i128::from(MAX_FUTURE_SKEW_SECS) * 1000;
+    if tim_ms > now_ms + skew_ms {
         return Err(PowError::FutureTimestamp);
     }
-    if now.saturating_sub(tim_unix) > max_age {
+    let age_ms = now_ms - tim_ms;
+    if age_ms > i128::from(max_age) * 1000 {
         return Err(PowError::Expired);
     }
 
@@ -154,9 +173,18 @@ pub fn verify_solution(
         return Err(PowError::InvalidSolution);
     }
 
-    // 5. Stable token identity for replay handling upstream.
+    // 5. Stable token identity for replay handling upstream, plus the
+    //    mint→verify delta. Clamped at zero: within the future-skew window
+    //    the delta is negative and carries no timing information. The
+    //    `u64::MAX` fallback is unreachable for any post-1970 `tim` (the age
+    //    already passed the max-age bound) and only guards hostile ancient
+    //    timestamps combined with an enormous configured max age.
     let tid = blake3::hash(solution.chg.as_bytes()).to_string();
-    Ok(Verified { tid })
+    let mint_to_verify_ms = u64::try_from(age_ms.max(0)).unwrap_or(u64::MAX);
+    Ok(Verified {
+        tid,
+        mint_to_verify_ms,
+    })
 }
 
 fn validate_solution_shape(solution: &Solution) -> Result<(), PowError> {

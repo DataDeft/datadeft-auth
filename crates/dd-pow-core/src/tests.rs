@@ -2,6 +2,7 @@
 //! generation is deterministic apart from proptest's own seeded RNG.
 
 use crate::challenge::Solution;
+use crate::clock::UnixMillis;
 use crate::error::PowError;
 use crate::ops::{has_leading_zero_prefix, hmac_tag_hex, tag_message};
 use crate::secret::PowSecret;
@@ -16,6 +17,12 @@ const TIM: &str = "2026-07-09T12:00:00Z";
 /// Unix timestamp of TIM (2026-07-09T12:00:00Z).
 const TIM_UNIX: u64 = 1_783_598_400;
 const MAX_AGE: u64 = 300;
+
+/// Millisecond clock at a whole-second unix instant. The fixtures predate
+/// millisecond resolution and are specified in seconds.
+fn at(unix_secs: u64) -> UnixMillis {
+    UnixMillis::from_millis(unix_secs * 1000)
+}
 
 fn secret() -> PowSecret {
     let mut bytes = [0u8; 32];
@@ -55,7 +62,7 @@ fn solve_like_worker(chg: &str, dif: u8) -> (u64, String) {
 }
 
 fn solved_solution(dif: u8) -> Solution {
-    let challenge = mint_challenge(&secret(), dif, TIM, entropy()).expect("mint");
+    let challenge = mint_challenge(&secret(), dif, at(TIM_UNIX), entropy()).expect("mint");
     let (nonce, hash) = solve_like_worker(&challenge.chg, dif);
     // Field mapping as the client builds its Solution JSON: chg/tim/tag/dif
     // echoed, sol = hash, non = nonce.toString().
@@ -182,8 +189,8 @@ fn production_difficulty_guidance_is_above_test_fixtures() {
 
 #[test]
 fn mint_is_deterministic_golden() {
-    let a = mint_challenge(&secret(), 3, TIM, entropy()).expect("mint a");
-    let b = mint_challenge(&secret(), 3, TIM, entropy()).expect("mint b");
+    let a = mint_challenge(&secret(), 3, at(TIM_UNIX), entropy()).expect("mint a");
+    let b = mint_challenge(&secret(), 3, at(TIM_UNIX), entropy()).expect("mint b");
     assert_eq!(a, b);
     assert_eq!(a.dif, 3);
     assert_eq!(a.tim, TIM);
@@ -243,7 +250,7 @@ fn accepts_real_worker_style_vector() {
         tim: TIM.to_string(),
         tag: hmac_tag_hex(&s, &tag_message(chg, 2, TIM)),
     };
-    verify_solution(&s, &sol, TIM_UNIX + 1, MAX_AGE, 2).unwrap();
+    verify_solution(&s, &sol, at(TIM_UNIX + 1), MAX_AGE, 2).unwrap();
 }
 
 // --- Tamper (examples the property does not construct) ----------------
@@ -253,7 +260,7 @@ fn wrong_secret_rejected() {
     let sol = solved_solution(1);
     let other = PowSecret::new([0x42; 32]);
     assert_eq!(
-        verify_solution(&other, &sol, TIM_UNIX + 1, MAX_AGE, 1),
+        verify_solution(&other, &sol, at(TIM_UNIX + 1), MAX_AGE, 1),
         Err(PowError::InvalidTag)
     );
 }
@@ -261,8 +268,8 @@ fn wrong_secret_rejected() {
 #[test]
 fn solution_for_different_challenge_rejected() {
     // Valid tag/chg from challenge A, but sol/non solve challenge B.
-    let a = mint_challenge(&secret(), 1, TIM, entropy()).expect("mint a");
-    let b = mint_challenge(&secret(), 1, TIM, [0xFF; 16]).expect("mint b");
+    let a = mint_challenge(&secret(), 1, at(TIM_UNIX), entropy()).expect("mint a");
+    let b = mint_challenge(&secret(), 1, at(TIM_UNIX), [0xFF; 16]).expect("mint b");
     assert_ne!(a.chg, b.chg);
     let (nonce, hash) = solve_like_worker(&b.chg, 1);
     let sol = Solution {
@@ -274,7 +281,7 @@ fn solution_for_different_challenge_rejected() {
         tag: a.tag,
     };
     assert_eq!(
-        verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 1),
+        verify_solution(&secret(), &sol, at(TIM_UNIX + 1), MAX_AGE, 1),
         Err(PowError::InvalidSolution)
     );
 }
@@ -282,7 +289,7 @@ fn solution_for_different_challenge_rejected() {
 #[test]
 fn missing_leading_zeros_rejected() {
     // Honest hash of chg+non, but the nonce does no work (no zeros).
-    let challenge = mint_challenge(&secret(), 1, TIM, entropy()).expect("mint");
+    let challenge = mint_challenge(&secret(), 1, at(TIM_UNIX), entropy()).expect("mint");
     let mut nonce: u64 = 0;
     let hash = loop {
         let digest = Sha256::digest(format!("{}{nonce}", challenge.chg).as_bytes());
@@ -301,7 +308,7 @@ fn missing_leading_zeros_rejected() {
         tag: challenge.tag,
     };
     assert_eq!(
-        verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 1),
+        verify_solution(&secret(), &sol, at(TIM_UNIX + 1), MAX_AGE, 1),
         Err(PowError::InvalidSolution)
     );
 }
@@ -312,7 +319,7 @@ fn missing_leading_zeros_rejected() {
 fn stale_tim_rejected() {
     let sol = solved_solution(1);
     assert_eq!(
-        verify_solution(&secret(), &sol, TIM_UNIX + MAX_AGE + 1, MAX_AGE, 1),
+        verify_solution(&secret(), &sol, at(TIM_UNIX + MAX_AGE + 1), MAX_AGE, 1),
         Err(PowError::Expired)
     );
 }
@@ -321,7 +328,7 @@ fn stale_tim_rejected() {
 fn expiry_boundary_accepted() {
     let sol = solved_solution(1);
     // age == max_age exactly: still valid.
-    verify_solution(&secret(), &sol, TIM_UNIX + MAX_AGE, MAX_AGE, 1).unwrap();
+    verify_solution(&secret(), &sol, at(TIM_UNIX + MAX_AGE), MAX_AGE, 1).unwrap();
 }
 
 #[test]
@@ -332,7 +339,7 @@ fn future_tim_rejected() {
         verify_solution(
             &secret(),
             &sol,
-            TIM_UNIX - MAX_FUTURE_SKEW_SECS - 1,
+            at(TIM_UNIX - MAX_FUTURE_SKEW_SECS - 1),
             MAX_AGE,
             1
         ),
@@ -343,7 +350,88 @@ fn future_tim_rejected() {
 #[test]
 fn future_tim_within_skew_accepted() {
     let sol = solved_solution(1);
-    verify_solution(&secret(), &sol, TIM_UNIX - MAX_FUTURE_SKEW_SECS, MAX_AGE, 1).unwrap();
+    verify_solution(
+        &secret(),
+        &sol,
+        at(TIM_UNIX - MAX_FUTURE_SKEW_SECS),
+        MAX_AGE,
+        1,
+    )
+    .unwrap();
+}
+
+// --- Millisecond resolution -------------------------------------------
+
+/// A sub-second mint instant lands in `tim` as a millisecond fraction, the
+/// solve round-trips, and the mint→verify delta is millisecond-exact. (The
+/// fraction-free whole-second format is pinned by
+/// `mint_is_deterministic_golden`.)
+#[test]
+fn millisecond_tim_round_trips_with_exact_delta() {
+    let mint_ms = TIM_UNIX * 1000 + 123;
+    let challenge =
+        mint_challenge(&secret(), 1, UnixMillis::from_millis(mint_ms), entropy()).expect("mint");
+    assert_eq!(challenge.tim, "2026-07-09T12:00:00.123Z");
+    let (nonce, hash) = solve_like_worker(&challenge.chg, 1);
+    let sol = Solution {
+        chg: challenge.chg,
+        sol: hash,
+        non: nonce.to_string(),
+        dif: 1,
+        tim: challenge.tim,
+        tag: challenge.tag,
+    };
+    let verified = verify_solution(
+        &secret(),
+        &sol,
+        UnixMillis::from_millis(mint_ms + 250),
+        MAX_AGE,
+        1,
+    )
+    .unwrap();
+    assert_eq!(verified.mint_to_verify_ms, 250);
+}
+
+/// Expiry is millisecond-precise: exactly `max_age` is accepted, one
+/// millisecond past it is rejected.
+#[test]
+fn expiry_boundary_is_millisecond_precise() {
+    let sol = solved_solution(1);
+    let mint_ms = TIM_UNIX * 1000;
+    verify_solution(
+        &secret(),
+        &sol,
+        UnixMillis::from_millis(mint_ms + MAX_AGE * 1000),
+        MAX_AGE,
+        1,
+    )
+    .unwrap();
+    assert_eq!(
+        verify_solution(
+            &secret(),
+            &sol,
+            UnixMillis::from_millis(mint_ms + MAX_AGE * 1000 + 1),
+            MAX_AGE,
+            1,
+        ),
+        Err(PowError::Expired)
+    );
+}
+
+/// Within the allowed future-skew window the delta is negative and carries
+/// no timing information: it must clamp to zero, never wrap.
+#[test]
+fn delta_clamps_to_zero_within_future_skew() {
+    let sol = solved_solution(1);
+    let verified = verify_solution(
+        &secret(),
+        &sol,
+        UnixMillis::from_millis(TIM_UNIX * 1000 - 5_000),
+        MAX_AGE,
+        1,
+    )
+    .unwrap();
+    assert_eq!(verified.mint_to_verify_ms, 0);
 }
 
 #[test]
@@ -361,7 +449,7 @@ fn garbage_tim_needs_valid_tag_first() {
         tag: hmac_tag_hex(&s, &tag_message(chg, 1, "not-a-timestamp")),
     };
     assert_eq!(
-        verify_solution(&s, &sol, TIM_UNIX, MAX_AGE, 1),
+        verify_solution(&s, &sol, at(TIM_UNIX), MAX_AGE, 1),
         Err(PowError::InvalidTimestamp)
     );
 }
@@ -374,7 +462,7 @@ fn difficulty_downgrade_rejected() {
     // raised min_difficulty to 2: must be rejected.
     let sol = solved_solution(1);
     assert_eq!(
-        verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 2),
+        verify_solution(&secret(), &sol, at(TIM_UNIX + 1), MAX_AGE, 2),
         Err(PowError::DifficultyTooLow)
     );
 }
@@ -382,7 +470,7 @@ fn difficulty_downgrade_rejected() {
 #[test]
 fn higher_difficulty_than_min_accepted() {
     let sol = solved_solution(2);
-    verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 1).unwrap();
+    verify_solution(&secret(), &sol, at(TIM_UNIX + 1), MAX_AGE, 1).unwrap();
 }
 
 #[test]
@@ -403,7 +491,7 @@ fn zero_difficulty_rejected() {
         tag: hmac_tag_hex(&s, &tag_message(chg, 0, TIM)),
     };
     assert_eq!(
-        verify_solution(&s, &sol, TIM_UNIX + 1, MAX_AGE, 0),
+        verify_solution(&s, &sol, at(TIM_UNIX + 1), MAX_AGE, 0),
         Err(PowError::DifficultyTooLow)
     );
 }
@@ -411,21 +499,21 @@ fn zero_difficulty_rejected() {
 #[test]
 fn difficulty_above_digest_width_is_rejected() {
     assert_eq!(
-        mint_challenge(&secret(), MAX_DIFFICULTY + 1, TIM, entropy()).unwrap_err(),
+        mint_challenge(&secret(), MAX_DIFFICULTY + 1, at(TIM_UNIX), entropy()).unwrap_err(),
         PowError::DifficultyTooHigh
     );
 
     let mut sol = solved_solution(1);
     sol.dif = MAX_DIFFICULTY + 1;
     assert_eq!(
-        verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 1).unwrap_err(),
+        verify_solution(&secret(), &sol, at(TIM_UNIX + 1), MAX_AGE, 1).unwrap_err(),
         PowError::DifficultyTooHigh
     );
     assert_eq!(
         verify_solution(
             &secret(),
             &solved_solution(1),
-            TIM_UNIX + 1,
+            at(TIM_UNIX + 1),
             MAX_AGE,
             MAX_DIFFICULTY + 1
         )
@@ -440,21 +528,21 @@ fn oversized_fields_are_rejected_before_hmac_work() {
     let mut sol = solved_solution(1);
     sol.chg = huge;
     assert_eq!(
-        verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 1).unwrap_err(),
+        verify_solution(&secret(), &sol, at(TIM_UNIX + 1), MAX_AGE, 1).unwrap_err(),
         PowError::InvalidTag
     );
 
     let mut sol = solved_solution(1);
     sol.non = "1".repeat(21);
     assert_eq!(
-        verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 1).unwrap_err(),
+        verify_solution(&secret(), &sol, at(TIM_UNIX + 1), MAX_AGE, 1).unwrap_err(),
         PowError::InvalidSolution
     );
 
     let mut sol = solved_solution(1);
     sol.tim = "2".repeat(33);
     assert_eq!(
-        verify_solution(&secret(), &sol, TIM_UNIX + 1, MAX_AGE, 1).unwrap_err(),
+        verify_solution(&secret(), &sol, at(TIM_UNIX + 1), MAX_AGE, 1).unwrap_err(),
         PowError::InvalidTimestamp
     );
 }
@@ -463,7 +551,7 @@ fn oversized_fields_are_rejected_before_hmac_work() {
 fn oversized_max_age_is_rejected_explicitly() {
     let sol = solved_solution(1);
     assert_eq!(
-        verify_solution(&secret(), &sol, TIM_UNIX + 1, u64::MAX, 1).unwrap_err(),
+        verify_solution(&secret(), &sol, at(TIM_UNIX + 1), u64::MAX, 1).unwrap_err(),
         PowError::MaxAgeTooLarge
     );
 }
@@ -503,7 +591,7 @@ proptest! {
         age in 0u64..=MAX_AGE,
     ) {
         let s = PowSecret::new(secret_bytes);
-        let challenge = mint_challenge(&s, dif, TIM, entropy).unwrap();
+        let challenge = mint_challenge(&s, dif, at(TIM_UNIX), entropy).unwrap();
         let (nonce, hash) = solve_like_worker(&challenge.chg, dif);
         let sol = Solution {
             chg: challenge.chg,
@@ -513,11 +601,14 @@ proptest! {
             tim: challenge.tim,
             tag: challenge.tag,
         };
-        let v1 = verify_solution(&s, &sol, TIM_UNIX + age, MAX_AGE, dif).unwrap();
+        let v1 = verify_solution(&s, &sol, at(TIM_UNIX + age), MAX_AGE, dif).unwrap();
         // Replaying the same solve at another valid instant => same tid.
-        let v2 = verify_solution(&s, &sol, TIM_UNIX, MAX_AGE, 1).unwrap();
+        let v2 = verify_solution(&s, &sol, at(TIM_UNIX), MAX_AGE, 1).unwrap();
         prop_assert_eq!(&v1.tid, &v2.tid);
         prop_assert_eq!(v1.tid, blake3::hash(sol.chg.as_bytes()).to_string());
+        // The mint→verify delta is exactly the injected age, in milliseconds.
+        prop_assert_eq!(v1.mint_to_verify_ms, age * 1000);
+        prop_assert_eq!(v2.mint_to_verify_ms, 0);
     }
 
     /// PROPERTY (single-field tamper): mutating exactly ONE field of a valid
@@ -536,7 +627,7 @@ proptest! {
         dif_delta in 1u8..=255,
     ) {
         let s = secret();
-        let challenge = mint_challenge(&s, dif, TIM, entropy).unwrap();
+        let challenge = mint_challenge(&s, dif, at(TIM_UNIX), entropy).unwrap();
         let (nonce, hash) = solve_like_worker(&challenge.chg, dif);
         let mut sol = Solution {
             chg: challenge.chg,
@@ -547,7 +638,7 @@ proptest! {
             tag: challenge.tag,
         };
         // Sanity: the untampered solution verifies.
-        prop_assert!(verify_solution(&s, &sol, TIM_UNIX + 1, MAX_AGE, 1).is_ok());
+        prop_assert!(verify_solution(&s, &sol, at(TIM_UNIX + 1), MAX_AGE, 1).is_ok());
 
         let expected = match field {
             // chg: any one-nibble change breaks the HMAC binding.
@@ -604,7 +695,7 @@ proptest! {
             }
         };
         prop_assert_eq!(
-            verify_solution(&s, &sol, TIM_UNIX + 1, MAX_AGE, 1),
+            verify_solution(&s, &sol, at(TIM_UNIX + 1), MAX_AGE, 1),
             Err(expected)
         );
     }
@@ -719,7 +810,7 @@ fn verify_never_panics_on_hostile_inputs() {
                 tim: tim.to_string(),
                 tag: tag.to_string(),
             },
-            *now,
+            UnixMillis::from_millis(*now),
             *age,
             *min,
         );
@@ -792,10 +883,12 @@ fn frozen_corpus_round_trips() {
             tim: entry.tim.clone(),
             tag: entry.tag.clone(),
         };
+        // The frozen corpus predates millisecond resolution: its clock is
+        // whole unix seconds, converted here at the boundary.
         let result = verify_solution(
             &s,
             &sol,
-            entry.now_unix,
+            at(entry.now_unix),
             entry.max_age,
             entry.min_difficulty,
         );
@@ -827,11 +920,11 @@ proptest! {
         tim in ".*",
         tag in ".*",
         dif in any::<u8>(),
-        now_unix in any::<u64>(),
+        now_ms in any::<u64>(),
         max_age in any::<u64>(),
         min_dif in any::<u8>(),
     ) {
         let s = Solution { chg, sol, non, dif, tim, tag };
-        let _ = verify_solution(&secret(), &s, now_unix, max_age, min_dif);
+        let _ = verify_solution(&secret(), &s, UnixMillis::from_millis(now_ms), max_age, min_dif);
     }
 }

@@ -19,7 +19,8 @@ fn test_tid() -> String {
 fn proof_cookie_round_trips_tid() {
     let keyring = keyring();
     let mut rng = PerCallRng::starting_at(0xa0);
-    let cookie = mint_pow_proof_cookie(&test_tid(), &keyring, &mut rng, NOW).expect("cookie mints");
+    let cookie =
+        mint_pow_proof_cookie(&test_tid(), None, &keyring, &mut rng, NOW).expect("cookie mints");
 
     let verified = verify_pow_proof_cookie(
         cookie.as_secret_value(),
@@ -29,13 +30,83 @@ fn proof_cookie_round_trips_tid() {
     )
     .expect("cookie parses");
     assert_eq!(verified.tid(), test_tid());
+    // A v1 cookie (minted without a class) reports no solve class.
+    assert_eq!(verified.solve_class(), None);
+}
+
+#[test]
+fn v2_proof_cookie_round_trips_solve_class() {
+    let keyring = keyring();
+    let mut rng = PerCallRng::starting_at(0xa0);
+    // Every byte value is opaque app data, including 0.
+    for class in [0u8, 1, 3, 255] {
+        let cookie = mint_pow_proof_cookie(&test_tid(), Some(class), &keyring, &mut rng, NOW)
+            .expect("cookie mints");
+        let verified = verify_pow_proof_cookie(
+            cookie.as_secret_value(),
+            &keyring,
+            NOW + 10,
+            DEFAULT_POW_PROOF_TTL_SECS,
+        )
+        .expect("cookie parses");
+        assert_eq!(verified.tid(), test_tid());
+        assert_eq!(verified.solve_class(), Some(class));
+    }
+}
+
+/// The v1 integration contract fits kids up to 12 bytes; the one-byte-larger
+/// v2 body must not shrink that budget (pinned by `MAX_BODY_BYTES = 65`).
+#[test]
+fn v2_body_fits_with_a_twelve_byte_kid() {
+    let keyring = test_keyring::<PowProofCookie>(0x33, "kid-12-bytes");
+    let mut rng = PerCallRng::starting_at(0xa0);
+    let cookie = mint_pow_proof_cookie(&test_tid(), Some(7), &keyring, &mut rng, NOW)
+        .expect("v2 body must mint under a 12-byte kid");
+    let verified = verify_pow_proof_cookie(
+        cookie.as_secret_value(),
+        &keyring,
+        NOW + 1,
+        DEFAULT_POW_PROOF_TTL_SECS,
+    )
+    .expect("cookie parses");
+    assert_eq!(verified.solve_class(), Some(7));
+}
+
+/// Version and length must pair exactly: an unknown version byte, a v1 tag
+/// with a trailing byte, or a v2 tag without one are all malformed. Bodies
+/// are crafted with the generic bound-cookie mint the proof cookie itself
+/// uses, so only the body shape is wrong.
+#[test]
+fn verify_rejects_mismatched_body_version_and_length() {
+    let keyring = keyring();
+    let mut rng = PerCallRng::starting_at(0xa0);
+    let now_u32 = u32::try_from(NOW).expect("fixture fits u32");
+    let bad_bodies: &[&[u8]] = &[
+        &[3u8; 34], // unknown version
+        &[1u8; 34], // v1 tag, v2 length
+        &[2u8; 33], // v2 tag, v1 length
+        &[1u8; 1],  // version byte only
+        &[2u8; 35], // v2 tag, trailing junk
+    ];
+    for bad_body in bad_bodies {
+        let cookie = mint_bound_cookie::<PowProofCookie, _>(
+            bad_body, &keyring, &mut rng, now_u32, now_u32, NOW,
+        )
+        .expect("bound cookie mints");
+        assert_eq!(
+            verify_pow_proof_cookie(&cookie, &keyring, NOW + 1, DEFAULT_POW_PROOF_TTL_SECS).err(),
+            Some(TokenError::InvalidToken),
+            "body {bad_body:?} must be rejected"
+        );
+    }
 }
 
 #[test]
 fn proof_cookie_expiry_is_inclusive_at_the_boundary() {
     let keyring = keyring();
     let mut rng = PerCallRng::starting_at(0xa0);
-    let cookie = mint_pow_proof_cookie(&test_tid(), &keyring, &mut rng, NOW).expect("cookie mints");
+    let cookie =
+        mint_pow_proof_cookie(&test_tid(), None, &keyring, &mut rng, NOW).expect("cookie mints");
 
     let boundary = NOW + DEFAULT_POW_PROOF_TTL_SECS;
     assert!(
@@ -63,7 +134,8 @@ fn proof_cookie_expiry_is_inclusive_at_the_boundary() {
 fn verify_rejects_out_of_range_max_age() {
     let keyring = keyring();
     let mut rng = PerCallRng::starting_at(0xa0);
-    let cookie = mint_pow_proof_cookie(&test_tid(), &keyring, &mut rng, NOW).expect("cookie mints");
+    let cookie =
+        mint_pow_proof_cookie(&test_tid(), None, &keyring, &mut rng, NOW).expect("cookie mints");
 
     for bad in [0, POW_PROOF_MAX_AGE_SECS + 1] {
         assert_eq!(
@@ -77,7 +149,8 @@ fn verify_rejects_out_of_range_max_age() {
 fn verify_rejects_tampering_and_garbage() {
     let keyring = keyring();
     let mut rng = PerCallRng::starting_at(0xa0);
-    let cookie = mint_pow_proof_cookie(&test_tid(), &keyring, &mut rng, NOW).expect("cookie mints");
+    let cookie =
+        mint_pow_proof_cookie(&test_tid(), None, &keyring, &mut rng, NOW).expect("cookie mints");
 
     let mut tampered = cookie.as_secret_value().to_owned();
     tampered.pop();
@@ -92,7 +165,8 @@ fn verify_rejects_tampering_and_garbage() {
 #[test]
 fn proof_cookie_from_a_different_keyring_is_rejected() {
     let mut rng = PerCallRng::starting_at(0xa0);
-    let cookie = mint_pow_proof_cookie(&test_tid(), &keyring(), &mut rng, NOW).expect("mints");
+    let cookie =
+        mint_pow_proof_cookie(&test_tid(), None, &keyring(), &mut rng, NOW).expect("mints");
 
     let other = test_keyring::<PowProofCookie>(0x22, KID);
     assert_eq!(
@@ -113,7 +187,7 @@ fn mint_rejects_malformed_tid() {
     let mut rng = PerCallRng::starting_at(0xa0);
     for bad in ["", "abc", &"AB".repeat(32), &"zz".repeat(32)] {
         assert_eq!(
-            mint_pow_proof_cookie(bad, &keyring, &mut rng, NOW).err(),
+            mint_pow_proof_cookie(bad, None, &keyring, &mut rng, NOW).err(),
             Some(TokenError::InvalidToken),
             "{bad:?} must be rejected"
         );
@@ -124,7 +198,7 @@ fn mint_rejects_malformed_tid() {
 fn value_debug_is_redacted() {
     let keyring = keyring();
     let mut rng = PerCallRng::starting_at(0xa0);
-    let cookie = mint_pow_proof_cookie(&test_tid(), &keyring, &mut rng, NOW).expect("mints");
+    let cookie = mint_pow_proof_cookie(&test_tid(), None, &keyring, &mut rng, NOW).expect("mints");
     assert_eq!(format!("{cookie:?}"), "PowProofCookieValue(..)");
 
     let verified = verify_pow_proof_cookie(

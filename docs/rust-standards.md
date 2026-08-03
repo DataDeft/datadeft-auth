@@ -115,7 +115,7 @@ Core APIs must not call these sources:
 Callers inject these inputs:
 
 - `now_unix`
-- `now_rfc3339`
+- `now: UnixMillis` (PoW mint/verify; the library formats RFC3339 internally)
 - CSPRNG entropy bytes
 - deterministic fixture entropy for tests
 - key material

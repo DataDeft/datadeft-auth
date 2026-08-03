@@ -176,6 +176,49 @@ Invalid token states include expired, consumed, missing, malformed, and invalid 
 - Clear proof cookies on auth success.
 - Clear proof cookies on terminal auth failure.
 
+### Solve-timing signal
+
+`dd-pow-core::Verified::mint_to_verify_ms`, surfaced by `dd-pow-axum` as
+`PowAdmission::mint_to_verify_ms`, is the server-derived mint→verify delta of
+a successful solve, in milliseconds.
+
+Trust argument:
+
+- Both instants come from the server's own clock. The challenge `tim` is
+  HMAC-bound in the tag, so a client cannot backdate it, and the client never
+  reports its own timing. No client clock is involved.
+- The delta is inflatable but not deflatable. A client can sit on a solved
+  challenge to look slower, but can never look faster than its true solve.
+- "Implausibly fast" is therefore unfakeable: a delta below the
+  browser-physical floor for the difficulty is definitive evidence of a
+  native-speed solver.
+- The delta includes network round trips and client-side queueing, not pure
+  solve time.
+
+Consumption rules:
+
+- Use the delta for risk tagging, triage, per-difficulty histograms, and
+  difficulty tuning.
+- The fast direction is the only one sound enough to gate on. Slow or
+  "human-looking" deltas must stay soft: a bot that sleeps before submitting
+  is timing-indistinguishable from a human per request.
+- Calibrate any fast floor from field data per difficulty, never from theory.
+  Genuine cohorts mix device speeds, so their solve-time distribution is a
+  mixture of exponentials; tests against a single theoretical exponential
+  reject honest traffic.
+- The browser-side floor exists only because the shipped `dd-protect-client`
+  worker pays an async `crypto.subtle` round trip per attempt. A WASM or
+  native-speed client, including a future optimization of the official
+  client, erases it. Revisit every threshold before changing the client's
+  solve loop.
+- Aggregation (per-IP, per-cohort, distribution-shape tests) is an app or
+  edge concern. The library exposes the per-solve delta only.
+- To carry a classification statelessly to later gate checks, stamp an
+  app-defined byte into the proof cookie's encrypted v2 body
+  (`solve_class`). The library assigns the byte no meaning: the minting app
+  defines the quantization, the reading app the policy, and both stay
+  outside the library.
+
 ## One-time magic-link consumption
 
 Magic-link consume flows must enforce one-time use.
@@ -615,4 +658,5 @@ Before phase acceptance, confirm these items:
 32. Timing review covers dummy work.
 33. Core code has no IO sources.
 34. Adapter errors map to safe public errors.
+35. Solve-timing consumers gate on fast deltas only; slow deltas stay soft.
 35. Dependency audit passes before release.

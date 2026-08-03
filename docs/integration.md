@@ -127,8 +127,12 @@ unreviewed outer stack safe. See the "Mandatory deployment gate" section in
 Proof-of-work is the primary defense against dumb bots. It is recommended.
 
 Wire the `dd-pow-axum` glue. `POST` to `mint_pow_challenge` for `pow/create`,
-and `POST` to `verify_pow_solution` for `pow/validate`, which sets `dd_pow`.
-Gate the magic-link request behind a valid `dd_pow` cookie. On the browser,
+and `POST` to `verify_pow_solution` for `pow/validate`, which returns a
+`PowAdmission`: the `dd_pow` `Set-Cookie` header plus the server-derived
+`mint_to_verify_ms` solve-timing signal (see "Solve-timing signal" in
+`docs/security.md`). Its `classify_solve` hook can stamp an app-defined
+class byte into the cookie; pass `|_| None` to opt out. Gate the magic-link
+request behind a valid `dd_pow` cookie. On the browser,
 build the `dd-protect-client` worker (`protect-worker.ts`) into a served static
 file, then call `protect({ workerUrl, createUrl, validateUrl })` on your login
 page. See [../packages/dd-protect-client/README.md](../packages/dd-protect-client/README.md).
