@@ -4,6 +4,45 @@ All notable changes to this workspace are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crates follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-08-03
+
+Solve-timing release. Breaking for `dd-pow-core` / `dd-pow-axum` callers;
+wire-compatible with deployed challenges, proof cookies, and the shipped
+browser client.
+
+### Changed
+
+- **PoW clock is milliseconds** (breaking). `mint_challenge`,
+  `verify_solution`, `mint_pow_challenge`, and `verify_pow_solution` now take
+  a `UnixMillis` newtype instead of seconds/RFC3339 strings; the unit change
+  is a compile error, never a silent ×1000. Mint formats `tim` itself,
+  RFC3339 with millisecond precision (whole seconds still format
+  fraction-free, so previously minted challenges and all goldens are
+  unchanged). Freshness checks are now millisecond-exact.
+- **Proof-cookie body budget** (`PowProofCookie::MAX_BODY_BYTES`) is 65, up
+  from 64, so the one-byte-larger v2 body keeps the established 12-byte kid
+  budget.
+
+### Added
+
+- **Solve-timing signal.** `Verified::mint_to_verify_ms` and
+  `PowAdmission::mint_to_verify_ms` (the new return type of
+  `verify_pow_solution`, carrying the `Set-Cookie` header) expose the
+  server-derived mint→verify delta. `tim` is HMAC-bound, so the delta is
+  inflatable but not deflatable: an implausibly fast solve is definitive
+  native-solver evidence. Soft signal only — for risk tagging, histograms, and
+  difficulty tuning, never hard blocking. Documented in `docs/security.md`,
+  "Solve-timing signal".
+- **Proof-cookie v2 body with an opaque solve-class byte.**
+  `mint_pow_proof_cookie` takes `Option<u8>`: `None` mints the v1 body
+  (byte-identical to 0.1.x cookies), `Some` mints the versioned v2 body
+  carrying one app-defined byte inside the encrypted payload.
+  `VerifiedPowProof::solve_class()` returns it; v1 cookies verify unchanged
+  and report `None`. `verify_pow_solution` exposes this as a
+  `classify_solve: FnOnce(u64) -> Option<u8>` hook mapping the delta to the
+  stamped byte. The library assigns the byte no meaning: quantization and
+  policy stay in the app.
+
 ## [0.1.1] - 2026-08-02
 
 Housekeeping patch. No behavioral change to any crate: the two source edits are
