@@ -38,6 +38,14 @@ ML-INV-001..005, SES-INV-001, and POW-INV-001..002 now have TLA+ models in
 POW-INV-003 and BOUND-INV-001 remain future work. Replay is opt-in, and parser
 bounds belong to fuzzing and Kani.
 
+The v0.2.0 solve-timing signal (`Verified::mint_to_verify_ms`, the proof-cookie
+solve-class byte) is deliberately outside the models. It is observational: it
+adds no admission transition and changes no invariant. The clock-unit change
+(seconds to milliseconds) is also invisible to the models, which treat expiry
+abstractly without time units. Timing-derived *policy* (for example, a fast
+floor that denies admission) would be a new guard on the accept transition and
+would need a model extension before shipping.
+
 ## Magic-link model
 
 Use these abstract states:
