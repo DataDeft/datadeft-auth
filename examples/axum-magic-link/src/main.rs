@@ -178,15 +178,17 @@ async fn index() -> Html<&'static str> {
     Html(INDEX_HTML)
 }
 
-async fn pow_challenge(State(state): State<AppState>) -> Result<Json<PowChallengeJson>, Response> {
+async fn pow_challenge(
+    State(state): State<AppState>,
+) -> Result<Json<PowChallengeJson>, (StatusCode, &'static str)> {
     let mut entropy = [0_u8; 16];
-    OsRng.try_fill_bytes(&mut entropy).map_err(|_| {
-        (StatusCode::SERVICE_UNAVAILABLE, "randomness unavailable\n").into_response()
-    })?;
+    OsRng
+        .try_fill_bytes(&mut entropy)
+        .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "randomness unavailable\n"))?;
     let now = current_unix_millis()
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "clock unavailable\n").into_response())?;
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "clock unavailable\n"))?;
     let challenge = mint_challenge(&state.pow_secret, POW_DIFFICULTY, now, entropy)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "pow unavailable\n").into_response())?;
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "pow unavailable\n"))?;
     Ok(Json(PowChallengeJson::from(challenge)))
 }
 
