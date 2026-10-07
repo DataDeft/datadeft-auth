@@ -1,0 +1,32 @@
+[package]
+name = "datadeft-pow-core"
+description = "Pure, IO-free proof-of-work challenge mint/verify."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["authentication", "security", "proof-of-work"]
+include = ["src/**", "tests/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[lints]
+workspace = true
+
+[dependencies]
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.2.1" } # x-release-please-version
+blake3 = "1"
+hex = "0.4"
+hmac = "0.12"
+rand_core = "0.6"
+sha2 = "0.10"
+subtle = "2"
+time = { version = "0.3.47", default-features = false, features = ["formatting", "parsing"] }
+zeroize = { version = "1", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.2.1", features = ["test-support"] } # x-release-please-version
+proptest = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

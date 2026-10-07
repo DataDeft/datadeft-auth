@@ -104,6 +104,22 @@ function installWorker(WorkerClass: new (url: string | URL) => MockWorker) {
 // -- Unit tests: protect() ----------------------------------------------------
 
 describe("protect", () => {
+    test("starts the distributed ESM worker as a module", async () => {
+        let workerOptions: WorkerOptions | undefined;
+        class ModuleWorker extends SolvingMockWorker {
+            constructor(_url: string | URL, options?: WorkerOptions) {
+                super();
+                workerOptions = options;
+            }
+        }
+        installWorker(ModuleWorker);
+        mockFetch((url) => url === CREATE_URL ? jsonResponse(CHALLENGE) : jsonResponse({ status: "ok" }));
+
+        await callProtect({ workerCount: 1 });
+
+        expect(workerOptions?.type).toBe("module");
+    });
+
     describe("challenge creation", () => {
         test("sends {} with JSON content type and same-origin credentials", async () => {
             let createInit: RequestInit | undefined;

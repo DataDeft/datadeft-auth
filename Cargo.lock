@@ -344,13 +344,13 @@ dependencies = [
 
 [[package]]
 name = "axum-magic-link"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "axum",
- "dd-magic-link-aws",
- "dd-magic-link-axum",
- "dd-magic-link-service",
- "dd-pow-core",
+ "datadeft-magic-link-aws",
+ "datadeft-magic-link-axum",
+ "datadeft-magic-link-service",
+ "datadeft-pow-core",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
@@ -527,8 +527,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "dd-auth-token-core"
-version = "0.2.0"
+name = "datadeft-auth-token-core"
+version = "0.2.1"
 dependencies = [
  "chacha20poly1305",
  "hex",
@@ -543,16 +543,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "dd-magic-link-aws"
-version = "0.2.0"
+name = "datadeft-magic-link-aws"
+version = "0.2.1"
 dependencies = [
  "aws-sdk-dynamodb",
  "aws-sdk-secretsmanager",
  "aws-sdk-sesv2",
  "base64",
- "dd-auth-token-core",
- "dd-magic-link-core",
- "dd-magic-link-service",
+ "datadeft-auth-token-core",
+ "datadeft-magic-link-core",
+ "datadeft-magic-link-service",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
@@ -561,14 +561,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "dd-magic-link-axum"
-version = "0.2.0"
+name = "datadeft-magic-link-axum"
+version = "0.2.1"
 dependencies = [
  "axum",
- "dd-auth-token-core",
- "dd-magic-link-aws",
- "dd-magic-link-core",
- "dd-magic-link-service",
+ "datadeft-auth-token-core",
+ "datadeft-magic-link-aws",
+ "datadeft-magic-link-core",
+ "datadeft-magic-link-service",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
@@ -578,10 +578,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "dd-magic-link-core"
-version = "0.2.0"
+name = "datadeft-magic-link-core"
+version = "0.2.1"
 dependencies = [
- "dd-auth-token-core",
+ "datadeft-auth-token-core",
  "hex",
  "hmac",
  "rand_core 0.6.4",
@@ -591,11 +591,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "dd-magic-link-service"
-version = "0.2.0"
+name = "datadeft-magic-link-service"
+version = "0.2.1"
 dependencies = [
- "dd-auth-token-core",
- "dd-magic-link-core",
+ "datadeft-auth-token-core",
+ "datadeft-magic-link-core",
  "futures-util",
  "hex",
  "rand_core 0.6.4",
@@ -604,13 +604,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "dd-pow-axum"
-version = "0.2.0"
+name = "datadeft-pow-axum"
+version = "0.2.1"
 dependencies = [
  "axum",
  "blake3",
- "dd-auth-token-core",
- "dd-pow-core",
+ "datadeft-auth-token-core",
+ "datadeft-pow-core",
  "hex",
  "rand_core 0.6.4",
  "serde",
@@ -619,11 +619,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "dd-pow-core"
-version = "0.2.0"
+name = "datadeft-pow-core"
+version = "0.2.1"
 dependencies = [
  "blake3",
- "dd-auth-token-core",
+ "datadeft-auth-token-core",
  "hex",
  "hmac",
  "proptest",

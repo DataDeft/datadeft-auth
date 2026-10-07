@@ -4,6 +4,34 @@ All notable changes to this workspace are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crates follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - Unreleased
+
+### Changed
+
+- Rename the seven Rust crates from `dd-*` to `datadeft-*`, including Rust
+  import paths and source directories. Registry installs use version `0.2`.
+- Prepare crates.io metadata, versioned path dependencies, README and dual
+  license texts. MIT OR Apache-2.0 is proposed, pending Istvan's sign-off.
+- Declare and verify Rust 1.88, matching the `time` dependency requirement.
+- Package the browser client as `@datadeft/protect-client` with ESM and `.d.ts`
+  exports for the main module and `./worker`. Workers now start as ES modules.
+  No runtime dependencies or install scripts; Bun workspace and packed-consumer
+  checks replace TypeScript source distribution.
+
+### Added
+
+- Explicit clock-skew variants for PoW and cookie verification/minting plus
+  `PowPolicy::with_clock_skew_secs`. Existing calls keep the 60-second default;
+  deployments can select 30 seconds (CeleraTax NFR-SEC-012) or zero.
+- Release-please PRs and tagged releases using crates.io/npm OIDC publishing,
+  with verification, an opt-in repository variable, and an approval environment.
+- [Registry migration guide](docs/migration-registries.md) and
+  [maintainer release runbook](docs/releasing.md), including first-publish
+  bootstrap and npm provenance prerequisites.
+
+Wire formats, cookie names, cryptographic domains, and expiry bounds are unchanged.
+This entry describes prepared changes, not a completed registry publication.
+
 ## [0.2.0] - 2026-08-03
 
 Solve-timing release. Breaking for `dd-pow-core` / `dd-pow-axum` callers;

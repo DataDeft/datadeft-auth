@@ -5,7 +5,9 @@ tokens, and scanner-safe magic-link login. Extracted from internal
 application code into small, deterministic, IO-free cores plus optional
 framework and cloud adapters.
 
-> **Status:** unpublished `0.1.0` workspace. APIs are not yet stable.
+> **Status:** preparing the first registry release, `0.2.1`. APIs are pre-1.0.
+> Publishing awaits maintainer approval and registry setup; the commands below
+> apply once that release is available. See [releasing.md](docs/releasing.md).
 > Start with [`docs/architecture.md`](docs/architecture.md) and
 > [`docs/onboarding.md`](docs/onboarding.md).
 > [`docs/security.md`](docs/security.md) is the normative security policy.
@@ -39,32 +41,33 @@ Examples of things to strip during extraction:
 ## Crate shape
 
 ```
-dd-pow-core
-dd-auth-token-core
-dd-magic-link-core
-dd-magic-link-service
-dd-magic-link-axum     (optional)
-dd-magic-link-aws      (optional)
+datadeft-pow-core
+datadeft-pow-axum            (optional)
+datadeft-auth-token-core
+datadeft-magic-link-core
+datadeft-magic-link-service
+datadeft-magic-link-axum     (optional)
+datadeft-magic-link-aws      (optional)
 ```
 
 Dependency direction (the adapters are siblings and neither depends on the other):
 
 ```
-dd-auth-token-core      -> (no workspace crates)
-dd-magic-link-core     -> dd-auth-token-core
-dd-magic-link-service  -> dd-magic-link-core, dd-auth-token-core
-dd-magic-link-axum     -> dd-magic-link-service
-dd-magic-link-aws      -> dd-magic-link-service
+datadeft-auth-token-core      -> (no workspace crates)
+datadeft-magic-link-core     -> datadeft-auth-token-core
+datadeft-magic-link-service  -> datadeft-magic-link-core, datadeft-auth-token-core
+datadeft-magic-link-axum     -> datadeft-magic-link-service
+datadeft-magic-link-aws      -> datadeft-magic-link-service
 ```
 
-### `dd-pow-core`
+### `datadeft-pow-core`
 
 Pure Rust, IO-free proof-of-work core. Owns challenge minting and solution
 verification. The caller injects clock, entropy, difficulty, max age, and
 secret. No Axum, Tokio, AWS SDK, filesystem, environment, logging, or
 application-specific domains. Deterministic and fully testable.
 
-### `dd-auth-token-core`
+### `datadeft-auth-token-core`
 
 Reusable Branca / base62 / keyring / session-cookie / PoW-cookie primitives.
 Cookie name, issuer, audience, TTLs, key IDs, and key material are all
@@ -72,14 +75,14 @@ Cookie name, issuer, audience, TTLs, key IDs, and key material are all
 for keys, cookies, session IDs, and secret-bearing types. Core APIs never
 read the environment or the clock directly.
 
-### `dd-magic-link-core`
+### `datadeft-magic-link-core`
 
 IO-free magic-link primitives. Owns the token grammar, selector/verifier
 types, parsing, formatting, verifier hash helpers, and redacted `Debug`.
 Stores only keyed lookup material, never raw token parts. No email sending,
 database access, rate limiting, Axum, AWS, or application copy.
 
-### `dd-magic-link-service`
+### `datadeft-magic-link-service`
 
 Framework-neutral orchestration for magic-link requests, scanner-safe
 confirmation, and server-revocable sessions. It depends on traits for storage,
@@ -103,7 +106,7 @@ Public errors are generic and non-enumerating. IP, global, malformed-request,
 and PoW admission controls belong to the consuming application or edge and are
 not magic-link API inputs. No Axum or AWS dependency.
 
-### `dd-magic-link-axum`
+### `datadeft-magic-link-axum`
 
 Optional Axum integration. Owns bounded request guards, strict same-origin
 confirmation, secure flow/session cookie helpers, scanner-safe account
@@ -113,7 +116,7 @@ storage transactions, and it does **not** force a router: consumers call the
 library functions from their own routes. Production deployments must also
 scrub token-bearing request targets from proxy, access, trace, and error logs.
 
-### `dd-magic-link-aws`
+### `datadeft-magic-link-aws`
 
 Optional AWS adapter. Owns DynamoDB implementations for the
 magic-link/session/user/rate-counter traits and an SES sending adapter if
@@ -124,7 +127,7 @@ errors before they cross the public boundary.
 
 Optional browser proof-of-work client, extracted from `frontends/pow`. The
 final public package must contain **no** CeleraTax/Panzerotti branding. It
-must match `dd-pow-core` challenge/solution vectors exactly.
+must match `datadeft-pow-core` challenge/solution vectors exactly.
 
 ## Email templates and branding
 
@@ -142,7 +145,7 @@ The service crate models email as **data/traits**, for example:
 - text body
 - optional HTML body
 
-If `dd-magic-link-aws` includes an SES sender, it sends **app-provided
+If `datadeft-magic-link-aws` includes an SES sender, it sends **app-provided
 message content**. It must not bake in CeleraTax copy, logos, domains,
 colors, or URLs.
 
@@ -188,35 +191,45 @@ the core crates are not direct dependencies:
 
 ```toml
 [dependencies]
-dd-magic-link-service = { path = "../datadeft-auth/crates/dd-magic-link-service" }
-dd-magic-link-axum    = { path = "../datadeft-auth/crates/dd-magic-link-axum" }
-dd-magic-link-aws     = { path = "../datadeft-auth/crates/dd-magic-link-aws", features = ["aws"] }
+datadeft-magic-link-service = { path = "../datadeft-auth/crates/datadeft-magic-link-service" }
+datadeft-magic-link-axum    = { path = "../datadeft-auth/crates/datadeft-magic-link-axum" }
+datadeft-magic-link-aws     = { path = "../datadeft-auth/crates/datadeft-magic-link-aws", features = ["aws"] }
 # Optional pre-request admission hardening:
-dd-pow-core           = { path = "../datadeft-auth/crates/dd-pow-core" }
+datadeft-pow-core           = { path = "../datadeft-auth/crates/datadeft-pow-core" }
 ```
 
-For development and tests, `dd-magic-link-aws` **without** the `aws` feature
+For development and tests, `datadeft-magic-link-aws` **without** the `aws` feature
 is SDK-free. It provides `FakeDynamoDbAuthStore` and `FakeMagicLinkOutbox`,
 in-memory implementations of every storage trait that mirror the DynamoDB
 adapter's semantics. For a different backend (for example Postgres), depend on
-`dd-magic-link-service` + `dd-magic-link-axum` and implement the repository
+`datadeft-magic-link-service` + `datadeft-magic-link-axum` and implement the repository
 traits.
 
 The complete integration includes request, scanner-safe landing, confirmation,
 authenticated session, and logout, wired on the shipped fakes. It is
 [`examples/axum-magic-link`](examples/axum-magic-link/src/main.rs). Start
-there. A compiling quickstart also lives in the `dd-magic-link-axum` crate
+there. A compiling quickstart also lives in the `datadeft-magic-link-axum` crate
 docs.
 
-## Local development
-
-Start with local path dependencies, not git or crates.io.
-
-Later, private-git consumption should pin exact commits or tags:
+## Install from registries
 
 ```toml
-dd-pow-core = { git = "ssh://git@github.com/datadeft/datadeft-auth.git", package = "dd-pow-core", rev = "<commit-sha>" }
+[dependencies]
+datadeft-pow-core = "0.2"
+# Optional HTTP integration:
+datadeft-pow-axum = "0.2"
 ```
+
+```sh
+bun add @datadeft/protect-client
+```
+
+Rust requires 1.88 or newer. Applications no longer need git credentials or
+vendored client sources. Use the [integration guide](docs/integration.md) for
+magic-link dependencies and the [migration note](docs/migration-registries.md)
+for the crate/import renames and configurable clock skew.
+
+For library development, local `path` dependencies remain supported.
 
 ## Repository tasks
 
@@ -255,4 +268,5 @@ status and MVP IDs in `docs/onboarding.md`.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE), at your option.
+The dual-license proposal needs Istvan's sign-off before the first publish.

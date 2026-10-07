@@ -1,12 +1,12 @@
 [package]
 name = "axum-magic-link"
-description = "Example app wiring dd-magic-link-service with an Axum router."
+publish = false
+description = "Example app wiring datadeft-magic-link-service with an Axum router."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish.workspace = true
 authors.workspace = true
 
 [lints]
@@ -20,12 +20,12 @@ path = "src/main.rs"
 axum = "0.8"
 # The minimal consumer dependency set: the service crate re-exports the keyring
 # and lookup-key types, the axum crate owns HTTP, and the aws crate's default
-# (SDK-free) build provides the in-memory fakes. dd-pow-core is optional
+# (SDK-free) build provides the in-memory fakes. datadeft-pow-core is optional
 # admission hardening.
-dd-magic-link-aws = { path = "../../crates/dd-magic-link-aws" }
-dd-magic-link-axum = { path = "../../crates/dd-magic-link-axum" }
-dd-magic-link-service = { path = "../../crates/dd-magic-link-service" }
-dd-pow-core = { path = "../../crates/dd-pow-core" }
+datadeft-magic-link-aws = { path = "../../crates/datadeft-magic-link-aws", version = "0.2.1" } # x-release-please-version
+datadeft-magic-link-axum = { path = "../../crates/datadeft-magic-link-axum", version = "0.2.1" } # x-release-please-version
+datadeft-magic-link-service = { path = "../../crates/datadeft-magic-link-service", version = "0.2.1" } # x-release-please-version
+datadeft-pow-core = { path = "../../crates/datadeft-pow-core", version = "0.2.1" } # x-release-please-version
 rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

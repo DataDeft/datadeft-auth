@@ -40,11 +40,11 @@ Before editing Rust code, read:
 Allowed dependency graph:
 
 ```text
-dd-auth-token-core      -> (no workspace crates)
-dd-magic-link-core     -> dd-auth-token-core
-dd-magic-link-service  -> dd-magic-link-core, dd-auth-token-core
-dd-magic-link-axum     -> dd-magic-link-service
-dd-magic-link-aws      -> dd-magic-link-service
+datadeft-auth-token-core      -> (no workspace crates)
+datadeft-magic-link-core     -> datadeft-auth-token-core
+datadeft-magic-link-service  -> datadeft-magic-link-core, datadeft-auth-token-core
+datadeft-magic-link-axum     -> datadeft-magic-link-service
+datadeft-magic-link-aws      -> datadeft-magic-link-service
 examples/*             -> adapter and service crates as needed
 ```
 

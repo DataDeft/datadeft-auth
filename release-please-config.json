@@ -1,0 +1,61 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "component": "datadeft-auth",
+      "include-component-in-tag": false,
+      "bump-minor-pre-major": false,
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "Cargo.toml"
+        },
+        {
+          "type": "generic",
+          "path": "crates/datadeft-auth-token-core/Cargo.toml"
+        },
+        {
+          "type": "generic",
+          "path": "crates/datadeft-magic-link-aws/Cargo.toml"
+        },
+        {
+          "type": "generic",
+          "path": "crates/datadeft-magic-link-axum/Cargo.toml"
+        },
+        {
+          "type": "generic",
+          "path": "crates/datadeft-magic-link-core/Cargo.toml"
+        },
+        {
+          "type": "generic",
+          "path": "crates/datadeft-magic-link-service/Cargo.toml"
+        },
+        {
+          "type": "generic",
+          "path": "crates/datadeft-pow-axum/Cargo.toml"
+        },
+        {
+          "type": "generic",
+          "path": "crates/datadeft-pow-core/Cargo.toml"
+        },
+        {
+          "type": "generic",
+          "path": "examples/axum-magic-link/Cargo.toml"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.lock",
+          "jsonpath": "$.package[?(!@.source)].version"
+        },
+        "packages/dd-protect-client/package.json",
+        {
+          "type": "json",
+          "path": "bun.lock",
+          "jsonpath": "$.workspaces[\"packages/dd-protect-client\"].version"
+        }
+      ]
+    }
+  }
+}

@@ -3,7 +3,13 @@ bun = "latest"
 
 [tasks.install]
 description = "Install JS dev dependencies"
-run = "bun install"
+dir = "../.."
+run = "bun install --frozen-lockfile --ignore-scripts"
+
+[tasks.lock]
+description = "Update the workspace Bun lockfile after dependency or package metadata changes"
+dir = "../.."
+run = "mise run js-lock"
 
 [tasks.lint]
 description = "Lint TypeScript with ESLint (security plugin)"
@@ -17,6 +23,15 @@ run = "bun run typecheck"
 description = "Run unit and worker integration tests"
 run = "bun test ts/"
 
+[tasks.build]
+description = "Build ESM and declarations, and copy the workspace license texts"
+run = "bun run build"
+
+[tasks.pack-check]
+description = "Inspect npm dry-run and test an installed tarball with real workers"
+depends = ["build"]
+run = "bun run test:package"
+
 [tasks.verify]
-description = "Full gate: lint, type-check, test"
-depends = ["lint", "typecheck", "test"]
+description = "Full gate: lint, type-check, test, build, and packed consumer checks"
+depends = ["lint", "typecheck", "test", "pack-check"]

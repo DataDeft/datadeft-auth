@@ -20,3 +20,4 @@ jobs:
       # token-core-guard, ts-verify, and spec in parallel, and installs the
       # tools it needs (bun, cargo-deny, tla-checker). See mise.toml.
       - run: mise run verify
+      - run: mise run package-crates

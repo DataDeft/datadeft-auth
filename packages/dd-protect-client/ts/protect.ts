@@ -1,9 +1,9 @@
-// protect.ts: dd-protect-client
+// protect.ts: @datadeft/protect-client
 //
 // One function for proof-of-work admission. No UI code, no hardcoded routes.
 //
 // Usage:
-//   import { protect, ProtectError } from "dd-protect-client";
+//   import { protect, ProtectError } from "@datadeft/protect-client";
 //
 //   try {
 //     await protect({
@@ -53,8 +53,8 @@ export class ProtectError extends Error {
 /** Settings for one admission attempt. */
 export interface ProtectConfig {
     /**
-     * URL of the built worker script the app serves. Pass a string path, or a
-     * bundler-resolved `new URL("dd-protect-client/worker", import.meta.url)`.
+     * URL of the ESM worker script the app serves. Pass a string path or a
+     * URL resolved by the consuming application's bundler.
      */
     workerUrl: string | URL;
     /** POST endpoint that mints a challenge (`pow/create`). */
@@ -139,7 +139,7 @@ function solve(
 
         for (let i = 0; i < workerCount; i++) {
             try {
-                const worker = new Worker(workerUrl);
+                const worker = new Worker(workerUrl, { type: "module" });
                 workers.push(worker);
 
                 worker.onmessage = (event: MessageEvent<WorkerMessage>) => {

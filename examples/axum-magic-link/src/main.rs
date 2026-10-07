@@ -1,6 +1,6 @@
-//! Local Axum example wiring `dd-magic-link-service`, `dd-magic-link-axum`,
-//! the in-memory fakes from `dd-magic-link-aws` (default, SDK-free build), and
-//! `dd-pow-core` together.
+//! Local Axum example wiring `datadeft-magic-link-service`, `datadeft-magic-link-axum`,
+//! the in-memory fakes from `datadeft-magic-link-aws` (default, SDK-free build), and
+//! `datadeft-pow-core` together.
 //!
 //! This binary is intentionally local-development only. It uses the
 //! crate-shipped in-memory fakes for storage/rate limiting/outbox, generates
@@ -23,20 +23,22 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use dd_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
-use dd_magic_link_axum::{
+use datadeft_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
+use datadeft_magic_link_axum::{
     APPLICATION_JSON, ConfirmCookieConfig, MagicLinkFlowResponseError, MagicLinkHttpError,
     MagicLinkRequestJson, MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect,
     SessionCookieConfig, apply_magic_link_security_headers, authenticate_session,
     clear_confirm_cookie_header, clear_session_cookie_header, generic_accepted_response,
     guarded_body, magic_link_confirmation, magic_link_landing, viewer_country_from,
 };
-use dd_magic_link_service::{
+use datadeft_magic_link_service::{
     Clock, DependencyError, KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey,
     MagicLinkConfirmCookie, MagicLinkFlowService, MagicLinkRequestService, MagicLinkServiceConfig,
     RootSecret, SessionCookie, validate_session,
 };
-use dd_pow_core::{Challenge, PowSecret, Solution, UnixMillis, mint_challenge, verify_solution};
+use datadeft_pow_core::{
+    Challenge, PowSecret, Solution, UnixMillis, mint_challenge, verify_solution,
+};
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
@@ -456,8 +458,8 @@ async fn dev_latest_magic_link(State(state): State<AppState>) -> Response {
 fn verify_pow_solution(
     state: &AppState,
     body: PowSolutionJson,
-) -> Result<(), dd_pow_core::PowError> {
-    let now = current_unix_millis().map_err(|_| dd_pow_core::PowError::InvalidTimestamp)?;
+) -> Result<(), datadeft_pow_core::PowError> {
+    let now = current_unix_millis().map_err(|_| datadeft_pow_core::PowError::InvalidTimestamp)?;
     let verified = verify_solution(
         &state.pow_secret,
         &body.into_solution(),
@@ -469,9 +471,9 @@ fn verify_pow_solution(
     let now_unix = now.as_secs();
     let expires_at_unix = now_unix
         .checked_add(POW_CHALLENGE_TTL_SECS)
-        .ok_or(dd_pow_core::PowError::InvalidTimestamp)?;
+        .ok_or(datadeft_pow_core::PowError::InvalidTimestamp)?;
     consume_pow_tid(&state.pow_replay, &verified.tid, now_unix, expires_at_unix)
-        .map_err(|_| dd_pow_core::PowError::InvalidSolution)?;
+        .map_err(|_| datadeft_pow_core::PowError::InvalidSolution)?;
     Ok(())
 }
 

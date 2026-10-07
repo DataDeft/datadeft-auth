@@ -12,15 +12,18 @@
 
 | Library | Purpose |
 | --- | --- |
-| `dd-pow-core` | Pure proof-of-work challenge mint and verify code. |
-| `dd-auth-token-core` | Token, keyring, session, and cookie primitives. |
-| `dd-magic-link-core` | Magic-link token and HMAC primitives. |
-| `dd-magic-link-service` | Request, confirmation, session, and repository logic. |
-| `dd-magic-link-axum` | Optional Axum HTTP helpers. |
-| `dd-magic-link-aws` | Optional DynamoDB and SES adapters. |
+| `datadeft-pow-core` | Pure proof-of-work challenge mint and verify code. |
+| `datadeft-auth-token-core` | Token, keyring, session, and cookie primitives. |
+| `datadeft-magic-link-core` | Magic-link token and HMAC primitives. |
+| `datadeft-magic-link-service` | Request, confirmation, session, and repository logic. |
+| `datadeft-magic-link-axum` | Optional Axum HTTP helpers. |
+| `datadeft-magic-link-aws` | Optional DynamoDB and SES adapters. |
 | `dd-protect-client` | Browser PoW client. |
 
 ## Contributor documents
 
 - [Rust standards](rust-standards.md)
 - [Operating model](operating.md)
+
+- [Registry release runbook](releasing.md)
+- [Registry migration](migration-registries.md)

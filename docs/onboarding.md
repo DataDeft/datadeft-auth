@@ -11,7 +11,7 @@
 | In-memory fakes | Ready for tests | Use `FakeDynamoDbAuthStore` and `FakeMagicLinkOutbox`. |
 | DynamoDB and SES | Ready for test deployment | Provision table, IAM, TTL, encryption, SES identity, and live tests. |
 | Session validation | Ready | Validate protected requests. Revoke server state on logout. |
-| PoW Rust admission | Ready | Wire the `dd-pow-axum` challenge and validate glue into your routes. Build the browser path. |
+| PoW Rust admission | Ready | Wire the `datadeft-pow-axum` challenge and validate glue into your routes. Build the browser path. |
 | Browser PoW client | Ready | Serve the built worker and call `protect()` from your login page. |
 | Country-aware PoW | Not ready | Build upstream policy. Never lower below the floor. |
 | Example app | Ready | Start with `examples/axum-magic-link`. |
@@ -63,9 +63,9 @@ PoW is optional app admission. Complete the PoW backlog before you require PoW.
 | MVP-005 | P1 | Done | Trait futures require `+ Send`, static dispatch only (no `dyn`). |
 | MVP-006 | P1 | Decided | Inline SES delivery accepted. Implement the `MagicLinkOutbox` trait against a durable queue only if a deployment needs it. |
 | MVP-007 | P1 | Decided | Store the normalized email at rest, protected by DynamoDB KMS and IAM. No app-side field encryption. |
-| MVP-010 | PoW | Done | `dd-protect-client` ships the worker and client, vector-tested against `dd-pow-core`. |
-| MVP-011 | PoW | Ready | Wire the `dd-pow-axum` challenge and validate glue into routes. |
-| MVP-012 | PoW | Done | Ship the `dd_pow` proof cookie (`dd-pow-core`, `dd-pow-axum`). Stateless, reusable within its TTL. |
+| MVP-010 | PoW | Done | `dd-protect-client` ships the worker and client, vector-tested against `datadeft-pow-core`. |
+| MVP-011 | PoW | Ready | Wire the `datadeft-pow-axum` challenge and validate glue into routes. |
+| MVP-012 | PoW | Done | Ship the `dd_pow` proof cookie (`datadeft-pow-core`, `datadeft-pow-axum`). Stateless, reusable within its TTL. |
 | MVP-013 | PoW | Not ready | Define trusted country source and difficulty policy. |
 | MVP-014 | P1 | Done | Keep session country as an opportunistic lock. |
 | MVP-020 | Assurance | Done | TLA+ safety models gated in CI (`formal-spec` job, `mise run spec`). Fairness-based liveness needs a checker with `WF` support. |

@@ -1,0 +1,27 @@
+[package]
+name = "datadeft-magic-link-core"
+description = "IO-free magic-link token grammar and auth primitives."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["authentication", "security", "passwordless"]
+include = ["src/**", "tests/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[lints]
+workspace = true
+
+[dependencies]
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.2.1" } # x-release-please-version
+hex = "0.4"
+hmac = "0.12"
+rand_core = "0.6"
+sha2 = "0.10"
+subtle = "2"
+zeroize = { version = "1", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.2.1", features = ["test-support"] } # x-release-please-version

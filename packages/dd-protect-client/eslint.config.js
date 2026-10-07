@@ -22,4 +22,14 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ["scripts/**/*.ts", "scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.browser,
+        Bun: "readonly",
+      },
+    },
+  },
 );

@@ -1,30 +1,35 @@
-# dd-protect-client
+# @datadeft/protect-client
 
-Optional browser proof-of-work client for [`dd-pow-core`](../../crates/dd-pow-core).
+Optional browser proof-of-work client for
+[`datadeft-pow-core`](https://crates.io/crates/datadeft-pow-core).
 It mints a challenge, solves it in Web Workers, and posts the solution. On
-success the server sets the `dd_pow` proof cookie. The solver matches the
-`dd-pow-core` wire contract exactly (`SHA-256(challenge + nonce)`, lowercase
-hex, `difficulty` leading zero hex characters, decimal nonce), so the two are
-interoperable by construction.
+success the server sets the `dd_pow` proof cookie. The solver uses
+`SHA-256(challenge + nonce)`, lowercase hex, `difficulty` leading zero hex
+characters, and a decimal nonce, matching the Rust wire contract.
 
-De-branded: no CeleraTax/Panzerotti naming, copy, or hardcoded routes. Zero
-runtime dependencies: only browser built-ins (`fetch`, `Worker`,
-`crypto.subtle`).
+Zero runtime or peer dependencies. The package uses browser built-ins
+(`fetch`, module `Worker`, and `crypto.subtle`) and requires a secure browser
+context (HTTPS, or localhost during development).
 
-## Distribution
+## Install
 
-Shipped as **TypeScript source**, not a built bundle. The consuming app's build
-(Bun, Vite, esbuild, …) compiles it. Types come straight from the source, so
-there is no `dist/` and no generated `.d.ts`.
+```sh
+bun add @datadeft/protect-client
+```
+
+The npm archive contains ESM JavaScript and TypeScript declarations in `dist/`.
+Consumers do not need TypeScript to execute it, a repository checkout, or install
+scripts. The main export is `@datadeft/protect-client`; the separate
+`@datadeft/protect-client/worker` export initializes the Web Worker.
 
 ## Usage
 
 ```ts
-import { protect, ProtectError } from "dd-protect-client";
+import { protect, ProtectError } from "@datadeft/protect-client";
 
 try {
   await protect({
-    workerUrl: "/pow-worker.js", // the built worker the app serves (see below)
+    workerUrl: "/pow-worker.js",
     createUrl: "/api/v1/session/pow/create",
     validateUrl: "/api/v1/session/pow/validate",
   });
@@ -34,7 +39,7 @@ try {
     switch (e.code) {
       case "network": // offline, DNS, or CORS
       case "timeout": // request or solve exceeded its limit
-      case "server":  // non-2xx from the admission API. See e.status
+      case "server":  // non-2xx from the admission API; see e.status
       case "solve":   // worker crash, CSP block, or nonce exhaustion
     }
   }
@@ -43,41 +48,66 @@ try {
 
 `createUrl` and `validateUrl` are required: the library never hardcodes routes.
 Optional knobs: `workerCount` (default `navigator.hardwareConcurrency`),
-`solveTimeoutMs` (default 30000), `fetchTimeoutMs` (default 10000).
+`solveTimeoutMs` (default 30000), and `fetchTimeoutMs` (default 10000).
 
-## The worker: you build it, you serve it
+## Serve the worker
 
-Web Workers load from a URL, so the worker cannot be bundled into the client
-the way a normal import is. The app builds `dd-protect-client/worker` into a
-served static file and passes its path as `workerUrl`. Two ways:
-
-**Static asset (explicit, CSP-friendly):**
-
-```sh
-bun build node_modules/dd-protect-client/ts/protect-worker.ts \
-  --outfile public/pow-worker.js --target browser
-```
-
-then `protect({ workerUrl: "/pow-worker.js", ... })`.
-
-**Bundler-native:** most bundlers emit the worker for you from a URL:
+Create an application entry file, for example `src/pow-worker.ts`:
 
 ```ts
-const workerUrl = new URL("dd-protect-client/worker", import.meta.url);
-await protect({ workerUrl, createUrl, validateUrl });
+import "@datadeft/protect-client/worker";
 ```
 
-`workerUrl` accepts a `string` or a `URL`, so both models work.
+Build that entry into your application's static assets:
+
+```sh
+bun build ./src/pow-worker.ts --outfile ./public/pow-worker.js --target browser --format esm
+```
+
+Pass the served same-origin URL (`/pow-worker.js` in this example) to `protect`.
+The client starts it with `{ type: "module" }`. The package marks the worker as
+having side effects so bundlers preserve its message handlers when importing it
+this way. Do not import the worker into your application's main thread.
+
+If your bundler has a worker URL asset feature, use that feature to build the
+same entry and pass its emitted URL. A bare package name in `new URL(...)` is
+not a portable browser package resolver. `workerUrl` accepts either a `string`
+or a `URL`. Serve the worker with a JavaScript content type and allow its URL
+in your application's `worker-src` CSP directive.
+
+## Migration from the source package
+
+Replace imports from `dd-protect-client` or a vendored copy with
+`@datadeft/protect-client`, remove the vendored files, and build the worker entry
+above. Replace any `node_modules/dd-protect-client/ts/protect-worker.ts` build
+paths with the public `@datadeft/protect-client/worker` export. The proof-of-work
+wire format and the `protect` / `ProtectError` API remain the same.
 
 ## Development
 
+From the repository root:
+
 ```sh
-bun install
-bun run lint        # ESLint + eslint-plugin-security
-bun run typecheck   # tsc: client (DOM) and worker (WebWorker) checked separately
-bun test            # unit tests + real worker integration tests
+mise run ts-verify
 ```
 
-Or `mise run verify` for all three. The worker source (WebWorker lib) and the
-client (DOM lib) type-check under separate tsconfigs to avoid the standard
-`self`/global conflict.
+Or, from this package directory:
+
+```sh
+mise run install
+mise run verify
+```
+
+Verification includes ESLint, separate DOM/worker type checks, unit tests,
+real worker tests, an ESM/declaration build, and `npm pack --dry-run`. It also
+installs a local tarball into an isolated temporary consumer without network
+access or install scripts, checks its declarations without Bun types, and
+executes both the packed worker and a tree-shaken worker bundle. Builds are
+explicit; there are no install, pack, or publish lifecycle hooks.
+
+`mise run build` creates `dist/` and copies the workspace license texts into
+the package. `mise run pack-check` rebuilds and runs the packaging checks.
+
+## License
+
+MIT OR Apache-2.0. Both license texts are included in the npm archive.

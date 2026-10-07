@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1300" height="760" viewBox="0 0 1300 760" role="img" aria-labelledby="title desc">
   <title id="title">Proof-of-work admission sequence</title>
-  <desc id="desc">The consuming application chooses a difficulty that never falls below production or country policy floors, mints an authenticated challenge with dd-pow-core, receives a browser solution, verifies it, and applies an application-owned replay and admission policy. The browser client and HTTP integration are planned.</desc>
+  <desc id="desc">The consuming application chooses a difficulty that never falls below production or country policy floors, mints an authenticated challenge with datadeft-pow-core, receives a browser solution, verifies it, and applies an application-owned replay and admission policy. The browser client and HTTP integration are planned.</desc>
   <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker><style>.title{font:700 24px system-ui,sans-serif;fill:#0f172a}.head{font:700 15px system-ui,sans-serif;fill:#0f172a}.text{font:13px system-ui,sans-serif;fill:#334155}.note{font:12px system-ui,sans-serif;fill:#92400e}.box{stroke:#334155;stroke-width:2;rx:8}.implemented{fill:#dcfce7}.planned{fill:#fef3c7;stroke-dasharray:8 5}.external{fill:#dbeafe}.life{stroke:#94a3b8;stroke-width:2;stroke-dasharray:6 5}.msg{stroke:#334155;stroke-width:2;marker-end:url(#arrow)}.return{stroke:#2563eb;stroke-width:2;stroke-dasharray:6 4;marker-end:url(#arrow)}.phase{fill:#f8fafc;stroke:#cbd5e1;rx:8}</style></defs>
   <text x="35" y="38" class="title">Independent PoW admission with monotonic country difficulty</text>
   <rect x="30" y="65" width="165" height="52" class="box planned"/><text x="112" y="87" text-anchor="middle" class="head">Browser solver</text><text x="112" y="106" text-anchor="middle" class="note">planned package</text>
   <rect x="260" y="65" width="205" height="52" class="box external"/><text x="362" y="87" text-anchor="middle" class="head">App / edge</text><text x="362" y="106" text-anchor="middle" class="text">owns admission</text>
   <rect x="535" y="65" width="210" height="52" class="box planned"/><text x="640" y="87" text-anchor="middle" class="head">Country policy</text><text x="640" y="106" text-anchor="middle" class="note">target, not implemented</text>
-  <rect x="820" y="65" width="200" height="52" class="box implemented"/><text x="920" y="87" text-anchor="middle" class="head">dd-pow-core</text><text x="920" y="106" text-anchor="middle" class="text">implemented</text>
+  <rect x="820" y="65" width="200" height="52" class="box implemented"/><text x="920" y="87" text-anchor="middle" class="head">datadeft-pow-core</text><text x="920" y="106" text-anchor="middle" class="text">implemented</text>
   <rect x="1085" y="65" width="180" height="52" class="box planned"/><text x="1175" y="87" text-anchor="middle" class="head">Replay store</text><text x="1175" y="106" text-anchor="middle" class="note">application-owned</text>
   <g><line x1="112" y1="117" x2="112" y2="720" class="life"/><line x1="362" y1="117" x2="362" y2="720" class="life"/><line x1="640" y1="117" x2="640" y2="720" class="life"/><line x1="920" y1="117" x2="920" y2="720" class="life"/><line x1="1175" y1="117" x2="1175" y2="720" class="life"/></g>
 
@@ -26,5 +26,5 @@
   <line x1="362" y1="610" x2="920" y2="610" class="msg"/><text x="641" y="602" text-anchor="middle" class="text">verify tag, freshness, current floor, work</text>
   <line x1="920" y1="645" x2="362" y2="645" class="return"/><text x="641" y="637" text-anchor="middle" class="text">verified non-secret tid</text>
   <line x1="362" y1="675" x2="1175" y2="675" class="msg"/><text x="768" y="667" text-anchor="middle" class="text">consume/check replay budget</text>
-  <text x="362" y="708" class="note">only the application admits the request. dd-pow-core does not authorize magic-link</text>
+  <text x="362" y="708" class="note">only the application admits the request. datadeft-pow-core does not authorize magic-link</text>
 </svg>

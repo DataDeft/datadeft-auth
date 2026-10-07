@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
   <title id="title">Datadeft authentication components and infrastructure</title>
-  <desc id="desc">The browser crosses an untrusted network into the consuming application and edge. Independent proof-of-work admission uses dd-pow-core. Magic-link HTTP helpers call the service and core crates, which use DynamoDB, SES, and externally loaded secrets.</desc>
+  <desc id="desc">The browser crosses an untrusted network into the consuming application and edge. Independent proof-of-work admission uses datadeft-pow-core. Magic-link HTTP helpers call the service and core crates, which use DynamoDB, SES, and externally loaded secrets.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#334155"/></marker>
     <style>
@@ -13,11 +13,11 @@
   <rect x="245" y="65" width="305" height="545" class="boundary"/><text x="260" y="88" class="boundaryLabel">CONSUMING APPLICATION / EDGE</text>
   <rect x="275" y="115" width="245" height="95" class="box external"/><text x="397" y="145" text-anchor="middle" class="label">Router + edge policy</text><text x="397" y="168" text-anchor="middle" class="small">TLS, trusted geo/IP, logs</text><text x="397" y="189" text-anchor="middle" class="small">templates, redirects, secrets</text>
   <rect x="275" y="250" width="245" height="90" class="box planned"/><text x="397" y="280" text-anchor="middle" class="label">PoW admission</text><text x="397" y="303" text-anchor="middle" class="small">endpoint, policy, replay</text><text x="397" y="324" text-anchor="middle" class="small">planned integration</text>
-  <rect x="275" y="390" width="245" height="90" class="box implemented"/><text x="397" y="420" text-anchor="middle" class="label">dd-magic-link-axum</text><text x="397" y="443" text-anchor="middle" class="small">bounds, Origin, cookies</text><text x="397" y="464" text-anchor="middle" class="small">implemented</text>
+  <rect x="275" y="390" width="245" height="90" class="box implemented"/><text x="397" y="420" text-anchor="middle" class="label">datadeft-magic-link-axum</text><text x="397" y="443" text-anchor="middle" class="small">bounds, Origin, cookies</text><text x="397" y="464" text-anchor="middle" class="small">implemented</text>
   <rect x="275" y="520" width="245" height="65" class="box planned"/><text x="397" y="548" text-anchor="middle" class="label">dd-protect-client</text><text x="397" y="570" text-anchor="middle" class="small">browser solver: planned</text>
 
-  <rect x="610" y="105" width="245" height="90" class="box implemented"/><text x="732" y="136" text-anchor="middle" class="label">dd-pow-core</text><text x="732" y="160" text-anchor="middle" class="small">pure mint + verify</text><text x="732" y="181" text-anchor="middle" class="small">implemented</text>
-  <rect x="610" y="245" width="245" height="90" class="box implemented"/><text x="732" y="276" text-anchor="middle" class="label">dd-magic-link-service</text><text x="732" y="300" text-anchor="middle" class="small">request, confirm, session</text><text x="732" y="321" text-anchor="middle" class="small">implemented</text>
+  <rect x="610" y="105" width="245" height="90" class="box implemented"/><text x="732" y="136" text-anchor="middle" class="label">datadeft-pow-core</text><text x="732" y="160" text-anchor="middle" class="small">pure mint + verify</text><text x="732" y="181" text-anchor="middle" class="small">implemented</text>
+  <rect x="610" y="245" width="245" height="90" class="box implemented"/><text x="732" y="276" text-anchor="middle" class="label">datadeft-magic-link-service</text><text x="732" y="300" text-anchor="middle" class="small">request, confirm, session</text><text x="732" y="321" text-anchor="middle" class="small">implemented</text>
   <rect x="610" y="385" width="245" height="95" class="box implemented"/><text x="732" y="416" text-anchor="middle" class="label">Core cryptography</text><text x="732" y="440" text-anchor="middle" class="small">magic-link + auth-token</text><text x="732" y="461" text-anchor="middle" class="small">IO-free, implemented</text>
 
   <rect x="930" y="90" width="220" height="80" class="box infra"/><text x="1040" y="122" text-anchor="middle" class="label">Secret manager</text><text x="1040" y="146" text-anchor="middle" class="small">loaded by application</text>
