@@ -315,7 +315,8 @@ async fn fake_scanner_confirmation_rejects_second_use() {
     assert_eq!(store.session_count().expect("sessions"), 1);
 }
 
-#[tokio::test]
+// Multi-threaded so the racing confirmations really run in parallel.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn shared_fake_end_to_end_confirmation_race_has_one_session_and_generic_losers() {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
     let outbox = crate::FakeMagicLinkOutbox::default();
@@ -916,7 +917,8 @@ async fn aggregate_attempt_id_is_exact_payload_idempotency_key() {
     );
 }
 
-#[tokio::test]
+// Multi-threaded so the racing confirmations really run in parallel.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn aggregate_replay_race_has_exactly_one_commit() {
     let user_id = UserId::parse(USER_ID).expect("user id");
     let (store, record, base_command) = authentication_fixture(

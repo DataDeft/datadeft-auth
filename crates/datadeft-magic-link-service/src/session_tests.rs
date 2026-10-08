@@ -566,3 +566,80 @@ async fn country_locked_sessions_require_the_same_trusted_country() {
     // three successful validations above reached the repository.
     assert_eq!(sessions.find_calls.get(), 3);
 }
+
+/// Keyring after a session-key rotation: a new active key plus the previous
+/// key kept verify-only until `verify_until_unix`.
+fn rotated_keyring(verify_until_unix: u64) -> KeyRing<SessionCookie> {
+    use datadeft_auth_token_core::keyring::{KeyId, KeySlot, RootSecret};
+    let new_kid = KeyId::parse("session-new").expect("kid");
+    let old_kid = KeyId::parse("session-active").expect("kid");
+    let new_key = RootSecret::new([0x52; 32])
+        .derive_key::<SessionCookie>(&new_kid)
+        .expect("new key");
+    let old_key = RootSecret::new([0x51; 32])
+        .derive_key::<SessionCookie>(&old_kid)
+        .expect("old key");
+    KeyRing::new(vec![
+        KeySlot::active_with_windows(
+            new_kid,
+            new_key,
+            10_000,
+            10_000 + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
+        ),
+        KeySlot::verify_only(old_kid, old_key, verify_until_unix),
+    ])
+    .expect("rotated keyring")
+}
+
+#[tokio::test]
+async fn session_minted_before_rotation_validates_with_verify_only_key() {
+    let cookie = cookie(&keyring(), 900, 800, None);
+    let sessions = TestSessions::with_record(record(800));
+    let clock = TestClock::at(900);
+
+    validate_session(
+        &cookie,
+        None,
+        &rotated_keyring(1_000),
+        &sessions,
+        &clock,
+        &config(),
+    )
+    .await
+    .expect("pre-rotation session still validates");
+    assert_eq!(sessions.find_calls.get(), 1);
+}
+
+#[tokio::test]
+async fn session_under_retired_or_unknown_key_is_rejected_before_lookup() {
+    let cookie = cookie(&keyring(), 900, 800, None);
+    let sessions = TestSessions::with_record(record(800));
+    let clock = TestClock::at(900);
+
+    // Verify-only window already closed: the old key is retired.
+    assert!(
+        validate_session(
+            &cookie,
+            None,
+            &rotated_keyring(899),
+            &sessions,
+            &clock,
+            &config()
+        )
+        .await
+        .is_err()
+    );
+    // Old key removed entirely: unknown kid.
+    let unknown = test_keyring_with_windows::<SessionCookie>(
+        0x52,
+        "session-new",
+        10_000,
+        10_000 + SessionCookie::MAX_ABSOLUTE_AGE_SECS,
+    );
+    assert!(
+        validate_session(&cookie, None, &unknown, &sessions, &clock, &config())
+            .await
+            .is_err()
+    );
+    assert_eq!(sessions.find_calls.get(), 0);
+}

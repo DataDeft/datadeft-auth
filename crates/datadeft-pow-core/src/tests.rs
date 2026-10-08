@@ -1077,3 +1077,36 @@ proptest! {
         );
     }
 }
+
+/// Non-canonical hex: uppercase spellings of otherwise valid `chg`, `tag`,
+/// and `sol` are rejected rather than normalized.
+#[test]
+fn uppercase_hex_fields_are_rejected() {
+    let valid = solved_solution(1);
+    verify_solution(&secret(), &valid, at(TIM_UNIX), MAX_AGE, 1).expect("valid solution");
+
+    let mut chg = valid.clone();
+    chg.chg = chg.chg.to_ascii_uppercase();
+    let mut tag = valid.clone();
+    tag.tag = tag.tag.to_ascii_uppercase();
+    let mut sol = valid.clone();
+    sol.sol = sol.sol.to_ascii_uppercase();
+    for solution in [chg, tag, sol] {
+        assert!(
+            verify_solution(&secret(), &solution, at(TIM_UNIX), MAX_AGE, 1).is_err(),
+            "uppercase hex must not verify"
+        );
+    }
+}
+
+/// Fresh entropy always yields a fresh challenge id; the mint is otherwise
+/// deterministic.
+#[test]
+fn distinct_entropy_mints_distinct_challenges() {
+    let first = mint_challenge(&secret(), 1, at(TIM_UNIX), [0x01; 16]).expect("mint");
+    let second = mint_challenge(&secret(), 1, at(TIM_UNIX), [0x02; 16]).expect("mint");
+    let repeat = mint_challenge(&secret(), 1, at(TIM_UNIX), [0x01; 16]).expect("mint");
+    assert_ne!(first.chg, second.chg);
+    assert_ne!(first.tag, second.tag);
+    assert_eq!(first, repeat);
+}

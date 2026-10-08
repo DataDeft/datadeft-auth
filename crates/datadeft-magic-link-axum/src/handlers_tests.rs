@@ -435,3 +435,41 @@ fn security_headers_keep_form_posts_same_origin_and_tokens_out_of_referer() {
     assert!(csp.contains("form-action 'self'"));
     assert!(csp.contains("frame-ancestors 'none'"));
 }
+
+/// Checklist item 30: a rejected landing and every public error body stay
+/// free of token material, even when the request carried a well-formed token.
+#[tokio::test]
+async fn rejected_landing_and_error_bodies_never_reflect_the_token() {
+    let token = "mlv1.000102030405060708090a0b0c0d0e0f.101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f";
+    let config = scanner_config();
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/auth/magic-link?token={token}"))
+        .body(Body::empty())
+        .expect("request");
+    let error = magic_link_landing(request, &config, |_command| async {
+        Err(fixture_flow_error(FixtureFlowError::Internal).await)
+    })
+    .await
+    .err()
+    .expect("landing rejected");
+    assert!(!format!("{error:?}").contains("mlv1"));
+
+    for http_error in [
+        MagicLinkHttpError::BadRequest,
+        MagicLinkHttpError::Forbidden,
+        MagicLinkHttpError::UnsupportedMediaType,
+        MagicLinkHttpError::PayloadTooLarge,
+        MagicLinkHttpError::MagicLinkUnavailable,
+        MagicLinkHttpError::Unavailable,
+        MagicLinkHttpError::Internal,
+    ] {
+        let response = axum::response::IntoResponse::into_response(http_error);
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .expect("body");
+        let body = String::from_utf8(body.to_vec()).expect("utf8");
+        assert!(!body.contains("mlv1"), "{body}");
+        assert!(!body.contains("000102030405060708090a0b0c0d0e0f"), "{body}");
+    }
+}

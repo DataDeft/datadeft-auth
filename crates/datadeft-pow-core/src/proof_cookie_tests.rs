@@ -313,3 +313,77 @@ fn value_debug_is_redacted() {
     .expect("parses");
     assert_eq!(format!("{verified:?}"), "VerifiedPowProof(..)");
 }
+
+/// Keyring after a proof-cookie key rotation: new active key plus the
+/// previous `KID` kept verify-only until `verify_until_unix`.
+fn rotated_keyring(
+    verify_until_unix: u64,
+) -> datadeft_auth_token_core::keyring::KeyRing<PowProofCookie> {
+    use datadeft_auth_token_core::keyring::{KeyId, KeyRing, KeySlot, RootSecret};
+    let new_kid = KeyId::parse("test-next").expect("kid");
+    let old_kid = KeyId::parse(KID).expect("kid");
+    let new_key = RootSecret::new([0x12; 32])
+        .derive_key::<PowProofCookie>(&new_kid)
+        .expect("new key");
+    let old_key = RootSecret::new([0x11; 32])
+        .derive_key::<PowProofCookie>(&old_kid)
+        .expect("old key");
+    KeyRing::new(vec![
+        KeySlot::active(new_kid, new_key),
+        KeySlot::verify_only(old_kid, old_key, verify_until_unix),
+    ])
+    .expect("rotated keyring")
+}
+
+#[test]
+fn proof_cookie_survives_rotation_while_previous_key_is_verify_only() {
+    let mut rng = PerCallRng::starting_at(0xa0);
+    let cookie =
+        mint_pow_proof_cookie(&test_tid(), None, &keyring(), &mut rng, NOW).expect("cookie mints");
+    let rotated = rotated_keyring(NOW + DEFAULT_POW_PROOF_TTL_SECS);
+
+    let verified = verify_pow_proof_cookie(
+        cookie.as_secret_value(),
+        &rotated,
+        NOW + 10,
+        DEFAULT_POW_PROOF_TTL_SECS,
+    )
+    .expect("pre-rotation cookie verifies with the verify-only key");
+    assert_eq!(verified.tid(), test_tid());
+
+    // New cookies mint under the new active kid, never the verify-only one.
+    let fresh = mint_pow_proof_cookie(&test_tid(), None, &rotated, &mut rng, NOW)
+        .expect("fresh cookie mints");
+    assert!(fresh.as_secret_value().starts_with("v1.test-next."));
+}
+
+#[test]
+fn proof_cookie_under_retired_or_unknown_kid_is_rejected() {
+    let mut rng = PerCallRng::starting_at(0xa0);
+    let cookie =
+        mint_pow_proof_cookie(&test_tid(), None, &keyring(), &mut rng, NOW).expect("cookie mints");
+
+    // Verify-only window closed before `now`: retired.
+    assert_eq!(
+        verify_pow_proof_cookie(
+            cookie.as_secret_value(),
+            &rotated_keyring(NOW + 5),
+            NOW + 10,
+            DEFAULT_POW_PROOF_TTL_SECS,
+        )
+        .unwrap_err(),
+        TokenError::InvalidToken
+    );
+    // Previous kid removed from the ring: unknown.
+    let unknown = test_keyring::<PowProofCookie>(0x12, "test-next");
+    assert_eq!(
+        verify_pow_proof_cookie(
+            cookie.as_secret_value(),
+            &unknown,
+            NOW + 10,
+            DEFAULT_POW_PROOF_TTL_SECS,
+        )
+        .unwrap_err(),
+        TokenError::InvalidToken
+    );
+}

@@ -1573,3 +1573,16 @@ fn authentication_commands_and_success_outcomes_redact_sensitive_values() {
     assert!(!debug.contains(command.session_id.as_str()));
     assert!(!debug.contains(selector.as_storage_value()));
 }
+
+/// Entropy table in docs/security.md: session IDs need 256 bits, drawn
+/// fresh for every session.
+#[test]
+fn session_ids_carry_256_bits_of_fresh_entropy() {
+    let mut rng = CountingRng::starting_at(1);
+    let first = generate_session_id(&mut rng).expect("session id");
+    let second = generate_session_id(&mut rng).expect("session id");
+    let hex = first.as_str().strip_prefix("sid_").expect("sid prefix");
+    assert_eq!(hex.len() * 4, 256);
+    assert!(hex.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    assert_ne!(first.as_str(), second.as_str());
+}

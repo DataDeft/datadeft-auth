@@ -500,3 +500,23 @@ fn cookie_token_size_is_bounded_by_confirm_body_cap() {
     assert!(maximum_body >= CONFIRM_BODY_BYTES);
     assert!(maximum_token < branca::MAX_TOKEN_BYTES);
 }
+
+/// Entropy table in docs/security.md: the confirm nonce needs at least 128
+/// bits ("256 when cheap"). Each mint draws a fresh one.
+#[test]
+fn confirm_nonce_meets_entropy_minimum_and_is_fresh_per_mint() {
+    const { assert!(MAGIC_LINK_CONFIRM_NONCE_BYTES * 8 >= 256) };
+    let ring = confirm_ring(0x71, "confirm-active");
+    let first = mint_confirm(&ring, 1_000, 1_300);
+    assert_eq!(
+        first.confirmation().as_value().len(),
+        MAGIC_LINK_CONFIRM_NONCE_BYTES * 2
+    );
+    let mut rng = PerCallRng::starting_at(0xb0);
+    let second =
+        mint_magic_link_confirm(bindings(1_300), &ring, &mut rng, 1_000).expect("second mint");
+    assert_ne!(
+        first.confirmation().as_value(),
+        second.confirmation().as_value()
+    );
+}

@@ -38,4 +38,4 @@ zeroize = { version = "1", default-features = false }
 datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.3.0", features = ["test-support"] } # x-release-please-version
 datadeft-magic-link-core = { path = "../datadeft-magic-link-core", version = "0.3.0" } # x-release-please-version
 rand_core = "0.6"
-tokio = { version = "1", features = ["macros", "rt", "sync"] }
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync"] }
