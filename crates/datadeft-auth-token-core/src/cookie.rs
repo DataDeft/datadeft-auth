@@ -27,6 +27,9 @@
 //! has a smaller [`KeyPurpose::MAX_BODY_BYTES`] application budget. Use
 //! [`max_body_bytes`] to compute the effective body budget for a purpose.
 
+mod freshness;
+mod payload;
+
 use std::fmt;
 
 use rand_core::{CryptoRng, RngCore};
@@ -35,6 +38,9 @@ use zeroize::Zeroize;
 use crate::branca::{self, Jti, Verified};
 use crate::error::TokenError;
 use crate::keyring::{KeyId, KeyPurpose, KeyRing};
+
+use self::freshness::*;
+use self::payload::*;
 
 /// Cookie value version prefix (`v1.{kid}.{token}`).
 pub const TOKEN_VERSION_PREFIX: &str = "v1";
@@ -49,32 +55,6 @@ pub const CLOCK_SKEW_TOLERANCE_SECS: u64 = 60;
 /// absorbs small clock differences between hosts; a larger value is a
 /// misconfiguration (`u64::MAX` would switch the future-date check off).
 pub const MAX_CLOCK_SKEW_SECS: u64 = 300;
-
-/// Reject freshness bounds longer than the purpose's own maximum lifetime
-/// ([`KeyPurpose::MAX_ABSOLUTE_AGE_SECS`]) with the distinct
-/// [`TokenError::InvalidTimestamp`]. A caller typo such as `u64::MAX` must not
-/// make old cookies valid forever.
-fn check_max_age<P: KeyPurpose>(max_age: MaxAge) -> Result<(), TokenError> {
-    if max_age.idle_secs > P::MAX_ABSOLUTE_AGE_SECS
-        || max_age.absolute_secs > P::MAX_ABSOLUTE_AGE_SECS
-    {
-        return Err(TokenError::InvalidTimestamp);
-    }
-    Ok(())
-}
-
-/// Reject a skew above [`MAX_CLOCK_SKEW_SECS`] with the distinct
-/// [`TokenError::InvalidTimestamp`], before any token work, so a
-/// misconfiguration is visible instead of collapsing into `InvalidToken`.
-fn check_clock_skew(clock_skew_secs: u64) -> Result<(), TokenError> {
-    if clock_skew_secs > MAX_CLOCK_SKEW_SECS {
-        return Err(TokenError::InvalidTimestamp);
-    }
-    Ok(())
-}
-
-/// Bound cookie payload version byte (internal binary framing).
-const PAYLOAD_V1: u8 = 1;
 
 /// Freshness bounds every cookie validation MUST supply.
 ///
@@ -394,153 +374,6 @@ pub fn parse_bound_cookie_with_clock_skew<P: KeyPurpose>(
 #[must_use]
 pub fn max_body_bytes<P: KeyPurpose>(kid: &KeyId) -> usize {
     max_body_bytes_for_parts::<P>(P::TOKEN_TYPE, kid.as_str())
-}
-
-fn max_body_bytes_for_parts<P: KeyPurpose>(typ: &str, kid: &str) -> usize {
-    branca::MAX_PAYLOAD_BYTES
-        .min(P::MAX_BODY_BYTES)
-        .saturating_sub(bound_payload_overhead(typ, kid))
-}
-
-fn max_cookie_token_bytes<P: KeyPurpose>(kid: &KeyId) -> usize {
-    branca::max_token_chars_for_payload(
-        bound_payload_overhead(P::TOKEN_TYPE, kid.as_str())
-            .saturating_add(max_body_bytes::<P>(kid)),
-    )
-}
-
-fn bound_payload_overhead(typ: &str, kid: &str) -> usize {
-    1 + 4 + 1 + typ.len() + 1 + kid.len()
-}
-
-fn check_mint_timestamp(
-    timestamp: u32,
-    now_unix: u64,
-    clock_skew_secs: u64,
-) -> Result<(), TokenError> {
-    let timestamp = u64::from(timestamp);
-    if timestamp > now_unix.saturating_add(clock_skew_secs) {
-        return Err(TokenError::InvalidTimestamp);
-    }
-    if now_unix > timestamp.saturating_add(clock_skew_secs) {
-        return Err(TokenError::InvalidTimestamp);
-    }
-    Ok(())
-}
-
-/// Idle-bound freshness on the Branca timestamp (last activity). Returns
-/// [`TokenError::Expired`] internally. Callers funnel it to the generic error.
-fn check_timestamp_fresh(
-    timestamp: u32,
-    now_unix: u64,
-    max_age_secs: u64,
-    clock_skew_secs: u64,
-) -> Result<(), TokenError> {
-    let ts = u64::from(timestamp);
-    if ts > now_unix.saturating_add(clock_skew_secs) {
-        return Err(TokenError::Expired); // future-dated beyond tolerance
-    }
-    if now_unix.saturating_sub(ts) > max_age_secs {
-        return Err(TokenError::Expired); // stale
-    }
-    Ok(())
-}
-
-/// Absolute-bound freshness on `iat` (first issue). `iat` must not postdate the
-/// last-activity timestamp, nor be future-dated beyond tolerance.
-fn check_absolute_fresh(
-    iat: u32,
-    timestamp: u32,
-    now_unix: u64,
-    absolute_secs: u64,
-    clock_skew_secs: u64,
-) -> Result<(), TokenError> {
-    let iat = u64::from(iat);
-    if iat > u64::from(timestamp) {
-        return Err(TokenError::Expired); // anchor postdates activity → malformed
-    }
-    if iat > now_unix.saturating_add(clock_skew_secs) {
-        return Err(TokenError::Expired); // future-dated beyond tolerance
-    }
-    if now_unix.saturating_sub(iat) > absolute_secs {
-        return Err(TokenError::Expired); // beyond absolute lifetime
-    }
-    Ok(())
-}
-
-/// Decoded view over the internal bound-cookie payload framing.
-struct DecodedPayload<'a> {
-    iat: u32,
-    typ: &'a [u8],
-    kid: &'a [u8],
-    body: &'a [u8],
-}
-
-/// Encode the bound payload with a fixed binary framing. This payload is
-/// internal and never parsed by a client, so it uses a compact length-prefixed
-/// layout rather than JSON: no byte-array expansion and no self-describing
-/// codec surface:
-///
-/// `v(1) || iat(4 BE) || typ_len(1) || typ || kid_len(1) || kid || body`
-fn encode_bound_payload<P: KeyPurpose>(
-    typ: &str,
-    kid: &str,
-    iat: u32,
-    body: &[u8],
-) -> Result<Vec<u8>, TokenError> {
-    if body.len() > max_body_bytes_for_parts::<P>(typ, kid) {
-        return Err(TokenError::PayloadTooLarge);
-    }
-
-    let typ = typ.as_bytes();
-    let kid = kid.as_bytes();
-    // `typ` is a small crate constant and `kid` is <= 64 bytes via KeyId::parse.
-    // The length prefixes are single bytes, so both must fit in a u8.
-    if typ.len() > usize::from(u8::MAX) || kid.len() > usize::from(u8::MAX) {
-        return Err(TokenError::Internal);
-    }
-
-    let mut out = Vec::with_capacity(1 + 4 + 1 + typ.len() + 1 + kid.len() + body.len());
-    out.push(PAYLOAD_V1);
-    out.extend_from_slice(&iat.to_be_bytes());
-    #[allow(clippy::cast_possible_truncation)] // bounded above
-    out.push(typ.len() as u8);
-    out.extend_from_slice(typ);
-    #[allow(clippy::cast_possible_truncation)] // bounded above
-    out.push(kid.len() as u8);
-    out.extend_from_slice(kid);
-    out.extend_from_slice(body);
-    Ok(out)
-}
-
-/// Parse the fixed binary framing. Every field is bounds-checked. Any short or
-/// malformed buffer is a generic failure. The buffer is authenticated by the
-/// AEAD before it reaches here, so this only guards against our own invariants.
-fn decode_bound_payload(buf: &[u8]) -> Result<DecodedPayload<'_>, TokenError> {
-    if *buf.first().ok_or(TokenError::InvalidToken)? != PAYLOAD_V1 {
-        return Err(TokenError::InvalidToken);
-    }
-    let iat_bytes = buf.get(1..5).ok_or(TokenError::InvalidToken)?;
-    let iat = u32::from_be_bytes([iat_bytes[0], iat_bytes[1], iat_bytes[2], iat_bytes[3]]);
-    let mut i = 5usize;
-
-    let typ_len = usize::from(*buf.get(i).ok_or(TokenError::InvalidToken)?);
-    i += 1;
-    let typ = buf.get(i..i + typ_len).ok_or(TokenError::InvalidToken)?;
-    i += typ_len;
-
-    let kid_len = usize::from(*buf.get(i).ok_or(TokenError::InvalidToken)?);
-    i += 1;
-    let kid = buf.get(i..i + kid_len).ok_or(TokenError::InvalidToken)?;
-    i += kid_len;
-
-    let body = buf.get(i..).ok_or(TokenError::InvalidToken)?;
-    Ok(DecodedPayload {
-        iat,
-        typ,
-        kid,
-        body,
-    })
 }
 
 #[cfg(test)]
