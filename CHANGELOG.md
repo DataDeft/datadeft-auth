@@ -37,7 +37,7 @@ Target: first registry release `0.2.1` (pending approval).
 
 - Explicit clock-skew variants for PoW and cookie verification/minting plus
   `PowPolicy::with_clock_skew_secs`. Existing calls keep the 60-second default;
-  deployments can select 30 seconds (CeleraTax NFR-SEC-012) or zero.
+  deployments can select a stricter bound such as 30 seconds, or zero.
 - Release-please PRs and tagged releases using crates.io/npm OIDC publishing,
   with verification, an opt-in repository variable, and an approval environment.
 - [Registry migration guide](docs/migration-registries.md) and

@@ -85,7 +85,7 @@ impl PowPolicy {
     }
 
     /// Allow challenge timestamps this many seconds ahead of the verifier.
-    /// Defaults to 60 seconds; use 30 for CeleraTax NFR-SEC-012, or zero
+    /// Defaults to 60 seconds; use a stricter value such as 30, or zero
     /// for strict clocks. This does not extend the challenge's maximum age.
     /// Configure proof-cookie verification separately with the same bound.
     #[must_use]

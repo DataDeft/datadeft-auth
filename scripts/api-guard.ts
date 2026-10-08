@@ -34,9 +34,18 @@ if (fnIndex === -1) {
 }
 
 // -- Check 2: test-support only under [dev-dependencies] --------------------
-const cargoFiles = new Glob("**/Cargo.toml");
-for await (const path of cargoFiles.scan({ onlyFiles: true })) {
-    if (path.includes("target/") || path.includes("node_modules/")) continue;
+// Only workspace manifest locations: a repo-wide `**` scan walks `target/`,
+// which a concurrent `cargo doc` rewrites, and crashes on vanished dirs.
+const manifestPaths: string[] = [];
+for (const pattern of ["Cargo.toml", "crates/*/Cargo.toml", "examples/*/Cargo.toml"]) {
+    for await (const path of new Glob(pattern).scan({ onlyFiles: true })) {
+        manifestPaths.push(path);
+    }
+}
+if (manifestPaths.length < 2) {
+    errors.push(`found only ${manifestPaths.length} Cargo.toml files; manifest scan is broken`);
+}
+for (const path of manifestPaths) {
 
     let underDevDependencies = false;
     (await Bun.file(path).text()).split("\n").forEach((line, index) => {

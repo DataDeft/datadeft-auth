@@ -19,8 +19,8 @@ The repo must never contain these values:
 
 Existing PoW and bound-cookie helpers allow 60 seconds of future timestamp
 skew. Explicit `*_with_clock_skew` helpers take a caller-supplied seconds bound;
-PoW Axum uses `PowPolicy::with_clock_skew_secs`. CeleraTax selects 30 seconds
-for NFR-SEC-012. Apply the same bound separately to challenge and proof-cookie
+PoW Axum uses `PowPolicy::with_clock_skew_secs`. Apps with a stricter
+requirement can select 30 seconds. Apply the same bound separately to challenge and proof-cookie
 verification. Zero forbids future timestamps. Skew never extends an expired
 TTL or the lifetime of a key. Magic-link service wrappers retain the default.
 

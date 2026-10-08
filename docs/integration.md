@@ -174,7 +174,7 @@ tests added, and any checklist item you could not complete.
 ## Clock-skew policy
 
 Existing APIs allow timestamps up to 60 seconds ahead of the verifier. This is
-a future-time tolerance, not extra TTL. For CeleraTax NFR-SEC-012, use
+a future-time tolerance, not extra TTL. For a stricter 30-second requirement, use
 `verify_solution_with_clock_skew(..., 30)` and
 `verify_pow_proof_cookie_with_clock_skew(..., 30)`. Axum users set
 `PowPolicy::new(difficulty, 120)?.with_clock_skew_secs(30)` for challenges and
