@@ -36,7 +36,12 @@
     "directory": "packages/dd-protect-client"
   },
   "homepage": "https://github.com/DataDeft/datadeft-auth/tree/main/packages/dd-protect-client",
-  "keywords": ["proof-of-work", "authentication", "web-worker", "browser"],
+  "keywords": [
+    "proof-of-work",
+    "authentication",
+    "web-worker",
+    "browser"
+  ],
   "scripts": {
     "lint": "eslint ts/ scripts/",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.scripts.json",
