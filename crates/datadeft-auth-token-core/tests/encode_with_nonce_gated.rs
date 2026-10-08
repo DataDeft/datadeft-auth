@@ -17,6 +17,6 @@ fn encode_with_nonce_is_available_under_test_support() {
     let nonce = [0x22u8; branca::NONCE_BYTES];
     let token = branca::encode_with_nonce(b"payload", &key, &nonce, 1).expect("encode");
     let verified = branca::decode(&token, &key).expect("decode");
-    assert_eq!(verified.payload, b"payload");
-    assert_eq!(verified.nonce, nonce);
+    assert_eq!(verified.payload(), b"payload");
+    assert_eq!(verified.nonce(), &nonce);
 }

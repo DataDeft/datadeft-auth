@@ -152,7 +152,7 @@ pub(crate) fn decrypt_wrapped_token<P: KeyPurpose>(
         .map_err(|_| TokenError::InvalidToken)?;
     let verified = branca::decode(parts.token(), key.key().as_bytes())
         .map_err(|_| TokenError::InvalidToken)?;
-    check_timestamp_fresh(verified.timestamp, now_unix, max_age_secs, clock_skew_secs)
+    check_timestamp_fresh(verified.timestamp(), now_unix, max_age_secs, clock_skew_secs)
         .map_err(|_| TokenError::InvalidToken)?;
     Ok((parts.kid, verified))
 }
@@ -326,7 +326,7 @@ pub fn parse_bound_cookie_with_clock_skew<P: KeyPurpose>(
     let (kid, verified) =
         decrypt_wrapped_token(value, keyring, now_unix, max_age.idle_secs, clock_skew_secs)?;
 
-    let payload = decode_bound_payload(&verified.payload).map_err(|_| TokenError::InvalidToken)?;
+    let payload = decode_bound_payload(verified.payload()).map_err(|_| TokenError::InvalidToken)?;
 
     if payload.typ != P::TOKEN_TYPE.as_bytes() || payload.kid != kid.as_str().as_bytes() {
         return Err(TokenError::InvalidToken);
@@ -334,7 +334,7 @@ pub fn parse_bound_cookie_with_clock_skew<P: KeyPurpose>(
 
     check_absolute_fresh(
         payload.iat,
-        verified.timestamp,
+        verified.timestamp(),
         now_unix,
         max_age.absolute_secs,
         clock_skew_secs,
@@ -343,7 +343,7 @@ pub fn parse_bound_cookie_with_clock_skew<P: KeyPurpose>(
 
     Ok(VerifiedCookie {
         kid,
-        timestamp: verified.timestamp,
+        timestamp: verified.timestamp(),
         iat: payload.iat,
         jti: verified.jti(),
         body: payload.body.to_vec(),

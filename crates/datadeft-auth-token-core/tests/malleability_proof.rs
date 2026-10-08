@@ -86,9 +86,9 @@ proptest! {
 
         // The canonical token authenticates to the minted fields. Jti tracks the nonce.
         let v = branca::decode(&token, &key).unwrap();
-        prop_assert_eq!(v.timestamp, timestamp);
-        prop_assert_eq!(&v.payload, &payload);
-        prop_assert_eq!(v.nonce, nonce);
+        prop_assert_eq!(v.timestamp(), timestamp);
+        prop_assert_eq!(v.payload(), payload.as_slice());
+        prop_assert_eq!(v.nonce(), &nonce);
         let jti = v.jti();
         prop_assert_eq!(jti.as_bytes(), &nonce);
 

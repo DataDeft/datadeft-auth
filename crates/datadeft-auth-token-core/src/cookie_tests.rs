@@ -79,7 +79,7 @@ fn cookie_validation_maps_malformed_unknown_and_bad_mac_to_invalid_token() {
     let (_, verified) =
         decrypt_wrapped_token(&value, &ring, now, max_age, CLOCK_SKEW_TOLERANCE_SECS)
             .expect("valid");
-    assert_eq!(verified.payload, b"payload");
+    assert_eq!(verified.payload(), b"payload");
 
     assert_eq!(
         decrypt_wrapped_token(

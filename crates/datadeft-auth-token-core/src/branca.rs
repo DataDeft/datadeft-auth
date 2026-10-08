@@ -80,15 +80,19 @@ impl fmt::Debug for Jti {
 /// Returned by [`decode`] instead of a bare tuple so callers key on typed,
 /// canonical fields: never on the raw token string, which is not a unique
 /// handle for the token (see the malleability note on [`decode`]).
+///
+/// The fields are private: [`decode`] is the only constructor, so holding a
+/// `Verified` proves the token authenticated under a real key. Building one
+/// by hand does not compile:
+///
+/// ```compile_fail
+/// use datadeft_auth_token_core::branca::Verified;
+/// let forged = Verified { timestamp: 0, nonce: [0; 24], payload: b"admin".to_vec() };
+/// ```
 pub struct Verified {
-    /// Mint time in unix seconds (authenticated as AAD). TTL is the caller's
-    /// responsibility. This function performs no clock check.
-    pub timestamp: u32,
-    /// The 24-byte per-token nonce from the authenticated header. Use
-    /// [`Verified::jti`] to key revocation / replay on it.
-    pub nonce: [u8; NONCE_BYTES],
-    /// Decrypted plaintext payload.
-    pub payload: Vec<u8>,
+    timestamp: u32,
+    nonce: [u8; NONCE_BYTES],
+    payload: Vec<u8>,
 }
 
 impl Drop for Verified {
@@ -98,6 +102,27 @@ impl Drop for Verified {
 }
 
 impl Verified {
+    /// Mint time in unix seconds (authenticated as AAD). TTL is the caller's
+    /// responsibility; [`decode`] performs no clock check.
+    #[must_use]
+    pub fn timestamp(&self) -> u32 {
+        self.timestamp
+    }
+
+    /// The 24-byte per-token nonce from the authenticated header. Use
+    /// [`Verified::jti`] to key revocation / replay on it.
+    #[must_use]
+    pub fn nonce(&self) -> &[u8; NONCE_BYTES] {
+        &self.nonce
+    }
+
+    /// Decrypted plaintext payload. It is zeroized when the `Verified` drops;
+    /// a caller that copies it owns any further zeroization.
+    #[must_use]
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+
     /// The string-independent token identity, safe as a revocation / replay key.
     #[must_use]
     pub fn jti(&self) -> Jti {
