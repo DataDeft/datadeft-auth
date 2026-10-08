@@ -159,6 +159,7 @@ pub(crate) async fn fixture_flow_error(kind: FixtureFlowError) -> MagicLinkFlowE
         clock: &clock,
         rng: &mut rng,
         lookup_hmac_key: &lookup_key,
+        previous_lookup_hmac_key: None,
         confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
         config: service_config,

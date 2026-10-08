@@ -130,6 +130,11 @@ pub struct MagicLinkFlowService<'a, Authentication, Sessions, Limiter, ServiceCl
     pub clock: &'a ServiceClock,
     pub rng: &'a mut Rng,
     pub lookup_hmac_key: &'a LookupHmacKey,
+    /// Previous lookup HMAC key during a rotation window, or `None`. Landing
+    /// retries a selector miss with it, so links issued just before a rotation
+    /// stay usable. New links and account bindings always use
+    /// `lookup_hmac_key`. Drop it once the magic-link TTL has passed.
+    pub previous_lookup_hmac_key: Option<&'a LookupHmacKey>,
     pub confirm_keyring: &'a KeyRing<MagicLinkConfirmCookie>,
     pub session_keyring: &'a KeyRing<SessionCookie>,
     pub config: MagicLinkServiceConfig,
@@ -187,6 +192,26 @@ where
             .await
             .map_err(map_dependency_error)
             .map_err(MagicLinkFlowError::from_public_error)?;
+        // Rotation window: a link minted under the previous lookup key is
+        // stored under that key's selector HMAC and verifier hash. The confirm
+        // bindings carry these values, so confirmation needs no key fallback.
+        let (selector_lookup, presented_verifier_hash, candidate) =
+            match (candidate, self.previous_lookup_hmac_key) {
+                (None, Some(previous_key)) => {
+                    let previous_selector = selector_lookup_hmac(previous_key, token.selector())
+                        .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+                    let previous_hash = verifier_hash(previous_key, token.verifier())
+                        .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+                    let previous_candidate = self
+                        .authentication
+                        .find_magic_link_for_authentication(&previous_selector)
+                        .await
+                        .map_err(map_dependency_error)
+                        .map_err(MagicLinkFlowError::from_public_error)?;
+                    (previous_selector, previous_hash, previous_candidate)
+                }
+                (candidate, _) => (selector_lookup, presented_verifier_hash, candidate),
+            };
         let candidate =
             validate_scanner_candidate(&self.config, candidate, &presented_verifier_hash, now_unix)
                 .map_err(MagicLinkFlowError::from_public_error)?;

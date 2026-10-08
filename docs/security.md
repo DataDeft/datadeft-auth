@@ -408,7 +408,7 @@ Each `SecretRef` must resolve to one JSON document.
   "magic_link_lookup_hmac_b64": "<32 bytes, standard base64>",
   "aws_storage_hmac_b64": "<32 bytes, standard base64>",
   "session_cookie_root_b64": "<32 bytes, standard base64>",
-  "magic_link_flow_cookie_root_b64": "<32 bytes, standard base64>"
+  "magic_link_confirm_cookie_root_b64": "<32 bytes, standard base64>"
 }
 ```
 
@@ -446,7 +446,8 @@ Recommended cadence:
 | --- | ---: | ---: |
 | Session cookie keys | 90 days | 31 days |
 | Branca session token keys | 90 days | 31 days |
-| Magic-link HMAC keys | 90 days | Link TTL plus 24 hours |
+| Magic-link lookup HMAC key | 90 days | Link TTL plus 24 hours |
+| AWS storage HMAC key | 90 days | 31 days, and until `rekey_email_lookups` has run |
 | PoW signing keys | 90 days | Challenge TTL plus 24 hours |
 | Rate-limit HMAC keys | 90 days | Longest window plus 24 hours |
 
@@ -455,7 +456,33 @@ Rules:
 - Use `AWSCURRENT` for active material.
 - Use `AWSPREVIOUS` for verify-only material when enabled.
 - Never mint with verify-only keys.
-- Never mint HMAC lookup values with old keys.
+- Never mint HMAC lookup values with old keys. Previous HMAC keys are only
+  for read fallback during rotation.
+
+### Rotating the HMAC keys
+
+The storage and lookup HMAC keys address records, so rotating them needs a
+read fallback, not just a verify-only slot. `LoadedAuthSecrets` exposes the
+previous document's HMAC keys only when they differ from the active ones.
+
+1. Write a new secret version with fresh values. Secrets Manager moves the old
+   version to `AWSPREVIOUS`; load it as the previous document.
+2. Pass `previous_storage_hmac_key` to
+   `DynamoDbAuthStore::with_previous_storage_hmac_key` and
+   `previous_lookup_hmac_key` to `MagicLinkFlowService::previous_lookup_hmac_key`.
+   Sessions and email lookups that miss under the new key retry under the
+   previous one. A user found that way gets a lookup row under the new key.
+   Links issued just before the rotation stay usable.
+3. Before dropping the previous document, run
+   `DynamoDbAuthStore::rekey_email_lookups` (needs `dynamodb:Scan`). It writes
+   new-key lookup rows for users who did not log in during the window. It is
+   idempotent.
+4. Keep the previous document for at least 31 days so pre-rotation sessions
+   expire naturally, then remove it.
+
+Rate-limit counters restart once at rotation; limits are best-effort.
+Removing the previous storage key before step 3 strands users who have not
+logged in since the rotation: their next login creates a second account.
 - Do not rotate session keys faster than verify retention.
 - Keep previous session keys for at least 31 days.
 - Reissue cookies with active keys after normal authorization checks.

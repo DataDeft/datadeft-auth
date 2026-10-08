@@ -17,7 +17,7 @@ use datadeft_magic_link_service::{
 
 use crate::error::{
     AwsAdapterError, map_authentication_transact_write_items_error, map_get_item_error,
-    map_put_item_error, map_update_item_error,
+    map_put_item_error, map_scan_error, map_update_item_error,
 };
 use crate::hmac_key::{
     EMAIL_LOOKUP_HMAC_PREFIX, RATE_LOOKUP_HMAC_PREFIX, SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey,
@@ -35,6 +35,7 @@ pub struct DynamoDbAuthStore {
     client: DynamoDbClient,
     table_name: String,
     storage_hmac_key: StorageHmacKey,
+    previous_storage_hmac_key: Option<StorageHmacKey>,
     cleanup_grace_secs: u64,
 }
 
@@ -49,8 +50,88 @@ impl DynamoDbAuthStore {
             client,
             table_name,
             storage_hmac_key,
+            previous_storage_hmac_key: None,
             cleanup_grace_secs: DEFAULT_CLEANUP_GRACE_SECS,
         }
+    }
+
+    /// Previous storage HMAC key during a rotation window. Session and email
+    /// lookups that miss under the current key retry under this one, and a
+    /// user found that way gets an email lookup row under the current key.
+    /// Run [`Self::rekey_email_lookups`] before dropping the previous key, so
+    /// users who did not log in during the window are not stranded.
+    #[must_use]
+    pub fn with_previous_storage_hmac_key(mut self, previous: StorageHmacKey) -> Self {
+        self.previous_storage_hmac_key = Some(previous);
+        self
+    }
+
+    /// Write an email lookup row under the current storage key for every user
+    /// profile that lacks one. Idempotent; safe to run repeatedly and while
+    /// serving traffic. Needs `dynamodb:Scan` on the table. Returns the number
+    /// of rows written.
+    pub async fn rekey_email_lookups(&self) -> Result<u64, AwsAdapterError> {
+        let mut written = 0u64;
+        let mut start_key: Option<HashMap<String, AttributeValue>> = None;
+        loop {
+            let output = self
+                .client
+                .scan()
+                .table_name(&self.table_name)
+                .filter_expression("entity_type = :user_profile")
+                .expression_attribute_values(":user_profile", av_s("user_profile"))
+                .set_exclusive_start_key(start_key.take())
+                .send()
+                .await
+                .map_err(map_scan_error)?;
+            for item in output.items() {
+                let email = NormalizedEmail::parse(required_s(item, "email_normalized")?)
+                    .map_err(|_| AwsAdapterError::Internal)?;
+                let user_id = UserId::parse(required_s(item, "user_id")?)
+                    .map_err(|_| AwsAdapterError::Internal)?;
+                if self.put_email_lookup_if_absent(&email, &user_id).await? {
+                    written = written.saturating_add(1);
+                }
+            }
+            match output.last_evaluated_key() {
+                Some(key) if !key.is_empty() => start_key = Some(key.clone()),
+                _ => return Ok(written),
+            }
+        }
+    }
+
+    /// Conditionally write the current-key email lookup row. Returns `true`
+    /// when written, `false` when one already existed.
+    async fn put_email_lookup_if_absent(
+        &self,
+        email: &NormalizedEmail,
+        user_id: &UserId,
+    ) -> Result<bool, AwsAdapterError> {
+        let result = self
+            .client
+            .put_item()
+            .table_name(&self.table_name)
+            .item("pk", av_s(self.pk_user_email(email)?))
+            .item("sk", av_s("PROFILE"))
+            .item("entity_type", av_s("user_email_lookup"))
+            .item("user_id", av_s(user_id.as_str()))
+            .item("email_normalized", av_s(email.as_str()))
+            .condition_expression("attribute_not_exists(pk)")
+            .send()
+            .await
+            .map_err(map_put_item_error);
+        match result {
+            Ok(_) => Ok(true),
+            Err(AwsAdapterError::ConditionalWriteFailed) => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn previous_hmac(&self, prefix: &str, value: &str) -> Result<Option<String>, AwsAdapterError> {
+        self.previous_storage_hmac_key
+            .as_ref()
+            .map(|key| key.hmac(prefix, value))
+            .transpose()
     }
 
     /// Override the retention grace (seconds past logical expiry) applied to
@@ -409,12 +490,27 @@ impl MagicLinkAuthenticationRepository for DynamoDbAuthStore {
         email: &NormalizedEmail,
     ) -> Result<Option<UserRecord>, DependencyError> {
         let email_pk = self.pk_user_email(email).map_err(DependencyError::from)?;
+        let previous_email_pk = self
+            .previous_hmac(EMAIL_LOOKUP_HMAC_PREFIX, email.as_str())
+            .map_err(DependencyError::from)?
+            .map(|hmac| format!("USER#{hmac}"));
         async {
-            let output = self
+            let mut output = self
                 .authentication_get_item(email_pk, "PROFILE")
                 .send()
                 .await
                 .map_err(map_get_item_error)?;
+            let mut migrate = false;
+            if output.item().is_none()
+                && let Some(previous_pk) = previous_email_pk
+            {
+                output = self
+                    .authentication_get_item(previous_pk, "PROFILE")
+                    .send()
+                    .await
+                    .map_err(map_get_item_error)?;
+                migrate = output.item().is_some();
+            }
             let Some(item) = output.item() else {
                 return Ok(None);
             };
@@ -433,7 +529,13 @@ impl MagicLinkAuthenticationRepository for DynamoDbAuthStore {
                 .await
                 .map_err(map_get_item_error)?;
             let profile = profile_output.item().ok_or(AwsAdapterError::Internal)?;
-            Self::item_to_authentication_user(profile, &user_id, email).map(Some)
+            let user = Self::item_to_authentication_user(profile, &user_id, email)?;
+            if migrate {
+                // Found under the previous storage key: write the current-key
+                // lookup row the commit's condition check reads.
+                self.put_email_lookup_if_absent(email, &user_id).await?;
+            }
+            Ok(Some(user))
         }
         .await
         .map_err(DependencyError::from)
@@ -452,6 +554,27 @@ impl MagicLinkAuthenticationRepository for DynamoDbAuthStore {
     }
 }
 
+impl DynamoDbAuthStore {
+    async fn revoke_session_item(
+        &self,
+        pk: String,
+        revoked_at_unix: u64,
+    ) -> Result<(), AwsAdapterError> {
+        self.client
+            .update_item()
+            .table_name(&self.table_name)
+            .key("pk", av_s(pk))
+            .key("sk", av_s("SESSION"))
+            .update_expression("SET revoked_at_unix = :now")
+            .condition_expression("attribute_exists(pk) AND attribute_not_exists(revoked_at_unix)")
+            .expression_attribute_values(":now", av_n(revoked_at_unix))
+            .send()
+            .await
+            .map_err(map_update_item_error)?;
+        Ok(())
+    }
+}
+
 impl SessionRepository for DynamoDbAuthStore {
     async fn find_session(
         &self,
@@ -459,12 +582,25 @@ impl SessionRepository for DynamoDbAuthStore {
         now_unix: u64,
     ) -> Result<Option<SessionRecord>, DependencyError> {
         let pk = self.pk_session(session_id).map_err(DependencyError::from)?;
+        let previous_pk = self
+            .previous_hmac(SESSION_LOOKUP_HMAC_PREFIX, session_id.as_str())
+            .map_err(DependencyError::from)?
+            .map(|hmac| Self::pk_session_from_hmac(&hmac));
         async {
-            let output = self
+            let mut output = self
                 .session_get_item(pk)
                 .send()
                 .await
                 .map_err(map_get_item_error)?;
+            if output.item().is_none()
+                && let Some(previous_pk) = previous_pk
+            {
+                output = self
+                    .session_get_item(previous_pk)
+                    .send()
+                    .await
+                    .map_err(map_get_item_error)?;
+            }
             let Some(item) = output.item() else {
                 return Ok(None);
             };
@@ -486,21 +622,20 @@ impl SessionRepository for DynamoDbAuthStore {
         revoked_at_unix: u64,
     ) -> Result<(), DependencyError> {
         let pk = self.pk_session(session_id).map_err(DependencyError::from)?;
+        let previous_pk = self
+            .previous_hmac(SESSION_LOOKUP_HMAC_PREFIX, session_id.as_str())
+            .map_err(DependencyError::from)?
+            .map(|hmac| Self::pk_session_from_hmac(&hmac));
         async {
-            self.client
-                .update_item()
-                .table_name(&self.table_name)
-                .key("pk", av_s(pk))
-                .key("sk", av_s("SESSION"))
-                .update_expression("SET revoked_at_unix = :now")
-                .condition_expression(
-                    "attribute_exists(pk) AND attribute_not_exists(revoked_at_unix)",
-                )
-                .expression_attribute_values(":now", av_n(revoked_at_unix))
-                .send()
-                .await
-                .map_err(map_update_item_error)?;
-            Ok::<(), AwsAdapterError>(())
+            let revoked = self.revoke_session_item(pk, revoked_at_unix).await;
+            match (revoked, previous_pk) {
+                // Rotation window: the session may be stored under the
+                // previous key. A second conditional failure is reported.
+                (Err(AwsAdapterError::ConditionalWriteFailed), Some(previous_pk)) => {
+                    self.revoke_session_item(previous_pk, revoked_at_unix).await
+                }
+                (result, _) => result,
+            }
         }
         .await
         .map_err(DependencyError::from)

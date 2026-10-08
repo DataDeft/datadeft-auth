@@ -47,8 +47,8 @@ impl From<AwsAdapterError> for DependencyError {
 use aws_sdk_dynamodb::error::{ProvideErrorMetadata, SdkError};
 #[cfg(feature = "aws")]
 use aws_sdk_dynamodb::operation::{
-    get_item::GetItemError, put_item::PutItemError, transact_write_items::TransactWriteItemsError,
-    update_item::UpdateItemError,
+    get_item::GetItemError, put_item::PutItemError, scan::ScanError,
+    transact_write_items::TransactWriteItemsError, update_item::UpdateItemError,
 };
 #[cfg(feature = "aws")]
 use aws_sdk_secretsmanager::operation::get_secret_value::GetSecretValueError;
@@ -57,6 +57,12 @@ use aws_sdk_sesv2::operation::send_email::SendEmailError;
 
 #[cfg(feature = "aws")]
 pub(crate) fn map_get_item_error(error: SdkError<GetItemError>) -> AwsAdapterError {
+    classify_metadata(&error)
+        .unwrap_or_else(|| fallback_debug_classification(&format!("{error:?}")))
+}
+
+#[cfg(feature = "aws")]
+pub(crate) fn map_scan_error(error: SdkError<ScanError>) -> AwsAdapterError {
     classify_metadata(&error)
         .unwrap_or_else(|| fallback_debug_classification(&format!("{error:?}")))
 }

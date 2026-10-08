@@ -13,7 +13,7 @@ use datadeft_magic_link_service::{
     SessionCookie,
 };
 use serde::Deserialize;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::AwsAdapterError;
 use crate::hmac_key::StorageHmacKey;
@@ -251,14 +251,21 @@ impl fmt::Debug for AwsAuthConfig {
 pub struct LoadedAuthSecrets {
     pub lookup_hmac_key: LookupHmacKey,
     pub storage_hmac_key: StorageHmacKey,
+    /// The previous document's lookup key when it differs from the active
+    /// one. Pass it to `MagicLinkFlowService::previous_lookup_hmac_key`.
+    pub previous_lookup_hmac_key: Option<LookupHmacKey>,
+    /// The previous document's storage key when it differs from the active
+    /// one. Pass it to `DynamoDbAuthStore::with_previous_storage_hmac_key`.
+    pub previous_storage_hmac_key: Option<StorageHmacKey>,
     pub confirm_keyring: KeyRing<MagicLinkConfirmCookie>,
     pub session_keyring: KeyRing<SessionCookie>,
 }
 
 impl LoadedAuthSecrets {
     /// Parse active and optional previous secret JSON payloads. Previous cookie
-    /// roots become verify-only keyring slots. New lookups do not use previous
-    /// HMAC material.
+    /// roots become verify-only keyring slots. Previous HMAC keys are kept only
+    /// for read fallback during rotation; new values always use the active
+    /// keys.
     pub fn from_json(active: &str, previous: Option<&str>) -> Result<Self, AwsAdapterError> {
         let active = AuthSecretDocument::parse(active)?;
         let previous = previous.map(AuthSecretDocument::parse).transpose()?;
@@ -274,6 +281,23 @@ impl LoadedAuthSecrets {
                 .map_err(|_| AwsAdapterError::Internal)?;
         let storage_hmac_key =
             StorageHmacKey::from_slice(&decode_key(&active.aws_storage_hmac_b64)?)?;
+        let previous_lookup_hmac_key = previous
+            .map(|previous| {
+                rotated_key(
+                    &active.magic_link_lookup_hmac_b64,
+                    &previous.magic_link_lookup_hmac_b64,
+                )
+            })
+            .transpose()?
+            .flatten()
+            .map(|bytes| LookupHmacKey::new(*bytes));
+        let previous_storage_hmac_key = previous
+            .map(|previous| {
+                rotated_key(&active.aws_storage_hmac_b64, &previous.aws_storage_hmac_b64)
+            })
+            .transpose()?
+            .flatten()
+            .map(|bytes| StorageHmacKey::new(*bytes));
         let confirm_keyring =
             build_keyring::<MagicLinkConfirmCookie>(active, previous, |document| {
                 &document.magic_link_confirm_cookie_root_b64
@@ -284,6 +308,8 @@ impl LoadedAuthSecrets {
         Ok(Self {
             lookup_hmac_key,
             storage_hmac_key,
+            previous_lookup_hmac_key,
+            previous_storage_hmac_key,
             confirm_keyring,
             session_keyring,
         })
@@ -408,6 +434,17 @@ fn build_keyring<P: KeyPurpose>(
     }
 
     KeyRing::new(slots).map_err(|_| AwsAdapterError::Internal)
+}
+
+/// Decode the previous key when it differs from the active one. An unchanged
+/// key needs no fallback, so it yields `None` and costs no extra reads.
+fn rotated_key(
+    active: &str,
+    previous: &str,
+) -> Result<Option<Zeroizing<[u8; KEY_BYTES]>>, AwsAdapterError> {
+    let active = Zeroizing::new(decode_key(active)?);
+    let previous = Zeroizing::new(decode_key(previous)?);
+    Ok((*active != *previous).then_some(previous))
 }
 
 fn decode_key(value: &str) -> Result<[u8; KEY_BYTES], AwsAdapterError> {

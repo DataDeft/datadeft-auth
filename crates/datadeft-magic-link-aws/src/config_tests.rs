@@ -132,3 +132,37 @@ fn config_rejects_empty_or_control_metadata() {
     );
     assert_eq!(bad_secret.validate(), Err(AwsAdapterError::Internal));
 }
+
+#[test]
+fn loaded_auth_secrets_keeps_previous_hmac_keys_only_when_rotated() {
+    let active = secret_json("active", 0x10, 1_000, 4_000_000);
+
+    let rotated = secret_json("previous", 0x20, 1, 4_000_000);
+    let loaded = LoadedAuthSecrets::from_json(&active, Some(&rotated)).expect("rotated");
+    assert!(loaded.previous_lookup_hmac_key.is_some());
+    assert!(loaded.previous_storage_hmac_key.is_some());
+
+    // Cookie-only rotation: identical HMAC keys need no fallback reads.
+    let cookie_only = format!(
+        r#"{{
+  "kid": "previous",
+  "mint_until_unix": 1,
+  "verify_until_unix": 4000000,
+  "magic_link_lookup_hmac_b64": "{}",
+  "aws_storage_hmac_b64": "{}",
+  "session_cookie_root_b64": "{}",
+  "magic_link_confirm_cookie_root_b64": "{}"
+}}"#,
+        key(0x10),
+        key(0x11),
+        key(0x22),
+        key(0x23),
+    );
+    let loaded = LoadedAuthSecrets::from_json(&active, Some(&cookie_only)).expect("cookie only");
+    assert!(loaded.previous_lookup_hmac_key.is_none());
+    assert!(loaded.previous_storage_hmac_key.is_none());
+
+    let loaded = LoadedAuthSecrets::from_json(&active, None).expect("no previous");
+    assert!(loaded.previous_lookup_hmac_key.is_none());
+    assert!(loaded.previous_storage_hmac_key.is_none());
+}

@@ -13,9 +13,11 @@ datadeft-magic-link-aws = { version = "0.3", features = ["aws"] }
 | default | In-memory fakes for every service trait (`FakeDynamoDbAuthStore`, `FakeMagicLinkOutbox`). No AWS SDK. |
 | `aws` feature | `DynamoDbAuthStore`, `SesMagicLinkOutbox`, and Secrets Manager loading via `resolve_auth_secrets`. |
 
-Secrets come from AWS Secrets Manager. `AWSCURRENT` maps to the active key and
-`AWSPREVIOUS` to verify-only for cookie keys. See "Rotation cadence" in the
-security policy for which keys can rotate.
+Secrets come from AWS Secrets Manager. `AWSCURRENT` is active and `AWSPREVIOUS`
+is kept during rotation: cookie keys become verify-only, and the HMAC keys
+serve as read fallback. Every key can rotate without logging users out or
+splitting accounts; follow "Rotating the HMAC keys" in the security policy,
+including `rekey_email_lookups` before dropping the previous secret.
 
 Row keys are HMACs of selectors, emails, and session IDs, and raw tokens are
 never stored. The normalized email is stored as an attribute on user and
