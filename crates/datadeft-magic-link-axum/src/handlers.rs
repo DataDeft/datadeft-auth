@@ -213,12 +213,17 @@ fn map_flow_error(error: MagicLinkFlowError) -> MagicLinkFlowResponseError {
     }
 }
 
-/// Apply no-store, no-referrer, CSP, and frame-denial headers to scanner-safe
-/// responses. Callers that render their own landing/confirmation pages should
-/// stamp these onto every such response.
+/// Apply no-store, strict-origin referrer, CSP, and frame-denial headers to
+/// scanner-safe responses. Callers that render their own landing/confirmation
+/// pages should stamp these onto every such response.
+///
+/// The referrer policy is `strict-origin`, not `no-referrer`: under
+/// `no-referrer` browsers send `Origin: null` on the confirmation form POST,
+/// which the exact same-origin check must reject. `strict-origin` still keeps
+/// the token-bearing path and query out of every `Referer` header.
 pub fn apply_magic_link_security_headers(headers: &mut HeaderMap) {
     headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    headers.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    headers.insert(REFERRER_POLICY, HeaderValue::from_static("strict-origin"));
     headers.insert(X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     headers.insert(
         CONTENT_SECURITY_POLICY,

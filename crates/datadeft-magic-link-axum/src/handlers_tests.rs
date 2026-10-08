@@ -406,3 +406,30 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
             .starts_with("dd_auth_confirm=;")
     );
 }
+
+#[test]
+fn security_headers_keep_form_posts_same_origin_and_tokens_out_of_referer() {
+    let mut headers = HeaderMap::new();
+    apply_magic_link_security_headers(&mut headers);
+    // `no-referrer` would make browsers send `Origin: null` on the
+    // confirmation form POST, which `request_is_same_origin` rejects.
+    // `strict-origin` sends only the origin, never the token-bearing path.
+    assert_eq!(
+        headers.get("referrer-policy").map(HeaderValue::as_bytes),
+        Some(&b"strict-origin"[..])
+    );
+    assert_eq!(
+        headers.get("cache-control").map(HeaderValue::as_bytes),
+        Some(&b"no-store"[..])
+    );
+    assert_eq!(
+        headers.get("x-frame-options").map(HeaderValue::as_bytes),
+        Some(&b"DENY"[..])
+    );
+    let csp = headers
+        .get("content-security-policy")
+        .and_then(|value| value.to_str().ok())
+        .expect("csp");
+    assert!(csp.contains("form-action 'self'"));
+    assert!(csp.contains("frame-ancestors 'none'"));
+}

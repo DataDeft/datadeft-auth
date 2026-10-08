@@ -38,7 +38,7 @@
 //!   ([`clear_confirm_cookie_header`]). Preserve it on `Unavailable` so the
 //!   user can retry.
 //! - **Stamp security headers** ([`apply_magic_link_security_headers`]:
-//!   `no-store`, `no-referrer`, CSP, frame-deny) on every landing/confirmation
+//!   `no-store`, `strict-origin` referrer, CSP, frame-deny) on every landing/confirmation
 //!   response you render.
 //! - **Never echo the raw token** into the response body or logs, and
 //!   HTML-escape any rendered account identity.

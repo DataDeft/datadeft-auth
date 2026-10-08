@@ -570,7 +570,10 @@ Implementation rules:
 - Do not load third-party assets on landing pages.
 - Prevent framing with CSP.
 - Add `X-Frame-Options: DENY` for old clients.
-- Set `Referrer-Policy: no-referrer`.
+- Set `Referrer-Policy: strict-origin`. It keeps the token-bearing path and
+  query out of `Referer`. Do not use `no-referrer`: browsers then send
+  `Origin: null` on the confirmation form POST, and the same-origin check
+  rejects it.
 - Clear confirm cookies on terminal consume failure.
 
 Scanner safety protects against GET-only scanners. Active scanners that submit forms rely on TTL, binding, one-time consume, and generic failures.
