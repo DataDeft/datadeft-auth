@@ -173,6 +173,13 @@ Rules:
 - Let server-side expiry win over browser cookie expiry.
 - Do not let cookies outlive server-side validity.
 - Never let sliding refresh exceed absolute expiry.
+- Refresh only through `refresh_session_cookie` after `validate_session`. It
+  re-issues the cookie once half the idle lifetime has passed, keeps the
+  original `iat`, session ID, and country, mints under the active key, and
+  never writes storage. Validation itself stays read-only.
+- Sliding refresh means a stolen cookie that keeps being used stays valid until
+  the absolute lifetime or revocation. Revoke server state on logout and on
+  suspected compromise.
 - Use cleanup TTL only for storage deletion.
 - Return the same public failure for invalid token states.
 

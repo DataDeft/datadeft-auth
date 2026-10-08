@@ -93,8 +93,9 @@ Implements the reusable core of:
 - **confirmation:** verify bound state locally, including its keyed-selector limit
   → atomically consume the challenge
   with user/session creation → return the encrypted session cookie value
-- **session:** validate cookie freshness plus server-side state, and support
-  revocation without sliding refresh
+- **session:** validate cookie freshness plus server-side state, support
+  revocation, and re-issue the cookie with `refresh_session_cookie` so active
+  users stay signed in up to the absolute lifetime
 
 Public errors are generic and non-enumerating. IP, global, malformed-request,
 and PoW admission controls belong to the consuming application or edge and are

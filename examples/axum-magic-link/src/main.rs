@@ -29,12 +29,13 @@ use datadeft_magic_link_axum::{
     MagicLinkRequestJson, MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect,
     SessionCookieConfig, apply_magic_link_security_headers, authenticate_session,
     clear_confirm_cookie_header, clear_session_cookie_header, generic_accepted_response,
-    guarded_body, magic_link_confirmation, magic_link_landing, viewer_country_from,
+    guarded_body, magic_link_confirmation, magic_link_landing, session_set_cookie_header,
+    viewer_country_from,
 };
 use datadeft_magic_link_service::{
     Clock, DependencyError, KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey,
     MagicLinkConfirmCookie, MagicLinkFlowService, MagicLinkRequestService, MagicLinkServiceConfig,
-    RootSecret, SessionCookie, validate_session,
+    RootSecret, SessionCookie, refresh_session_cookie, validate_session,
 };
 use datadeft_pow_core::{
     Challenge, PowSecret, Solution, UnixMillis, mint_challenge, verify_solution,
@@ -378,12 +379,43 @@ async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
     )
     .await
     {
-        Ok(session) => Html(format!(
-            "<!doctype html><h1>Authenticated</h1><p>User: {}</p><p>Email: {}</p><form method=\"post\" action=\"/logout\"><button type=\"submit\">Logout</button></form>",
-            escape_html(session.session().user_id.as_str()),
-            escape_html(session.session().email.as_str()),
-        ))
-        .into_response(),
+        Ok(session) => {
+            let mut response = Html(format!(
+                "<!doctype html><h1>Authenticated</h1><p>User: {}</p><p>Email: {}</p><form method=\"post\" action=\"/logout\"><button type=\"submit\">Logout</button></form>",
+                escape_html(session.session().user_id.as_str()),
+                escape_html(session.session().email.as_str()),
+            ))
+            .into_response();
+            // Sliding session: re-issue the cookie once half the idle lifetime
+            // has passed. The absolute lifetime and revocation still apply.
+            let mut rng = OsRng;
+            match refresh_session_cookie(
+                &session,
+                state.session_keyring.as_ref(),
+                &mut rng,
+                &state.config,
+            ) {
+                Ok(Some(refreshed)) => {
+                    match session_set_cookie_header(
+                        state.http_config.session_cookie(),
+                        refreshed.as_secret_value(),
+                    ) {
+                        Ok(header) => {
+                            response.headers_mut().append(SET_COOKIE, header);
+                        }
+                        Err(_) => {
+                            return (StatusCode::INTERNAL_SERVER_ERROR, "internal error\n")
+                                .into_response();
+                        }
+                    }
+                }
+                // Not due yet: keep the current cookie.
+                Ok(None) => {}
+                // A failed refresh does not end a valid session.
+                Err(_) => {}
+            }
+            response
+        }
         Err(rejection) => rejection.into_response(),
     }
 }

@@ -46,7 +46,10 @@ pub use error::{
     TemporaryAuthStateAction,
 };
 pub use service::{MagicLinkFlowService, MagicLinkRequestService};
-pub use session::{SessionValidationError, ValidatedSession, validate_session};
+pub use session::{
+    RefreshedSessionCookie, SessionValidationError, ValidatedSession, refresh_session_cookie,
+    validate_session,
+};
 pub use session_body::{
     SessionBodyError, SessionCookieBody, decode_session_cookie_body, encode_session_cookie_body,
 };

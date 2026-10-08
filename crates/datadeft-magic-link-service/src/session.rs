@@ -1,19 +1,28 @@
-//! Complete server-side session validation.
+//! Complete server-side session validation and explicit cookie refresh.
 //!
 //! Validation is deliberately non-sliding: it does not touch repository state or
 //! re-mint the cookie. The authenticated cookie timestamp is bounded by the
 //! configured idle lifetime, while its original `iat` is bounded by the absolute
 //! lifetime. The repository remains authoritative for revocation and storage
 //! expiry.
+//!
+//! Sliding is a separate, explicit step: [`refresh_session_cookie`] re-issues
+//! the cookie with a fresh activity timestamp and the original `iat`, so active
+//! users stay signed in up to the absolute lifetime and never beyond it.
 
 use core::fmt;
 
-use datadeft_auth_token_core::cookie::{CLOCK_SKEW_TOLERANCE_SECS, parse_bound_cookie};
+use datadeft_auth_token_core::TokenError;
+use datadeft_auth_token_core::cookie::{
+    CLOCK_SKEW_TOLERANCE_SECS, mint_bound_cookie, parse_bound_cookie,
+};
 use datadeft_auth_token_core::keyring::KeyRing;
+use rand_core::{CryptoRng, RngCore};
+use zeroize::Zeroize;
 
 use crate::config::MagicLinkServiceConfig;
 use crate::error::DependencyError;
-use crate::session_body::decode_session_cookie_body;
+use crate::session_body::{decode_session_cookie_body, encode_session_cookie_body};
 use crate::traits::{Clock, SessionRepository};
 use crate::types::{SessionCookie, SessionRecord};
 
@@ -44,9 +53,28 @@ impl fmt::Display for SessionValidationError {
 impl std::error::Error for SessionValidationError {}
 
 /// Authenticated server-side session and its cookie-bound country context.
+///
+/// Only [`validate_session`] constructs one, so holding a `ValidatedSession`
+/// proves the cookie and the server-side record passed every check. That is
+/// what makes it safe input for [`refresh_session_cookie`]. Building one by
+/// hand does not compile:
+///
+/// ```compile_fail
+/// use datadeft_magic_link_service::ValidatedSession;
+/// fn forge(session: datadeft_magic_link_service::SessionRecord) -> ValidatedSession {
+///     ValidatedSession { session, country: None, issued_at_unix: 0,
+///         last_activity_unix: 0, validated_at_unix: 0 }
+/// }
+/// ```
 pub struct ValidatedSession {
     session: SessionRecord,
     country: Option<String>,
+    /// Authenticated first-issue time (`iat`) of the presented cookie.
+    issued_at_unix: u64,
+    /// Authenticated last-activity time (Branca timestamp) of the cookie.
+    last_activity_unix: u64,
+    /// The single clock reading the validation used.
+    validated_at_unix: u64,
 }
 
 impl ValidatedSession {
@@ -135,7 +163,100 @@ where
     Ok(ValidatedSession {
         session,
         country: body.country,
+        issued_at_unix: u64::from(verified.iat()),
+        last_activity_unix: u64::from(verified.timestamp()),
+        validated_at_unix: now_unix,
     })
+}
+
+/// A re-issued session cookie value. Bearer material: `Debug` is redacted and
+/// the value is zeroized on drop.
+pub struct RefreshedSessionCookie(String);
+
+impl RefreshedSessionCookie {
+    /// The cookie value to send in `Set-Cookie`.
+    #[must_use]
+    pub fn as_secret_value(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for RefreshedSessionCookie {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("RefreshedSessionCookie(..)")
+    }
+}
+
+impl Drop for RefreshedSessionCookie {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+/// Re-issue the session cookie when it is due, so active users stay signed in.
+///
+/// Call it after [`validate_session`] succeeds, in the same request, and send
+/// any returned value with the normal session `Set-Cookie` header. It returns
+/// `Ok(None)` while the cookie's last activity is younger than half the idle
+/// lifetime, so most requests change nothing.
+///
+/// Security properties:
+///
+/// - It only accepts a [`ValidatedSession`], which only [`validate_session`]
+///   builds, and it reuses that validation's single clock reading.
+/// - The new cookie keeps the original issue time (`iat`), session id, and
+///   country binding. Only the activity timestamp moves, so the absolute
+///   lifetime can never be extended; a cookie at or past it is not re-issued.
+/// - It never reads or writes the repository. Revocation stays authoritative:
+///   a refreshed cookie for a revoked session fails its next validation.
+/// - It mints under the keyring's current active key, so refreshing also moves
+///   active sessions onto a rotated key.
+///
+/// The trade-off is the usual one for sliding sessions: a stolen cookie that
+/// keeps being used stays valid until the absolute lifetime or revocation.
+pub fn refresh_session_cookie<Rng>(
+    validated: &ValidatedSession,
+    session_keyring: &KeyRing<SessionCookie>,
+    rng: &mut Rng,
+    config: &MagicLinkServiceConfig,
+) -> Result<Option<RefreshedSessionCookie>, SessionValidationError>
+where
+    Rng: RngCore + CryptoRng + ?Sized,
+{
+    let max_age = config
+        .session_max_age()
+        .map_err(|_| SessionValidationError::Internal)?;
+    let now_unix = validated.validated_at_unix;
+    // A cookie stamped slightly in the future (within clock skew) is fresh.
+    if validated.issued_at_unix > now_unix
+        || now_unix.saturating_sub(validated.last_activity_unix) < max_age.idle_secs / 2
+    {
+        return Ok(None);
+    }
+    if now_unix.saturating_sub(validated.issued_at_unix) >= max_age.absolute_secs {
+        return Ok(None);
+    }
+    let timestamp = u32::try_from(now_unix).map_err(|_| SessionValidationError::Internal)?;
+    let iat =
+        u32::try_from(validated.issued_at_unix).map_err(|_| SessionValidationError::Internal)?;
+    let mut body =
+        encode_session_cookie_body(&validated.session.session_id, validated.country.as_deref())
+            .map_err(|_| SessionValidationError::Internal)?;
+    let minted = mint_bound_cookie::<SessionCookie, _>(
+        &body,
+        session_keyring,
+        rng,
+        timestamp,
+        iat,
+        now_unix,
+    );
+    body.zeroize();
+    match minted {
+        Ok(cookie) => Ok(Some(RefreshedSessionCookie(cookie))),
+        Err(TokenError::EntropyUnavailable) => Err(SessionValidationError::Unavailable),
+        // Keyring and rotation faults stay distinct from an invalid session.
+        Err(_) => Err(SessionValidationError::Internal),
+    }
 }
 
 fn map_session_dependency_error(error: DependencyError) -> SessionValidationError {
