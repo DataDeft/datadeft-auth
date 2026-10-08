@@ -845,5 +845,13 @@ impl AuthAdminRepository for FakeDynamoDbAuthStore {
 }
 
 #[cfg(test)]
-#[path = "fake_tests.rs"]
-mod tests;
+mod test_support;
+
+#[cfg(test)]
+mod admin_tests;
+#[cfg(test)]
+mod aggregate_tests;
+#[cfg(test)]
+mod flow_tests;
+#[cfg(test)]
+mod rotation_tests;

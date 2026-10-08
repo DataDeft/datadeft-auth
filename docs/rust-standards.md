@@ -141,24 +141,40 @@ Production code must not use `unwrap` or `expect`.
 
 ## Module layout
 
-Use one feature module plus co-located tests.
+Keep files small enough to read in one sitting, for humans and agents alike:
+
+- Production files: about 400 lines at most.
+- Test files: about 600 lines at most.
+- Split along feature boundaries, never mid-feature.
+
+`lib.rs` holds only crate docs, `mod` declarations, and `pub use` re-exports.
+No functions, types, or impls.
+
+Split a large module with the `module.rs` + `module/` layout. Never use
+`mod.rs`. The parent file says what the module is, declares its children, and
+re-exports, so the public API does not change:
 
 ```text
 src/
   lib.rs
-  magic_link.rs
-  magic_link_tests.rs
-  session_cookie.rs
-  session_cookie_tests.rs
+  service.rs              # docs, `mod request; mod flow;`, re-exports
+  service/
+    request.rs
+    flow.rs
+    flow_tests.rs         # `#[cfg(test)] mod flow_tests;` in service.rs
 ```
 
-Wire tests with this pattern:
+A small module keeps the flat pattern: one feature file plus a co-located
+`*_tests.rs` wired with `#[path]`:
 
 ```rust
 #[cfg(test)]
 #[path = "magic_link_tests.rs"]
 mod magic_link_tests;
 ```
+
+Tests that share fixtures put them in a `test_support.rs` child module
+(`#[cfg(test)]`, items `pub(super)`).
 
 Entry files decode, delegate, and encode. Put business logic in named modules.
 
