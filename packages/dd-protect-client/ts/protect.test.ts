@@ -397,6 +397,98 @@ describe("protect", () => {
 
 // -- Unit tests: ProtectError -------------------------------------------------
 
+describe("input validation", () => {
+    for (const [requested, expected] of [
+        [0, 1],
+        [-5, 1],
+        [2.5, 2],
+        [100, 8],
+        [8, 8],
+        [1, 1],
+    ] as const) {
+        test(`clamps workerCount ${requested} to ${expected}`, async () => {
+            let started = 0;
+            const strides: number[] = [];
+            class CountingWorker extends SolvingMockWorker {
+                constructor() {
+                    super();
+                    started += 1;
+                }
+                postMessage(data: unknown) {
+                    strides.push((data as { step: number }).step);
+                    super.postMessage(data);
+                }
+            }
+            installWorker(CountingWorker);
+            mockFetch(() => jsonResponse(CHALLENGE));
+
+            await callProtect({ workerCount: requested });
+            expect(started).toBe(expected);
+            // Every worker strides by the clamped integer count.
+            expect(strides.every((step) => step === expected)).toBe(true);
+        });
+    }
+
+    test("falls back to the default for a non-finite workerCount", async () => {
+        let started = 0;
+        class CountingWorker extends SolvingMockWorker {
+            constructor() {
+                super();
+                started += 1;
+            }
+        }
+        installWorker(CountingWorker);
+        mockFetch(() => jsonResponse(CHALLENGE));
+
+        await callProtect({ workerCount: Number.NaN });
+        expect(started).toBeGreaterThanOrEqual(1);
+        expect(started).toBeLessThanOrEqual(8);
+    });
+
+    const longField = "a".repeat(257);
+    const invalidChallenges: [string, unknown][] = [
+        ["null", null],
+        ["an array", [CHALLENGE]],
+        ["an empty object", {}],
+        ["a missing dif", { chg: "abc", tim: "t", tag: "g" }],
+        ["dif 0", { ...CHALLENGE, dif: 0 }],
+        ["dif 65", { ...CHALLENGE, dif: 65 }],
+        ["a fractional dif", { ...CHALLENGE, dif: 2.5 }],
+        ["a string dif", { ...CHALLENGE, dif: "1" }],
+        ["a numeric chg", { ...CHALLENGE, chg: 123 }],
+        ["an empty tag", { ...CHALLENGE, tag: "" }],
+        ["a missing tim", { chg: "abc", dif: 1, tag: "g" }],
+        ["an oversized chg", { ...CHALLENGE, chg: longField }],
+    ];
+    for (const [name, body] of invalidChallenges) {
+        test(`rejects a challenge with ${name} without starting workers`, async () => {
+            let workersStarted = 0;
+            class CountingWorker extends SolvingMockWorker {
+                constructor() {
+                    super();
+                    workersStarted += 1;
+                }
+            }
+            installWorker(CountingWorker);
+            mockFetch((url) => {
+                if (url === CREATE_URL) return jsonResponse(body);
+                throw new Error(`unexpected fetch: ${url}`);
+            });
+
+            try {
+                await callProtect();
+                expect.unreachable("should have thrown");
+            } catch (e) {
+                expect(e).toBeInstanceOf(ProtectError);
+                const pe = e as ProtectError;
+                expect(pe.code).toBe("server");
+                expect(pe.status).toBe(200);
+            }
+            expect(workersStarted).toBe(0);
+        });
+    }
+});
+
 describe("ProtectError", () => {
     test("has the correct name, code, message, and status", () => {
         const e = new ProtectError("server", "bad request", 400);

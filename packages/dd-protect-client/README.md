@@ -47,8 +47,13 @@ try {
 ```
 
 `createUrl` and `validateUrl` are required: the library never hardcodes routes.
-Optional knobs: `workerCount` (default `navigator.hardwareConcurrency`),
-`solveTimeoutMs` (default 30000), and `fetchTimeoutMs` (default 10000).
+Optional knobs: `workerCount` (default `navigator.hardwareConcurrency`; always
+clamped to 1–8, fractions round down), `solveTimeoutMs` (default 30000), and
+`fetchTimeoutMs` (default 10000).
+
+A challenge response that is not JSON, or not a well-formed challenge (string
+`chg`/`tim`/`tag`, integer `dif` in 1–64), fails with `ProtectError("server")`
+before any worker starts. Error messages never include the response body.
 
 ## Serve the worker
 

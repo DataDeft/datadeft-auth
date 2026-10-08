@@ -61,7 +61,10 @@ export interface ProtectConfig {
     createUrl: string;
     /** POST endpoint that verifies a solution and sets the proof cookie (`pow/validate`). */
     validateUrl: string;
-    /** Parallel workers to spawn. Default: `navigator.hardwareConcurrency` (or 4). */
+    /**
+     * Parallel workers to spawn, clamped to `1..=8` (fractions round down).
+     * Default: `navigator.hardwareConcurrency` (or 4), clamped the same way.
+     */
     workerCount?: number;
     /** Maximum time for the whole solve. Default: 30000 ms. */
     solveTimeoutMs?: number;
@@ -91,8 +94,26 @@ interface WorkerMessage {
     message?: string;
 }
 
-const DEFAULT_WORKER_COUNT =
-    typeof navigator !== "undefined" ? navigator.hardwareConcurrency || 4 : 4;
+/** Worker count bounds; more workers than this only add browser overhead. */
+const MIN_WORKER_COUNT = 1;
+const MAX_WORKER_COUNT = 8;
+
+/** Clamp a worker count into `MIN..=MAX`; a non-finite value yields `fallback`. */
+function clampWorkerCount(value: number, fallback: number): number {
+    if (!Number.isFinite(value)) {
+        return fallback;
+    }
+    return Math.min(MAX_WORKER_COUNT, Math.max(MIN_WORKER_COUNT, Math.floor(value)));
+}
+
+const DEFAULT_WORKER_COUNT = clampWorkerCount(
+    typeof navigator !== "undefined" ? navigator.hardwareConcurrency || 4 : 4,
+    4,
+);
+/** Generous ceiling for challenge string fields (the server sends far less). */
+const MAX_CHALLENGE_FIELD_LENGTH = 256;
+/** Difficulty range the server accepts: leading zero hex digits of SHA-256. */
+const MAX_DIFFICULTY = 64;
 const DEFAULT_SOLVE_TIMEOUT_MS = 30_000;
 const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
 
@@ -105,6 +126,39 @@ function wrapFetchError(err: unknown, context: string): ProtectError {
     }
     const message = err instanceof Error ? err.message : String(err);
     return new ProtectError("network", `${context}: ${message}`);
+}
+
+/** True for a non-empty string within the challenge field length limit. */
+function isChallengeField(value: unknown): value is string {
+    return (
+        typeof value === "string" &&
+        value.length > 0 &&
+        value.length <= MAX_CHALLENGE_FIELD_LENGTH
+    );
+}
+
+/**
+ * Check the parsed challenge's shape before any worker starts. TypeScript's
+ * `as` is only an annotation; a hostile or misconfigured server can send
+ * anything, and a missing `dif` would otherwise "solve" instantly.
+ */
+function parseChallenge(value: unknown): Challenge | null {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        return null;
+    }
+    const { chg, dif, tim, tag } = value as Record<string, unknown>;
+    if (
+        !isChallengeField(chg) ||
+        !isChallengeField(tim) ||
+        !isChallengeField(tag) ||
+        typeof dif !== "number" ||
+        !Number.isInteger(dif) ||
+        dif < 1 ||
+        dif > MAX_DIFFICULTY
+    ) {
+        return null;
+    }
+    return { chg, dif, tim, tag };
 }
 
 function solve(
@@ -198,7 +252,12 @@ function solve(
  * @throws {ProtectError} with `code` set to the failure category.
  */
 export async function protect(config: ProtectConfig): Promise<void> {
-    const workerCount = config.workerCount ?? DEFAULT_WORKER_COUNT;
+    // Clamped so a bad value can neither start zero workers (a hang until the
+    // solve timeout) nor fractional nonce strides.
+    const workerCount = clampWorkerCount(
+        config.workerCount ?? DEFAULT_WORKER_COUNT,
+        DEFAULT_WORKER_COUNT,
+    );
     const solveTimeoutMs = config.solveTimeoutMs ?? DEFAULT_SOLVE_TIMEOUT_MS;
     const fetchTimeoutMs = config.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
 
@@ -220,9 +279,9 @@ export async function protect(config: ProtectConfig): Promise<void> {
         // not belong in error messages, UIs, or logs. `status` carries the code.
         throw new ProtectError("server", "challenge creation failed", createResp.status);
     }
-    let challenge: Challenge;
+    let parsed: unknown;
     try {
-        challenge = (await createResp.json()) as Challenge;
+        parsed = await createResp.json();
     } catch (err) {
         // The body read shares the request timeout.
         if (err instanceof DOMException && err.name === "TimeoutError") {
@@ -235,6 +294,10 @@ export async function protect(config: ProtectConfig): Promise<void> {
             "challenge response was not valid JSON",
             createResp.status,
         );
+    }
+    const challenge = parseChallenge(parsed);
+    if (challenge === null) {
+        throw new ProtectError("server", "invalid challenge", createResp.status);
     }
 
     const solution = await solve(challenge, config.workerUrl, workerCount, solveTimeoutMs);
