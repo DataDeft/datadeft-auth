@@ -3,6 +3,10 @@
 
 use aws_sdk_dynamodb::config::{Credentials, Region};
 
+use datadeft_magic_link_service::{
+    AdminAction, AdminActor, AdminEvent, AdminEventId, PageCursor, SessionHandle,
+};
+
 use super::*;
 
 const USER_ID: &str = "usr_000102030405060708090a0b0c0d0e0f";
