@@ -1,10 +1,17 @@
-//! Strict, bounded parsing of incoming `Cookie` headers with unambiguous
-//! selection of a single target cookie.
+//! Bounded parsing of incoming `Cookie` headers with unambiguous selection of
+//! a single target cookie.
+//!
+//! Only the target cookie is validated strictly. Other cookies on the host
+//! (consent banners, analytics) often break RFC 6265: commas, spaces,
+//! non-ASCII bytes, or no name. They are skipped, never parsed, so one
+//! foreign cookie cannot lock a user out of authentication.
 
 use axum::http::HeaderMap;
 use axum::http::header::COOKIE;
 
-const MAX_COOKIE_HEADER_FIELDS: usize = 8;
+// HTTP/2 clients may send one `Cookie` field per cookie, and hyper does not
+// merge them. The aggregate byte cap bounds the work either way.
+const MAX_COOKIE_HEADER_FIELDS: usize = 128;
 const MAX_COOKIE_HEADER_BYTES: usize = 8192;
 pub(crate) const MAX_SELECTED_COOKIE_VALUE_BYTES: usize = 4096;
 
@@ -34,41 +41,41 @@ pub(crate) fn extract_target_cookie(
         aggregate = aggregate
             .checked_add(bytes.len())
             .ok_or(CookieParseError::Oversized)?;
-        if aggregate > MAX_COOKIE_HEADER_BYTES || !bytes.is_ascii() {
+        if aggregate > MAX_COOKIE_HEADER_BYTES {
             return Err(CookieParseError::Oversized);
         }
         for raw_pair in bytes.split(|byte| *byte == b';') {
             let pair = trim_cookie_pair(raw_pair);
-            if pair.is_empty() {
-                return Err(CookieParseError::Malformed);
-            }
+            // Foreign pairs with no `=` (or empty segments from a trailing
+            // `;`) cannot be the target cookie: skip them.
             let Some(equals) = pair.iter().position(|byte| *byte == b'=') else {
-                return Err(CookieParseError::Malformed);
+                continue;
             };
             let name = &pair[..equals];
             let value = &pair[equals + 1..];
+            if name != target_name.as_bytes() {
+                continue;
+            }
+            if selected.is_some() {
+                return Err(CookieParseError::Duplicate);
+            }
             if !is_cookie_pair_name(name) || !value.iter().copied().all(is_cookie_octet) {
                 return Err(CookieParseError::Malformed);
             }
-            if name == target_name.as_bytes() {
-                if selected.is_some() {
-                    return Err(CookieParseError::Duplicate);
-                }
-                if value.is_empty()
-                    || value.len() > MAX_SELECTED_COOKIE_VALUE_BYTES
-                    || value.first() == Some(&b'"')
-                {
-                    return Err(if value.len() > MAX_SELECTED_COOKIE_VALUE_BYTES {
-                        CookieParseError::Oversized
-                    } else {
-                        CookieParseError::Malformed
-                    });
-                }
-                let value = core::str::from_utf8(value)
-                    .map_err(|_| CookieParseError::Malformed)?
-                    .to_owned();
-                selected = Some(value);
+            if value.is_empty()
+                || value.len() > MAX_SELECTED_COOKIE_VALUE_BYTES
+                || value.first() == Some(&b'"')
+            {
+                return Err(if value.len() > MAX_SELECTED_COOKIE_VALUE_BYTES {
+                    CookieParseError::Oversized
+                } else {
+                    CookieParseError::Malformed
+                });
             }
+            let value = core::str::from_utf8(value)
+                .map_err(|_| CookieParseError::Malformed)?
+                .to_owned();
+            selected = Some(value);
         }
     }
     selected.ok_or(CookieParseError::Missing)
