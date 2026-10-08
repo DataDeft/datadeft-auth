@@ -47,6 +47,9 @@ struct TestSessions {
     return_mismatched_record: Shared<bool>,
     find_calls: Shared<usize>,
     revoke_calls: Shared<usize>,
+    user_disabled: Shared<bool>,
+    user_check_error: Shared<Option<DependencyError>>,
+    user_checks: Shared<usize>,
 }
 
 impl TestSessions {
@@ -93,6 +96,14 @@ impl SessionRepository for TestSessions {
     ) -> Result<(), DependencyError> {
         self.revoke_calls.set(self.revoke_calls.get() + 1);
         Ok(())
+    }
+
+    async fn is_user_active(&self, _user_id: &UserId) -> Result<bool, DependencyError> {
+        self.user_checks.set(self.user_checks.get() + 1);
+        if let Some(error) = self.user_check_error.take() {
+            return Err(error);
+        }
+        Ok(!self.user_disabled.get())
     }
 }
 
@@ -851,6 +862,50 @@ async fn stale_validation_cannot_be_refreshed() {
             )
             .unwrap_err(),
             SessionValidationError::InvalidSession
+        );
+    }
+}
+
+// --- disabled users --------------------------------------------------------
+
+#[tokio::test]
+async fn disabled_user_cannot_use_a_valid_session() {
+    let keyring = keyring();
+    let cookie = cookie(&keyring, 900, 800, None);
+    let sessions = TestSessions::with_record(record(800));
+
+    validated_at(&cookie, None, &keyring, &sessions, 900)
+        .await
+        .expect("active user validates");
+    sessions.user_disabled.set(true);
+    assert_eq!(
+        validated_at(&cookie, None, &keyring, &sessions, 900)
+            .await
+            .unwrap_err(),
+        SessionValidationError::InvalidSession
+    );
+    // Checked on every validation, not cached.
+    assert_eq!(sessions.user_checks.get(), 2);
+}
+
+#[tokio::test]
+async fn user_status_lookup_failures_never_count_as_active() {
+    let keyring = keyring();
+    let cookie = cookie(&keyring, 900, 800, None);
+    for (error, expected) in [
+        (
+            DependencyError::Unavailable,
+            SessionValidationError::Unavailable,
+        ),
+        (DependencyError::Internal, SessionValidationError::Internal),
+    ] {
+        let sessions = TestSessions::with_record(record(800));
+        sessions.user_check_error.set(Some(error));
+        assert_eq!(
+            validated_at(&cookie, None, &keyring, &sessions, 900)
+                .await
+                .unwrap_err(),
+            expected
         );
     }
 }

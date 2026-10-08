@@ -1161,3 +1161,10 @@ async fn storage_key_change_without_previous_key_splits_accounts() {
         .expect("second login");
     assert_eq!(unrotated.user_count().expect("users"), 2);
 }
+
+#[tokio::test]
+async fn fake_user_status_fails_closed_for_unknown_users() {
+    let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
+    let unknown = UserId::parse("usr_000102030405060708090a0b0c0d0e0f").expect("user id");
+    assert!(!store.is_user_active(&unknown).await.expect("status"));
+}

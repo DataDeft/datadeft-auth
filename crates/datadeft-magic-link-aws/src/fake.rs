@@ -547,6 +547,15 @@ impl SessionRepository for FakeDynamoDbAuthStore {
         session.revoked_at_unix = Some(revoked_at_unix);
         Ok(())
     }
+
+    async fn is_user_active(&self, user_id: &UserId) -> Result<bool, DependencyError> {
+        let mut inner = self.lock_inner()?;
+        Self::take_next_error(&mut inner)?;
+        Ok(inner
+            .user_profiles_by_id
+            .get(user_id.as_str())
+            .is_some_and(|profile| profile.user_id == *user_id && !profile.disabled))
+    }
 }
 
 impl RateLimiter for FakeDynamoDbAuthStore {

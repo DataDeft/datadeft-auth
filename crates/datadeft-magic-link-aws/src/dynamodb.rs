@@ -647,6 +647,25 @@ impl SessionRepository for DynamoDbAuthStore {
         .await
         .map_err(DependencyError::from)
     }
+
+    async fn is_user_active(&self, user_id: &UserId) -> Result<bool, DependencyError> {
+        async {
+            let output = self
+                .authentication_get_item(Self::pk_user_id(user_id), "PROFILE")
+                .send()
+                .await
+                .map_err(map_get_item_error)?;
+            // Fail closed: only an intact, enabled profile for this id counts.
+            let Some(item) = output.item() else {
+                return Ok::<bool, AwsAdapterError>(false);
+            };
+            Ok(optional_s(item, "entity_type") == Some("user_profile")
+                && optional_s(item, "user_id") == Some(user_id.as_str())
+                && matches!(item.get("disabled"), Some(AttributeValue::Bool(false))))
+        }
+        .await
+        .map_err(DependencyError::from)
+    }
 }
 
 impl RateLimiter for DynamoDbAuthStore {

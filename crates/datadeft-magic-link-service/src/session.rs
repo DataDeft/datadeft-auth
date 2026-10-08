@@ -101,7 +101,8 @@ impl fmt::Debug for ValidatedSession {
 ///
 /// The operation validates configuration before reading the clock, reads the
 /// clock exactly once, authenticates and freshness-checks the cookie, decodes its
-/// body, enforces the country lock, and performs exactly one repository lookup.
+/// body, enforces the country lock, looks up the session, and checks that its
+/// user is still active (not disabled).
 /// Missing, revoked, expired, future-created, malformed, and wrong-country
 /// sessions all collapse to [`SessionValidationError::InvalidSession`].
 ///
@@ -157,6 +158,15 @@ where
     }
     let session_age = now_unix.saturating_sub(session.created_at_unix);
     if session_age > max_age.absolute_secs {
+        return Err(SessionValidationError::InvalidSession);
+    }
+    // A disabled (or missing) user ends every session at once, without
+    // waiting for revocation to reach each one.
+    if !sessions
+        .is_user_active(&session.user_id)
+        .await
+        .map_err(map_session_dependency_error)?
+    {
         return Err(SessionValidationError::InvalidSession);
     }
 

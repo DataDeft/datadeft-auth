@@ -107,6 +107,13 @@ impl SessionRepository for FixtureRepository {
     ) -> Result<(), DependencyError> {
         Ok(())
     }
+
+    async fn is_user_active(
+        &self,
+        _user_id: &datadeft_magic_link_service::UserId,
+    ) -> Result<bool, DependencyError> {
+        Ok(true)
+    }
 }
 
 pub(crate) struct FixtureLimiter;

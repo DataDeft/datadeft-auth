@@ -281,6 +281,10 @@ impl SessionRepository for FakeRepository {
         self.revoked.borrow_mut().push(session_id.clone());
         Ok(())
     }
+
+    async fn is_user_active(&self, _user_id: &UserId) -> Result<bool, DependencyError> {
+        Ok(true)
+    }
 }
 
 #[derive(Default)]

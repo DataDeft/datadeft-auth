@@ -21,7 +21,7 @@ use datadeft_magic_link_core::{LookupHmac, NormalizedEmail};
 use crate::error::{CommitMagicLinkAuthenticationError, DependencyError};
 use crate::types::{
     CommitMagicLinkAuthentication, MagicLinkAuthenticationCandidate, MagicLinkEmail,
-    MagicLinkRecord, RateLimitKey, SessionId, SessionRecord, UserRecord,
+    MagicLinkRecord, RateLimitKey, SessionId, SessionRecord, UserId, UserRecord,
 };
 
 /// Deterministic clock boundary.
@@ -114,6 +114,15 @@ pub trait SessionRepository {
         session_id: &SessionId,
         revoked_at_unix: u64,
     ) -> impl Future<Output = Result<(), DependencyError>> + Send;
+
+    /// Whether the user may hold a session: the profile exists and is not
+    /// disabled. Called on every session validation, so disabling a user ends
+    /// all of their sessions immediately. Must fail closed: a missing profile
+    /// is `false`, and storage errors are errors, never `true`.
+    fn is_user_active(
+        &self,
+        user_id: &UserId,
+    ) -> impl Future<Output = Result<bool, DependencyError>> + Send;
 }
 
 /// Rate limiter result.
