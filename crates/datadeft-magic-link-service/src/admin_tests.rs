@@ -1,7 +1,10 @@
 //! Admin type tests. Storage-backed behaviour is tested against the fake store
 //! in `datadeft-magic-link-aws`.
 
+use datadeft_magic_link_core::NormalizedEmail;
+
 use super::*;
+use crate::types::UserId;
 
 const HANDLE: &str = "sih_3f9a1c2e00000000000000000000000000000000000000000000000000000001";
 
