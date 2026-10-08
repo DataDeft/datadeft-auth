@@ -47,6 +47,24 @@ Target: first registry release `0.3.0` (pending approval).
 Wire formats, cookie names, cryptographic domains, and expiry bounds are unchanged.
 This entry describes prepared changes, not a completed registry publication.
 
+## [0.3.0](https://github.com/DataDeft/datadeft-auth/compare/v0.2.0...v0.3.0) (2026-10-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **pow:** mint_to_verify_ms is Option<u64>; classify_solve takes Option<u64>. Existing `|_| None` classifiers compile unchanged.
+
+### Features
+
+* prepare Rust and npm registry releases ([d12c21b](https://github.com/DataDeft/datadeft-auth/commit/d12c21b5dc00ad8bfb32fa694ae617be8c030093))
+
+
+### Bug Fixes
+
+* keep example HTTP errors compact for current Clippy ([8c416f7](https://github.com/DataDeft/datadeft-auth/commit/8c416f7d7efa92c343c0a26afdd1ad36f1df822e))
+* normalize Bun lock with workspace TypeScript resolution ([81f09b8](https://github.com/DataDeft/datadeft-auth/commit/81f09b8f33ff370fa2149f6cef858f003b0b3922))
+* **pow:** report unknown solve timing as None instead of 0 ([44759ed](https://github.com/DataDeft/datadeft-auth/commit/44759ed706d1133ecc67039633a9032851e8deca))
+
 ## [0.2.0] - 2026-08-03
 
 Solve-timing release. Breaking for `dd-pow-core` / `dd-pow-axum` callers;
