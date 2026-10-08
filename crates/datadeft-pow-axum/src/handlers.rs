@@ -17,8 +17,9 @@ use core::fmt;
 use axum::http::HeaderValue;
 use datadeft_auth_token_core::keyring::KeyRing;
 use datadeft_pow_core::{
-    Challenge, MAX_DIFFICULTY, MAX_FUTURE_SKEW_SECS, PowProofCookie, PowSecret, Solution,
-    UnixMillis, mint_challenge, mint_pow_proof_cookie, verify_solution_with_clock_skew,
+    Challenge, MAX_CLOCK_SKEW_SECS, MAX_DIFFICULTY, MAX_FUTURE_SKEW_SECS, PowProofCookie,
+    PowSecret, Solution, UnixMillis, mint_challenge, mint_pow_proof_cookie,
+    verify_solution_with_clock_skew,
 };
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -44,6 +45,8 @@ pub enum PowPolicyError {
     InvalidDifficulty,
     /// The challenge lifetime must be nonzero.
     InvalidChallengeMaxAge,
+    /// Clock skew must be at most `MAX_CLOCK_SKEW_SECS`.
+    InvalidClockSkew,
 }
 
 impl fmt::Display for PowPolicyError {
@@ -51,6 +54,7 @@ impl fmt::Display for PowPolicyError {
         f.write_str(match self {
             Self::InvalidDifficulty => "PoW difficulty must be in 1..=MAX_DIFFICULTY",
             Self::InvalidChallengeMaxAge => "PoW challenge max age must be nonzero",
+            Self::InvalidClockSkew => "PoW clock skew must be at most MAX_CLOCK_SKEW_SECS",
         })
     }
 }
@@ -88,10 +92,13 @@ impl PowPolicy {
     /// Defaults to 60 seconds; use a stricter value such as 30, or zero
     /// for strict clocks. This does not extend the challenge's maximum age.
     /// Configure proof-cookie verification separately with the same bound.
-    #[must_use]
-    pub fn with_clock_skew_secs(mut self, clock_skew_secs: u64) -> Self {
+    /// Values above [`MAX_CLOCK_SKEW_SECS`] are rejected.
+    pub fn with_clock_skew_secs(mut self, clock_skew_secs: u64) -> Result<Self, PowPolicyError> {
+        if clock_skew_secs > MAX_CLOCK_SKEW_SECS {
+            return Err(PowPolicyError::InvalidClockSkew);
+        }
         self.clock_skew_secs = clock_skew_secs;
-        self
+        Ok(self)
     }
 
     /// Maximum accepted future timestamp offset, in seconds.

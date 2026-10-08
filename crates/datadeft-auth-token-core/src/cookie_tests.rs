@@ -315,7 +315,7 @@ fn configured_clock_skew_never_extends_idle_or_absolute_expiry() {
     let value = mint_bound_cookie(b"body", &ring, &mut rng, 1_000, 1_000, 1_000).expect("mint");
 
     for bounds in [MaxAge::new(30, 60), MaxAge::new(60, 30)] {
-        for skew in [0, 30, 60, u64::MAX] {
+        for skew in [0, 30, 60, MAX_CLOCK_SKEW_SECS] {
             assert!(parse_bound_cookie_with_clock_skew(&value, &ring, 1_030, bounds, skew).is_ok());
             assert_eq!(
                 parse_bound_cookie_with_clock_skew(&value, &ring, 1_031, bounds, skew).unwrap_err(),
@@ -326,37 +326,64 @@ fn configured_clock_skew_never_extends_idle_or_absolute_expiry() {
 }
 
 #[test]
-fn configured_clock_skew_handles_maximum_u64_without_overflow() {
+fn clock_skew_above_the_cap_is_rejected_as_misconfiguration() {
     let ring = test_ring(0x8C, "active");
     let mut rng = FixedBytesRng([0xB9; branca::NONCE_BYTES]);
+    for skew in [MAX_CLOCK_SKEW_SECS + 1, u64::MAX] {
+        assert_eq!(
+            mint_bound_cookie_with_clock_skew(b"body", &ring, &mut rng, 1_000, 1_000, 1_000, skew)
+                .unwrap_err(),
+            TokenError::InvalidTimestamp
+        );
+    }
+    let value = mint_bound_cookie(b"body", &ring, &mut rng, 1_000, 1_000, 1_000).expect("mint");
+    for skew in [MAX_CLOCK_SKEW_SECS + 1, u64::MAX] {
+        // Distinct from InvalidToken, so operators see the misconfiguration.
+        assert_eq!(
+            parse_bound_cookie_with_clock_skew(&value, &ring, 1_000, MaxAge::fixed(60), skew)
+                .unwrap_err(),
+            TokenError::InvalidTimestamp
+        );
+    }
+}
+
+#[test]
+fn capped_clock_skew_is_overflow_safe_at_extreme_times() {
+    let ring = test_ring(0x8C, "active");
+    let mut rng = FixedBytesRng([0xBA; branca::NONCE_BYTES]);
     let value = mint_bound_cookie_with_clock_skew(
         b"body",
         &ring,
         &mut rng,
         u32::MAX,
         u32::MAX,
-        1,
-        u64::MAX,
+        u64::from(u32::MAX),
+        MAX_CLOCK_SKEW_SECS,
     )
-    .expect("large skew is overflow safe at mint");
-    for now in [1, u64::MAX] {
+    .expect("mint at the u32 timestamp ceiling");
+    for now in [u64::from(u32::MAX), u64::MAX] {
         assert!(
             parse_bound_cookie_with_clock_skew(
                 &value,
                 &ring,
                 now,
                 MaxAge::fixed(u64::MAX),
-                u64::MAX,
+                MAX_CLOCK_SKEW_SECS,
             )
             .is_ok()
         );
     }
     assert_eq!(
-        parse_bound_cookie_with_clock_skew(&value, &ring, u64::MAX, MaxAge::fixed(60), u64::MAX,)
-            .unwrap_err(),
+        parse_bound_cookie_with_clock_skew(
+            &value,
+            &ring,
+            u64::MAX,
+            MaxAge::fixed(60),
+            MAX_CLOCK_SKEW_SECS,
+        )
+        .unwrap_err(),
         TokenError::InvalidToken
     );
-    let mut rng = FixedBytesRng([0xBA; branca::NONCE_BYTES]);
     assert_eq!(
         mint_bound_cookie_with_clock_skew(
             b"body",
@@ -365,10 +392,12 @@ fn configured_clock_skew_handles_maximum_u64_without_overflow() {
             u32::MAX,
             u32::MAX,
             u64::MAX,
-            u64::MAX,
+            MAX_CLOCK_SKEW_SECS,
         )
         .unwrap_err(),
-        TokenError::KeyExpired
+        // The mint timestamp is far behind `now`; the capped skew cannot
+        // bridge it, and the comparison saturates instead of overflowing.
+        TokenError::InvalidTimestamp
     );
 }
 

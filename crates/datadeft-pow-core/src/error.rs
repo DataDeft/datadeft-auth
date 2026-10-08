@@ -18,6 +18,8 @@ pub enum PowError {
     DifficultyTooHigh,
     /// `max_age_secs` cannot be represented by the timestamp arithmetic.
     MaxAgeTooLarge,
+    /// Configured clock skew exceeds [`crate::MAX_CLOCK_SKEW_SECS`].
+    ClockSkewTooLarge,
     /// Wrong leading zeros, or `sol != SHA-256(chg + non)`.
     InvalidSolution,
 }
@@ -32,6 +34,7 @@ impl core::fmt::Display for PowError {
             Self::DifficultyTooLow => "solution difficulty is below the required minimum",
             Self::DifficultyTooHigh => "solution difficulty exceeds the supported maximum",
             Self::MaxAgeTooLarge => "maximum challenge age is too large",
+            Self::ClockSkewTooLarge => "configured clock skew is too large",
             Self::InvalidSolution => "proof-of-work solution is incorrect",
         };
         f.write_str(msg)

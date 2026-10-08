@@ -1,6 +1,7 @@
 //! Tests for the proof-of-work core. Time/entropy are injected data, so
 //! generation is deterministic apart from proptest's own seeded RNG.
 
+use crate::MAX_CLOCK_SKEW_SECS;
 use crate::challenge::Solution;
 use crate::clock::UnixMillis;
 use crate::error::PowError;
@@ -428,9 +429,9 @@ fn zero_skew_rejects_a_timestamp_one_millisecond_ahead() {
 }
 
 #[test]
-fn configured_skew_preserves_expiry_and_handles_full_u64_range() {
+fn configured_skew_preserves_expiry_and_is_capped() {
     let sol = solved_solution(1);
-    for clock_skew_secs in [0, 30, 60, u64::MAX] {
+    for clock_skew_secs in [0, 30, 60, MAX_CLOCK_SKEW_SECS] {
         assert!(
             verify_solution_with_clock_skew(
                 &secret(),
@@ -454,16 +455,31 @@ fn configured_skew_preserves_expiry_and_handles_full_u64_range() {
             Err(PowError::Expired)
         );
     }
-    assert!(
+    // Above the cap is a configuration error, whatever the clock says.
+    for clock_skew_secs in [MAX_CLOCK_SKEW_SECS + 1, u64::MAX] {
+        assert_eq!(
+            verify_solution_with_clock_skew(
+                &secret(),
+                &sol,
+                at(TIM_UNIX),
+                MAX_AGE,
+                1,
+                clock_skew_secs
+            ),
+            Err(PowError::ClockSkewTooLarge)
+        );
+    }
+    // At the cap the arithmetic stays overflow safe at both clock extremes.
+    assert_eq!(
         verify_solution_with_clock_skew(
             &secret(),
             &sol,
             UnixMillis::from_millis(0),
             MAX_AGE,
             1,
-            u64::MAX,
-        )
-        .is_ok()
+            MAX_CLOCK_SKEW_SECS,
+        ),
+        Err(PowError::FutureTimestamp)
     );
     assert_eq!(
         verify_solution_with_clock_skew(
@@ -472,7 +488,7 @@ fn configured_skew_preserves_expiry_and_handles_full_u64_range() {
             UnixMillis::from_millis(u64::MAX),
             MAX_AGE,
             1,
-            u64::MAX,
+            MAX_CLOCK_SKEW_SECS,
         ),
         Err(PowError::Expired)
     );

@@ -21,6 +21,9 @@ type HmacSha256 = Hmac<Sha256>;
 /// clock skew between server instances and matches the token-cookie default.
 /// Use [`verify_solution_with_clock_skew`] to configure another tolerance.
 pub const MAX_FUTURE_SKEW_SECS: u64 = 60;
+/// Largest tolerance [`verify_solution_with_clock_skew`] accepts. Shared with
+/// the cookie layer so one auth path has one skew ceiling.
+pub const MAX_CLOCK_SKEW_SECS: u64 = datadeft_auth_token_core::cookie::MAX_CLOCK_SKEW_SECS;
 /// Maximum useful difficulty for a 64-character lowercase hex SHA-256 digest.
 pub const MAX_DIFFICULTY: u8 = 64;
 /// Recommended production minimum. Difficulty 1–3 is useful for tests only.
@@ -139,6 +142,9 @@ pub fn verify_solution_with_clock_skew(
 ) -> Result<Verified, PowError> {
     if min_difficulty > MAX_DIFFICULTY {
         return Err(PowError::DifficultyTooHigh);
+    }
+    if clock_skew_secs > MAX_CLOCK_SKEW_SECS {
+        return Err(PowError::ClockSkewTooLarge);
     }
     let max_age = i64::try_from(max_age_secs).map_err(|_| PowError::MaxAgeTooLarge)?;
     validate_solution_shape(solution)?;

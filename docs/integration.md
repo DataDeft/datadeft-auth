@@ -189,7 +189,7 @@ Existing APIs allow timestamps up to 60 seconds ahead of the verifier. This is
 a future-time tolerance, not extra TTL. For a stricter 30-second requirement, use
 `verify_solution_with_clock_skew(..., 30)` and
 `verify_pow_proof_cookie_with_clock_skew(..., 30)`. Axum users set
-`PowPolicy::new(difficulty, 120)?.with_clock_skew_secs(30)` for challenges and
+`PowPolicy::new(difficulty, 120)?.with_clock_skew_secs(30)?` for challenges and
 use the explicit proof-cookie verifier with the same bound at their gate.
 Zero rejects all future timestamps.
 

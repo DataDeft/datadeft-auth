@@ -220,6 +220,10 @@ pub fn verify_pow_proof_cookie_with_clock_skew(
     if max_age_secs == 0 || max_age_secs > POW_PROOF_MAX_AGE_SECS {
         return Err(TokenError::InvalidToken);
     }
+    // A misconfigured skew is reported, not collapsed into InvalidToken.
+    if clock_skew_secs > crate::MAX_CLOCK_SKEW_SECS {
+        return Err(TokenError::InvalidTimestamp);
+    }
 
     let verified = parse_bound_cookie_with_clock_skew::<PowProofCookie>(
         cookie_value,

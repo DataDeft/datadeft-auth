@@ -21,7 +21,9 @@ Existing PoW and bound-cookie helpers allow 60 seconds of future timestamp
 skew. Explicit `*_with_clock_skew` helpers take a caller-supplied seconds bound;
 PoW Axum uses `PowPolicy::with_clock_skew_secs`. Apps with a stricter
 requirement can select 30 seconds. Apply the same bound separately to challenge and proof-cookie
-verification. Zero forbids future timestamps. Skew never extends an expired
+verification. Zero forbids future timestamps. The tolerance is capped at
+`MAX_CLOCK_SKEW_SECS` (300 seconds); larger values are rejected as a
+configuration error. Skew never extends an expired
 TTL or the lifetime of a key. Magic-link service wrappers retain the default.
 
 ## Token design

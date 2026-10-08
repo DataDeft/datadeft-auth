@@ -81,7 +81,7 @@ fn admission_applies_configured_clock_skew() {
         (60, 60_000, true),
         (60, 60_001, false),
     ] {
-        let configured = policy().with_clock_skew_secs(skew);
+        let configured = policy().with_clock_skew_secs(skew).expect("skew in range");
         let mut rng = PerCallRng::starting_at(0xa0);
         let result = verify_pow_solution(
             &secret,
@@ -214,4 +214,15 @@ fn expired_challenge_is_rejected() {
 fn solution_request_rejects_unknown_fields() {
     let json = r#"{"chg":"a","sol":"b","non":"0","tim":"t","tag":"g","extra":"x"}"#;
     assert!(serde_json::from_str::<PowSolutionRequest>(json).is_err());
+}
+
+#[test]
+fn policy_rejects_clock_skew_above_the_cap() {
+    assert!(policy().with_clock_skew_secs(MAX_CLOCK_SKEW_SECS).is_ok());
+    for skew in [MAX_CLOCK_SKEW_SECS + 1, u64::MAX] {
+        assert_eq!(
+            policy().with_clock_skew_secs(skew).unwrap_err(),
+            PowPolicyError::InvalidClockSkew
+        );
+    }
 }

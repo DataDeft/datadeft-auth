@@ -45,6 +45,21 @@ pub const TOKEN_VERSION_PREFIX: &str = "v1";
 /// read as fresh).
 pub const CLOCK_SKEW_TOLERANCE_SECS: u64 = 60;
 
+/// Largest tolerance the `*_with_clock_skew` entry points accept. Skew only
+/// absorbs small clock differences between hosts; a larger value is a
+/// misconfiguration (`u64::MAX` would switch the future-date check off).
+pub const MAX_CLOCK_SKEW_SECS: u64 = 300;
+
+/// Reject a skew above [`MAX_CLOCK_SKEW_SECS`] with the distinct
+/// [`TokenError::InvalidTimestamp`], before any token work, so a
+/// misconfiguration is visible instead of collapsing into `InvalidToken`.
+fn check_clock_skew(clock_skew_secs: u64) -> Result<(), TokenError> {
+    if clock_skew_secs > MAX_CLOCK_SKEW_SECS {
+        return Err(TokenError::InvalidTimestamp);
+    }
+    Ok(())
+}
+
 /// Bound cookie payload version byte (internal binary framing).
 const PAYLOAD_V1: u8 = 1;
 
@@ -277,6 +292,7 @@ where
     P: KeyPurpose,
     R: RngCore + CryptoRng + ?Sized,
 {
+    check_clock_skew(clock_skew_secs)?;
     check_mint_timestamp(timestamp, now_unix, clock_skew_secs)?;
     if iat > timestamp {
         return Err(TokenError::InvalidTimestamp);
@@ -327,6 +343,7 @@ pub fn parse_bound_cookie_with_clock_skew<P: KeyPurpose>(
     max_age: MaxAge,
     clock_skew_secs: u64,
 ) -> Result<VerifiedCookie, TokenError> {
+    check_clock_skew(clock_skew_secs)?;
     // Enforces the idle bound (and skew) on the Branca timestamp.
     let (kid, verified) =
         decrypt_wrapped_token(value, keyring, now_unix, max_age.idle_secs, clock_skew_secs)?;

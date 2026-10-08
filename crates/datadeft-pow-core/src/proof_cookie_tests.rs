@@ -3,6 +3,7 @@
 use datadeft_auth_token_core::test_support::{PerCallRng, test_keyring};
 
 use super::*;
+use crate::MAX_CLOCK_SKEW_SECS;
 
 const NOW: u64 = 1_781_438_700;
 const KID: &str = "test-active";
@@ -189,14 +190,14 @@ fn proof_cookie_default_skew_remains_sixty_seconds() {
 }
 
 #[test]
-fn proof_cookie_configured_skew_preserves_expiry_and_handles_full_u64_range() {
+fn proof_cookie_configured_skew_preserves_expiry_and_is_capped() {
     let keyring = keyring();
     let mut rng = PerCallRng::starting_at(0xa0);
     let cookie =
         mint_pow_proof_cookie(&test_tid(), None, &keyring, &mut rng, NOW).expect("cookie mints");
     let boundary = NOW + DEFAULT_POW_PROOF_TTL_SECS;
 
-    for clock_skew_secs in [0, 30, 60, u64::MAX] {
+    for clock_skew_secs in [0, 30, 60, MAX_CLOCK_SKEW_SECS] {
         assert!(
             verify_pow_proof_cookie_with_clock_skew(
                 cookie.as_secret_value(),
@@ -221,15 +222,31 @@ fn proof_cookie_configured_skew_preserves_expiry_and_handles_full_u64_range() {
             );
         }
     }
-    assert!(
+    // Above the cap is reported as a misconfiguration, not InvalidToken.
+    for clock_skew_secs in [MAX_CLOCK_SKEW_SECS + 1, u64::MAX] {
+        assert_eq!(
+            verify_pow_proof_cookie_with_clock_skew(
+                cookie.as_secret_value(),
+                &keyring,
+                NOW,
+                DEFAULT_POW_PROOF_TTL_SECS,
+                clock_skew_secs,
+            )
+            .err(),
+            Some(TokenError::InvalidTimestamp)
+        );
+    }
+    // At the cap, a cookie far in the future is still rejected.
+    assert_eq!(
         verify_pow_proof_cookie_with_clock_skew(
             cookie.as_secret_value(),
             &keyring,
             0,
             DEFAULT_POW_PROOF_TTL_SECS,
-            u64::MAX,
+            MAX_CLOCK_SKEW_SECS,
         )
-        .is_ok()
+        .err(),
+        Some(TokenError::InvalidToken)
     );
 }
 
