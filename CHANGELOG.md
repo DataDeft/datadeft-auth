@@ -40,7 +40,7 @@ Target: first registry release `0.3.0` (pending approval).
   deployments can select a stricter bound such as 30 seconds, or zero.
 - Release-please PRs and tagged releases using crates.io/npm OIDC publishing,
   with verification, an opt-in repository variable, and an approval environment.
-- [Registry migration guide](docs/migration-registries.md) and
+- Consumer upgrade notes in [integration.md](docs/integration.md) and a
   [maintainer release runbook](docs/releasing.md), including first-publish
   bootstrap and npm provenance prerequisites.
 

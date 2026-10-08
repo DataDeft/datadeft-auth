@@ -26,4 +26,3 @@
 - [Operating model](operating.md)
 
 - [Registry release runbook](releasing.md)
-- [Registry migration](migration-registries.md)

@@ -20,23 +20,17 @@ session cookies, magic-link request/consume orchestration). The consuming
 application keeps everything product-specific (router, paths, JSON shapes,
 email templates, redirects, consent policy, locale, audit/WAL, infra).
 
-## Reference source is porting material only
+## No application-specific code
 
-Code under [`to-be-porting/`](to-be-porting/) is **copied reference source**,
-not finished library code. It exists only as the material to extract from.
-Git ignores it (see [`.gitignore`](.gitignore)) and it must never be wired
-into the public crates verbatim. When extracting, remove all application
-branding, domains, cookie names, issuer/audience values, email templates,
-and product-specific policies.
+The libraries were extracted from application code. The public crates and the
+npm package must contain no application branding, domains, cookie names,
+issuer/audience values, email templates, or product-specific policies.
+That excludes:
 
-Examples of things to strip during extraction:
-
-- cookie names like `ct_session` / `ct_pow`
-- issuer/audience like `celeratax-auth` / `app.celeratax.hu`
-- CloudFront / viewer-country / EU-27 enforcement logic
-- WAL/audit event emission
-- `@panzerotti/protect-client` package naming
-- any CeleraTax/Panzerotti-branded email templates
+- application-specific cookie names, issuers, audiences, and domains
+- CDN, viewer-country, or regional enforcement logic
+- audit/WAL event emission
+- application package names and branded email templates
 
 ## Crate shape
 
@@ -125,16 +119,12 @@ errors before they cross the public boundary.
 
 ### `packages/dd-protect-client`
 
-Optional browser proof-of-work client, extracted from `frontends/pow`. The
-final public package must contain **no** CeleraTax/Panzerotti branding. It
+Optional browser proof-of-work client. The public package must contain **no** consuming-application branding. It
 must match `datadeft-pow-core` challenge/solution vectors exactly.
 
 ## Email templates and branding
 
-The copied CeleraTax email templates under
-`to-be-porting/celeratax/backends/adapters/templates` are **reference
-material only**. The libraries must **not** send CeleraTax-branded email by
-default. Every consuming application provides its own subject, text, and HTML
+The libraries must **not** send application-branded email by default. Every consuming application provides its own subject, text, and HTML
 templates (or a renderer).
 
 The service crate models email as **data/traits**, for example:
@@ -146,7 +136,7 @@ The service crate models email as **data/traits**, for example:
 - optional HTML body
 
 If `datadeft-magic-link-aws` includes an SES sender, it sends **app-provided
-message content**. It must not bake in CeleraTax copy, logos, domains,
+message content**. It must not bake in application copy, logos, domains,
 colors, or URLs.
 
 ## How a consuming API uses this
@@ -226,8 +216,7 @@ bun add @datadeft/protect-client
 
 Rust requires 1.88 or newer. Applications no longer need git credentials or
 vendored client sources. Use the [integration guide](docs/integration.md) for
-magic-link dependencies and the [migration note](docs/migration-registries.md)
-for the crate/import renames and configurable clock skew.
+magic-link dependencies, crate/import renames, and configurable clock skew.
 
 For library development, local `path` dependencies remain supported.
 

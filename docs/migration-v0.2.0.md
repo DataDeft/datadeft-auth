@@ -1,7 +1,8 @@
 # Migrating a consumer to datadeft-auth v0.2.0
 
 > This describes the historical git-tag migration. For registry packages and
-> renamed imports, also follow [migration-registries.md](migration-registries.md).
+> renamed imports, also follow "Upgrading from the git-tag crates" in
+> [integration.md](integration.md).
 
 This document is written to be handed to an implementation agent working on
 an application that consumes datadeft-auth (for example `pz-api`). It is

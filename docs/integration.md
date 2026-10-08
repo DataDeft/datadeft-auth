@@ -42,8 +42,20 @@ bun add @datadeft/protect-client
 The other core crates arrive transitively. The service and Axum crates
 re-export the types needed for magic-link integration. Commit the consumer
 lockfiles. No git credentials or vendored TypeScript are needed.
-See [migration-registries.md](migration-registries.md) for the complete rename
-map and worker migration.
+
+### Upgrading from the git-tag crates
+
+Before the registry release, the crates were named `dd-*` and consumed as git
+dependencies. Each `dd-<name>` crate is now `datadeft-<name>` (Rust imports
+`dd_<name>` become `datadeft_<name>`), and the browser client is
+`@datadeft/protect-client`. Replace git or vendored dependencies with registry
+versions, update imports, and regenerate lockfiles. Rust 1.88 or newer is
+required. No compatibility aliases exist. Cookie names (`dd_pow`, `dd_session`,
+`dd_auth_confirm`), HMAC/HKDF domains, stored keys, and wire formats are
+unchanged, so no session or data migration is needed. 0.3.0 also changes
+`mint_to_verify_ms` to `Option<u64>` (see `CHANGELOG.md`). The client now starts
+a module worker; see the
+[client README](../packages/dd-protect-client/README.md) for the worker entry.
 
 ## What you provide
 

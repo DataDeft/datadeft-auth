@@ -4,13 +4,13 @@ This prepares `0.3.0` as the first registry release. `v0.2.0` already exists as 
 git release; never move that tag. All seven Rust crates and the npm client use
 one version and one release PR. No package has been published by this work.
 
-## Approval and one-time setup (Istvan)
+## Approval and one-time setup (maintainers)
 
 Before the first publication:
 
 1. Confirm the seven `datadeft-*` names below and `@datadeft/protect-client`.
    The license is MIT (approved 2026-10-08).
-2. Obtain **both Istvan's and Roland's approval** on the implementation PR and
+2. Obtain **approval from two maintainers** on the implementation PR and
    every release PR. Configure branch protection for two approvals and verify
    the identities before merging. A CODEOWNERS list or an environment with two
    reviewers does not require both people to approve; GitHub environments
@@ -43,7 +43,7 @@ an entirely OIDC-only first publication is not currently possible. See the
 [crates.io prerequisites](https://crates.io/docs/trusted-publishing) and
 [npm trust prerequisites](https://docs.npmjs.com/cli/v11/commands/npm-trust/).
 
-After the approved release is tagged, Istvan must bootstrap the real reviewed
+After the approved release is tagged, a maintainer must bootstrap the real reviewed
 packages from that exact tag using a local, narrowly scoped, short-lived
 crates.io credential and interactive npm login/2FA. Do not create placeholder
 packages or put bootstrap credentials in CI. Run the checks below and publish
@@ -129,7 +129,7 @@ versions to hide that bootstrap limitation.
    versions synchronized. Use `mise run js-lock` when changing JS dependencies;
    it normalizes Bun's JSONC output for release-please's strict JSON updater.
 3. Approve any pending bot-created CI runs, review the full release PR, and
-   obtain Istvan's and Roland's approvals before merge.
+   obtain two maintainer approvals before merge.
 4. Release-please creates the matching `vX.Y.Z` tag/release. Since a tag created
    by `GITHUB_TOKEN` does not trigger a push workflow, it explicitly dispatches
    `release.yml` on that tag. Human-created release tags also trigger it.

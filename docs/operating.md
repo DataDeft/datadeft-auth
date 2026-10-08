@@ -159,11 +159,11 @@ Recommended early versions:
 Do not publish until the repo meets these conditions.
 
 1. Provenance audit passed.
-2. Istvan has approved the MIT license (2026-10-08).
+2. The maintainers have approved the MIT license (2026-10-08).
 3. Docs exist.
 4. Examples compile.
 5. Public API review passed.
 6. Dependency audit passed.
 7. License audit passed.
 8. Workspace archive verification passed for every crate; per-crate registry dry-runs pass once their dependencies exist.
-9. Both Istvan and Roland approved the PR; registry bootstrap and OIDC setup follow [releasing.md](releasing.md).
+9. Two maintainers approved the PR; registry bootstrap and OIDC setup follow [releasing.md](releasing.md).
