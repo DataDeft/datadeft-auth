@@ -21,6 +21,11 @@ use crate::types::{RequestMagicLinkCommand, SessionCookie, SessionRecord};
 
 use super::*;
 
+// Crate items the service test modules use, re-exported once for all of them.
+pub(super) use crate::error::*;
+pub(super) use crate::traits::*;
+pub(super) use crate::types::*;
+
 pub(super) const NOW: u64 = 1_000;
 pub(super) const SELECTOR: &str = "000102030405060708090a0b0c0d0e0f";
 pub(super) const VERIFIER: &str =
