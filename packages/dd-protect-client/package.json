@@ -21,8 +21,7 @@
     "dist/*.js",
     "dist/*.d.ts",
     "README.md",
-    "LICENSE-MIT",
-    "LICENSE-APACHE"
+    "LICENSE"
   ],
   "sideEffects": [
     "./dist/protect-worker.js"
@@ -54,6 +53,6 @@
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.51.0"
   },
-  "license": "(MIT OR Apache-2.0)",
+  "license": "MIT",
   "author": "Istvan <dev@l1x.be>"
 }

@@ -39,4 +39,4 @@ The normative security policy is [`docs/security.md`](https://github.com/DataDef
 
 ## License
 
-Licensed under MIT OR Apache-2.0.
+Licensed under MIT.

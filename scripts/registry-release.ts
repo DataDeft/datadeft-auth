@@ -50,7 +50,7 @@ async function check(): Promise<string> {
       requireCondition(manifest.package[field]?.workspace && root.workspace.package[field], `${name}: missing ${field}`);
     }
     requireCondition(manifest.package.description && manifest.package.readme && manifest.package.keywords?.length, `${name}: incomplete metadata`);
-    for (const license of ["LICENSE-MIT", "LICENSE-APACHE"]) {
+    for (const license of ["LICENSE"]) {
       requireCondition(await Bun.file(`${base}/${license}`).text() === await Bun.file(license).text(), `${name}: stale ${license}`);
     }
     for (const section of ["dependencies", "dev-dependencies", "build-dependencies"]) {

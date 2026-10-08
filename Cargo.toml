@@ -8,7 +8,7 @@ members = ["crates/*", "examples/*"]
 version = "0.3.0" # x-release-please-version
 edition = "2024"
 rust-version = "1.88"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "https://github.com/DataDeft/datadeft-auth"
 authors = ["Istvan <dev@l1x.be>"]
 

@@ -25,8 +25,8 @@ Target: first registry release `0.3.0` (pending approval).
   proof cookies (return a class byte only once every node runs v0.2.0+).
 - Rename the seven Rust crates from `dd-*` to `datadeft-*`, including Rust
   import paths and source directories. Registry installs use version `0.3`.
-- Prepare crates.io metadata, versioned path dependencies, README and dual
-  license texts. MIT OR Apache-2.0 is proposed, pending Istvan's sign-off.
+- Prepare crates.io metadata, versioned path dependencies, READMEs, and MIT
+  license texts.
 - Declare and verify Rust 1.88, matching the `time` dependency requirement.
 - Package the browser client as `@datadeft/protect-client` with ESM and `.d.ts`
   exports for the main module and `./worker`. Workers now start as ES modules.

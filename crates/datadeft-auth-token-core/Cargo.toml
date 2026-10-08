@@ -9,7 +9,7 @@ repository.workspace = true
 authors.workspace = true
 readme = "README.md"
 keywords = ["authentication", "security", "passwordless"]
-include = ["src/**", "tests/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+include = ["src/**", "tests/**", "README.md", "LICENSE"]
 
 [features]
 default = []

@@ -8,9 +8,8 @@ one version and one release PR. No package has been published by this work.
 
 Before the first publication:
 
-1. Confirm the seven `datadeft-*` names below, `@datadeft/protect-client`, and
-   MIT OR Apache-2.0. The license files and metadata in this PR are a proposal;
-   get license/provenance sign-off from Istvan before merge/publication.
+1. Confirm the seven `datadeft-*` names below and `@datadeft/protect-client`.
+   The license is MIT (approved 2026-10-08).
 2. Obtain **both Istvan's and Roland's approval** on the implementation PR and
    every release PR. Configure branch protection for two approvals and verify
    the identities before merging. A CODEOWNERS list or an environment with two
@@ -161,11 +160,11 @@ security policy, architecture, synthetic examples, and placeholder key fields;
 no production secret, credential, cookie capture, or customer data was found
 there. Disclosure of that design is intentional: source secrecy is not a
 security boundary. This is not a replacement for the separate security review
-or the required provenance/license sign-off.
+or the required provenance sign-off.
 
 Rust tarballs allow only sources, tests (including deterministic vectors),
 README, and license texts, plus Cargo-generated metadata/lockfiles. npm packing
-asserts the exact eight-file distribution (two JS, two declarations, README,
-package.json, and two licenses). `docs/security.md` is linked from crate READMEs
+asserts the exact seven-file distribution (two JS, two declarations, README,
+package.json, and the license). `docs/security.md` is linked from crate READMEs
 rather than bundled; do not change repository visibility before its review and
 approval are complete.

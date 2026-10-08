@@ -34,7 +34,7 @@ try {
         assert.equal(manifest.scripts?.[lifecycle], undefined, `${lifecycle} is not allowed`);
     }
     const expectedFiles = [
-        "LICENSE-APACHE", "LICENSE-MIT", "README.md", "package.json",
+        "LICENSE", "README.md", "package.json",
         "dist/protect.d.ts", "dist/protect.js",
         "dist/protect-worker.d.ts", "dist/protect-worker.js",
     ].sort();
@@ -43,7 +43,7 @@ try {
     ));
     assert.equal(dryRun.length, 1);
     assert.deepEqual(dryRun[0]?.files.map((file) => file.path).sort(), expectedFiles);
-    for (const license of ["LICENSE-MIT", "LICENSE-APACHE"]) {
+    for (const license of ["LICENSE"]) {
         assert.equal(
             // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed license names under the package directory
             await readFile(resolve(packageRoot, license), "utf8"),

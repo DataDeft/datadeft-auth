@@ -110,4 +110,4 @@ the package. `mise run pack-check` rebuilds and runs the packaging checks.
 
 ## License
 
-MIT OR Apache-2.0. Both license texts are included in the npm archive.
+MIT. The license text is included in the npm archive.

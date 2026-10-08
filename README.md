@@ -268,5 +268,4 @@ status and MVP IDs in `docs/onboarding.md`.
 
 ## License
 
-[MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE), at your option.
-The dual-license proposal needs Istvan's sign-off before the first publish.
+[MIT](LICENSE).

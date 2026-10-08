@@ -15,6 +15,6 @@ for (const config of ["tsconfig.build.json", "tsconfig.worker-build.json"]) {
         throw new Error(`TypeScript build failed: ${config}`);
     }
 }
-for (const license of ["LICENSE-MIT", "LICENSE-APACHE"]) {
+for (const license of ["LICENSE"]) {
     await copyFile(resolve(workspaceRoot, license), resolve(packageRoot, license));
 }

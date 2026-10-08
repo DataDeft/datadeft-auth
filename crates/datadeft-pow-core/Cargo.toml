@@ -9,7 +9,7 @@ repository.workspace = true
 authors.workspace = true
 readme = "README.md"
 keywords = ["authentication", "security", "proof-of-work"]
-include = ["src/**", "tests/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+include = ["src/**", "tests/**", "README.md", "LICENSE"]
 
 [lints]
 workspace = true

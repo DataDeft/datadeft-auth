@@ -159,7 +159,7 @@ Recommended early versions:
 Do not publish until the repo meets these conditions.
 
 1. Provenance audit passed.
-2. Istvan has approved MIT OR Apache-2.0 and the bundled license texts.
+2. Istvan has approved the MIT license (2026-10-08).
 3. Docs exist.
 4. Examples compile.
 5. Public API review passed.
