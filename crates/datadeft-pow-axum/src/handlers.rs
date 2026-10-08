@@ -70,9 +70,7 @@ impl PowPolicy {
         if difficulty == 0 || difficulty > MAX_DIFFICULTY {
             return Err(PowPolicyError::InvalidDifficulty);
         }
-        if challenge_max_age_secs == 0
-            || validate_challenge_max_age_secs(challenge_max_age_secs).is_err()
-        {
+        if validate_challenge_max_age_secs(challenge_max_age_secs).is_err() {
             return Err(PowPolicyError::InvalidChallengeMaxAge);
         }
         Ok(Self {

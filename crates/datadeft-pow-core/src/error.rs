@@ -16,8 +16,8 @@ pub enum PowError {
     DifficultyTooLow,
     /// Configured or echoed difficulty is above the 64-hex-nibble maximum.
     DifficultyTooHigh,
-    /// `max_age_secs` exceeds [`crate::MAX_CHALLENGE_MAX_AGE_SECS`].
-    MaxAgeTooLarge,
+    /// `max_age_secs` is outside `1..=`[`crate::MAX_CHALLENGE_MAX_AGE_SECS`].
+    InvalidMaxAge,
     /// Configured clock skew exceeds [`crate::MAX_CLOCK_SKEW_SECS`].
     ClockSkewTooLarge,
     /// Wrong leading zeros, or `sol != SHA-256(chg + non)`.
@@ -33,7 +33,7 @@ impl core::fmt::Display for PowError {
             Self::FutureTimestamp => "challenge timestamp is in the future",
             Self::DifficultyTooLow => "solution difficulty is below the required minimum",
             Self::DifficultyTooHigh => "solution difficulty exceeds the supported maximum",
-            Self::MaxAgeTooLarge => "maximum challenge age is too large",
+            Self::InvalidMaxAge => "maximum challenge age is out of range",
             Self::ClockSkewTooLarge => "configured clock skew is too large",
             Self::InvalidSolution => "proof-of-work solution is incorrect",
         };

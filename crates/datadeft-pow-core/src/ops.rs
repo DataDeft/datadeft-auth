@@ -38,11 +38,12 @@ pub fn validate_clock_skew_secs(clock_skew_secs: u64) -> Result<(), PowError> {
     Ok(())
 }
 
-/// Check a challenge lifetime against [`MAX_CHALLENGE_MAX_AGE_SECS`]. Shared
-/// by verification and policy builders so the rule lives in one place.
+/// Check a challenge lifetime is in `1..=`[`MAX_CHALLENGE_MAX_AGE_SECS`]. Zero
+/// would expire every solution at once. Shared by verification and policy
+/// builders so the rule lives in one place.
 pub fn validate_challenge_max_age_secs(max_age_secs: u64) -> Result<(), PowError> {
-    if max_age_secs > MAX_CHALLENGE_MAX_AGE_SECS {
-        return Err(PowError::MaxAgeTooLarge);
+    if max_age_secs == 0 || max_age_secs > MAX_CHALLENGE_MAX_AGE_SECS {
+        return Err(PowError::InvalidMaxAge);
     }
     Ok(())
 }

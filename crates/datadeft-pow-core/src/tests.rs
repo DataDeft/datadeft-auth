@@ -169,8 +169,8 @@ fn secret_debug_redacts_and_error_display_is_stable() {
             "solution difficulty exceeds the supported maximum",
         ),
         (
-            PowError::MaxAgeTooLarge,
-            "maximum challenge age is too large",
+            PowError::InvalidMaxAge,
+            "maximum challenge age is out of range",
         ),
     ];
     for (err, msg) in cases {
@@ -713,7 +713,7 @@ fn oversized_max_age_is_rejected_explicitly() {
     let sol = solved_solution(1);
     assert_eq!(
         verify_solution(&secret(), &sol, at(TIM_UNIX + 1), u64::MAX, 1).unwrap_err(),
-        PowError::MaxAgeTooLarge
+        PowError::InvalidMaxAge
     );
 }
 
@@ -1008,7 +1008,7 @@ impl CorpusEntry {
             Some("DifficultyTooLow") => PowError::DifficultyTooLow,
             Some("InvalidSolution") => PowError::InvalidSolution,
             Some("DifficultyTooHigh") => PowError::DifficultyTooHigh,
-            Some("MaxAgeTooLarge") => PowError::MaxAgeTooLarge,
+            Some("InvalidMaxAge") => PowError::InvalidMaxAge,
             other => panic!("corpus fixture has unknown err kind {other:?}"),
         }
     }
@@ -1027,7 +1027,7 @@ fn frozen_corpus_round_trips() {
         "InvalidSolution",
         "InvalidTag",
         "InvalidTimestamp",
-        "MaxAgeTooLarge",
+        "InvalidMaxAge",
     ]);
     let observed_errors = corpus
         .iter()
@@ -1133,10 +1133,10 @@ fn distinct_entropy_mints_distinct_challenges() {
 fn challenge_max_age_above_the_ceiling_is_rejected() {
     let sol = solved_solution(1);
     assert!(verify_solution(&secret(), &sol, at(TIM_UNIX), MAX_CHALLENGE_MAX_AGE_SECS, 1).is_ok());
-    for max_age in [MAX_CHALLENGE_MAX_AGE_SECS + 1, u64::MAX] {
+    for max_age in [0, MAX_CHALLENGE_MAX_AGE_SECS + 1, u64::MAX] {
         assert_eq!(
             verify_solution(&secret(), &sol, at(TIM_UNIX), max_age, 1),
-            Err(PowError::MaxAgeTooLarge)
+            Err(PowError::InvalidMaxAge)
         );
     }
 }
