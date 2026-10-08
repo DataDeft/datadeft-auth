@@ -24,6 +24,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod admin;
 pub mod config;
 pub mod error;
 pub mod service;
@@ -35,6 +36,12 @@ pub mod types;
 #[cfg(test)]
 mod test_shared;
 
+pub use admin::{
+    AdminAction, AdminActor, AdminError, AdminEvent, AdminEventId, AuthAdminRepository,
+    AuthAdminService, MAX_ADMIN_ACTOR_ID_BYTES, MAX_ADMIN_PAGE_SIZE, MAX_ADMIN_REASON_BYTES,
+    MAX_PAGE_CURSOR_BYTES, Page, PageCursor, SessionHandle, SessionStatus, SessionSummary,
+    UserSummary,
+};
 pub use config::{MagicLinkConfigError, MagicLinkServiceConfig, RateLimitConfig};
 pub use datadeft_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 pub use datadeft_magic_link_core::{

@@ -75,6 +75,7 @@ impl StorageHmacKeys {
         self.previous.as_ref()
     }
 
+    #[cfg(feature = "aws")]
     pub(crate) fn set_previous(&mut self, previous: StorageHmacKey) {
         self.previous = Some(previous);
     }
