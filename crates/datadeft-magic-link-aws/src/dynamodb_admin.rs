@@ -123,10 +123,15 @@ impl DynamoDbAuthStore {
                 .expression_attribute_values(":target", av_bool(true))
                 .expression_attribute_values(":at", av_n(event.at_unix))
                 .expression_attribute_values(":actor", av_s(event.actor.id())),
+            // The watermark keeps every session from before the re-enable
+            // invalid, even one whose revocation failed.
             AdminAction::EnableUser => builder
-                .update_expression("SET disabled = :target REMOVE disabled_at_unix, disabled_by")
+                .update_expression(
+                    "SET disabled = :target, sessions_valid_after_unix = :at REMOVE disabled_at_unix, disabled_by",
+                )
                 .expression_attribute_values(":current", av_bool(true))
-                .expression_attribute_values(":target", av_bool(false)),
+                .expression_attribute_values(":target", av_bool(false))
+                .expression_attribute_values(":at", av_n(event.at_unix)),
             AdminAction::RevokeSession => return Err(AwsAdapterError::Internal),
         };
         let update = builder.build().map_err(|_| AwsAdapterError::Internal)?;
@@ -138,14 +143,72 @@ impl DynamoDbAuthStore {
         ])
     }
 
-    async fn transact(&self, items: Vec<TransactWriteItem>) -> Result<(), AwsAdapterError> {
+    /// The event id doubles as the idempotency token, so an SDK retry of a
+    /// commit whose response was lost is a no-op instead of a failed
+    /// condition.
+    async fn transact(
+        &self,
+        event: &AdminEvent,
+        items: Vec<TransactWriteItem>,
+    ) -> Result<(), AwsAdapterError> {
         self.client
             .transact_write_items()
+            .client_request_token(event.event_id.as_str())
             .set_transact_items(Some(items))
             .send()
             .await
             .map_err(map_admin_transact_write_items_error)?;
         Ok(())
+    }
+
+    /// One-time migration: remove the `ttl` attribute from session and
+    /// session-index rows written before audit retention, so DynamoDB TTL
+    /// cannot delete them. Idempotent; safe while serving traffic. Needs
+    /// `dynamodb:Scan` and `UpdateItem`. Returns the number of rows updated.
+    pub async fn remove_legacy_session_ttl(&self) -> Result<u64, AwsAdapterError> {
+        let mut updated = 0u64;
+        let mut start_key: Option<HashMap<String, AttributeValue>> = None;
+        loop {
+            let output = self
+                .client
+                .scan()
+                .table_name(&self.table_name)
+                .filter_expression(
+                    "(entity_type = :session OR entity_type = :index) AND attribute_exists(#ttl)",
+                )
+                .expression_attribute_names("#ttl", "ttl")
+                .expression_attribute_values(":session", av_s("session"))
+                .expression_attribute_values(":index", av_s("user_session_index"))
+                .projection_expression("pk, sk")
+                .set_exclusive_start_key(start_key.take())
+                .send()
+                .await
+                .map_err(map_scan_error)?;
+            for item in output.items() {
+                let result = self
+                    .client
+                    .update_item()
+                    .table_name(&self.table_name)
+                    .key("pk", av_s(required_s(item, "pk")?))
+                    .key("sk", av_s(required_s(item, "sk")?))
+                    .update_expression("REMOVE #ttl")
+                    .condition_expression("attribute_exists(pk)")
+                    .expression_attribute_names("#ttl", "ttl")
+                    .send()
+                    .await
+                    .map_err(map_update_item_error);
+                match result {
+                    Ok(_) => updated = updated.saturating_add(1),
+                    // Deleted by TTL between the scan and the update.
+                    Err(AwsAdapterError::ConditionalWriteFailed) => {}
+                    Err(error) => return Err(error),
+                }
+            }
+            match output.last_evaluated_key() {
+                Some(key) if !key.is_empty() => start_key = Some(key.clone()),
+                _ => return Ok(updated),
+            }
+        }
     }
 
     async fn get_user_summary(
@@ -264,11 +327,11 @@ pub(crate) fn item_to_admin_event(
         .map(SessionHandle::parse)
         .transpose()
         .map_err(|_| AwsAdapterError::Internal)?;
-    let actor = AdminActor::new(
-        required_s(item, "actor_id")?,
+    // Stored history stays readable even if input limits tighten later.
+    let actor = AdminActor::from_stored(
+        required_s(item, "actor_id")?.to_owned(),
         optional_s_strict(item, "actor_reason")?.map(str::to_owned),
-    )
-    .map_err(|_| AwsAdapterError::Internal)?;
+    );
     Ok(AdminEvent {
         event_id: AdminEventId::parse(required_s(item, "event_id")?)
             .map_err(|_| AwsAdapterError::Internal)?,
@@ -386,7 +449,10 @@ impl AuthAdminRepository for DynamoDbAuthStore {
                         .send()
                         .await
                         .map_err(map_get_item_error)?;
-                    let item = session.item().ok_or(AwsAdapterError::Internal)?;
+                    // A legacy-TTL index row can outlive its session row.
+                    let Some(item) = session.item() else {
+                        continue;
+                    };
                     let summary = item_to_session_summary(item)?;
                     if summary.user_id != *user_id {
                         return Err(AwsAdapterError::Internal);
@@ -438,14 +504,17 @@ impl AuthAdminRepository for DynamoDbAuthStore {
     }
 
     async fn revoke_session_audited(&self, event: &AdminEvent) -> Result<(), DependencyError> {
-        async { self.transact(self.revoke_session_transaction(event)?).await }
-            .await
-            .map_err(DependencyError::from)
+        async {
+            self.transact(event, self.revoke_session_transaction(event)?)
+                .await
+        }
+        .await
+        .map_err(DependencyError::from)
     }
 
     async fn set_user_disabled_audited(&self, event: &AdminEvent) -> Result<(), DependencyError> {
         async {
-            self.transact(self.set_user_disabled_transaction(event)?)
+            self.transact(event, self.set_user_disabled_transaction(event)?)
                 .await
         }
         .await

@@ -98,7 +98,11 @@ impl SessionRepository for TestSessions {
         Ok(())
     }
 
-    async fn is_user_active(&self, _user_id: &UserId) -> Result<bool, DependencyError> {
+    async fn is_session_owner_active(
+        &self,
+        _user_id: &UserId,
+        _session_created_at_unix: u64,
+    ) -> Result<bool, DependencyError> {
         self.user_checks.set(self.user_checks.get() + 1);
         if let Some(error) = self.user_check_error.take() {
             return Err(error);

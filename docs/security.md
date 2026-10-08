@@ -201,8 +201,20 @@ every admin endpoint before calling the service.
   `display_id()` (`sess_xxxxxxxx`) in UIs; pass the full handle back.
 - Disabling a user takes effect on the next request: `validate_session` checks
   the user's status every time. `disable_user` then revokes every session so
-  the audit trail records each one ending. Enabling does not restore revoked
-  sessions; the user logs in again.
+  the audit trail records each one ending. It is safe to retry: on an error
+  the user may already be disabled, and calling again finishes revoking.
+- Enabling never restores a session from before the disable, even one whose
+  revocation failed: it stamps a `sessions_valid_after` watermark on the
+  profile, and validation rejects older sessions. The user logs in again.
+- Admin transactions use the audit event id as the DynamoDB idempotency token.
+- Audit events within the same second list in event-id order, not action
+  order; use the timestamps.
+- "Append-only" is enforced by the library, not by IAM: the admin role needs
+  `TransactWriteItems`, which could also overwrite rows. Enable DynamoDB
+  point-in-time recovery or stream exports for tamper evidence.
+- Upgrading from a version that set `ttl` on session rows: run
+  `DynamoDbAuthStore::remove_legacy_session_ttl` once, so TTL cannot delete
+  retained sessions. Admin listings skip index rows whose session row is gone.
 - Admin ids and reasons are length-capped and may not contain control
   characters. `Debug` output redacts the reason.
 

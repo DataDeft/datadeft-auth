@@ -55,6 +55,10 @@ fn admin_actor_is_validated_and_its_reason_is_redacted() {
             Some("r".repeat(MAX_ADMIN_REASON_BYTES + 1)),
         ),
         ("admin".to_owned(), Some("line\rbreak".to_owned())),
+        ("admin\u{202E}nimda".to_owned(), None),
+        ("ad\u{200B}min".to_owned(), None),
+        ("admin".to_owned(), Some("line\u{2028}separator".to_owned())),
+        ("admin".to_owned(), Some("\u{FEFF}bom".to_owned())),
     ] {
         assert_eq!(
             AdminActor::new(id, reason).unwrap_err(),
@@ -120,4 +124,11 @@ fn page_limits_are_clamped() {
     assert_eq!(clamp_limit(0), 1);
     assert_eq!(clamp_limit(25), 25);
     assert_eq!(clamp_limit(u32::MAX), MAX_ADMIN_PAGE_SIZE);
+}
+
+#[test]
+fn stored_actors_stay_readable_when_limits_tighten() {
+    let long = "a".repeat(MAX_ADMIN_ACTOR_ID_BYTES + 10);
+    assert!(AdminActor::new(long.clone(), None).is_err());
+    assert_eq!(AdminActor::from_stored(long.clone(), None).id(), long);
 }

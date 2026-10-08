@@ -126,6 +126,13 @@ fn disable_and_enable_transactions_require_the_opposite_state() {
             .update_expression()
             .contains("REMOVE disabled_at_unix, disabled_by")
     );
+    // Re-enabling stamps the watermark that keeps older sessions invalid.
+    assert!(
+        update
+            .update_expression()
+            .contains("sessions_valid_after_unix = :at")
+    );
+    assert_eq!(attribute(values, ":at"), Some(&av_n(1_234)));
 }
 
 #[test]

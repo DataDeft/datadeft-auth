@@ -93,6 +93,14 @@ impl AdminActor {
         Ok(Self { id, reason })
     }
 
+    /// Rebuild an actor read back from storage. Stored history stays readable
+    /// even if the input limits are tightened later; only new actors from
+    /// [`AdminActor::new`] are validated.
+    #[must_use]
+    pub fn from_stored(id: String, reason: Option<String>) -> Self {
+        Self { id, reason }
+    }
+
     #[must_use]
     pub fn id(&self) -> &str {
         &self.id
@@ -114,8 +122,22 @@ impl fmt::Debug for AdminActor {
     }
 }
 
+/// Control characters plus invisible and direction-changing ones that would
+/// let an actor id or reason look different from what is stored.
 fn has_control(value: &str) -> bool {
-    value.chars().any(char::is_control)
+    value.chars().any(|ch| {
+        ch.is_control()
+            || matches!(
+                ch,
+                '\u{00AD}'
+                    | '\u{061C}'
+                    | '\u{180E}'
+                    | '\u{200B}'..='\u{200F}'
+                    | '\u{2028}'..='\u{202E}'
+                    | '\u{2060}'..='\u{2069}'
+                    | '\u{FEFF}'
+            )
+    })
 }
 
 /// Opaque handle for one stored session: the keyed hash its record is stored
@@ -554,19 +576,30 @@ where
 
     /// Disable the user: login is blocked and every session is rejected from
     /// the next request on. Then revoke all sessions, so the audit trail shows
-    /// each one ending. Returns how many sessions were revoked.
+    /// each one ending. Returns how many sessions this call revoked.
+    ///
+    /// Safe to retry. On an error the user may already be disabled (their
+    /// sessions are rejected regardless); calling again finishes revoking.
+    /// Calling it for an already-disabled user just completes revocation.
     pub async fn disable_user(
         &mut self,
         user_id: &UserId,
         actor: &AdminActor,
     ) -> Result<u64, AdminError> {
-        self.set_disabled(AdminAction::DisableUser, user_id, actor)
-            .await?;
+        match self
+            .set_disabled(AdminAction::DisableUser, user_id, actor)
+            .await
+        {
+            Ok(()) | Err(AdminError::AlreadyInState) => {}
+            Err(error) => return Err(error),
+        }
         self.revoke_all_sessions(user_id, actor).await
     }
 
-    /// Enable a disabled user. Revoked sessions stay revoked; the user logs
-    /// in again.
+    /// Enable a disabled user. No session from before this moment works
+    /// again, even one whose revocation failed: enabling stamps a
+    /// `sessions_valid_after` watermark that session validation enforces. The
+    /// user logs in again.
     pub async fn enable_user(
         &mut self,
         user_id: &UserId,

@@ -108,9 +108,10 @@ impl SessionRepository for FixtureRepository {
         Ok(())
     }
 
-    async fn is_user_active(
+    async fn is_session_owner_active(
         &self,
         _user_id: &datadeft_magic_link_service::UserId,
+        _session_created_at_unix: u64,
     ) -> Result<bool, DependencyError> {
         Ok(true)
     }

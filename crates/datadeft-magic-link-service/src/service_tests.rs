@@ -282,7 +282,11 @@ impl SessionRepository for FakeRepository {
         Ok(())
     }
 
-    async fn is_user_active(&self, _user_id: &UserId) -> Result<bool, DependencyError> {
+    async fn is_session_owner_active(
+        &self,
+        _user_id: &UserId,
+        _session_created_at_unix: u64,
+    ) -> Result<bool, DependencyError> {
         Ok(true)
     }
 }

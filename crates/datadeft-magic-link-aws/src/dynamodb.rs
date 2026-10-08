@@ -648,7 +648,11 @@ impl SessionRepository for DynamoDbAuthStore {
         .map_err(DependencyError::from)
     }
 
-    async fn is_user_active(&self, user_id: &UserId) -> Result<bool, DependencyError> {
+    async fn is_session_owner_active(
+        &self,
+        user_id: &UserId,
+        session_created_at_unix: u64,
+    ) -> Result<bool, DependencyError> {
         async {
             let output = self
                 .authentication_get_item(Self::pk_user_id(user_id), "PROFILE")
@@ -659,9 +663,13 @@ impl SessionRepository for DynamoDbAuthStore {
             let Some(item) = output.item() else {
                 return Ok::<bool, AwsAdapterError>(false);
             };
+            // Sessions from before a re-enable stay invalid (watermark).
+            let fresh_enough = optional_u64(item, "sessions_valid_after_unix")?
+                .is_none_or(|valid_after| session_created_at_unix >= valid_after);
             Ok(optional_s(item, "entity_type") == Some("user_profile")
                 && optional_s(item, "user_id") == Some(user_id.as_str())
-                && matches!(item.get("disabled"), Some(AttributeValue::Bool(false))))
+                && matches!(item.get("disabled"), Some(AttributeValue::Bool(false)))
+                && fresh_enough)
         }
         .await
         .map_err(DependencyError::from)

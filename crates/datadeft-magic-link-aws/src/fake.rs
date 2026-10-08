@@ -69,6 +69,9 @@ struct FakeDynamoDbInner {
     authentication_attempts: HashMap<String, CommitMagicLinkAuthentication>,
     rate_counters: HashMap<String, u32>,
     disabled_meta: HashMap<String, DisabledMeta>,
+    /// Per user: sessions created before this time are not valid (set on
+    /// re-enable).
+    sessions_valid_after: HashMap<String, u64>,
     admin_events: Vec<AdminEvent>,
     next_error: Option<AwsAdapterError>,
     #[cfg(test)]
@@ -565,13 +568,22 @@ impl SessionRepository for FakeDynamoDbAuthStore {
         Ok(())
     }
 
-    async fn is_user_active(&self, user_id: &UserId) -> Result<bool, DependencyError> {
+    async fn is_session_owner_active(
+        &self,
+        user_id: &UserId,
+        session_created_at_unix: u64,
+    ) -> Result<bool, DependencyError> {
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
-        Ok(inner
+        let enabled = inner
             .user_profiles_by_id
             .get(user_id.as_str())
-            .is_some_and(|profile| profile.user_id == *user_id && !profile.disabled))
+            .is_some_and(|profile| profile.user_id == *user_id && !profile.disabled);
+        let fresh_enough = inner
+            .sessions_valid_after
+            .get(user_id.as_str())
+            .is_none_or(|valid_after| session_created_at_unix >= *valid_after);
+        Ok(enabled && fresh_enough)
     }
 }
 
@@ -722,10 +734,11 @@ impl AuthAdminRepository for FakeDynamoDbAuthStore {
                 .rsplit('#')
                 .next()
                 .ok_or(DependencyError::Internal)?;
-            let stored = inner
-                .sessions_by_hmac
-                .get(session_hmac)
-                .ok_or(DependencyError::Internal)?;
+            // Mirror DynamoDB: an index row can outlive its session row (rows
+            // written with a legacy TTL expire independently). Skip it.
+            let Some(stored) = inner.sessions_by_hmac.get(session_hmac) else {
+                continue;
+            };
             sessions.push(FakeDynamoDbInner::session_summary(session_hmac, stored)?);
         }
         sessions.sort_by_key(|session| core::cmp::Reverse(session.created_at_unix));
@@ -796,6 +809,11 @@ impl AuthAdminRepository for FakeDynamoDbAuthStore {
         } else {
             DisabledMeta::default()
         };
+        if !disable {
+            inner
+                .sessions_valid_after
+                .insert(event.user_id.as_str().to_owned(), event.at_unix);
+        }
         inner
             .disabled_meta
             .insert(event.user_id.as_str().to_owned(), meta);
@@ -811,14 +829,17 @@ impl AuthAdminRepository for FakeDynamoDbAuthStore {
     ) -> Result<Page<AdminEvent>, DependencyError> {
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
-        // Newest first; insertion order breaks ties within one second.
-        let events: Vec<AdminEvent> = inner
+        // Same order as the DynamoDB sort key `EVENT#<at>#<event id>`, newest
+        // first: within one second the order follows the random event id.
+        let mut events: Vec<AdminEvent> = inner
             .admin_events
             .iter()
-            .rev()
             .filter(|event| event.user_id == *user_id)
             .cloned()
             .collect();
+        events.sort_by(|left, right| {
+            (right.at_unix, right.event_id.as_str()).cmp(&(left.at_unix, left.event_id.as_str()))
+        });
         fake_page(events, cursor, limit)
     }
 }

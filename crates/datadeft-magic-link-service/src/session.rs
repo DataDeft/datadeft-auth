@@ -163,7 +163,7 @@ where
     // A disabled (or missing) user ends every session at once, without
     // waiting for revocation to reach each one.
     if !sessions
-        .is_user_active(&session.user_id)
+        .is_session_owner_active(&session.user_id, session.created_at_unix)
         .await
         .map_err(map_session_dependency_error)?
     {

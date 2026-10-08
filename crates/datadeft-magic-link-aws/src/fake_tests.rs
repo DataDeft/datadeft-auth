@@ -1167,7 +1167,12 @@ async fn storage_key_change_without_previous_key_splits_accounts() {
 async fn fake_user_status_fails_closed_for_unknown_users() {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
     let unknown = UserId::parse("usr_000102030405060708090a0b0c0d0e0f").expect("user id");
-    assert!(!store.is_user_active(&unknown).await.expect("status"));
+    assert!(
+        !store
+            .is_session_owner_active(&unknown, 0)
+            .await
+            .expect("status")
+    );
 }
 
 // --- admin -----------------------------------------------------------------
@@ -1377,19 +1382,25 @@ async fn disabling_a_user_blocks_login_and_every_session_until_enabled() {
                 .expect("disable"),
             2
         );
+        // Repeating a disable is safe: it completes revocation (none left).
         assert_eq!(
             admin
                 .disable_user(&user_id, &admin_actor())
                 .await
-                .unwrap_err(),
-            AdminError::AlreadyInState
+                .expect("repeat"),
+            0
         );
         let user = admin.get_user(&user_id).await.expect("get").expect("user");
         assert!(user.disabled);
         assert_eq!(user.disabled_at_unix, Some(1_000));
         assert_eq!(user.disabled_by.as_deref(), Some("admin@example.test"));
     }
-    assert!(!store.is_user_active(&user_id).await.expect("status"));
+    assert!(
+        !store
+            .is_session_owner_active(&user_id, 1_000)
+            .await
+            .expect("status")
+    );
     assert!(
         login_with_keys(&store, &mut login_rng, &key, &key, None)
             .await
@@ -1427,19 +1438,30 @@ async fn disabling_a_user_blocks_login_and_every_session_until_enabled() {
             .list_admin_events(&user_id, None, 10)
             .await
             .expect("events");
-        let actions: Vec<AdminAction> = events.items.iter().map(|event| event.action).collect();
+        // All four happened within the same second (FixedClock), where the
+        // order follows the random event id, as in DynamoDB. Check the set.
+        let mut actions: Vec<&str> = events
+            .items
+            .iter()
+            .map(|event| event.action.as_str())
+            .collect();
+        actions.sort_unstable();
         assert_eq!(
             actions,
             [
-                AdminAction::EnableUser,
-                AdminAction::RevokeSession,
-                AdminAction::RevokeSession,
-                AdminAction::DisableUser,
-            ],
-            "newest first"
+                "disable_user",
+                "enable_user",
+                "revoke_session",
+                "revoke_session"
+            ]
         );
     }
-    assert!(store.is_user_active(&user_id).await.expect("status"));
+    assert!(
+        store
+            .is_session_owner_active(&user_id, 1_000)
+            .await
+            .expect("status")
+    );
     login_with_keys(&store, &mut login_rng, &key, &key, None)
         .await
         .expect("an enabled user can log in again");
@@ -1471,5 +1493,122 @@ async fn admin_mutations_on_unknown_users_report_not_found() {
             .await
             .expect("nothing to revoke"),
         0
+    );
+}
+
+/// A clock pinned to one instant, for admin calls at a later time.
+struct At(u64);
+
+impl Clock for At {
+    fn now_unix(&self) -> Result<u64, DependencyError> {
+        Ok(self.0)
+    }
+}
+
+/// The state a disable leaves behind when revoking then fails: disabled,
+/// sessions still unrevoked.
+async fn disable_without_revoking(store: &FakeDynamoDbAuthStore, user_id: &UserId) {
+    use datadeft_magic_link_service::{AdminEvent, AdminEventId, AuthAdminRepository};
+    store
+        .set_user_disabled_audited(&AdminEvent {
+            event_id: AdminEventId::parse("evt_000102030405060708090a0b0c0d0e0f").expect("id"),
+            at_unix: 1_500,
+            action: AdminAction::DisableUser,
+            user_id: user_id.clone(),
+            session: None,
+            actor: admin_actor(),
+        })
+        .await
+        .expect("disable");
+}
+
+#[tokio::test]
+async fn retried_disable_finishes_revoking_after_a_partial_failure() {
+    let (store, user_id) = store_with_two_sessions().await;
+    disable_without_revoking(&store, &user_id).await;
+
+    let mut rng = CountingRng::starting_at(50);
+    let mut admin = admin_service(&store, &mut rng);
+    // The retry must not stop at "already disabled".
+    assert_eq!(
+        admin
+            .disable_user(&user_id, &admin_actor())
+            .await
+            .expect("retry"),
+        2
+    );
+    assert!(
+        admin
+            .list_sessions_for_user(&user_id)
+            .await
+            .expect("sessions")
+            .iter()
+            .all(|(_, status)| *status == SessionStatus::Revoked)
+    );
+}
+
+#[tokio::test]
+async fn enabling_never_restores_sessions_from_before_the_disable() {
+    let (store, user_id) = store_with_two_sessions().await;
+    // Sessions were created at 1_000. Disable without revoking them, as a
+    // partial failure would, then enable later at 2_000.
+    disable_without_revoking(&store, &user_id).await;
+    let mut rng = CountingRng::starting_at(50);
+    let mut admin = AuthAdminService {
+        admin: &store,
+        clock: &At(2_000),
+        rng: &mut rng,
+    };
+    admin
+        .enable_user(&user_id, &admin_actor())
+        .await
+        .expect("enable");
+
+    // Unrevoked, yet rejected: they predate the re-enable watermark.
+    assert!(
+        !store
+            .is_session_owner_active(&user_id, 1_000)
+            .await
+            .expect("status")
+    );
+    // Sessions from after the re-enable work.
+    assert!(
+        store
+            .is_session_owner_active(&user_id, 2_000)
+            .await
+            .expect("status")
+    );
+}
+
+#[tokio::test]
+async fn index_rows_without_a_session_row_are_skipped() {
+    let (store, user_id) = store_with_two_sessions().await;
+    // Simulate a legacy TTL deleting one session row but not its index row.
+    {
+        let mut inner = store.inner.lock().expect("lock");
+        let orphan = inner
+            .sessions_by_hmac
+            .keys()
+            .next()
+            .cloned()
+            .expect("a session");
+        inner.sessions_by_hmac.remove(&orphan);
+    }
+    let mut rng = CountingRng::starting_at(50);
+    let mut admin = admin_service(&store, &mut rng);
+    assert_eq!(
+        admin
+            .list_sessions_for_user(&user_id)
+            .await
+            .expect("listing still works")
+            .len(),
+        1
+    );
+    assert_eq!(
+        admin
+            .disable_user(&user_id, &admin_actor())
+            .await
+            .expect("disable"),
+        1
     );
 }
