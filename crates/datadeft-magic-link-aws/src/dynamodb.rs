@@ -426,7 +426,8 @@ impl DynamoDbAuthStore {
             .item("email_normalized", av_s(command.magic_link.email.as_str()))
             .item("created_at_unix", av_n(command.now_unix))
             .item("expires_at_unix", av_n(command.session_expires_at_unix))
-            .item("ttl", av_n(command.session_expires_at_unix))
+            // No `ttl`: session rows are kept for the audit trail. Validity is
+            // `expires_at_unix` / `revoked_at_unix`, checked on every read.
             .condition_expression("attribute_not_exists(pk)")
             .build()
             .map_err(|_| AwsAdapterError::Internal)?;
@@ -440,7 +441,8 @@ impl DynamoDbAuthStore {
             .item("entity_type", av_s("user_session_index"))
             .item("created_at_unix", av_n(command.now_unix))
             .item("expires_at_unix", av_n(command.session_expires_at_unix))
-            .item("ttl", av_n(command.session_expires_at_unix))
+            // No `ttl`: session rows are kept for the audit trail. Validity is
+            // `expires_at_unix` / `revoked_at_unix`, checked on every read.
             .condition_expression("attribute_not_exists(pk)")
             .build()
             .map_err(|_| AwsAdapterError::Internal)?;

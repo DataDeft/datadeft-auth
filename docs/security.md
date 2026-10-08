@@ -164,7 +164,23 @@ Rules:
 | `session_idle_ttl` | 24 hours |
 | `session_absolute_ttl` | 30 days |
 | `magic_link_cleanup_grace` | 24 hours after expiry |
-| `session_cleanup_grace` | 24 hours after expiry |
+
+## Retention
+
+Nothing that identifies an account or its activity is deleted; the rows are
+the audit trail. DynamoDB TTL (the `ttl` attribute) is set only on rows that
+carry no audit value:
+
+| Row | Retention |
+| --- | --- |
+| User profile, email lookup | Kept; disabling is a flag, never a delete |
+| Session, per-user session index | Kept; expiry and revocation are fields |
+| Admin audit events | Kept; append-only |
+| Magic-link challenge | TTL: expiry plus `magic_link_cleanup_grace` |
+| Rate-limit counter | TTL: window end plus cleanup grace |
+
+Validity never depends on deletion: every read checks `expires_at_unix` and
+`revoked_at_unix`.
 
 Rules:
 

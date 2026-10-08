@@ -268,19 +268,14 @@ fn create_authentication_transaction_derives_all_items_and_validity_expiry() {
         session.get("expires_at_unix"),
         Some(&av_n(command.session_expires_at_unix))
     );
-    assert_eq!(
-        session.get("ttl"),
-        Some(&av_n(command.session_expires_at_unix))
-    );
+    // Kept for the audit trail: no TTL deletion.
+    assert_eq!(session.get("ttl"), None);
     let index = actions[4].put().expect("index put").item();
     assert_eq!(
         index.get("expires_at_unix"),
         Some(&av_n(command.session_expires_at_unix))
     );
-    assert_eq!(
-        index.get("ttl"),
-        Some(&av_n(command.session_expires_at_unix))
-    );
+    assert_eq!(index.get("ttl"), None);
     for action in &actions {
         if let Some(put) = action.put() {
             assert!(!put.item().values().any(|value| {
