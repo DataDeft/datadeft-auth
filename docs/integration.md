@@ -15,28 +15,35 @@ secrets, email templates, logs, and edge policy.
 2. [security.md](security.md) for the required security behavior and the TTL
    baseline. These rules are not optional.
 3. The module docs and the compiling quickstart in
-   `crates/dd-magic-link-axum/src/lib.rs`.
+   `crates/datadeft-magic-link-axum/src/lib.rs`.
 4. `examples/axum-magic-link` for a complete, runnable, fake-backed integration.
    This is your reference. Mirror its wiring.
 
 Do not invent an approach. Follow the example and the trait contracts.
 
-## Pin the release
+## Install registry versions
 
-The crates are `publish = false`. Pin to the `v0.1.0` tag or a Git revision.
+The first registry release is being prepared; use these dependencies after it
+has been approved and published. Rust 1.88 or newer is required.
 
 ```toml
 [dependencies]
-dd-magic-link-service = { git = "https://github.com/DataDeft/datadeft-auth", tag = "v0.1.0" }
-dd-magic-link-axum    = { git = "https://github.com/DataDeft/datadeft-auth", tag = "v0.1.0" }
-dd-magic-link-aws     = { git = "https://github.com/DataDeft/datadeft-auth", tag = "v0.1.0", features = ["aws"] }
-# Add dd-pow-axum if you enforce proof-of-work admission.
+datadeft-pow-core           = "0.2"
+datadeft-magic-link-service = "0.2"
+datadeft-magic-link-axum    = "0.2"
+datadeft-magic-link-aws     = { version = "0.2", features = ["aws"] }
+# Add datadeft-pow-axum = "0.2" for the PoW HTTP helpers.
 ```
 
-The core crates (`dd-auth-token-core`, `dd-magic-link-core`, `dd-pow-core`)
-arrive transitively. The service and Axum crates re-export the types you need.
-For the browser proof-of-work client, add `packages/dd-protect-client` as a
-TypeScript source dependency. Your bundler compiles it.
+```sh
+bun add @datadeft/protect-client
+```
+
+The other core crates arrive transitively. The service and Axum crates
+re-export the types needed for magic-link integration. Commit the consumer
+lockfiles. No git credentials or vendored TypeScript are needed.
+See [migration-registries.md](migration-registries.md) for the complete rename
+map and worker migration.
 
 ## What you provide
 
@@ -49,12 +56,12 @@ The libraries hold no globals. You inject every dependency.
   proof-cookie purpose `PowProofCookie`. Configure an active slot and
   verify-only slots. Rotate about every 90 days and keep the previous key
   verify-only for at least 31 days. `resolve_auth_secrets` in
-  `dd-magic-link-aws` loads them.
+  `datadeft-magic-link-aws` loads them.
 - A `MagicLinkEmailRenderer`. You own the subject, the text, and the HTML body,
   and you own languages. The library gives you `MagicLinkEmail { email, token,
   expires_at_unix }`. You return `RenderedMagicLinkEmail`. The library never
   stores or templates the message body.
-- The storage and delivery adapters. Use `dd-magic-link-aws` for DynamoDB and
+- The storage and delivery adapters. Use `datadeft-magic-link-aws` for DynamoDB and
   SES, or implement the repository, session, limiter, and outbox traits
   yourself. Use `FakeDynamoDbAuthStore` and `FakeMagicLinkOutbox` for tests.
 - Routes, cookie configuration, redirects, body limits, and token-safe logging.
@@ -120,7 +127,7 @@ logs, middleware, tracing, metrics, and error reporting use route templates and
 never retain raw request targets, tokens, confirmations, or cookies. The
 handlers prove non-reflection only after handler entry. They cannot make an
 unreviewed outer stack safe. See the "Mandatory deployment gate" section in
-`crates/dd-magic-link-axum/src/lib.rs`.
+`crates/datadeft-magic-link-axum/src/lib.rs`.
 
 ## Proof-of-work admission
 
@@ -130,15 +137,15 @@ Migrating an existing consumer from v0.1.x? Follow
 [migration-v0.2.0.md](migration-v0.2.0.md); it is written to be handed to an
 implementation agent as-is.
 
-Wire the `dd-pow-axum` glue. `POST` to `mint_pow_challenge` for `pow/create`,
+Wire the `datadeft-pow-axum` glue. `POST` to `mint_pow_challenge` for `pow/create`,
 and `POST` to `verify_pow_solution` for `pow/validate`, which returns a
 `PowAdmission`: the `dd_pow` `Set-Cookie` header plus the server-derived
 `mint_to_verify_ms` solve-timing signal (see "Solve-timing signal" in
 `docs/security.md`). Its `classify_solve` hook can stamp an app-defined
 class byte into the cookie; pass `|_| None` to opt out. Gate the magic-link
 request behind a valid `dd_pow` cookie. On the browser,
-build the `dd-protect-client` worker (`protect-worker.ts`) into a served static
-file, then call `protect({ workerUrl, createUrl, validateUrl })` on your login
+bundle the `@datadeft/protect-client/worker` entry into a served ES module
+worker, then call `protect({ workerUrl, createUrl, validateUrl })` on your login
 page. See [../packages/dd-protect-client/README.md](../packages/dd-protect-client/README.md).
 
 The challenge lifetime is 2 minutes. The proof-cookie lifetime is 3 hours by
@@ -163,3 +170,18 @@ particular:
 
 Report changed files, the traits you implemented, security-sensitive decisions,
 tests added, and any checklist item you could not complete.
+
+## Clock-skew policy
+
+Existing APIs allow timestamps up to 60 seconds ahead of the verifier. This is
+a future-time tolerance, not extra TTL. For CeleraTax NFR-SEC-012, use
+`verify_solution_with_clock_skew(..., 30)` and
+`verify_pow_proof_cookie_with_clock_skew(..., 30)`. Axum users set
+`PowPolicy::new(difficulty, 120)?.with_clock_skew_secs(30)` for challenges and
+use the explicit proof-cookie verifier with the same bound at their gate.
+Zero rejects all future timestamps.
+
+The token crate also exposes `mint_bound_cookie_with_clock_skew` and
+`parse_bound_cookie_with_clock_skew`; both take `clock_skew_secs` last. Existing
+magic-link service wrappers retain their 60-second policy. The PoW policy does
+not silently change another subsystem's cookie validation.

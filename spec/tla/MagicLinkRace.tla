@@ -6,7 +6,7 @@
  Checks ML-INV-002 under interleaving: at most one session per challenge, even
  when two attempts race and one sees an ambiguous commit result and retries.
  This models the atomic DynamoDB transaction and the retry contract in
- dd-magic-link-service (the MagicLinkAuthenticationRepository doc comment).
+ datadeft-magic-link-service (the MagicLinkAuthenticationRepository doc comment).
 
  The atomic commit is one TLA+ action, which models the conditional
  transaction. Only one attempt can move the challenge from Issued to Consumed.

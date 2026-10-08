@@ -4,10 +4,9 @@ All notable changes to this workspace are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crates follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## Registry release preparation
 
-Breaking for `dd-pow-core` / `dd-pow-axum` callers that read the solve-timing
-value; wire-compatible with deployed challenges and proof cookies.
+Target: first registry release `0.2.1` (pending approval).
 
 ### Changed
 
@@ -15,18 +14,38 @@ value; wire-compatible with deployed challenges and proof cookies.
   `Verified::mint_to_verify_ms` and `PowAdmission::mint_to_verify_ms` are now
   `Option<u64>`, and `verify_pow_solution`'s `classify_solve` closure takes
   `Option<u64>`. The value is `None` when the challenge `tim` is ahead of the
-  verifying clock (accepted within `MAX_FUTURE_SKEW_SECS`). Previously it was
-  clamped to `0`, which reads as the fastest possible solve and could falsely
-  flag honest clients when instance clocks disagree. Existing `|_| None`
-  classifiers compile unchanged; classifiers that read the value must handle
-  `None` and never treat it as fast.
-
-### Documentation
-
+  verifying clock (accepted within the configured clock-skew tolerance).
+  Previously it was clamped to `0`, which reads as the fastest possible solve
+  and could falsely flag honest clients when instance clocks disagree.
+  Existing `|_| None` classifiers compile unchanged; classifiers that read the
+  value must handle `None` and never treat it as fast.
 - The solve-timing trust argument (`docs/security.md`) now states the
-  cross-instance clock assumption behind fast-floor gating.
-- `docs/migration-v0.2.0.md` documents the rolling-upgrade constraint for v2
-  proof cookies: return a class byte only once every node runs v0.2.0+.
+  cross-instance clock assumption behind fast-floor gating, and
+  `docs/migration-v0.2.0.md` documents the rolling-upgrade constraint for v2
+  proof cookies (return a class byte only once every node runs v0.2.0+).
+- Rename the seven Rust crates from `dd-*` to `datadeft-*`, including Rust
+  import paths and source directories. Registry installs use version `0.2`.
+- Prepare crates.io metadata, versioned path dependencies, README and dual
+  license texts. MIT OR Apache-2.0 is proposed, pending Istvan's sign-off.
+- Declare and verify Rust 1.88, matching the `time` dependency requirement.
+- Package the browser client as `@datadeft/protect-client` with ESM and `.d.ts`
+  exports for the main module and `./worker`. Workers now start as ES modules.
+  No runtime dependencies or install scripts; Bun workspace and packed-consumer
+  checks replace TypeScript source distribution.
+
+### Added
+
+- Explicit clock-skew variants for PoW and cookie verification/minting plus
+  `PowPolicy::with_clock_skew_secs`. Existing calls keep the 60-second default;
+  deployments can select 30 seconds (CeleraTax NFR-SEC-012) or zero.
+- Release-please PRs and tagged releases using crates.io/npm OIDC publishing,
+  with verification, an opt-in repository variable, and an approval environment.
+- [Registry migration guide](docs/migration-registries.md) and
+  [maintainer release runbook](docs/releasing.md), including first-publish
+  bootstrap and npm provenance prerequisites.
+
+Wire formats, cookie names, cryptographic domains, and expiry bounds are unchanged.
+This entry describes prepared changes, not a completed registry publication.
 
 ## [0.2.0] - 2026-08-03
 

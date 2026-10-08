@@ -8,8 +8,8 @@ Example consuming-project dependency:
 
 ```toml
 [dependencies]
-dd-pow-core = { path = "../datadeft-auth/crates/dd-pow-core" }
-dd-magic-link-core = { path = "../datadeft-auth/crates/dd-magic-link-core" }
+datadeft-pow-core = { path = "../datadeft-auth/crates/datadeft-pow-core" }
+datadeft-magic-link-core = { path = "../datadeft-auth/crates/datadeft-magic-link-core" }
 ```
 
 ## Task runner
@@ -64,12 +64,12 @@ Public API changes across crates need a short proposal first.
 | Lane | Owns | Output |
 | --- | --- | --- |
 | Repo setup | Workspace root, CI, licensing, docs, tasks | Buildable repo |
-| PoW core | `crates/dd-pow-core` | Deterministic PoW core |
-| Auth token core | `crates/dd-auth-token-core` | Token and cookie primitives |
-| Magic-link core | `crates/dd-magic-link-core` | Magic-link primitives |
-| Magic-link service | `crates/dd-magic-link-service` | Trait-based auth flow |
-| Axum adapter | `crates/dd-magic-link-axum` | HTTP integration |
-| AWS adapter | `crates/dd-magic-link-aws` | DynamoDB and SES adapters |
+| PoW core | `crates/datadeft-pow-core` | Deterministic PoW core |
+| Auth token core | `crates/datadeft-auth-token-core` | Token and cookie primitives |
+| Magic-link core | `crates/datadeft-magic-link-core` | Magic-link primitives |
+| Magic-link service | `crates/datadeft-magic-link-service` | Trait-based auth flow |
+| Axum adapter | `crates/datadeft-magic-link-axum` | HTTP integration |
+| AWS adapter | `crates/datadeft-magic-link-aws` | DynamoDB and SES adapters |
 | Browser client | `packages/dd-protect-client` | Browser PoW client |
 | Example | `examples/axum-magic-link` | Integration proof |
 
@@ -120,12 +120,12 @@ The orchestrator accepts, changes, or rejects the proposal.
 ## Merge order
 
 1. Repo setup.
-2. `dd-pow-core`.
-3. `dd-auth-token-core`.
-4. `dd-magic-link-core`.
-5. `dd-magic-link-service`.
-6. `dd-magic-link-axum`.
-7. `dd-magic-link-aws`.
+2. `datadeft-pow-core`.
+3. `datadeft-auth-token-core`.
+4. `datadeft-magic-link-core`.
+5. `datadeft-magic-link-service`.
+6. `datadeft-magic-link-axum`.
+7. `datadeft-magic-link-aws`.
 8. `dd-protect-client` and examples.
 9. Consuming-project integration.
 10. Publish preparation.
@@ -159,10 +159,11 @@ Recommended early versions:
 Do not publish until the repo meets these conditions.
 
 1. Provenance audit passed.
-2. MIT license file exists.
+2. Istvan has approved MIT OR Apache-2.0 and the bundled license texts.
 3. Docs exist.
 4. Examples compile.
 5. Public API review passed.
 6. Dependency audit passed.
 7. License audit passed.
-8. `cargo publish --dry-run` passed for each crate.
+8. Workspace archive verification passed for every crate; per-crate registry dry-runs pass once their dependencies exist.
+9. Both Istvan and Roland approved the PR; registry bootstrap and OIDC setup follow [releasing.md](releasing.md).

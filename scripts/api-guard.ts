@@ -5,7 +5,7 @@
 // invariants:
 //   1. `encode_with_nonce` stays gated behind `test`/`test-support`. It is a
 //      nonce-reuse footgun and must never appear in the default public API.
-//   2. No crate enables `dd-auth-token-core/test-support` outside
+//   2. No crate enables `datadeft-auth-token-core/test-support` outside
 //      `[dev-dependencies]`. As a normal dependency feature it would unify into
 //      a default build and pull the footgun in.
 //   3. The root mise config lives at `mise.toml`, not `.mise.toml`. A stale
@@ -17,7 +17,7 @@ import { Glob } from "bun";
 const errors: string[] = [];
 
 // -- Check 1: encode_with_nonce gating -------------------------------------
-const brancaPath = "crates/dd-auth-token-core/src/branca.rs";
+const brancaPath = "crates/datadeft-auth-token-core/src/branca.rs";
 const brancaLines = (await Bun.file(brancaPath).text()).split("\n");
 const fnIndex = brancaLines.findIndex((line) => line.includes("pub fn encode_with_nonce"));
 
@@ -44,7 +44,7 @@ for await (const path of cargoFiles.scan({ onlyFiles: true })) {
         if (header) underDevDependencies = header[1]!.includes("dev-dependencies");
 
         const enablesTestSupport =
-            line.includes("dd-auth-token-core") && line.includes("test-support");
+            line.includes("datadeft-auth-token-core") && line.includes("test-support");
         if (enablesTestSupport && !underDevDependencies) {
             errors.push(
                 `${path}:${index + 1}: test-support enabled outside ` +

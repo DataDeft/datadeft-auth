@@ -15,6 +15,15 @@ The repo must never contain these values:
 - real customer emails
 - production database dumps
 
+## Clock skew
+
+Existing PoW and bound-cookie helpers allow 60 seconds of future timestamp
+skew. Explicit `*_with_clock_skew` helpers take a caller-supplied seconds bound;
+PoW Axum uses `PowPolicy::with_clock_skew_secs`. CeleraTax selects 30 seconds
+for NFR-SEC-012. Apply the same bound separately to challenge and proof-cookie
+verification. Zero forbids future timestamps. Skew never extends an expired
+TTL or the lifetime of a key. Magic-link service wrappers retain the default.
+
 ## Token design
 
 - Treat magic-link tokens as one-time bearer secrets.
@@ -43,11 +52,11 @@ The repo must never contain these values:
 
 Repository traits pass raw `SessionId`, `NormalizedEmail`, and `RateLimitKey` values. Each storage adapter must key those values before storage.
 
-Use the shared `dd_magic_link_core::domain_separated_lookup_hmac` framing. Use an adapter-specific domain and secret.
+Use the shared `datadeft_magic_link_core::domain_separated_lookup_hmac` framing. Use an adapter-specific domain and secret.
 
 The type system does not enforce this rule. A new repository could store raw IDs and still compile.
 
-Only first-party adapters have approval. New adapters must copy the keying behavior. Use the `dd-magic-link-aws` vectors as the reference.
+Only first-party adapters have approval. New adapters must copy the keying behavior. Use the `datadeft-magic-link-aws` vectors as the reference.
 
 Moving key derivation into the service changes stored partition keys. That change requires a data migration.
 
@@ -84,7 +93,7 @@ The consuming application must follow these rules:
 11. Never log the raw token.
 12. HTML-escape rendered account identity.
 
-`dd-magic-link-axum` runs the input gauntlet. The application owns rendered responses under this contract.
+`datadeft-magic-link-axum` runs the input gauntlet. The application owns rendered responses under this contract.
 
 ## Bearer secret entropy
 
@@ -178,7 +187,7 @@ Invalid token states include expired, consumed, missing, malformed, and invalid 
 
 ### Solve-timing signal
 
-`dd-pow-core::Verified::mint_to_verify_ms`, surfaced by `dd-pow-axum` as
+`datadeft-pow-core::Verified::mint_to_verify_ms`, surfaced by `datadeft-pow-axum` as
 `PowAdmission::mint_to_verify_ms`, is the server-derived mint→verify delta of
 a successful solve, in milliseconds.
 
@@ -247,7 +256,7 @@ Required behavior:
 10. Add replay tests.
 11. Add concurrent consume tests.
 
-For Branca tokens, key dedup stores on `dd-auth-token-core::branca::Jti`.
+For Branca tokens, key dedup stores on `datadeft-auth-token-core::branca::Jti`.
 
 ## HMAC lookup material
 

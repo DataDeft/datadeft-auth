@@ -1,25 +1,49 @@
 {
-  "name": "dd-protect-client",
-  "version": "0.1.0",
-  "description": "Browser proof-of-work client for dd-pow-core. De-branded; matches dd-pow-core challenge/solution vectors.",
+  "name": "@datadeft/protect-client",
+  "version": "0.2.1",
+  "description": "Browser proof-of-work client and Web Worker for datadeft-pow-core.",
   "type": "module",
-  "main": "./ts/protect.ts",
-  "types": "./ts/protect.ts",
+  "main": "./dist/protect.js",
+  "types": "./dist/protect.d.ts",
   "exports": {
-    ".": "./ts/protect.ts",
-    "./worker": "./ts/protect-worker.ts"
+    ".": {
+      "types": "./dist/protect.d.ts",
+      "import": "./dist/protect.js",
+      "default": "./dist/protect.js"
+    },
+    "./worker": {
+      "types": "./dist/protect-worker.d.ts",
+      "import": "./dist/protect-worker.js",
+      "default": "./dist/protect-worker.js"
+    }
   },
   "files": [
-    "ts/protect.ts",
-    "ts/protect-worker.ts",
-    "README.md"
+    "dist/*.js",
+    "dist/*.d.ts",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
   ],
-  "private": true,
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/protect-worker.js"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DataDeft/datadeft-auth.git",
+    "directory": "packages/dd-protect-client"
+  },
+  "homepage": "https://github.com/DataDeft/datadeft-auth/tree/main/packages/dd-protect-client",
+  "keywords": ["proof-of-work", "authentication", "web-worker", "browser"],
   "scripts": {
-    "lint": "eslint ts/",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
-    "test": "bun test ts/"
+    "lint": "eslint ts/ scripts/",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.scripts.json",
+    "test": "bun test ts/",
+    "build": "bun scripts/build.ts",
+    "test:package": "bun scripts/check-package.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
@@ -30,9 +54,6 @@
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.51.0"
   },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "license": "MIT",
+  "license": "(MIT OR Apache-2.0)",
   "author": "Istvan <dev@l1x.be>"
 }

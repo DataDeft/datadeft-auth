@@ -10,12 +10,12 @@ The repository provides reusable authentication libraries. The consuming applica
 
 | Component | Responsibility | Status |
 | --- | --- | --- |
-| `dd-pow-core` | Mint and verify PoW challenges. | Ready |
-| `dd-auth-token-core` | Encrypt cookies and manage purpose keys. | Ready |
-| `dd-magic-link-core` | Parse tokens and compute HMAC lookup values. | Ready |
-| `dd-magic-link-service` | Run request, confirmation, session, and repository logic. | Ready |
-| `dd-magic-link-axum` | Parse HTTP input and create safe responses. | Ready |
-| `dd-magic-link-aws` | Store data in DynamoDB and send email with SES. | Ready for test deployment |
+| `datadeft-pow-core` | Mint and verify PoW challenges. | Ready |
+| `datadeft-auth-token-core` | Encrypt cookies and manage purpose keys. | Ready |
+| `datadeft-magic-link-core` | Parse tokens and compute HMAC lookup values. | Ready |
+| `datadeft-magic-link-service` | Run request, confirmation, session, and repository logic. | Ready |
+| `datadeft-magic-link-axum` | Parse HTTP input and create safe responses. | Ready |
+| `datadeft-magic-link-aws` | Store data in DynamoDB and send email with SES. | Ready for test deployment |
 | Consuming application | Configure routes, secrets, templates, logs, and edge policy. | Required |
 | `dd-protect-client` | Solve PoW in the browser. | Ready |
 | Example app | Show a full fake-backed Axum flow. | Available |
@@ -23,14 +23,14 @@ The repository provides reusable authentication libraries. The consuming applica
 The dependency direction stays one-way.
 
 ```text
-dd-auth-token-core      -> no workspace crates
-dd-magic-link-core     -> dd-auth-token-core
-dd-magic-link-service  -> dd-magic-link-core, dd-auth-token-core
-dd-magic-link-axum     -> dd-magic-link-service
-dd-magic-link-aws      -> dd-magic-link-service
+datadeft-auth-token-core      -> no workspace crates
+datadeft-magic-link-core     -> datadeft-auth-token-core
+datadeft-magic-link-service  -> datadeft-magic-link-core, datadeft-auth-token-core
+datadeft-magic-link-axum     -> datadeft-magic-link-service
+datadeft-magic-link-aws      -> datadeft-magic-link-service
 
 consuming application  -> selected adapters and services
-PoW admission          -> dd-pow-core
+PoW admission          -> datadeft-pow-core
 ```
 
 ## Magic-link flow
@@ -61,7 +61,7 @@ PoW admission          -> dd-pow-core
 
 ![PoW sequence](diagrams/pow-sequence.svg)
 
-`dd-pow-core` is deterministic. It does not read clocks, files, network, or environment variables.
+`datadeft-pow-core` is deterministic. It does not read clocks, files, network, or environment variables.
 
 It can do these tasks:
 

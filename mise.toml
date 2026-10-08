@@ -2,17 +2,18 @@
 
 [tools]
 bun = "latest"
+node = "24"
 
 [tasks.api-guard]
-description = "Assert dd-auth-token-core API hygiene (encode_with_nonce gating, test-support dev-only)"
+description = "Assert datadeft-auth-token-core API hygiene (encode_with_nonce gating, test-support dev-only)"
 run = "bun scripts/api-guard.ts"
 
 [tasks.token-core-guard]
-description = "dd-auth-token-core guard: API hygiene, no-features build, gated surface test"
+description = "datadeft-auth-token-core guard: API hygiene, no-features build, gated surface test"
 depends = ["api-guard"]
 run = """
-cargo build -p dd-auth-token-core --no-default-features
-cargo test -p dd-auth-token-core --features test-support --test encode_with_nonce_gated
+cargo build -p datadeft-auth-token-core --no-default-features
+cargo test -p datadeft-auth-token-core --features test-support --test encode_with_nonce_gated
 """
 
 [tasks.fmt]
@@ -56,15 +57,44 @@ tla spec/tla/Liveness.tla --check-liveness --allow-deadlock
 """
 
 [tasks.ts-verify]
-description = "Verify the dd-protect-client TypeScript package: install, lint, type-check, test"
-dir = "packages/dd-protect-client"
+description = "Verify the npm package including its built and packed consumer surface"
 run = """
-bun install
-bun run lint
-bun run typecheck
-bun test ts/
+bun install --frozen-lockfile --ignore-scripts
+mise -C packages/dd-protect-client run verify
 """
+
+[tasks.package-crates]
+description = "Package and build all seven crates, staging unpublished workspace dependencies"
+run = "cargo package --workspace --exclude axum-magic-link --all-features --locked"
+
+[tasks.crates-dry-run]
+description = "Try every crate against crates.io in dependency order; never uploads"
+run = "bun scripts/registry-release.ts dry-run"
+
+[tasks.release-check]
+description = "Check release versions, registry metadata, licenses and package boundaries"
+run = "bun scripts/registry-release.ts check"
+
+[tasks.publish-crates]
+description = "Publish approved release from GitHub Actions using its temporary OIDC credential"
+run = "bun scripts/registry-release.ts publish"
+
+[tasks.msrv]
+description = "Check the declared minimum Rust version (install rustup toolchain 1.88.0 first)"
+run = "cargo +1.88.0 check --workspace --all-targets --all-features --locked"
 
 [tasks.verify]
 description = "Full verification: fmt-check + clippy + test + docs + audit + token-core-guard + ts-verify + spec"
-depends = ["fmt-check", "clippy", "test", "docs", "audit", "token-core-guard", "ts-verify", "spec"]
+depends = ["fmt-check", "clippy", "test", "docs", "audit", "token-core-guard", "ts-verify", "spec", "release-check", "workflow-check"]
+
+[tasks.js-lock]
+description = "Update Bun dependencies and normalize the lockfile for release-please"
+run = """
+bun install --ignore-scripts
+bun scripts/normalize-bun-lock.ts
+"""
+
+[tasks.workflow-check]
+description = "Validate GitHub Actions and shell commands"
+tools = { "ubi:rhysd/actionlint" = "1.7.7" }
+run = "actionlint"

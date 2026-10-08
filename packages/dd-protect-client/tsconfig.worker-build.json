@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.worker.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "noEmit": false,
+    "noEmitOnError": true,
+    "declaration": true,
+    "rootDir": "ts",
+    "outDir": "dist"
+  },
+  "include": ["ts/protect-worker.ts"]
+}
