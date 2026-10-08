@@ -6,6 +6,7 @@ use datadeft_magic_link_core::{
 
 use super::*;
 use crate::error::TemporaryAuthStateAction;
+use crate::error::{MagicLinkFlowError, MagicLinkServiceError};
 
 #[test]
 fn ids_are_validated_and_redacted() {
