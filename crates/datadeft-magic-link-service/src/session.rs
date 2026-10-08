@@ -294,5 +294,8 @@ fn map_session_dependency_error(error: DependencyError) -> SessionValidationErro
 }
 
 #[cfg(test)]
-#[path = "session_tests.rs"]
-mod tests;
+mod refresh_tests;
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+mod validation_tests;
