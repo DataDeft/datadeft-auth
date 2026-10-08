@@ -196,14 +196,19 @@ impl Drop for RefreshedSessionCookie {
 /// Re-issue the session cookie when it is due, so active users stay signed in.
 ///
 /// Call it after [`validate_session`] succeeds, in the same request, and send
-/// any returned value with the normal session `Set-Cookie` header. It returns
-/// `Ok(None)` while the cookie's last activity is younger than half the idle
-/// lifetime, so most requests change nothing.
+/// any returned value with the normal session `Set-Cookie` header on a response
+/// marked `Cache-Control: no-store`, so no shared cache can store the cookie.
+/// It returns `Ok(None)` while the cookie's last activity is younger than half
+/// the idle lifetime, so most requests change nothing.
+///
+/// "Same request" is enforced: the clock is read again, and a validation older
+/// than the clock-skew tolerance (or a clock that went backwards) is refused
+/// with [`SessionValidationError::InvalidSession`]; validate again first.
 ///
 /// Security properties:
 ///
-/// - It only accepts a [`ValidatedSession`], which only [`validate_session`]
-///   builds, and it reuses that validation's single clock reading.
+/// - It only accepts a fresh [`ValidatedSession`], which only
+///   [`validate_session`] builds.
 /// - The new cookie keeps the original issue time (`iat`), session id, and
 ///   country binding. Only the activity timestamp moves, so the absolute
 ///   lifetime can never be extended; a cookie at or past it is not re-issued.
@@ -214,19 +219,27 @@ impl Drop for RefreshedSessionCookie {
 ///
 /// The trade-off is the usual one for sliding sessions: a stolen cookie that
 /// keeps being used stays valid until the absolute lifetime or revocation.
-pub fn refresh_session_cookie<Rng>(
+pub fn refresh_session_cookie<Rng, ServiceClock>(
     validated: &ValidatedSession,
     session_keyring: &KeyRing<SessionCookie>,
     rng: &mut Rng,
+    clock: &ServiceClock,
     config: &MagicLinkServiceConfig,
 ) -> Result<Option<RefreshedSessionCookie>, SessionValidationError>
 where
     Rng: RngCore + CryptoRng + ?Sized,
+    ServiceClock: Clock,
 {
     let max_age = config
         .session_max_age()
         .map_err(|_| SessionValidationError::Internal)?;
-    let now_unix = validated.validated_at_unix;
+    let now_unix = clock.now_unix().map_err(map_session_dependency_error)?;
+    if now_unix < validated.validated_at_unix
+        || now_unix - validated.validated_at_unix > CLOCK_SKEW_TOLERANCE_SECS
+    {
+        // A stale validation: revocation may have happened since.
+        return Err(SessionValidationError::InvalidSession);
+    }
     // A cookie stamped slightly in the future (within clock skew) is fresh.
     if validated.issued_at_unix > now_unix
         || now_unix.saturating_sub(validated.last_activity_unix) < max_age.idle_secs / 2

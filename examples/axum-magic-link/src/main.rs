@@ -386,6 +386,9 @@ async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
                 escape_html(session.session().email.as_str()),
             ))
             .into_response();
+            // Authenticated pages are never cacheable, and a refreshed bearer
+            // cookie must not be stored by any shared cache: no-store et al.
+            apply_magic_link_security_headers(response.headers_mut());
             // Sliding session: re-issue the cookie once half the idle lifetime
             // has passed. The absolute lifetime and revocation still apply.
             let mut rng = OsRng;
@@ -393,6 +396,7 @@ async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
                 &session,
                 state.session_keyring.as_ref(),
                 &mut rng,
+                &LocalClock,
                 &state.config,
             ) {
                 Ok(Some(refreshed)) => {
@@ -411,8 +415,11 @@ async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
                 }
                 // Not due yet: keep the current cookie.
                 Ok(None) => {}
-                // A failed refresh does not end a valid session.
-                Err(_) => {}
+                // A failed refresh does not end a valid session, but operators
+                // must see it: a lapsed session-key mint window would otherwise
+                // silently log everyone out at the idle limit. The error kind
+                // carries no secret.
+                Err(error) => eprintln!("session refresh failed: {error}"),
             }
             response
         }

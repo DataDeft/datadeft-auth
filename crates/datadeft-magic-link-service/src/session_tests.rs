@@ -665,9 +665,11 @@ async fn validated_at(
     .await
 }
 
+/// Refresh in the same request: the clock reads the validation's instant.
 fn refresh(validated: &ValidatedSession, keyring: &KeyRing<SessionCookie>) -> Option<String> {
     let mut rng = PerCallRng::starting_at(0x71);
-    refresh_session_cookie(validated, keyring, &mut rng, &config())
+    let clock = TestClock::at(validated.validated_at_unix);
+    refresh_session_cookie(validated, keyring, &mut rng, &clock, &config())
         .expect("refresh")
         .map(|cookie| cookie.as_secret_value().to_owned())
 }
@@ -812,4 +814,43 @@ async fn refresh_reissues_under_the_current_active_key() {
 fn refreshed_cookie_debug_is_redacted() {
     let cookie = RefreshedSessionCookie("v1.kid.secret".to_owned());
     assert_eq!(format!("{cookie:?}"), "RefreshedSessionCookie(..)");
+}
+
+#[tokio::test]
+async fn stale_validation_cannot_be_refreshed() {
+    let keyring = keyring();
+    let original = cookie(&keyring, 900, 800, None);
+    let sessions = TestSessions::with_record(record(800));
+    let validated = validated_at(&original, None, &keyring, &sessions, 960)
+        .await
+        .expect("valid");
+    let mut rng = PerCallRng::starting_at(0x71);
+
+    // Within the skew tolerance of the validation it still counts as fresh.
+    assert!(
+        refresh_session_cookie(
+            &validated,
+            &keyring,
+            &mut rng,
+            &TestClock::at(1_020),
+            &config()
+        )
+        .expect("fresh enough")
+        .is_some()
+    );
+    // Kept around and refreshed later, or with a clock that went backwards:
+    // refused, so the caller must validate (and see any revocation) again.
+    for later in [1_021, 959] {
+        assert_eq!(
+            refresh_session_cookie(
+                &validated,
+                &keyring,
+                &mut rng,
+                &TestClock::at(later),
+                &config()
+            )
+            .unwrap_err(),
+            SessionValidationError::InvalidSession
+        );
+    }
 }
