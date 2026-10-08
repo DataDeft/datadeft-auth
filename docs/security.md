@@ -458,6 +458,11 @@ Rules:
 - Never mint with verify-only keys.
 - Never mint HMAC lookup values with old keys. Previous HMAC keys are only
   for read fallback during rotation.
+- Do not rotate session keys faster than verify retention.
+- Keep previous session keys for at least 31 days.
+- Reissue cookies with active keys after normal authorization checks.
+- Retire magic-link and PoW keys sooner than session keys.
+- Fail closed on unknown, missing, retired, disabled, or malformed key IDs.
 
 ### Rotating the HMAC keys
 
@@ -483,11 +488,6 @@ previous document's HMAC keys only when they differ from the active ones.
 Rate-limit counters restart once at rotation; limits are best-effort.
 Removing the previous storage key before step 3 strands users who have not
 logged in since the rotation: their next login creates a second account.
-- Do not rotate session keys faster than verify retention.
-- Keep previous session keys for at least 31 days.
-- Reissue cookies with active keys after normal authorization checks.
-- Retire magic-link and PoW keys sooner than session keys.
-- Fail closed on unknown, missing, retired, disabled, or malformed key IDs.
 
 ## Cookie security
 

@@ -52,6 +52,40 @@ impl fmt::Debug for StorageHmacKey {
     }
 }
 
+/// The current storage key plus, during a rotation window, the previous one.
+///
+/// Writes always use [`Self::current`]. Reads that miss under the current key
+/// retry under [`Self::previous`], so records written before a rotation stay
+/// reachable. Both stores share this type so their fallback cannot drift.
+pub(crate) struct StorageHmacKeys {
+    current: StorageHmacKey,
+    previous: Option<StorageHmacKey>,
+}
+
+impl StorageHmacKeys {
+    pub(crate) fn new(current: StorageHmacKey, previous: Option<StorageHmacKey>) -> Self {
+        Self { current, previous }
+    }
+
+    pub(crate) fn current(&self) -> &StorageHmacKey {
+        &self.current
+    }
+
+    pub(crate) fn previous(&self) -> Option<&StorageHmacKey> {
+        self.previous.as_ref()
+    }
+
+    pub(crate) fn set_previous(&mut self, previous: StorageHmacKey) {
+        self.previous = Some(previous);
+    }
+}
+
+impl fmt::Debug for StorageHmacKeys {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("StorageHmacKeys(..)")
+    }
+}
+
 #[cfg(test)]
 #[path = "hmac_key_tests.rs"]
 mod tests;

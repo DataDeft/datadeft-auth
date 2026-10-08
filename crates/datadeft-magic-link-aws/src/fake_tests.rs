@@ -1074,7 +1074,10 @@ async fn storage_key_rotation_keeps_users_and_sessions() {
         .expect("first login");
     let session_id = first.authentication().session_id().clone();
 
-    let after = before.rotated(StorageHmacKey::new([0x25; 32]));
+    let after = before.sharing_data_with_keys(
+        StorageHmacKey::new([0x25; 32]),
+        Some(StorageHmacKey::new([0x24; 32])),
+    );
 
     // The pre-rotation session is still found and can be revoked.
     assert!(
@@ -1104,11 +1107,7 @@ async fn storage_key_rotation_keeps_users_and_sessions() {
     );
 
     // Login migrated the lookup, so the store works without the old key.
-    let without_previous = FakeDynamoDbAuthStore {
-        inner: Arc::clone(&after.inner),
-        storage_hmac_key: Arc::clone(&after.storage_hmac_key),
-        previous_storage_hmac_key: None,
-    };
+    let without_previous = after.sharing_data_with_keys(StorageHmacKey::new([0x25; 32]), None);
     let email = NormalizedEmail::parse("user@example.com").expect("email");
     assert!(
         without_previous
@@ -1128,16 +1127,15 @@ async fn rekey_migrates_users_who_did_not_log_in_during_rotation() {
         .await
         .expect("login");
 
-    let after = before.rotated(StorageHmacKey::new([0x25; 32]));
+    let after = before.sharing_data_with_keys(
+        StorageHmacKey::new([0x25; 32]),
+        Some(StorageHmacKey::new([0x24; 32])),
+    );
     assert_eq!(after.rekey_email_lookups().expect("rekey"), 1);
     assert_eq!(after.rekey_email_lookups().expect("rekey is idempotent"), 0);
 
     // With the previous key dropped, the account is still found.
-    let dropped = FakeDynamoDbAuthStore {
-        inner: Arc::clone(&after.inner),
-        storage_hmac_key: Arc::clone(&after.storage_hmac_key),
-        previous_storage_hmac_key: None,
-    };
+    let dropped = after.sharing_data_with_keys(StorageHmacKey::new([0x25; 32]), None);
     login_with_keys(&dropped, &mut rng, &lookup_key, &lookup_key, None)
         .await
         .expect("login after previous key dropped");
@@ -1153,11 +1151,7 @@ async fn storage_key_change_without_previous_key_splits_accounts() {
     login_with_keys(&before, &mut rng, &lookup_key, &lookup_key, None)
         .await
         .expect("first login");
-    let unrotated = FakeDynamoDbAuthStore {
-        inner: Arc::clone(&before.inner),
-        storage_hmac_key: Arc::new(StorageHmacKey::new([0x25; 32])),
-        previous_storage_hmac_key: None,
-    };
+    let unrotated = before.sharing_data_with_keys(StorageHmacKey::new([0x25; 32]), None);
     login_with_keys(&unrotated, &mut rng, &lookup_key, &lookup_key, None)
         .await
         .expect("second login");

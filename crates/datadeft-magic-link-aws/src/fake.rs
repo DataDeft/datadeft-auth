@@ -7,6 +7,7 @@
 
 use core::fmt;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::{Arc, Mutex};
 
 use datadeft_magic_link_service::{
@@ -20,6 +21,7 @@ use datadeft_magic_link_service::{
 use crate::error::AwsAdapterError;
 use crate::hmac_key::{
     EMAIL_LOOKUP_HMAC_PREFIX, RATE_LOOKUP_HMAC_PREFIX, SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey,
+    StorageHmacKeys,
 };
 use crate::window::fixed_window_index;
 
@@ -35,8 +37,7 @@ pub struct UserSessionIndexEntry {
 #[derive(Clone)]
 pub struct FakeDynamoDbAuthStore {
     inner: Arc<Mutex<FakeDynamoDbInner>>,
-    storage_hmac_key: Arc<StorageHmacKey>,
-    previous_storage_hmac_key: Option<Arc<StorageHmacKey>>,
+    storage_hmac_keys: Arc<StorageHmacKeys>,
 }
 
 /// Session record plus the expiry the DynamoDB item would carry as TTL.
@@ -66,19 +67,22 @@ impl FakeDynamoDbAuthStore {
     pub fn new(storage_hmac_key: StorageHmacKey) -> Self {
         Self {
             inner: Arc::default(),
-            storage_hmac_key: Arc::new(storage_hmac_key),
-            previous_storage_hmac_key: None,
+            storage_hmac_keys: Arc::new(StorageHmacKeys::new(storage_hmac_key, None)),
         }
     }
 
-    /// Model a storage-key rotation: a store over the same data that uses
-    /// `storage_hmac_key` as current and this store's current key as previous.
+    /// A store over the same data with different storage keys. Models a
+    /// rotation (`previous: Some(old_key)`), dropping the previous key after
+    /// it (`None`), or a key change without fallback.
     #[must_use]
-    pub fn rotated(&self, storage_hmac_key: StorageHmacKey) -> Self {
+    pub fn sharing_data_with_keys(
+        &self,
+        current: StorageHmacKey,
+        previous: Option<StorageHmacKey>,
+    ) -> Self {
         Self {
             inner: Arc::clone(&self.inner),
-            storage_hmac_key: Arc::new(storage_hmac_key),
-            previous_storage_hmac_key: Some(Arc::clone(&self.storage_hmac_key)),
+            storage_hmac_keys: Arc::new(StorageHmacKeys::new(current, previous)),
         }
     }
 
@@ -87,14 +91,15 @@ impl FakeDynamoDbAuthStore {
     /// lookups written.
     pub fn rekey_email_lookups(&self) -> Result<usize, DependencyError> {
         let mut inner = self.lock_inner()?;
-        let profiles: Vec<UserRecord> = inner.user_profiles_by_id.values().cloned().collect();
+        let profiles: Vec<(String, UserId)> = inner
+            .user_profiles_by_id
+            .values()
+            .map(|profile| Ok((self.email_hmac(&profile.email)?, profile.user_id.clone())))
+            .collect::<Result<_, DependencyError>>()?;
         let mut written = 0usize;
-        for profile in profiles {
-            let email_hmac = self.email_hmac(&profile.email)?;
-            if let std::collections::hash_map::Entry::Vacant(entry) =
-                inner.user_id_by_email_hmac.entry(email_hmac)
-            {
-                entry.insert(profile.user_id.clone());
+        for (email_hmac, user_id) in profiles {
+            if let Entry::Vacant(entry) = inner.user_id_by_email_hmac.entry(email_hmac) {
+                entry.insert(user_id);
                 written = written.saturating_add(1);
             }
         }
@@ -152,48 +157,44 @@ impl FakeDynamoDbAuthStore {
             .unwrap_or_default())
     }
 
-    fn email_hmac(&self, email: &NormalizedEmail) -> Result<String, DependencyError> {
-        self.storage_hmac_key
-            .hmac(EMAIL_LOOKUP_HMAC_PREFIX, email.as_str())
+    fn hmac(&self, prefix: &str, value: &str) -> Result<String, DependencyError> {
+        self.storage_hmac_keys
+            .current()
+            .hmac(prefix, value)
             .map_err(DependencyError::from)
     }
 
-    fn previous_email_hmac(
-        &self,
-        email: &NormalizedEmail,
-    ) -> Result<Option<String>, DependencyError> {
-        self.previous_storage_hmac_key
-            .as_ref()
-            .map(|key| {
-                key.hmac(EMAIL_LOOKUP_HMAC_PREFIX, email.as_str())
-                    .map_err(DependencyError::from)
-            })
-            .transpose()
-    }
-
-    fn previous_session_hmac(
-        &self,
-        session_id: &SessionId,
-    ) -> Result<Option<String>, DependencyError> {
-        self.previous_storage_hmac_key
-            .as_ref()
-            .map(|key| {
-                key.hmac(SESSION_LOOKUP_HMAC_PREFIX, session_id.as_str())
-                    .map_err(DependencyError::from)
-            })
-            .transpose()
+    fn email_hmac(&self, email: &NormalizedEmail) -> Result<String, DependencyError> {
+        self.hmac(EMAIL_LOOKUP_HMAC_PREFIX, email.as_str())
     }
 
     fn session_hmac(&self, session_id: &SessionId) -> Result<String, DependencyError> {
-        self.storage_hmac_key
-            .hmac(SESSION_LOOKUP_HMAC_PREFIX, session_id.as_str())
-            .map_err(DependencyError::from)
+        self.hmac(SESSION_LOOKUP_HMAC_PREFIX, session_id.as_str())
     }
 
     fn rate_hmac(&self, key: &RateLimitKey) -> Result<String, DependencyError> {
-        self.storage_hmac_key
-            .hmac(RATE_LOOKUP_HMAC_PREFIX, key.as_str())
-            .map_err(DependencyError::from)
+        self.hmac(RATE_LOOKUP_HMAC_PREFIX, key.as_str())
+    }
+
+    /// The HMAC of `value` under the current key, or under the previous key
+    /// when only that one is `present`. Mirrors the real store's
+    /// `get_with_key_fallback`; the flag reports a previous-key hit.
+    fn resolve_hmac(
+        &self,
+        prefix: &str,
+        value: &str,
+        present: impl Fn(&str) -> bool,
+    ) -> Result<(String, bool), DependencyError> {
+        let current = self.hmac(prefix, value)?;
+        if !present(&current)
+            && let Some(previous) = self.storage_hmac_keys.previous()
+        {
+            let previous = previous.hmac(prefix, value)?;
+            if present(&previous) {
+                return Ok((previous, true));
+            }
+        }
+        Ok((current, false))
     }
 
     fn authentication_error(error: AwsAdapterError) -> CommitMagicLinkAuthenticationError {
@@ -321,22 +322,25 @@ impl MagicLinkAuthenticationRepository for FakeDynamoDbAuthStore {
         &self,
         email: &NormalizedEmail,
     ) -> Result<Option<UserRecord>, DependencyError> {
-        let email_hmac = self.email_hmac(email)?;
-        let previous_email_hmac = self.previous_email_hmac(email)?;
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
-        if !inner.user_id_by_email_hmac.contains_key(&email_hmac) {
-            // Rotation window: migrate a lookup found under the previous key
-            // so the commit's condition check sees it under the current key.
-            let migrated = previous_email_hmac
-                .and_then(|previous| inner.user_id_by_email_hmac.get(&previous).cloned());
-            if let Some(user_id) = migrated {
-                inner
-                    .user_id_by_email_hmac
-                    .insert(email_hmac.clone(), user_id);
-            }
+        let (found_hmac, from_previous) =
+            self.resolve_hmac(EMAIL_LOOKUP_HMAC_PREFIX, email.as_str(), |hmac| {
+                inner.user_id_by_email_hmac.contains_key(hmac)
+            })?;
+        if from_previous {
+            // Rotation window: migrate the lookup so the commit's condition
+            // check sees it under the current key.
+            let user_id = inner
+                .user_id_by_email_hmac
+                .get(&found_hmac)
+                .cloned()
+                .ok_or(DependencyError::Internal)?;
+            inner
+                .user_id_by_email_hmac
+                .insert(self.email_hmac(email)?, user_id);
         }
-        let Some(user_id) = inner.user_id_by_email_hmac.get(&email_hmac) else {
+        let Some(user_id) = inner.user_id_by_email_hmac.get(&found_hmac) else {
             return Ok(None);
         };
         let user = inner
@@ -506,14 +510,12 @@ impl SessionRepository for FakeDynamoDbAuthStore {
         session_id: &SessionId,
         now_unix: u64,
     ) -> Result<Option<SessionRecord>, DependencyError> {
-        let session_hmac = self.session_hmac(session_id)?;
-        let previous_session_hmac = self.previous_session_hmac(session_id)?;
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
-        let session_hmac = match previous_session_hmac {
-            Some(previous) if !inner.sessions_by_hmac.contains_key(&session_hmac) => previous,
-            _ => session_hmac,
-        };
+        let (session_hmac, _) =
+            self.resolve_hmac(SESSION_LOOKUP_HMAC_PREFIX, session_id.as_str(), |hmac| {
+                inner.sessions_by_hmac.contains_key(hmac)
+            })?;
         Ok(inner
             .sessions_by_hmac
             .get(&session_hmac)
@@ -528,14 +530,12 @@ impl SessionRepository for FakeDynamoDbAuthStore {
         session_id: &SessionId,
         revoked_at_unix: u64,
     ) -> Result<(), DependencyError> {
-        let session_hmac = self.session_hmac(session_id)?;
-        let previous_session_hmac = self.previous_session_hmac(session_id)?;
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
-        let session_hmac = match previous_session_hmac {
-            Some(previous) if !inner.sessions_by_hmac.contains_key(&session_hmac) => previous,
-            _ => session_hmac,
-        };
+        let (session_hmac, _) =
+            self.resolve_hmac(SESSION_LOOKUP_HMAC_PREFIX, session_id.as_str(), |hmac| {
+                inner.sessions_by_hmac.contains_key(hmac)
+            })?;
         let session = &mut inner
             .sessions_by_hmac
             .get_mut(&session_hmac)

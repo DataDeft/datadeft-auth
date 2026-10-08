@@ -4,6 +4,7 @@ use core::fmt;
 use std::collections::HashMap;
 
 use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_sdk_dynamodb::operation::get_item::GetItemOutput;
 use aws_sdk_dynamodb::operation::get_item::builders::GetItemFluentBuilder;
 use aws_sdk_dynamodb::operation::transact_write_items::builders::TransactWriteItemsFluentBuilder;
 use aws_sdk_dynamodb::types::{AttributeValue, ConditionCheck, Put, TransactWriteItem, Update};
@@ -21,6 +22,7 @@ use crate::error::{
 };
 use crate::hmac_key::{
     EMAIL_LOOKUP_HMAC_PREFIX, RATE_LOOKUP_HMAC_PREFIX, SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey,
+    StorageHmacKeys,
 };
 use crate::window::fixed_window_index;
 
@@ -34,8 +36,7 @@ pub const DEFAULT_CLEANUP_GRACE_SECS: u64 = 24 * 60 * 60;
 pub struct DynamoDbAuthStore {
     client: DynamoDbClient,
     table_name: String,
-    storage_hmac_key: StorageHmacKey,
-    previous_storage_hmac_key: Option<StorageHmacKey>,
+    storage_hmac_keys: StorageHmacKeys,
     cleanup_grace_secs: u64,
 }
 
@@ -49,8 +50,7 @@ impl DynamoDbAuthStore {
         Self {
             client,
             table_name,
-            storage_hmac_key,
-            previous_storage_hmac_key: None,
+            storage_hmac_keys: StorageHmacKeys::new(storage_hmac_key, None),
             cleanup_grace_secs: DEFAULT_CLEANUP_GRACE_SECS,
         }
     }
@@ -62,7 +62,7 @@ impl DynamoDbAuthStore {
     /// users who did not log in during the window are not stranded.
     #[must_use]
     pub fn with_previous_storage_hmac_key(mut self, previous: StorageHmacKey) -> Self {
-        self.previous_storage_hmac_key = Some(previous);
+        self.storage_hmac_keys.set_previous(previous);
         self
     }
 
@@ -79,6 +79,7 @@ impl DynamoDbAuthStore {
                 .scan()
                 .table_name(&self.table_name)
                 .filter_expression("entity_type = :user_profile")
+                .projection_expression("user_id, email_normalized")
                 .expression_attribute_values(":user_profile", av_s("user_profile"))
                 .set_exclusive_start_key(start_key.take())
                 .send()
@@ -111,11 +112,7 @@ impl DynamoDbAuthStore {
             .client
             .put_item()
             .table_name(&self.table_name)
-            .item("pk", av_s(self.pk_user_email(email)?))
-            .item("sk", av_s("PROFILE"))
-            .item("entity_type", av_s("user_email_lookup"))
-            .item("user_id", av_s(user_id.as_str()))
-            .item("email_normalized", av_s(email.as_str()))
+            .set_item(Some(self.email_lookup_item(email, user_id)?))
             .condition_expression("attribute_not_exists(pk)")
             .send()
             .await
@@ -127,11 +124,68 @@ impl DynamoDbAuthStore {
         }
     }
 
-    fn previous_hmac(&self, prefix: &str, value: &str) -> Result<Option<String>, AwsAdapterError> {
-        self.previous_storage_hmac_key
-            .as_ref()
-            .map(|key| key.hmac(prefix, value))
-            .transpose()
+    /// The email lookup row, shared by user creation and lookup migration so
+    /// the commit's condition check and both writers agree on its shape.
+    fn email_lookup_item(
+        &self,
+        email: &NormalizedEmail,
+        user_id: &UserId,
+    ) -> Result<HashMap<String, AttributeValue>, AwsAdapterError> {
+        Ok(HashMap::from([
+            ("pk".to_owned(), av_s(self.pk_user_email(email)?)),
+            ("sk".to_owned(), av_s("PROFILE")),
+            ("entity_type".to_owned(), av_s("user_email_lookup")),
+            ("user_id".to_owned(), av_s(user_id.as_str())),
+            ("email_normalized".to_owned(), av_s(email.as_str())),
+        ]))
+    }
+
+    /// Consistent read of `(pk, sk)` under the current storage key, retried
+    /// under the previous key on a miss. Returns the output and whether it
+    /// came from the previous key. The previous HMAC is only computed on a
+    /// miss, so the hot path pays nothing outside a rotation.
+    async fn get_with_key_fallback(
+        &self,
+        sk: &str,
+        pk_for: impl Fn(&StorageHmacKey) -> Result<String, AwsAdapterError>,
+    ) -> Result<(GetItemOutput, bool), AwsAdapterError> {
+        let output = self
+            .authentication_get_item(pk_for(self.storage_hmac_keys.current())?, sk)
+            .send()
+            .await
+            .map_err(map_get_item_error)?;
+        if output.item().is_none()
+            && let Some(previous) = self.storage_hmac_keys.previous()
+        {
+            let fallback = self
+                .authentication_get_item(pk_for(previous)?, sk)
+                .send()
+                .await
+                .map_err(map_get_item_error)?;
+            if fallback.item().is_some() {
+                return Ok((fallback, true));
+            }
+        }
+        Ok((output, false))
+    }
+
+    async fn revoke_session_item(
+        &self,
+        pk: String,
+        revoked_at_unix: u64,
+    ) -> Result<(), AwsAdapterError> {
+        self.client
+            .update_item()
+            .table_name(&self.table_name)
+            .key("pk", av_s(pk))
+            .key("sk", av_s("SESSION"))
+            .update_expression("SET revoked_at_unix = :now")
+            .condition_expression("attribute_exists(pk) AND attribute_not_exists(revoked_at_unix)")
+            .expression_attribute_values(":now", av_n(revoked_at_unix))
+            .send()
+            .await
+            .map_err(map_update_item_error)?;
+        Ok(())
     }
 
     /// Override the retention grace (seconds past logical expiry) applied to
@@ -144,7 +198,7 @@ impl DynamoDbAuthStore {
     }
 
     fn hmac(&self, prefix: &str, value: &str) -> Result<String, AwsAdapterError> {
-        self.storage_hmac_key.hmac(prefix, value)
+        self.storage_hmac_keys.current().hmac(prefix, value)
     }
 
     fn pk_magic_link(selector_lookup_hmac: &LookupHmac) -> String {
@@ -159,15 +213,27 @@ impl DynamoDbAuthStore {
         self.hmac(SESSION_LOOKUP_HMAC_PREFIX, session_id.as_str())
     }
 
-    fn pk_session(&self, session_id: &SessionId) -> Result<String, AwsAdapterError> {
-        Ok(Self::pk_session_from_hmac(&self.session_hmac(session_id)?))
+    fn pk_session_under(
+        key: &StorageHmacKey,
+        session_id: &SessionId,
+    ) -> Result<String, AwsAdapterError> {
+        Ok(Self::pk_session_from_hmac(
+            &key.hmac(SESSION_LOOKUP_HMAC_PREFIX, session_id.as_str())?,
+        ))
+    }
+
+    fn pk_user_email_under(
+        key: &StorageHmacKey,
+        email: &NormalizedEmail,
+    ) -> Result<String, AwsAdapterError> {
+        Ok(format!(
+            "USER#{}",
+            key.hmac(EMAIL_LOOKUP_HMAC_PREFIX, email.as_str())?
+        ))
     }
 
     fn pk_user_email(&self, email: &NormalizedEmail) -> Result<String, AwsAdapterError> {
-        Ok(format!(
-            "USER#{}",
-            self.hmac(EMAIL_LOOKUP_HMAC_PREFIX, email.as_str())?
-        ))
+        Self::pk_user_email_under(self.storage_hmac_keys.current(), email)
     }
 
     fn pk_user_id(user_id: &UserId) -> String {
@@ -238,15 +304,6 @@ impl DynamoDbAuthStore {
             .table_name(&self.table_name)
             .key("pk", av_s(pk))
             .key("sk", av_s(sk))
-            .consistent_read(true)
-    }
-
-    fn session_get_item(&self, pk: String) -> GetItemFluentBuilder {
-        self.client
-            .get_item()
-            .table_name(&self.table_name)
-            .key("pk", av_s(pk))
-            .key("sk", av_s("SESSION"))
             .consistent_read(true)
     }
 
@@ -348,11 +405,9 @@ impl DynamoDbAuthStore {
                     .map_err(|_| AwsAdapterError::Internal)?;
                 let email_put = Put::builder()
                     .table_name(&self.table_name)
-                    .item("pk", av_s(self.pk_user_email(&command.magic_link.email)?))
-                    .item("sk", av_s("PROFILE"))
-                    .item("entity_type", av_s("user_email_lookup"))
-                    .item("user_id", av_s(user_id.as_str()))
-                    .item("email_normalized", av_s(command.magic_link.email.as_str()))
+                    .set_item(Some(
+                        self.email_lookup_item(&command.magic_link.email, user_id)?,
+                    ))
                     .condition_expression("attribute_not_exists(pk)")
                     .build()
                     .map_err(|_| AwsAdapterError::Internal)?;
@@ -489,28 +544,10 @@ impl MagicLinkAuthenticationRepository for DynamoDbAuthStore {
         &self,
         email: &NormalizedEmail,
     ) -> Result<Option<UserRecord>, DependencyError> {
-        let email_pk = self.pk_user_email(email).map_err(DependencyError::from)?;
-        let previous_email_pk = self
-            .previous_hmac(EMAIL_LOOKUP_HMAC_PREFIX, email.as_str())
-            .map_err(DependencyError::from)?
-            .map(|hmac| format!("USER#{hmac}"));
         async {
-            let mut output = self
-                .authentication_get_item(email_pk, "PROFILE")
-                .send()
-                .await
-                .map_err(map_get_item_error)?;
-            let mut migrate = false;
-            if output.item().is_none()
-                && let Some(previous_pk) = previous_email_pk
-            {
-                output = self
-                    .authentication_get_item(previous_pk, "PROFILE")
-                    .send()
-                    .await
-                    .map_err(map_get_item_error)?;
-                migrate = output.item().is_some();
-            }
+            let (output, migrate) = self
+                .get_with_key_fallback("PROFILE", |key| Self::pk_user_email_under(key, email))
+                .await?;
             let Some(item) = output.item() else {
                 return Ok(None);
             };
@@ -554,53 +591,16 @@ impl MagicLinkAuthenticationRepository for DynamoDbAuthStore {
     }
 }
 
-impl DynamoDbAuthStore {
-    async fn revoke_session_item(
-        &self,
-        pk: String,
-        revoked_at_unix: u64,
-    ) -> Result<(), AwsAdapterError> {
-        self.client
-            .update_item()
-            .table_name(&self.table_name)
-            .key("pk", av_s(pk))
-            .key("sk", av_s("SESSION"))
-            .update_expression("SET revoked_at_unix = :now")
-            .condition_expression("attribute_exists(pk) AND attribute_not_exists(revoked_at_unix)")
-            .expression_attribute_values(":now", av_n(revoked_at_unix))
-            .send()
-            .await
-            .map_err(map_update_item_error)?;
-        Ok(())
-    }
-}
-
 impl SessionRepository for DynamoDbAuthStore {
     async fn find_session(
         &self,
         session_id: &SessionId,
         now_unix: u64,
     ) -> Result<Option<SessionRecord>, DependencyError> {
-        let pk = self.pk_session(session_id).map_err(DependencyError::from)?;
-        let previous_pk = self
-            .previous_hmac(SESSION_LOOKUP_HMAC_PREFIX, session_id.as_str())
-            .map_err(DependencyError::from)?
-            .map(|hmac| Self::pk_session_from_hmac(&hmac));
         async {
-            let mut output = self
-                .session_get_item(pk)
-                .send()
-                .await
-                .map_err(map_get_item_error)?;
-            if output.item().is_none()
-                && let Some(previous_pk) = previous_pk
-            {
-                output = self
-                    .session_get_item(previous_pk)
-                    .send()
-                    .await
-                    .map_err(map_get_item_error)?;
-            }
+            let (output, _) = self
+                .get_with_key_fallback("SESSION", |key| Self::pk_session_under(key, session_id))
+                .await?;
             let Some(item) = output.item() else {
                 return Ok(None);
             };
@@ -621,18 +621,23 @@ impl SessionRepository for DynamoDbAuthStore {
         session_id: &SessionId,
         revoked_at_unix: u64,
     ) -> Result<(), DependencyError> {
-        let pk = self.pk_session(session_id).map_err(DependencyError::from)?;
-        let previous_pk = self
-            .previous_hmac(SESSION_LOOKUP_HMAC_PREFIX, session_id.as_str())
-            .map_err(DependencyError::from)?
-            .map(|hmac| Self::pk_session_from_hmac(&hmac));
         async {
-            let revoked = self.revoke_session_item(pk, revoked_at_unix).await;
-            match (revoked, previous_pk) {
+            let keys = &self.storage_hmac_keys;
+            let revoked = self
+                .revoke_session_item(
+                    Self::pk_session_under(keys.current(), session_id)?,
+                    revoked_at_unix,
+                )
+                .await;
+            match (revoked, keys.previous()) {
                 // Rotation window: the session may be stored under the
                 // previous key. A second conditional failure is reported.
-                (Err(AwsAdapterError::ConditionalWriteFailed), Some(previous_pk)) => {
-                    self.revoke_session_item(previous_pk, revoked_at_unix).await
+                (Err(AwsAdapterError::ConditionalWriteFailed), Some(previous)) => {
+                    self.revoke_session_item(
+                        Self::pk_session_under(previous, session_id)?,
+                        revoked_at_unix,
+                    )
+                    .await
                 }
                 (result, _) => result,
             }

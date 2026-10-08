@@ -157,7 +157,8 @@ fn authentication_read_builders_are_strongly_consistent() {
 
 #[test]
 fn session_read_builder_is_strongly_consistent() {
-    let request = store().session_get_item("SESSION#test".to_owned());
+    // Session reads share the consistent-read builder with authentication.
+    let request = store().authentication_get_item("SESSION#test".to_owned(), "SESSION");
 
     assert_eq!(request.as_input().get_consistent_read(), &Some(true));
 }

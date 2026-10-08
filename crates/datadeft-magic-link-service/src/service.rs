@@ -184,34 +184,25 @@ where
             return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
         }
 
-        let presented_verifier_hash = verifier_hash(self.lookup_hmac_key, token.verifier())
-            .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
-        let candidate = self
-            .authentication
-            .find_magic_link_for_authentication(&selector_lookup)
-            .await
-            .map_err(map_dependency_error)
-            .map_err(MagicLinkFlowError::from_public_error)?;
+        let mut found = landing_candidate(
+            self.authentication,
+            self.lookup_hmac_key,
+            selector_lookup,
+            &token,
+        )
+        .await?;
         // Rotation window: a link minted under the previous lookup key is
         // stored under that key's selector HMAC and verifier hash. The confirm
         // bindings carry these values, so confirmation needs no key fallback.
-        let (selector_lookup, presented_verifier_hash, candidate) =
-            match (candidate, self.previous_lookup_hmac_key) {
-                (None, Some(previous_key)) => {
-                    let previous_selector = selector_lookup_hmac(previous_key, token.selector())
-                        .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
-                    let previous_hash = verifier_hash(previous_key, token.verifier())
-                        .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
-                    let previous_candidate = self
-                        .authentication
-                        .find_magic_link_for_authentication(&previous_selector)
-                        .await
-                        .map_err(map_dependency_error)
-                        .map_err(MagicLinkFlowError::from_public_error)?;
-                    (previous_selector, previous_hash, previous_candidate)
-                }
-                (candidate, _) => (selector_lookup, presented_verifier_hash, candidate),
-            };
+        if found.2.is_none()
+            && let Some(previous_key) = self.previous_lookup_hmac_key
+        {
+            let previous_selector = selector_lookup_hmac(previous_key, token.selector())
+                .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+            found = landing_candidate(self.authentication, previous_key, previous_selector, &token)
+                .await?;
+        }
+        let (selector_lookup, presented_verifier_hash, candidate) = found;
         let candidate =
             validate_scanner_candidate(&self.config, candidate, &presented_verifier_hash, now_unix)
                 .map_err(MagicLinkFlowError::from_public_error)?;
@@ -348,6 +339,31 @@ async fn landing_limits_deny<Limiter: RateLimiter>(
         config.rate_limits.landing_selector_window_secs,
     )];
     any_limit_denied(limiter, checks, now_unix).await
+}
+
+/// One landing lookup under `key`: the presented verifier hash and the record
+/// stored at `selector_lookup` (already derived under the same key).
+async fn landing_candidate<Authentication: MagicLinkAuthenticationRepository>(
+    authentication: &Authentication,
+    key: &LookupHmacKey,
+    selector_lookup: LookupHmac,
+    token: &MagicLinkToken,
+) -> Result<
+    (
+        LookupHmac,
+        VerifierHash,
+        Option<MagicLinkAuthenticationCandidate>,
+    ),
+    MagicLinkFlowError,
+> {
+    let presented_verifier_hash = verifier_hash(key, token.verifier())
+        .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+    let candidate = authentication
+        .find_magic_link_for_authentication(&selector_lookup)
+        .await
+        .map_err(map_dependency_error)
+        .map_err(MagicLinkFlowError::from_public_error)?;
+    Ok((selector_lookup, presented_verifier_hash, candidate))
 }
 
 fn validate_scanner_candidate(

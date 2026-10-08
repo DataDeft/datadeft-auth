@@ -276,28 +276,14 @@ impl LoadedAuthSecrets {
         active: &AuthSecretDocument,
         previous: Option<&AuthSecretDocument>,
     ) -> Result<Self, AwsAdapterError> {
-        let lookup_hmac_key =
-            LookupHmacKey::from_slice(&decode_key(&active.magic_link_lookup_hmac_b64)?)
-                .map_err(|_| AwsAdapterError::Internal)?;
-        let storage_hmac_key =
-            StorageHmacKey::from_slice(&decode_key(&active.aws_storage_hmac_b64)?)?;
-        let previous_lookup_hmac_key = previous
-            .map(|previous| {
-                rotated_key(
-                    &active.magic_link_lookup_hmac_b64,
-                    &previous.magic_link_lookup_hmac_b64,
-                )
-            })
-            .transpose()?
-            .flatten()
-            .map(|bytes| LookupHmacKey::new(*bytes));
-        let previous_storage_hmac_key = previous
-            .map(|previous| {
-                rotated_key(&active.aws_storage_hmac_b64, &previous.aws_storage_hmac_b64)
-            })
-            .transpose()?
-            .flatten()
-            .map(|bytes| StorageHmacKey::new(*bytes));
+        let lookup_bytes = Zeroizing::new(decode_key(&active.magic_link_lookup_hmac_b64)?);
+        let storage_bytes = Zeroizing::new(decode_key(&active.aws_storage_hmac_b64)?);
+        let previous_lookup = previous_if_rotated(&lookup_bytes, previous, |document| {
+            &document.magic_link_lookup_hmac_b64
+        })?;
+        let previous_storage = previous_if_rotated(&storage_bytes, previous, |document| {
+            &document.aws_storage_hmac_b64
+        })?;
         let confirm_keyring =
             build_keyring::<MagicLinkConfirmCookie>(active, previous, |document| {
                 &document.magic_link_confirm_cookie_root_b64
@@ -306,10 +292,10 @@ impl LoadedAuthSecrets {
             &document.session_cookie_root_b64
         })?;
         Ok(Self {
-            lookup_hmac_key,
-            storage_hmac_key,
-            previous_lookup_hmac_key,
-            previous_storage_hmac_key,
+            lookup_hmac_key: LookupHmacKey::new(*lookup_bytes),
+            storage_hmac_key: StorageHmacKey::new(*storage_bytes),
+            previous_lookup_hmac_key: previous_lookup.map(|bytes| LookupHmacKey::new(*bytes)),
+            previous_storage_hmac_key: previous_storage.map(|bytes| StorageHmacKey::new(*bytes)),
             confirm_keyring,
             session_keyring,
         })
@@ -436,15 +422,19 @@ fn build_keyring<P: KeyPurpose>(
     KeyRing::new(slots).map_err(|_| AwsAdapterError::Internal)
 }
 
-/// Decode the previous key when it differs from the active one. An unchanged
-/// key needs no fallback, so it yields `None` and costs no extra reads.
-fn rotated_key(
-    active: &str,
-    previous: &str,
+/// The previous document's HMAC key, but only when it differs from the
+/// active one. An unchanged key needs no fallback, so it yields `None` and
+/// costs no extra reads.
+fn previous_if_rotated(
+    active: &[u8; KEY_BYTES],
+    previous: Option<&AuthSecretDocument>,
+    key_b64: fn(&AuthSecretDocument) -> &str,
 ) -> Result<Option<Zeroizing<[u8; KEY_BYTES]>>, AwsAdapterError> {
-    let active = Zeroizing::new(decode_key(active)?);
-    let previous = Zeroizing::new(decode_key(previous)?);
-    Ok((*active != *previous).then_some(previous))
+    let Some(previous) = previous else {
+        return Ok(None);
+    };
+    let decoded = Zeroizing::new(decode_key(key_b64(previous))?);
+    Ok((*decoded != *active).then_some(decoded))
 }
 
 fn decode_key(value: &str) -> Result<[u8; KEY_BYTES], AwsAdapterError> {
