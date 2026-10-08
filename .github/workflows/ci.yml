@@ -10,12 +10,14 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - uses: jdx/mise-action@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
       # One gate. mise runs fmt-check, clippy, test, docs, audit,
       # token-core-guard, ts-verify, and spec in parallel, and installs the
       # tools it needs (bun, cargo-deny, tla-checker). See mise.toml.
