@@ -2,8 +2,8 @@
 //!
 //! Owns the token grammar, selector/verifier types, parsing, generation,
 //! normalized-email boundary, keyed lookup/verifier HMAC helpers, the
-//! scanner-safe confirmation cookie, and redacted `Debug`. Stores only
-//! keyed lookup material, never raw token parts or raw emails. Core APIs
+//! scanner-safe confirmation cookie, and redacted `Debug`. Lookup keys are
+//! keyed HMACs, and raw token parts are never stored. Core APIs
 //! receive entropy/key material as inputs and never read the clock,
 //! environment, filesystem, network, or OS RNG directly.
 

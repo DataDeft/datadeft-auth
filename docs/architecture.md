@@ -40,7 +40,7 @@ PoW admission          -> datadeft-pow-core
 1. The request service validates consent and the normalized email.
 2. The request service applies keyed-email limits.
 3. The request service creates an independent selector and verifier.
-4. The repository stores only keyed material.
+4. The repository addresses records by keyed lookup material and never stores the raw token.
 5. The outbox sends the bearer link.
 6. The `GET` landing route parses the token.
 7. The landing route applies a keyed-selector limit.

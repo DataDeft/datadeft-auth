@@ -84,8 +84,8 @@ The Axum handlers are headless. They run the input checks and return structured
 results plus prepared cookie headers. Your application renders the responses.
 
 1. Request. `POST` to `request_magic_link`. It validates consent and the
-   normalized email, mints a selector and a verifier, stores only keyed lookup
-   material, and hands the URL to your outbox.
+   normalized email, mints a selector and a verifier, stores the record under
+   keyed lookup material (never the raw token), and hands the URL to your outbox.
 2. Landing. `GET` to `magic_link_landing` (`begin_magic_link_landing`). This is
    side-effect-free and repeatable. It sets the `dd_auth_confirm` cookie. It
    never consumes the token. Render the account page and a same-origin `POST`

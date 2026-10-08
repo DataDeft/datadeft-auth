@@ -11,8 +11,8 @@ datadeft-magic-link-core = "0.3"
   generation, and redacted `Debug`.
 - `NormalizedEmail`: a validated, exact-match email boundary. No provider
   alias rules.
-- Keyed HMAC lookup and verifier-hash helpers. Storage holds only keyed lookup
-  material, never raw token parts or raw emails.
+- Keyed HMAC lookup and verifier-hash helpers. Lookup keys are keyed HMACs,
+  and raw token parts are never stored.
 - The scanner-safe confirmation cookie, which binds selector, verifier proof,
   account, expiry, and an independent confirmation nonce.
 

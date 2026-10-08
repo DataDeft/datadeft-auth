@@ -1,7 +1,9 @@
 //! Purpose-separated HMAC lookup material for magic-link flows.
 //!
-//! Storage keys and verifier hashes are secret-keyed HMACs. Raw emails,
-//! selectors, and verifiers should never be stored.
+//! Storage lookup keys and verifier hashes are secret-keyed HMACs. Raw
+//! selectors and verifiers should never be stored. An adapter may store the
+//! normalized email as a record attribute (for sending mail and identifying
+//! the account), but should not use it as a lookup key.
 
 use core::fmt;
 

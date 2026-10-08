@@ -14,8 +14,13 @@ datadeft-magic-link-aws = { version = "0.3", features = ["aws"] }
 | `aws` feature | `DynamoDbAuthStore`, `SesMagicLinkOutbox`, and Secrets Manager loading via `resolve_auth_secrets`. |
 
 Secrets come from AWS Secrets Manager. `AWSCURRENT` maps to the active key and
-`AWSPREVIOUS` to verify-only, so keys rotate without logging users out. Storage
-keys are HMACs of selectors and emails, never raw values.
+`AWSPREVIOUS` to verify-only for cookie keys. See "Rotation cadence" in the
+security policy for which keys can rotate.
+
+Row keys are HMACs of selectors, emails, and session IDs, and raw tokens are
+never stored. The normalized email is stored as an attribute on user and
+magic-link records so the application can send mail. Protect the table with
+encryption at rest and least-privilege IAM.
 
 ## Security
 

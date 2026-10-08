@@ -270,6 +270,15 @@ Use secret-keyed HMAC for these lookup keys:
 
 Do not use bare SHA-256 for secret-derived or PII-derived lookup material.
 
+## Data at rest
+
+HMACs keep raw selectors, verifiers, session IDs, and emails out of record
+keys. Raw tokens are never stored. The normalized email is stored as a record
+attribute, because the application needs it to send mail and identify the
+account. The keyed lookup keys therefore protect against guessing record
+addresses, not against reading a full table dump. Protect auth tables with
+encryption at rest, least-privilege access, and backup controls.
+
 ## Logging
 
 Never log these values:
