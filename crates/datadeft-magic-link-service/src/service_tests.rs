@@ -1329,8 +1329,8 @@ async fn natural_create_user_session_collision_is_fully_atomic() {
         CommitMagicLinkAuthenticationError::SessionConflict
     );
     assert_eq!(
-        repository.candidate.borrow().as_ref(),
-        Some(&initial_candidate)
+        repository.candidate.borrow().as_ref().map(candidate_state),
+        Some(candidate_state(&initial_candidate))
     );
     assert!(repository.user.borrow().is_none());
     assert_eq!(repository.sessions.borrow().as_slice(), &[existing_session]);
@@ -1585,4 +1585,20 @@ fn session_ids_carry_256_bits_of_fresh_entropy() {
     assert_eq!(hex.len() * 4, 256);
     assert!(hex.bytes().all(|byte| byte.is_ascii_hexdigit()));
     assert_ne!(first.as_str(), second.as_str());
+}
+
+/// Comparable snapshot of a candidate. The candidate itself has no `==`
+/// because it holds a verifier hash, which only compares in constant time.
+fn candidate_state(
+    candidate: &MagicLinkAuthenticationCandidate,
+) -> (String, String, u64, Option<u64>, String, String, u64) {
+    (
+        candidate.verifier_hash.as_storage_value().to_owned(),
+        candidate.email.as_str().to_owned(),
+        candidate.expires_at_unix,
+        candidate.consumed_at_unix,
+        candidate.terms_version.clone(),
+        candidate.privacy_version.clone(),
+        candidate.consented_at_unix,
+    )
 }

@@ -85,7 +85,18 @@ impl fmt::Debug for LookupHmac {
 }
 
 /// Secret-derived verifier hash, e.g. `mlv_<hex>`.
-#[derive(Clone, Eq, PartialEq)]
+///
+/// There is deliberately no `==`: an early-exit comparison would leak timing.
+/// Compare with [`VerifierHash::matches_hash_constant_time`]. This does not
+/// compile:
+///
+/// ```compile_fail
+/// use datadeft_magic_link_core::VerifierHash;
+/// fn leaks_timing(stored: &VerifierHash, presented: &VerifierHash) -> bool {
+///     stored == presented
+/// }
+/// ```
+#[derive(Clone)]
 pub struct VerifierHash(String);
 
 impl VerifierHash {

@@ -132,7 +132,7 @@ impl fmt::Debug for SessionId {
 
 /// Magic-link record written at request time. It contains keyed lookup material,
 /// never raw selectors or verifiers.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct MagicLinkRecord {
     pub selector_lookup_hmac: LookupHmac,
     pub email: NormalizedEmail,
@@ -218,7 +218,7 @@ impl fmt::Debug for SessionRecord {
 /// with the presented verifier hash. All other fields are security-relevant
 /// optimistic-read state that the service validates before constructing a
 /// [`CommitMagicLinkAuthentication`] command.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct MagicLinkAuthenticationCandidate {
     pub verifier_hash: VerifierHash,
     pub email: NormalizedEmail,
@@ -575,7 +575,7 @@ impl Drop for ConfirmMagicLinkFlowCommand {
 /// Email outbox request. The contained token is bearer material. Debug redacts
 /// it. The outbox owns URL construction, template, and language: this carries
 /// only the recipient, the token, and the token's expiry.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct MagicLinkEmail {
     pub email: NormalizedEmail,
     pub token: MagicLinkToken,

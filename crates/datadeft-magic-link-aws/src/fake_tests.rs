@@ -983,7 +983,11 @@ async fn aggregate_reads_candidates_and_scrubs_store_debug() {
         .expect("candidate")
         .expect("stored candidate");
     assert_eq!(candidate.email, record.email);
-    assert_eq!(candidate.verifier_hash, record.verifier_hash);
+    assert!(
+        candidate
+            .verifier_hash
+            .matches_hash_constant_time(&record.verifier_hash)
+    );
     assert_eq!(format!("{store:?}"), "FakeDynamoDbAuthStore(..)");
 }
 

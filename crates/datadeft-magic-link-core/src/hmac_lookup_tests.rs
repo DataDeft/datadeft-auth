@@ -55,7 +55,7 @@ fn verifier_hash_storage_value_round_trips_canonical_vector() {
     let parsed = VerifierHash::parse_storage_value(stored).expect("canonical storage value");
 
     assert_eq!(parsed.as_storage_value(), stored);
-    assert_eq!(parsed, generated);
+    // VerifierHash has no `==`: the constant-time method is the only comparison.
     assert!(parsed.matches_hash_constant_time(&generated));
 }
 
@@ -75,8 +75,8 @@ fn verifier_hash_storage_parser_rejects_malformed_and_noncanonical_values() {
 
     for value in malformed {
         assert_eq!(
-            VerifierHash::parse_storage_value(value),
-            Err(MagicLinkError::InvalidToken),
+            VerifierHash::parse_storage_value(value).err(),
+            Some(MagicLinkError::InvalidToken),
             "accepted malformed verifier hash storage value"
         );
     }

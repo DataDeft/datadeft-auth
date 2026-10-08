@@ -152,8 +152,13 @@ pub(crate) fn decrypt_wrapped_token<P: KeyPurpose>(
         .map_err(|_| TokenError::InvalidToken)?;
     let verified = branca::decode(parts.token(), key.key().as_bytes())
         .map_err(|_| TokenError::InvalidToken)?;
-    check_timestamp_fresh(verified.timestamp(), now_unix, max_age_secs, clock_skew_secs)
-        .map_err(|_| TokenError::InvalidToken)?;
+    check_timestamp_fresh(
+        verified.timestamp(),
+        now_unix,
+        max_age_secs,
+        clock_skew_secs,
+    )
+    .map_err(|_| TokenError::InvalidToken)?;
     Ok((parts.kid, verified))
 }
 

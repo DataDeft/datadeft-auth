@@ -96,8 +96,8 @@ fn authentication_candidate_parser_requires_canonical_verifier_hash() {
         let mut item = item_with_candidate();
         item.insert("verifier_hash".to_owned(), av_s(malformed));
         assert_eq!(
-            DynamoDbAuthStore::item_to_authentication_candidate(&item),
-            Err(AwsAdapterError::Internal)
+            DynamoDbAuthStore::item_to_authentication_candidate(&item).err(),
+            Some(AwsAdapterError::Internal)
         );
     }
 }

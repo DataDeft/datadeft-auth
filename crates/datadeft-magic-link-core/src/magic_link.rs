@@ -87,7 +87,7 @@ impl fmt::Debug for MagicLinkSelector {
 }
 
 /// Secret verifier half of a magic-link token.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct MagicLinkVerifier(String);
 
 impl MagicLinkVerifier {
@@ -130,7 +130,7 @@ impl fmt::Debug for MagicLinkVerifier {
 }
 
 /// Full bearer magic-link token.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct MagicLinkToken {
     selector: MagicLinkSelector,
     verifier: MagicLinkVerifier,
