@@ -182,6 +182,30 @@ carry no audit value:
 Validity never depends on deletion: every read checks `expires_at_unix` and
 `revoked_at_unix`.
 
+## Admin operations
+
+`AuthAdminService` gives consuming projects the data and audited mutations for
+their own admin UI. Who is an admin is the application's decision; authorize
+every admin endpoint before calling the service.
+
+- Queries: `list_users`, `get_user`, `find_user_by_email`,
+  `list_sessions_for_user`, `list_active_sessions`, `list_admin_events`. Pages
+  use an opaque `PageCursor` and a limit clamped to 100; a page may be shorter
+  than the limit while more remain, so continue while `next` is set.
+- Mutations: `revoke_session` (final), `revoke_all_sessions`, `disable_user`,
+  `enable_user`. Each writes the change and an append-only `AdminEvent`
+  (event id, time, action, user, session, admin id and reason) in one
+  transaction: both or neither.
+- Sessions are addressed by `SessionHandle`, the keyed hash they are stored
+  under, never by the raw session id, which is not stored. Show
+  `display_id()` (`sess_xxxxxxxx`) in UIs; pass the full handle back.
+- Disabling a user takes effect on the next request: `validate_session` checks
+  the user's status every time. `disable_user` then revokes every session so
+  the audit trail records each one ending. Enabling does not restore revoked
+  sessions; the user logs in again.
+- Admin ids and reasons are length-capped and may not contain control
+  characters. `Debug` output redacts the reason.
+
 Rules:
 
 - Keep magic-link and PoW values short-lived.

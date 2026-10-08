@@ -47,7 +47,7 @@ impl From<AwsAdapterError> for DependencyError {
 use aws_sdk_dynamodb::error::{ProvideErrorMetadata, SdkError};
 #[cfg(feature = "aws")]
 use aws_sdk_dynamodb::operation::{
-    get_item::GetItemError, put_item::PutItemError, scan::ScanError,
+    get_item::GetItemError, put_item::PutItemError, query::QueryError, scan::ScanError,
     transact_write_items::TransactWriteItemsError, update_item::UpdateItemError,
 };
 #[cfg(feature = "aws")]
@@ -65,6 +65,41 @@ pub(crate) fn map_get_item_error(error: SdkError<GetItemError>) -> AwsAdapterErr
 pub(crate) fn map_scan_error(error: SdkError<ScanError>) -> AwsAdapterError {
     classify_metadata(&error)
         .unwrap_or_else(|| fallback_debug_classification(&format!("{error:?}")))
+}
+
+#[cfg(feature = "aws")]
+pub(crate) fn map_query_error(error: SdkError<QueryError>) -> AwsAdapterError {
+    classify_metadata(&error)
+        .unwrap_or_else(|| fallback_debug_classification(&format!("{error:?}")))
+}
+
+/// Map an admin mutation transaction failure. A failed condition means the
+/// target is missing or already in the requested state; the service tells the
+/// two apart. Other cancellations (conflicts, throttling) are retryable.
+#[cfg(feature = "aws")]
+pub(crate) fn map_admin_transact_write_items_error<R>(
+    error: SdkError<TransactWriteItemsError, R>,
+) -> AwsAdapterError
+where
+    SdkError<TransactWriteItemsError, R>: ProvideErrorMetadata,
+{
+    if let Some(TransactWriteItemsError::TransactionCanceledException(exception)) =
+        error.as_service_error()
+    {
+        let condition_failed = exception
+            .cancellation_reasons()
+            .iter()
+            .any(|reason| reason.code() == Some("ConditionalCheckFailed"));
+        return if condition_failed {
+            AwsAdapterError::ConditionalWriteFailed
+        } else {
+            AwsAdapterError::DependencyUnavailable
+        };
+    }
+    match error.code() {
+        Some("ValidationException") => AwsAdapterError::Internal,
+        Some(_) | None => AwsAdapterError::DependencyUnavailable,
+    }
 }
 
 #[cfg(feature = "aws")]

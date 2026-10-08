@@ -789,6 +789,9 @@ fn required_bool(
         .map_err(|_| AwsAdapterError::Internal)
 }
 
+#[path = "dynamodb_admin.rs"]
+mod admin;
+
 #[cfg(test)]
 #[path = "dynamodb_tests.rs"]
 mod tests;

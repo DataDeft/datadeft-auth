@@ -19,6 +19,12 @@ serve as read fallback. Every key can rotate without logging users out or
 splitting accounts; follow "Rotating the HMAC keys" in the security policy,
 including `rekey_email_lookups` before dropping the previous secret.
 
+`DynamoDbAuthStore` also implements the admin API (`AuthAdminRepository`).
+Every admin mutation is one `TransactWriteItems` with its audit event; nothing
+is deleted. IAM for the admin role needs `dynamodb:GetItem`, `Query`, `Scan`,
+and `TransactWriteItems` on the table; `rekey_email_lookups` needs `Scan` and
+`PutItem`.
+
 Row keys are HMACs of selectors, emails, and session IDs, and raw tokens are
 never stored. The normalized email is stored as an attribute on user and
 magic-link records so the application can send mail. Protect the table with
