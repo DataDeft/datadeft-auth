@@ -216,10 +216,26 @@ export async function protect(config: ProtectConfig): Promise<void> {
         throw wrapFetchError(err, "challenge request failed");
     }
     if (!createResp.ok) {
-        const text = await createResp.text().catch(() => "");
-        throw new ProtectError("server", `challenge creation failed: ${text}`, createResp.status);
+        // The body is not echoed: proxies and portals return HTML pages that do
+        // not belong in error messages, UIs, or logs. `status` carries the code.
+        throw new ProtectError("server", "challenge creation failed", createResp.status);
     }
-    const challenge = (await createResp.json()) as Challenge;
+    let challenge: Challenge;
+    try {
+        challenge = (await createResp.json()) as Challenge;
+    } catch (err) {
+        // The body read shares the request timeout.
+        if (err instanceof DOMException && err.name === "TimeoutError") {
+            throw new ProtectError("timeout", "challenge request failed: timed out");
+        }
+        // HTTP 200 with a non-JSON body: captive portals, proxy or WAF block
+        // pages, CDN error pages, empty responses.
+        throw new ProtectError(
+            "server",
+            "challenge response was not valid JSON",
+            createResp.status,
+        );
+    }
 
     const solution = await solve(challenge, config.workerUrl, workerCount, solveTimeoutMs);
 

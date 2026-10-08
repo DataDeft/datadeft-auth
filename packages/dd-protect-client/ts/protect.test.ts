@@ -142,6 +142,48 @@ describe("protect", () => {
             expect(headers["Content-Type"]).toBe("application/json");
         });
 
+        test("throws ProtectError('timeout') when reading the challenge body times out", async () => {
+            mockFetch((url) => {
+                if (url !== CREATE_URL) throw new Error(`unexpected fetch: ${url}`);
+                const response = jsonResponse(CHALLENGE);
+                response.json = () =>
+                    Promise.reject(new DOMException("body read timed out", "TimeoutError"));
+                return response;
+            });
+
+            try {
+                await callProtect();
+                expect.unreachable("should have thrown");
+            } catch (e) {
+                expect(e).toBeInstanceOf(ProtectError);
+                expect((e as ProtectError).code).toBe("timeout");
+            }
+        });
+
+        for (const [name, body] of [
+            ["an HTML page", "<!doctype html><title>Wi-Fi login</title>"],
+            ["an empty body", ""],
+            ["truncated JSON", '{"chg":'],
+        ] as const) {
+            test(`throws ProtectError('server') when a 200 response is ${name}`, async () => {
+                mockFetch((url) => {
+                    if (url === CREATE_URL) return textResponse(body, 200);
+                    throw new Error(`unexpected fetch: ${url}`);
+                });
+
+                try {
+                    await callProtect();
+                    expect.unreachable("should have thrown");
+                } catch (e) {
+                    expect(e).toBeInstanceOf(ProtectError);
+                    const pe = e as ProtectError;
+                    expect(pe.code).toBe("server");
+                    expect(pe.status).toBe(200);
+                    expect(pe.message).not.toContain("<");
+                }
+            });
+        }
+
         test("throws ProtectError('server') on non-2xx", async () => {
             mockFetch((url) => {
                 if (url === CREATE_URL) return textResponse("rate limited", 429);
@@ -156,7 +198,8 @@ describe("protect", () => {
                 const pe = e as ProtectError;
                 expect(pe.code).toBe("server");
                 expect(pe.status).toBe(429);
-                expect(pe.message).toContain("rate limited");
+                // The response body is never echoed into the message.
+                expect(pe.message).not.toContain("rate limited");
             }
         });
 
