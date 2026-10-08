@@ -17,9 +17,9 @@ use core::fmt;
 use axum::http::HeaderValue;
 use datadeft_auth_token_core::keyring::KeyRing;
 use datadeft_pow_core::{
-    Challenge, MAX_CHALLENGE_MAX_AGE_SECS, MAX_CLOCK_SKEW_SECS, MAX_DIFFICULTY,
-    MAX_FUTURE_SKEW_SECS, PowProofCookie, PowSecret, Solution, UnixMillis, mint_challenge,
-    mint_pow_proof_cookie, verify_solution_with_clock_skew,
+    Challenge, MAX_DIFFICULTY, MAX_FUTURE_SKEW_SECS, PowProofCookie, PowSecret, Solution,
+    UnixMillis, mint_challenge, mint_pow_proof_cookie, validate_challenge_max_age_secs,
+    validate_clock_skew_secs, verify_solution_with_clock_skew,
 };
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -70,7 +70,9 @@ impl PowPolicy {
         if difficulty == 0 || difficulty > MAX_DIFFICULTY {
             return Err(PowPolicyError::InvalidDifficulty);
         }
-        if challenge_max_age_secs == 0 || challenge_max_age_secs > MAX_CHALLENGE_MAX_AGE_SECS {
+        if challenge_max_age_secs == 0
+            || validate_challenge_max_age_secs(challenge_max_age_secs).is_err()
+        {
             return Err(PowPolicyError::InvalidChallengeMaxAge);
         }
         Ok(Self {
@@ -96,9 +98,7 @@ impl PowPolicy {
     /// Configure proof-cookie verification separately with the same bound.
     /// Values above [`MAX_CLOCK_SKEW_SECS`] are rejected.
     pub fn with_clock_skew_secs(mut self, clock_skew_secs: u64) -> Result<Self, PowPolicyError> {
-        if clock_skew_secs > MAX_CLOCK_SKEW_SECS {
-            return Err(PowPolicyError::InvalidClockSkew);
-        }
+        validate_clock_skew_secs(clock_skew_secs).map_err(|_| PowPolicyError::InvalidClockSkew)?;
         self.clock_skew_secs = clock_skew_secs;
         Ok(self)
     }

@@ -257,10 +257,11 @@ fn verify_rejects_out_of_range_max_age() {
     let cookie =
         mint_pow_proof_cookie(&test_tid(), None, &keyring, &mut rng, NOW).expect("cookie mints");
 
+    // A misconfigured lifetime is reported distinctly from a bad cookie.
     for bad in [0, POW_PROOF_MAX_AGE_SECS + 1] {
         assert_eq!(
             verify_pow_proof_cookie(cookie.as_secret_value(), &keyring, NOW + 1, bad).err(),
-            Some(TokenError::InvalidToken)
+            Some(TokenError::InvalidTimestamp)
         );
     }
 }

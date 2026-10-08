@@ -2,7 +2,10 @@
 
 use datadeft_auth_token_core::keyring::KeyRing;
 use datadeft_auth_token_core::test_support::{PerCallRng, test_keyring};
-use datadeft_pow_core::{PowProofCookie, PowSecret, UnixMillis, verify_pow_proof_cookie};
+use datadeft_pow_core::{
+    MAX_CHALLENGE_MAX_AGE_SECS, MAX_CLOCK_SKEW_SECS, PowProofCookie, PowSecret, UnixMillis,
+    verify_pow_proof_cookie,
+};
 use sha2::{Digest, Sha256};
 
 use super::*;

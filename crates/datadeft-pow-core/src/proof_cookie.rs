@@ -184,8 +184,9 @@ where
 ///
 /// `max_age_secs` is the deployment's configured lifetime and must be in
 /// `1..=POW_PROOF_MAX_AGE_SECS`. Both freshness bounds (last activity and first
-/// issue) are enforced against it. Every failure collapses to
-/// [`TokenError::InvalidToken`] so nothing leaks which check failed.
+/// issue) are enforced against it. Every cookie failure collapses to
+/// [`TokenError::InvalidToken`] so nothing leaks which check failed; a
+/// misconfigured `max_age_secs` is reported as [`TokenError::InvalidTimestamp`].
 /// Future timestamps use the default [`MAX_FUTURE_SKEW_SECS`] tolerance.
 pub fn verify_pow_proof_cookie(
     cookie_value: &str,
@@ -208,8 +209,10 @@ pub fn verify_pow_proof_cookie(
 /// accepting authenticated issue and activity timestamps at most
 /// `clock_skew_secs` ahead of `now_unix`. The boundary is inclusive; zero
 /// rejects every future timestamp. Clock skew never extends `max_age_secs`.
-/// Use the same tolerance for challenge verification. All failures collapse
-/// to [`TokenError::InvalidToken`].
+/// Use the same tolerance for challenge verification. Every cookie failure
+/// collapses to [`TokenError::InvalidToken`]; a misconfigured `max_age_secs`
+/// or a skew above [`crate::MAX_CLOCK_SKEW_SECS`] is reported as
+/// [`TokenError::InvalidTimestamp`].
 pub fn verify_pow_proof_cookie_with_clock_skew(
     cookie_value: &str,
     keyring: &KeyRing<PowProofCookie>,
@@ -217,11 +220,8 @@ pub fn verify_pow_proof_cookie_with_clock_skew(
     max_age_secs: u64,
     clock_skew_secs: u64,
 ) -> Result<VerifiedPowProof, TokenError> {
-    if max_age_secs == 0 || max_age_secs > POW_PROOF_MAX_AGE_SECS {
-        return Err(TokenError::InvalidToken);
-    }
-    // A misconfigured skew is reported, not collapsed into InvalidToken.
-    if clock_skew_secs > crate::MAX_CLOCK_SKEW_SECS {
+    // The upper bound and the skew cap are enforced by the cookie layer.
+    if max_age_secs == 0 {
         return Err(TokenError::InvalidTimestamp);
     }
 
@@ -232,7 +232,11 @@ pub fn verify_pow_proof_cookie_with_clock_skew(
         MaxAge::fixed(max_age_secs),
         clock_skew_secs,
     )
-    .map_err(|_| TokenError::InvalidToken)?;
+    .map_err(|error| match error {
+        // Raised only for misconfigured bounds, before any cookie work.
+        TokenError::InvalidTimestamp => TokenError::InvalidTimestamp,
+        _ => TokenError::InvalidToken,
+    })?;
 
     // Exact version/length pairing: a v1 tag with a trailing byte or a v2
     // tag without one is malformed, not "close enough".

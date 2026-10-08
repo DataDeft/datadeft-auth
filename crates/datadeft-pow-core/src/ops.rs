@@ -28,6 +28,24 @@ pub const MAX_CLOCK_SKEW_SECS: u64 = datadeft_auth_token_core::cookie::MAX_CLOCK
 /// solved within seconds (the default policy is 2 minutes); a long window lets
 /// attackers solve in bulk now and spend the solutions later.
 pub const MAX_CHALLENGE_MAX_AGE_SECS: u64 = 10 * 60;
+
+/// Check a clock-skew tolerance against [`MAX_CLOCK_SKEW_SECS`]. Shared by
+/// verification and policy builders so the rule lives in one place.
+pub fn validate_clock_skew_secs(clock_skew_secs: u64) -> Result<(), PowError> {
+    if clock_skew_secs > MAX_CLOCK_SKEW_SECS {
+        return Err(PowError::ClockSkewTooLarge);
+    }
+    Ok(())
+}
+
+/// Check a challenge lifetime against [`MAX_CHALLENGE_MAX_AGE_SECS`]. Shared
+/// by verification and policy builders so the rule lives in one place.
+pub fn validate_challenge_max_age_secs(max_age_secs: u64) -> Result<(), PowError> {
+    if max_age_secs > MAX_CHALLENGE_MAX_AGE_SECS {
+        return Err(PowError::MaxAgeTooLarge);
+    }
+    Ok(())
+}
 /// Maximum useful difficulty for a 64-character lowercase hex SHA-256 digest.
 pub const MAX_DIFFICULTY: u8 = 64;
 /// Recommended production minimum. Difficulty 1–3 is useful for tests only.
@@ -147,13 +165,8 @@ pub fn verify_solution_with_clock_skew(
     if min_difficulty > MAX_DIFFICULTY {
         return Err(PowError::DifficultyTooHigh);
     }
-    if clock_skew_secs > MAX_CLOCK_SKEW_SECS {
-        return Err(PowError::ClockSkewTooLarge);
-    }
-    if max_age_secs > MAX_CHALLENGE_MAX_AGE_SECS {
-        return Err(PowError::MaxAgeTooLarge);
-    }
-    let max_age = i64::try_from(max_age_secs).map_err(|_| PowError::MaxAgeTooLarge)?;
+    validate_clock_skew_secs(clock_skew_secs)?;
+    validate_challenge_max_age_secs(max_age_secs)?;
     validate_solution_shape(solution)?;
     let expected_tag = hmac_tag_raw(
         secret,
@@ -181,7 +194,7 @@ pub fn verify_solution_with_clock_skew(
         return Err(PowError::FutureTimestamp);
     }
     let age_ms = now_ms - tim_ms;
-    if age_ms > i128::from(max_age) * 1000 {
+    if age_ms > i128::from(max_age_secs) * 1000 {
         return Err(PowError::Expired);
     }
 

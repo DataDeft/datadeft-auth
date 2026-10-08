@@ -86,8 +86,8 @@ pub use clock::UnixMillis;
 pub use error::PowError;
 pub use ops::{
     MAX_CHALLENGE_MAX_AGE_SECS, MAX_CLOCK_SKEW_SECS, MAX_DIFFICULTY, MAX_FUTURE_SKEW_SECS,
-    RECOMMENDED_PRODUCTION_MIN_DIFFICULTY, mint_challenge, verify_solution,
-    verify_solution_with_clock_skew,
+    RECOMMENDED_PRODUCTION_MIN_DIFFICULTY, mint_challenge, validate_challenge_max_age_secs,
+    validate_clock_skew_secs, verify_solution, verify_solution_with_clock_skew,
 };
 pub use proof_cookie::{
     DEFAULT_POW_PROOF_TTL_SECS, HKDF_INFO_POW_PROOF_COOKIE_V1, POW_PROOF_MAX_AGE_SECS,

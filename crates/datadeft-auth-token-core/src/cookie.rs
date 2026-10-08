@@ -50,9 +50,6 @@ pub const CLOCK_SKEW_TOLERANCE_SECS: u64 = 60;
 /// misconfiguration (`u64::MAX` would switch the future-date check off).
 pub const MAX_CLOCK_SKEW_SECS: u64 = 300;
 
-/// Reject a skew above [`MAX_CLOCK_SKEW_SECS`] with the distinct
-/// [`TokenError::InvalidTimestamp`], before any token work, so a
-/// misconfiguration is visible instead of collapsing into `InvalidToken`.
 /// Reject freshness bounds longer than the purpose's own maximum lifetime
 /// ([`KeyPurpose::MAX_ABSOLUTE_AGE_SECS`]) with the distinct
 /// [`TokenError::InvalidTimestamp`]. A caller typo such as `u64::MAX` must not
@@ -66,6 +63,9 @@ fn check_max_age<P: KeyPurpose>(max_age: MaxAge) -> Result<(), TokenError> {
     Ok(())
 }
 
+/// Reject a skew above [`MAX_CLOCK_SKEW_SECS`] with the distinct
+/// [`TokenError::InvalidTimestamp`], before any token work, so a
+/// misconfiguration is visible instead of collapsing into `InvalidToken`.
 fn check_clock_skew(clock_skew_secs: u64) -> Result<(), TokenError> {
     if clock_skew_secs > MAX_CLOCK_SKEW_SECS {
         return Err(TokenError::InvalidTimestamp);
