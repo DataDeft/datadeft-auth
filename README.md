@@ -198,7 +198,7 @@ traits.
 
 The complete integration includes request, scanner-safe landing, confirmation,
 authenticated session, and logout, wired on the shipped fakes. It is
-[`examples/axum-magic-link`](examples/axum-magic-link/src/main.rs). Start
+[`examples/axum-magic-link`](examples/axum-magic-link/src/). Start
 there. A compiling quickstart also lives in the `datadeft-magic-link-axum` crate
 docs.
 
@@ -240,7 +240,7 @@ See [`docs/operating.md`](docs/operating.md) for the full operating model.
 
 The core, service, Axum, and AWS library surfaces are complete, and the
 runnable integration example ships in
-[`examples/axum-magic-link`](examples/axum-magic-link/src/main.rs). The
+[`examples/axum-magic-link`](examples/axum-magic-link/src/). The
 remaining work is production evidence: deployment logging attestation, live
 DynamoDB validation, and an immutable release reference. Browser PoW and
 country-aware PoW admission remain planned application integration. See the
