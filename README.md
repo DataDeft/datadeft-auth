@@ -205,9 +205,9 @@ docs.
 
 ```toml
 [dependencies]
-datadeft-pow-core = "0.3"
+datadeft-pow-core = "0.4"
 # Optional HTTP integration:
-datadeft-pow-axum = "0.3"
+datadeft-pow-axum = "0.4"
 ```
 
 ```sh

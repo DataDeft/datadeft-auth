@@ -55,7 +55,8 @@
           "path": "bun.lock",
           "jsonpath": "$.workspaces[\"packages/dd-protect-client\"].version"
         }
-      ]
+      ],
+      "release-as": "0.4.0"
     }
   }
 }
