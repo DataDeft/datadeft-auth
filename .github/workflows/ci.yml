@@ -17,7 +17,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
       # One gate. mise runs fmt-check, clippy, test, docs, audit,
       # token-core-guard, ts-verify, and spec in parallel, and installs the
       # tools it needs (bun, cargo-deny, tla-checker). See mise.toml.
