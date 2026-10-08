@@ -174,13 +174,19 @@ pub fn verify_solution(
     }
 
     // 5. Stable token identity for replay handling upstream, plus the
-    //    mint→verify delta. Clamped at zero: within the future-skew window
-    //    the delta is negative and carries no timing information. The
-    //    `u64::MAX` fallback is unreachable for any post-1970 `tim` (the age
-    //    already passed the max-age bound) and only guards hostile ancient
-    //    timestamps combined with an enormous configured max age.
+    //    mint→verify delta. A negative age (accepted within the future-skew
+    //    window) means the minting and verifying clocks disagree, so the
+    //    delta is unknown: report `None`, never a clamped zero that would
+    //    read as the fastest possible solve. The `u64::MAX` fallback is
+    //    unreachable for any post-1970 `tim` (the age already passed the
+    //    max-age bound) and only guards hostile ancient timestamps combined
+    //    with an enormous configured max age.
     let tid = blake3::hash(solution.chg.as_bytes()).to_string();
-    let mint_to_verify_ms = u64::try_from(age_ms.max(0)).unwrap_or(u64::MAX);
+    let mint_to_verify_ms = if age_ms < 0 {
+        None
+    } else {
+        Some(u64::try_from(age_ms).unwrap_or(u64::MAX))
+    };
     Ok(Verified {
         tid,
         mint_to_verify_ms,

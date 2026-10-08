@@ -184,14 +184,22 @@ a successful solve, in milliseconds.
 
 Trust argument:
 
-- Both instants come from the server's own clock. The challenge `tim` is
-  HMAC-bound in the tag, so a client cannot backdate it, and the client never
-  reports its own timing. No client clock is involved.
-- The delta is inflatable but not deflatable. A client can sit on a solved
-  challenge to look slower, but can never look faster than its true solve.
-- "Implausibly fast" is therefore unfakeable: a delta below the
-  browser-physical floor for the difficulty is definitive evidence of a
-  native-speed solver.
+- Both instants come from server clocks. The challenge `tim` is HMAC-bound
+  in the tag, so a client cannot backdate it, and the client never reports
+  its own timing. No client clock is involved.
+- The delta is inflatable but not deflatable by the client. A client can sit
+  on a solved challenge to look slower, but can never look faster than its
+  true solve.
+- "Implausibly fast" is therefore unfakeable by the client: a delta below the
+  browser-physical floor for the difficulty is strong evidence of a
+  native-speed solver, under the clock assumption below.
+- Clock assumption: when one instance mints and another verifies, the delta
+  is shifted by the clock offset between them. A verifier whose clock runs
+  behind the minter's shrinks every delta by that offset. The value is `None`
+  when the verifying clock is behind `tim` (accepted within
+  `MAX_FUTURE_SKEW_SECS`), because the delta is then unknown. A fast floor is
+  only sound when instance clocks are synchronized well below the floor (on
+  AWS, the Amazon Time Sync Service).
 - The delta includes network round trips and client-side queueing, not pure
   solve time.
 
@@ -203,6 +211,8 @@ Consumption rules:
   "human-looking" deltas must stay soft: a bot that sleeps before submitting
   is timing-indistinguishable from a human per request.
 - Calibrate any fast floor from field data per difficulty, never from theory.
+- Never treat `None` as a fast solve. Count it separately in metrics; a
+  rising `None` rate indicates clock drift between instances.
   Genuine cohorts mix device speeds, so their solve-time distribution is a
   mixture of exponentials; tests against a single theoretical exponential
   reject honest traffic.

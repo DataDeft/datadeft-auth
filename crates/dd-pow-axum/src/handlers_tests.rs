@@ -85,12 +85,12 @@ fn create_then_validate_round_trips_into_a_parseable_proof_cookie() {
         &config,
         &mut rng,
         at(TIM_UNIX + 1),
-        |ms| Some(u8::from(ms >= 300)),
+        |ms| ms.map(|ms| u8::from(ms >= 300)),
     )
     .expect("solution accepted");
 
     // Server-derived solve timing: verified one second after mint.
-    assert_eq!(admission.mint_to_verify_ms, 1000);
+    assert_eq!(admission.mint_to_verify_ms, Some(1000));
 
     let header = admission.set_cookie.to_str().expect("ascii");
     assert!(header.starts_with("dd_pow=v1."));

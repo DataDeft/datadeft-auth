@@ -94,6 +94,11 @@ before wiring anything beyond a metric):
   collected histogram later.
 - Treat the delta as including network round trips and client-side
   queueing, not pure solve time.
+- With more than one instance, the delta is only as accurate as clock
+  synchronization between the minting and verifying instances. From v0.3.0
+  the field is `Option<u64>` and is `None` when the verifying clock is
+  behind the mint time; v0.2.0 reports `0` in that case, so do not read a
+  v0.2.0 `0` as a fast solve.
 
 ## 5. Later (not now): solve classification
 
@@ -104,6 +109,12 @@ cookie body and comes back at later gate checks via
 The byte is opaque to the library; the app owns the encoding. This replaces
 any planned app-side `tid → delta` side table. Constraint: proof-cookie
 keyring kids stay at most 12 bytes (unchanged from v1).
+
+Rolling upgrades: a class byte produces a v2 cookie body, which 0.1.x nodes
+reject (they accept only the v1 body and a 64-byte body budget). Return
+`Some(byte)` only after every node verifying `dd_pow` cookies runs v0.2.0 or
+later, and do not roll back below v0.2.0 while v2 cookies are live (up to the
+proof-cookie TTL, 3 hours by default).
 
 ## Do not
 

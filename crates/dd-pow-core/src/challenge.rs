@@ -55,17 +55,25 @@ pub struct Verified {
     /// in an upper layer.
     pub tid: String,
     /// Server-derived mint→verify delta in milliseconds: verify-time `now`
-    /// minus the challenge mint time `tim`, clamped at zero. Both instants
-    /// are the server's own clock (`tim` is HMAC-bound in the tag, so the
-    /// client cannot backdate it), which makes the delta *inflatable but not
-    /// deflatable*: a client can look slower than it is by sitting on a
-    /// solved challenge, but can never look faster than its true solve. An
-    /// implausibly small value is therefore definitive evidence of a fast
-    /// (native-speed) solver.
+    /// minus the challenge mint time `tim`. Both instants are server clocks
+    /// (`tim` is HMAC-bound in the tag, so the client cannot backdate it),
+    /// which makes the delta *inflatable but not deflatable* by the client:
+    /// a client can look slower than it is by sitting on a solved challenge,
+    /// but can never look faster than its true solve.
+    ///
+    /// `None` when `tim` is ahead of `now` (accepted within
+    /// [`crate::MAX_FUTURE_SKEW_SECS`]): the minting and verifying clocks
+    /// disagree and the delta is unknown. `None` must never be treated as a
+    /// fast solve.
+    ///
+    /// When one instance mints and another verifies, the delta is shifted by
+    /// the clock offset between them. An implausibly small value is strong
+    /// evidence of a fast (native-speed) solver only when those clocks are
+    /// synchronized well below the fast floor being applied.
     ///
     /// The delta includes network round trips and any client-side delay
     /// before submission, not pure solve time. Because slow values are
     /// spoofable, treat this as a soft risk signal (tagging, triage,
     /// difficulty tuning) — never a hard block on "too slow".
-    pub mint_to_verify_ms: u64,
+    pub mint_to_verify_ms: Option<u64>,
 }

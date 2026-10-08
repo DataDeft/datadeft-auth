@@ -161,11 +161,12 @@ pub struct PowAdmission {
     /// `Set-Cookie` header to append to the response.
     pub set_cookie: HeaderValue,
     /// Mint→verify delta in milliseconds ([`dd_pow_core::Verified::mint_to_verify_ms`]):
-    /// inflatable but not deflatable, so an implausibly small value is
-    /// definitive evidence of a native-speed solver. Use for risk tagging,
-    /// histograms, and difficulty tuning — never for hard blocking of slow
-    /// solves.
-    pub mint_to_verify_ms: u64,
+    /// inflatable but not deflatable by the client. `None` when the verifying
+    /// clock is behind the minting clock (delta unknown; never treat it as
+    /// fast). Across instances the value is only as accurate as their clock
+    /// synchronization. Use for risk tagging, histograms, and difficulty
+    /// tuning — never for hard blocking of slow solves.
+    pub mint_to_verify_ms: Option<u64>,
 }
 
 /// Verify a posted solution and, on success, mint the `dd_pow` proof cookie.
@@ -178,7 +179,9 @@ pub struct PowAdmission {
 /// solve-class byte stamped into the proof cookie's encrypted body, making
 /// the app's classification available statelessly at later
 /// `verify_pow_proof_cookie` gate checks. Quantization policy is the app's;
-/// return `None` (e.g. `|_| None`) to mint the v1 body without a class.
+/// return `None` (e.g. `|_| None`) to mint the v1 body without a class. The
+/// delta argument is `None` when it is unknown (verifying clock behind the
+/// minting clock); never classify that as a fast solve.
 #[allow(clippy::too_many_arguments)] // Headless glue: every dependency is injected.
 pub fn verify_pow_solution<R, C>(
     secret: &PowSecret,
@@ -192,7 +195,7 @@ pub fn verify_pow_solution<R, C>(
 ) -> Result<PowAdmission, PowFlowError>
 where
     R: RngCore + CryptoRng + ?Sized,
-    C: FnOnce(u64) -> Option<u8>,
+    C: FnOnce(Option<u64>) -> Option<u8>,
 {
     let solution = Solution {
         chg: request.chg.clone(),

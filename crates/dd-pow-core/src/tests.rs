@@ -389,7 +389,7 @@ fn millisecond_tim_round_trips_with_exact_delta() {
         1,
     )
     .unwrap();
-    assert_eq!(verified.mint_to_verify_ms, 250);
+    assert_eq!(verified.mint_to_verify_ms, Some(250));
 }
 
 /// Expiry is millisecond-precise: exactly `max_age` is accepted, one
@@ -419,9 +419,10 @@ fn expiry_boundary_is_millisecond_precise() {
 }
 
 /// Within the allowed future-skew window the delta is negative and carries
-/// no timing information: it must clamp to zero, never wrap.
+/// no timing information: it must be `None`, never a clamped zero (which
+/// would read as the fastest possible solve) and never a wrapped value.
 #[test]
-fn delta_clamps_to_zero_within_future_skew() {
+fn delta_is_unknown_within_future_skew() {
     let sol = solved_solution(1);
     let verified = verify_solution(
         &secret(),
@@ -431,7 +432,33 @@ fn delta_clamps_to_zero_within_future_skew() {
         1,
     )
     .unwrap();
-    assert_eq!(verified.mint_to_verify_ms, 0);
+    assert_eq!(verified.mint_to_verify_ms, None);
+}
+
+/// Boundary: verifying at exactly the mint instant is a known zero delta;
+/// one millisecond before it is unknown.
+#[test]
+fn delta_boundary_at_mint_instant() {
+    let sol = solved_solution(1);
+    let mint_ms = TIM_UNIX * 1000;
+    let at_mint = verify_solution(
+        &secret(),
+        &sol,
+        UnixMillis::from_millis(mint_ms),
+        MAX_AGE,
+        1,
+    )
+    .unwrap();
+    assert_eq!(at_mint.mint_to_verify_ms, Some(0));
+    let before_mint = verify_solution(
+        &secret(),
+        &sol,
+        UnixMillis::from_millis(mint_ms - 1),
+        MAX_AGE,
+        1,
+    )
+    .unwrap();
+    assert_eq!(before_mint.mint_to_verify_ms, None);
 }
 
 #[test]
@@ -607,8 +634,8 @@ proptest! {
         prop_assert_eq!(&v1.tid, &v2.tid);
         prop_assert_eq!(v1.tid, blake3::hash(sol.chg.as_bytes()).to_string());
         // The mint→verify delta is exactly the injected age, in milliseconds.
-        prop_assert_eq!(v1.mint_to_verify_ms, age * 1000);
-        prop_assert_eq!(v2.mint_to_verify_ms, 0);
+        prop_assert_eq!(v1.mint_to_verify_ms, Some(age * 1000));
+        prop_assert_eq!(v2.mint_to_verify_ms, Some(0));
     }
 
     /// PROPERTY (single-field tamper): mutating exactly ONE field of a valid

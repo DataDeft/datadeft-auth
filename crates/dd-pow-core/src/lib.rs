@@ -59,10 +59,12 @@
 //! # Solve timing
 //!
 //! [`Verified::mint_to_verify_ms`] reports how long after mint a solution
-//! arrived, computed entirely from the server's own clock (`tim` is
-//! HMAC-bound, so a client cannot backdate it). The value is inflatable but
-//! not deflatable: use it as a soft bot-detection signal and a
-//! difficulty-tuning instrument, never as a hard block on slow solves.
+//! arrived, computed entirely from server clocks (`tim` is HMAC-bound, so a
+//! client cannot backdate it). The value is inflatable but not deflatable by
+//! the client: use it as a soft bot-detection signal and a difficulty-tuning
+//! instrument, never as a hard block on slow solves. It is `None` when the
+//! verifying clock is behind the minting clock; across instances it is only
+//! as accurate as their clock synchronization.
 
 mod challenge;
 mod clock;
