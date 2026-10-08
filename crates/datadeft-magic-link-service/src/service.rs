@@ -877,5 +877,12 @@ fn map_dependency_error(error: DependencyError) -> MagicLinkServiceError {
 }
 
 #[cfg(test)]
-#[path = "service_tests.rs"]
-mod tests;
+mod api_tests;
+#[cfg(test)]
+mod confirmation_tests;
+#[cfg(test)]
+mod landing_tests;
+#[cfg(test)]
+mod request_tests;
+#[cfg(test)]
+mod test_support;
