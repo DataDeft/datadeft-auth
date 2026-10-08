@@ -17,9 +17,9 @@ use core::fmt;
 use axum::http::HeaderValue;
 use datadeft_auth_token_core::keyring::KeyRing;
 use datadeft_pow_core::{
-    Challenge, MAX_CLOCK_SKEW_SECS, MAX_DIFFICULTY, MAX_FUTURE_SKEW_SECS, PowProofCookie,
-    PowSecret, Solution, UnixMillis, mint_challenge, mint_pow_proof_cookie,
-    verify_solution_with_clock_skew,
+    Challenge, MAX_CHALLENGE_MAX_AGE_SECS, MAX_CLOCK_SKEW_SECS, MAX_DIFFICULTY,
+    MAX_FUTURE_SKEW_SECS, PowProofCookie, PowSecret, Solution, UnixMillis, mint_challenge,
+    mint_pow_proof_cookie, verify_solution_with_clock_skew,
 };
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,7 @@ pub struct PowPolicy {
 pub enum PowPolicyError {
     /// Difficulty must be in `1..=MAX_DIFFICULTY`.
     InvalidDifficulty,
-    /// The challenge lifetime must be nonzero.
+    /// The challenge lifetime must be in `1..=MAX_CHALLENGE_MAX_AGE_SECS`.
     InvalidChallengeMaxAge,
     /// Clock skew must be at most `MAX_CLOCK_SKEW_SECS`.
     InvalidClockSkew,
@@ -53,7 +53,9 @@ impl fmt::Display for PowPolicyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::InvalidDifficulty => "PoW difficulty must be in 1..=MAX_DIFFICULTY",
-            Self::InvalidChallengeMaxAge => "PoW challenge max age must be nonzero",
+            Self::InvalidChallengeMaxAge => {
+                "PoW challenge max age must be in 1..=MAX_CHALLENGE_MAX_AGE_SECS"
+            }
             Self::InvalidClockSkew => "PoW clock skew must be at most MAX_CLOCK_SKEW_SECS",
         })
     }
@@ -63,12 +65,12 @@ impl std::error::Error for PowPolicyError {}
 
 impl PowPolicy {
     /// Build a validated policy. `difficulty` must be in `1..=MAX_DIFFICULTY`
-    /// and `challenge_max_age_secs` nonzero.
+    /// and `challenge_max_age_secs` in `1..=MAX_CHALLENGE_MAX_AGE_SECS`.
     pub fn new(difficulty: u8, challenge_max_age_secs: u64) -> Result<Self, PowPolicyError> {
         if difficulty == 0 || difficulty > MAX_DIFFICULTY {
             return Err(PowPolicyError::InvalidDifficulty);
         }
-        if challenge_max_age_secs == 0 {
+        if challenge_max_age_secs == 0 || challenge_max_age_secs > MAX_CHALLENGE_MAX_AGE_SECS {
             return Err(PowPolicyError::InvalidChallengeMaxAge);
         }
         Ok(Self {

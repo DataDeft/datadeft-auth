@@ -16,7 +16,7 @@ pub enum PowError {
     DifficultyTooLow,
     /// Configured or echoed difficulty is above the 64-hex-nibble maximum.
     DifficultyTooHigh,
-    /// `max_age_secs` cannot be represented by the timestamp arithmetic.
+    /// `max_age_secs` exceeds [`crate::MAX_CHALLENGE_MAX_AGE_SECS`].
     MaxAgeTooLarge,
     /// Configured clock skew exceeds [`crate::MAX_CLOCK_SKEW_SECS`].
     ClockSkewTooLarge,

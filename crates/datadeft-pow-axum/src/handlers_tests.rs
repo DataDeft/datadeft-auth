@@ -226,3 +226,14 @@ fn policy_rejects_clock_skew_above_the_cap() {
         );
     }
 }
+
+#[test]
+fn policy_rejects_challenge_max_age_above_the_ceiling() {
+    assert!(PowPolicy::new(5, MAX_CHALLENGE_MAX_AGE_SECS).is_ok());
+    for max_age in [MAX_CHALLENGE_MAX_AGE_SECS + 1, u64::MAX] {
+        assert_eq!(
+            PowPolicy::new(5, max_age).unwrap_err(),
+            PowPolicyError::InvalidChallengeMaxAge
+        );
+    }
+}

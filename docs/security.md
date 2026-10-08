@@ -26,6 +26,15 @@ verification. Zero forbids future timestamps. The tolerance is capped at
 configuration error. Skew never extends an expired
 TTL or the lifetime of a key. Magic-link service wrappers retain the default.
 
+## Freshness bounds are capped
+
+Cookie verification rejects an idle or absolute max age longer than the cookie
+type's own `MAX_ABSOLUTE_AGE_SECS` (sessions 30 days, PoW proof 24 hours,
+confirm 5 minutes) with `TokenError::InvalidTimestamp`. PoW challenge
+verification and `PowPolicy::new` reject a challenge max age above
+`MAX_CHALLENGE_MAX_AGE_SECS` (10 minutes). A misconfigured bound fails loudly
+instead of making old cookies or stockpiled solutions valid.
+
 ## Token design
 
 - Treat magic-link tokens as one-time bearer secrets.

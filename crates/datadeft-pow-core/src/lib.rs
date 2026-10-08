@@ -85,7 +85,7 @@ pub use challenge::{Challenge, Solution, Verified};
 pub use clock::UnixMillis;
 pub use error::PowError;
 pub use ops::{
-    MAX_CLOCK_SKEW_SECS, MAX_DIFFICULTY, MAX_FUTURE_SKEW_SECS,
+    MAX_CHALLENGE_MAX_AGE_SECS, MAX_CLOCK_SKEW_SECS, MAX_DIFFICULTY, MAX_FUTURE_SKEW_SECS,
     RECOMMENDED_PRODUCTION_MIN_DIFFICULTY, mint_challenge, verify_solution,
     verify_solution_with_clock_skew,
 };

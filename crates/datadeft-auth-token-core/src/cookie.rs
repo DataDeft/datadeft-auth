@@ -53,6 +53,19 @@ pub const MAX_CLOCK_SKEW_SECS: u64 = 300;
 /// Reject a skew above [`MAX_CLOCK_SKEW_SECS`] with the distinct
 /// [`TokenError::InvalidTimestamp`], before any token work, so a
 /// misconfiguration is visible instead of collapsing into `InvalidToken`.
+/// Reject freshness bounds longer than the purpose's own maximum lifetime
+/// ([`KeyPurpose::MAX_ABSOLUTE_AGE_SECS`]) with the distinct
+/// [`TokenError::InvalidTimestamp`]. A caller typo such as `u64::MAX` must not
+/// make old cookies valid forever.
+fn check_max_age<P: KeyPurpose>(max_age: MaxAge) -> Result<(), TokenError> {
+    if max_age.idle_secs > P::MAX_ABSOLUTE_AGE_SECS
+        || max_age.absolute_secs > P::MAX_ABSOLUTE_AGE_SECS
+    {
+        return Err(TokenError::InvalidTimestamp);
+    }
+    Ok(())
+}
+
 fn check_clock_skew(clock_skew_secs: u64) -> Result<(), TokenError> {
     if clock_skew_secs > MAX_CLOCK_SKEW_SECS {
         return Err(TokenError::InvalidTimestamp);
@@ -344,6 +357,7 @@ pub fn parse_bound_cookie_with_clock_skew<P: KeyPurpose>(
     clock_skew_secs: u64,
 ) -> Result<VerifiedCookie, TokenError> {
     check_clock_skew(clock_skew_secs)?;
+    check_max_age::<P>(max_age)?;
     // Enforces the idle bound (and skew) on the Branca timestamp.
     let (kid, verified) =
         decrypt_wrapped_token(value, keyring, now_unix, max_age.idle_secs, clock_skew_secs)?;

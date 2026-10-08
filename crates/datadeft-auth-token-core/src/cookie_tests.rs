@@ -361,27 +361,21 @@ fn capped_clock_skew_is_overflow_safe_at_extreme_times() {
         MAX_CLOCK_SKEW_SECS,
     )
     .expect("mint at the u32 timestamp ceiling");
-    for now in [u64::from(u32::MAX), u64::MAX] {
-        assert!(
-            parse_bound_cookie_with_clock_skew(
-                &value,
-                &ring,
-                now,
-                MaxAge::fixed(u64::MAX),
-                MAX_CLOCK_SKEW_SECS,
-            )
-            .is_ok()
-        );
-    }
-    assert_eq!(
+    let longest = MaxAge::fixed(TestCookie::MAX_ABSOLUTE_AGE_SECS);
+    assert!(
         parse_bound_cookie_with_clock_skew(
             &value,
             &ring,
-            u64::MAX,
-            MaxAge::fixed(60),
+            u64::from(u32::MAX),
+            longest,
             MAX_CLOCK_SKEW_SECS,
         )
-        .unwrap_err(),
+        .is_ok()
+    );
+    // At the far end of the clock the cookie is expired, not an overflow.
+    assert_eq!(
+        parse_bound_cookie_with_clock_skew(&value, &ring, u64::MAX, longest, MAX_CLOCK_SKEW_SECS)
+            .unwrap_err(),
         TokenError::InvalidToken
     );
     assert_eq!(
@@ -510,4 +504,26 @@ fn encrypted_kid_must_match_wrapper_kid() {
         .unwrap_err(),
         TokenError::InvalidToken
     );
+}
+
+#[test]
+fn max_age_beyond_the_purpose_lifetime_is_rejected_as_misconfiguration() {
+    let ring = test_ring(0x8C, "active");
+    let mut rng = FixedBytesRng([0xBB; branca::NONCE_BYTES]);
+    let value = mint_bound_cookie(b"body", &ring, &mut rng, 1_000, 1_000, 1_000).expect("mint");
+    let longest = TestCookie::MAX_ABSOLUTE_AGE_SECS;
+    assert!(parse_bound_cookie(&value, &ring, 1_000, MaxAge::fixed(longest)).is_ok());
+    for bounds in [
+        MaxAge::fixed(longest + 1),
+        MaxAge::new(longest + 1, 60),
+        MaxAge::new(60, longest + 1),
+        MaxAge::fixed(u64::MAX),
+    ] {
+        // Distinct from InvalidToken, so a typo does not silently widen or
+        // break validation.
+        assert_eq!(
+            parse_bound_cookie(&value, &ring, 1_000, bounds).unwrap_err(),
+            TokenError::InvalidTimestamp
+        );
+    }
 }

@@ -1,12 +1,12 @@
 //! Tests for the proof-of-work core. Time/entropy are injected data, so
 //! generation is deterministic apart from proptest's own seeded RNG.
 
-use crate::MAX_CLOCK_SKEW_SECS;
 use crate::challenge::Solution;
 use crate::clock::UnixMillis;
 use crate::error::PowError;
 use crate::ops::{has_leading_zero_prefix, hmac_tag_hex, tag_message};
 use crate::secret::PowSecret;
+use crate::{MAX_CHALLENGE_MAX_AGE_SECS, MAX_CLOCK_SKEW_SECS};
 use crate::{
     MAX_DIFFICULTY, MAX_FUTURE_SKEW_SECS, RECOMMENDED_PRODUCTION_MIN_DIFFICULTY, mint_challenge,
     verify_solution, verify_solution_with_clock_skew,
@@ -1125,4 +1125,18 @@ fn distinct_entropy_mints_distinct_challenges() {
     assert_ne!(first.chg, second.chg);
     assert_ne!(first.tag, second.tag);
     assert_eq!(first, repeat);
+}
+
+/// A challenge lifetime above the ceiling is rejected before any work, so a
+/// misconfigured max age cannot let solutions be stockpiled.
+#[test]
+fn challenge_max_age_above_the_ceiling_is_rejected() {
+    let sol = solved_solution(1);
+    assert!(verify_solution(&secret(), &sol, at(TIM_UNIX), MAX_CHALLENGE_MAX_AGE_SECS, 1).is_ok());
+    for max_age in [MAX_CHALLENGE_MAX_AGE_SECS + 1, u64::MAX] {
+        assert_eq!(
+            verify_solution(&secret(), &sol, at(TIM_UNIX), max_age, 1),
+            Err(PowError::MaxAgeTooLarge)
+        );
+    }
 }
