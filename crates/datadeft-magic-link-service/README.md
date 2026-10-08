@@ -5,7 +5,7 @@ Framework-neutral magic-link login orchestration for the
 
 ```toml
 [dependencies]
-datadeft-magic-link-service = "0.2"
+datadeft-magic-link-service = "0.3"
 ```
 
 It covers the magic-link request, the scanner-safe landing

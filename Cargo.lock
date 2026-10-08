@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "axum-magic-link"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "axum",
  "datadeft-magic-link-aws",
@@ -528,7 +528,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-auth-token-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "chacha20poly1305",
  "hex",
@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-magic-link-aws"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "aws-sdk-dynamodb",
  "aws-sdk-secretsmanager",
@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-magic-link-axum"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "axum",
  "datadeft-auth-token-core",
@@ -579,7 +579,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-magic-link-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "datadeft-auth-token-core",
  "hex",
@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-magic-link-service"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "datadeft-auth-token-core",
  "datadeft-magic-link-core",
@@ -605,7 +605,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-pow-axum"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "axum",
  "blake3",
@@ -620,7 +620,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-pow-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "datadeft-auth-token-core",

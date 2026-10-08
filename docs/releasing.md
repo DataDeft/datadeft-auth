@@ -1,6 +1,6 @@
 # Registry releases
 
-This prepares `0.2.1` as the first registry release. `v0.2.0` already exists as a
+This prepares `0.3.0` as the first registry release. `v0.2.0` already exists as a
 git release; never move that tag. All seven Rust crates and the npm client use
 one version and one release PR. No package has been published by this work.
 

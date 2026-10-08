@@ -4,7 +4,7 @@ IO-free magic-link primitives for the [datadeft-auth](https://github.com/DataDef
 
 ```toml
 [dependencies]
-datadeft-magic-link-core = "0.2"
+datadeft-magic-link-core = "0.3"
 ```
 
 - Token grammar: independent CSPRNG selector and verifier, parsing,

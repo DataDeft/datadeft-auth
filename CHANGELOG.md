@@ -6,7 +6,7 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Registry release preparation
 
-Target: first registry release `0.2.1` (pending approval).
+Target: first registry release `0.3.0` (pending approval).
 
 ### Changed
 
@@ -24,7 +24,7 @@ Target: first registry release `0.2.1` (pending approval).
   `docs/migration-v0.2.0.md` documents the rolling-upgrade constraint for v2
   proof cookies (return a class byte only once every node runs v0.2.0+).
 - Rename the seven Rust crates from `dd-*` to `datadeft-*`, including Rust
-  import paths and source directories. Registry installs use version `0.2`.
+  import paths and source directories. Registry installs use version `0.3`.
 - Prepare crates.io metadata, versioned path dependencies, README and dual
   license texts. MIT OR Apache-2.0 is proposed, pending Istvan's sign-off.
 - Declare and verify Rust 1.88, matching the `time` dependency requirement.

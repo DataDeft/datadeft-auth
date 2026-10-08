@@ -5,7 +5,7 @@ proof-of-work admission gate.
 
 ```toml
 [dependencies]
-datadeft-pow-axum = "0.2"
+datadeft-pow-axum = "0.3"
 ```
 
 The crate is headless. It validates and mints, and returns structured values

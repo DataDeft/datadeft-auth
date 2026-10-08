@@ -19,7 +19,7 @@ Replace git/tag/revision and vendored path dependencies with registry versions:
 
 ```toml
 [dependencies]
-datadeft-pow-core = "0.2"
+datadeft-pow-core = "0.3"
 ```
 
 Use the same version range for the other crates you need. Update Rust imports,
@@ -30,6 +30,9 @@ repository. The minimum supported Rust version is 1.88; update CI as needed.
 No compatibility aliases are introduced. Cookie names (`dd_pow`, `dd_session`,
 `dd_auth_confirm`), HMAC/HKDF domains, stored keys, and wire formats remain the
 same. Renaming packages does not require deleting sessions or migrating data.
+0.3.0 also changes `mint_to_verify_ms` to `Option<u64>` (see `CHANGELOG.md`);
+`|_| None` solve classifiers compile unchanged.
+
 For pre-0.2 consumers, also apply [migration-v0.2.0.md](migration-v0.2.0.md),
 substituting the new crate names when following its historical examples.
 

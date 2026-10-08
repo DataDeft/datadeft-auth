@@ -5,7 +5,7 @@ tokens, and scanner-safe magic-link login. Extracted from internal
 application code into small, deterministic, IO-free cores plus optional
 framework and cloud adapters.
 
-> **Status:** preparing the first registry release, `0.2.1`. APIs are pre-1.0.
+> **Status:** preparing the first registry release, `0.3.0`. APIs are pre-1.0.
 > Publishing awaits maintainer approval and registry setup; the commands below
 > apply once that release is available. See [releasing.md](docs/releasing.md).
 > Start with [`docs/architecture.md`](docs/architecture.md) and
@@ -215,9 +215,9 @@ docs.
 
 ```toml
 [dependencies]
-datadeft-pow-core = "0.2"
+datadeft-pow-core = "0.3"
 # Optional HTTP integration:
-datadeft-pow-axum = "0.2"
+datadeft-pow-axum = "0.3"
 ```
 
 ```sh

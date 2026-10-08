@@ -5,7 +5,7 @@ Low-level token, keyring, and cookie primitives for the
 
 ```toml
 [dependencies]
-datadeft-auth-token-core = "0.2"
+datadeft-auth-token-core = "0.3"
 ```
 
 - `base62`: radix-62 encoding with canonicality checks.
