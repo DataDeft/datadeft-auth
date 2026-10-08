@@ -97,5 +97,12 @@ pub use proof_cookie::{
 pub use secret::PowSecret;
 
 #[cfg(test)]
-#[path = "tests.rs"]
-mod tests;
+mod freshness_tests;
+#[cfg(test)]
+mod property_tests;
+#[cfg(test)]
+mod rejection_tests;
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+mod vector_tests;
