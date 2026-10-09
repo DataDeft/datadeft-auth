@@ -711,12 +711,12 @@ async fn apply(h: &mut Harness, m: &mut Model, op: &Op) {
             // ML-INV-005: the commit saw the disabled user and burned nothing.
             expect_flow_error(result, MagicLinkServiceError::MagicLinkUnavailable);
             assert!(
-                !h.store
+                h.store
                     .magic_link_record(&m.links[flow.link].selector)
                     .expect("record")
                     .expect("link")
                     .consumed_at_unix
-                    .is_some()
+                    .is_none()
             );
             m.users[user].disabled = true;
         }
