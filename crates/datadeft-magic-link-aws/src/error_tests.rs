@@ -44,19 +44,22 @@ fn authentication_mapper_extracts_cancellation_reasons_and_maps_action_positions
         let mut codes = ["None"; 5];
         codes[index] = "ConditionalCheckFailed";
         assert_eq!(
-            map_authentication_transact_write_items_error(transaction_canceled(&codes)),
+            map_authentication_transact_write_items_error(transaction_canceled(&codes), 5),
             expected
         );
     }
 
     assert_eq!(
-        map_authentication_transact_write_items_error(transaction_canceled(&[
-            "ConditionalCheckFailed",
-            "ConditionalCheckFailed",
-            "None",
-            "None",
-            "ConditionalCheckFailed",
-        ])),
+        map_authentication_transact_write_items_error(
+            transaction_canceled(&[
+                "ConditionalCheckFailed",
+                "ConditionalCheckFailed",
+                "None",
+                "None",
+                "ConditionalCheckFailed",
+            ]),
+            5
+        ),
         CommitMagicLinkAuthenticationError::Rejected
     );
 }
@@ -68,7 +71,7 @@ fn authentication_mapper_treats_malformed_service_requests_as_internal() {
         "ValidationException",
     ] {
         assert_eq!(
-            map_authentication_transact_write_items_error(service_error_with_code(code)),
+            map_authentication_transact_write_items_error(service_error_with_code(code), 5),
             CommitMagicLinkAuthenticationError::Internal
         );
     }
@@ -77,9 +80,10 @@ fn authentication_mapper_treats_malformed_service_requests_as_internal() {
 #[test]
 fn authentication_mapper_treats_unknown_and_transport_failures_as_dependency_unavailable() {
     assert_eq!(
-        map_authentication_transact_write_items_error(service_error_with_code(
-            "UnknownProviderFailure"
-        )),
+        map_authentication_transact_write_items_error(
+            service_error_with_code("UnknownProviderFailure"),
+            5
+        ),
         CommitMagicLinkAuthenticationError::DependencyUnavailable
     );
     assert_eq!(
@@ -87,7 +91,8 @@ fn authentication_mapper_treats_unknown_and_transport_failures_as_dependency_una
             SdkError::<TransactWriteItemsError, ()>::timeout_error(io::Error::new(
                 io::ErrorKind::TimedOut,
                 "synthetic transport timeout",
-            ))
+            )),
+            5,
         ),
         CommitMagicLinkAuthenticationError::DependencyUnavailable
     );
@@ -105,17 +110,23 @@ fn authentication_cancellation_mapping_uses_stable_action_positions_and_preceden
     ] {
         let mut codes = [none; 5];
         codes[index] = Some("ConditionalCheckFailed");
-        assert_eq!(classify_authentication_cancellation_codes(&codes), expected);
+        assert_eq!(
+            classify_authentication_cancellation_codes(&codes, 5),
+            expected
+        );
     }
 
     assert_eq!(
-        classify_authentication_cancellation_codes(&[
-            Some("ConditionalCheckFailed"),
-            Some("ConditionalCheckFailed"),
-            none,
-            none,
-            Some("ConditionalCheckFailed"),
-        ]),
+        classify_authentication_cancellation_codes(
+            &[
+                Some("ConditionalCheckFailed"),
+                Some("ConditionalCheckFailed"),
+                none,
+                none,
+                Some("ConditionalCheckFailed"),
+            ],
+            5
+        ),
         CommitMagicLinkAuthenticationError::Rejected
     );
 }
@@ -123,11 +134,11 @@ fn authentication_cancellation_mapping_uses_stable_action_positions_and_preceden
 #[test]
 fn authentication_cancellation_mapping_rejects_impossible_and_ambiguous_layouts() {
     assert_eq!(
-        classify_authentication_cancellation_codes(&[Some("None"); 4]),
+        classify_authentication_cancellation_codes(&[Some("None"); 4], 5),
         CommitMagicLinkAuthenticationError::Internal
     );
     assert_eq!(
-        classify_authentication_cancellation_codes(&[Some("None"); 5]),
+        classify_authentication_cancellation_codes(&[Some("None"); 5], 5),
         CommitMagicLinkAuthenticationError::Internal
     );
     for code in [
@@ -137,14 +148,56 @@ fn authentication_cancellation_mapping_rejects_impossible_and_ambiguous_layouts(
         "UnknownProviderFailure",
     ] {
         assert_eq!(
-            classify_authentication_cancellation_codes(&[
-                Some("None"),
-                Some(code),
-                Some("None"),
-                Some("None"),
-                Some("None"),
-            ]),
+            classify_authentication_cancellation_codes(
+                &[
+                    Some("None"),
+                    Some(code),
+                    Some("None"),
+                    Some("None"),
+                    Some("None"),
+                ],
+                5
+            ),
             CommitMagicLinkAuthenticationError::DependencyUnavailable
         );
     }
+}
+
+/// A create during a storage-key rotation has six actions: challenge,
+/// profile, email row (current key), email row (previous key), session,
+/// session index. Every user action maps to `UserConflict`; the session
+/// actions stay last.
+#[test]
+fn authentication_cancellation_mapping_follows_the_rotation_create_layout() {
+    let none = Some("None");
+    for (index, expected) in [
+        (0, CommitMagicLinkAuthenticationError::Rejected),
+        (1, CommitMagicLinkAuthenticationError::UserConflict),
+        (2, CommitMagicLinkAuthenticationError::UserConflict),
+        (3, CommitMagicLinkAuthenticationError::UserConflict),
+        (4, CommitMagicLinkAuthenticationError::SessionConflict),
+        (5, CommitMagicLinkAuthenticationError::SessionConflict),
+    ] {
+        let mut codes = [none; 6];
+        codes[index] = Some("ConditionalCheckFailed");
+        assert_eq!(
+            classify_authentication_cancellation_codes(&codes, 6),
+            expected
+        );
+    }
+    let mut throttled = [none; 6];
+    throttled[3] = Some("TransactionConflict");
+    assert_eq!(
+        classify_authentication_cancellation_codes(&throttled, 6),
+        CommitMagicLinkAuthenticationError::DependencyUnavailable
+    );
+    // Reasons must match the count the request was built with.
+    assert_eq!(
+        classify_authentication_cancellation_codes(&[none; 5], 6),
+        CommitMagicLinkAuthenticationError::Internal
+    );
+    assert_eq!(
+        classify_authentication_cancellation_codes(&[none; 6], 5),
+        CommitMagicLinkAuthenticationError::Internal
+    );
 }

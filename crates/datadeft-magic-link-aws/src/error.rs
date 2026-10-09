@@ -129,6 +129,7 @@ pub(crate) fn map_update_item_error(error: SdkError<UpdateItemError>) -> AwsAdap
 #[cfg(feature = "aws")]
 pub(crate) fn map_authentication_transact_write_items_error<R>(
     error: SdkError<TransactWriteItemsError, R>,
+    action_count: usize,
 ) -> CommitMagicLinkAuthenticationError {
     if let Some(TransactWriteItemsError::TransactionCanceledException(exception)) =
         error.as_service_error()
@@ -138,7 +139,7 @@ pub(crate) fn map_authentication_transact_write_items_error<R>(
             .iter()
             .map(|reason| reason.code())
             .collect::<Vec<_>>();
-        return classify_authentication_cancellation_codes(&codes);
+        return classify_authentication_cancellation_codes(&codes, action_count);
     }
     match error.code() {
         Some("IdempotentParameterMismatchException") | Some("ValidationException") => {
@@ -148,21 +149,31 @@ pub(crate) fn map_authentication_transact_write_items_error<R>(
     }
 }
 
+/// Classify cancellation reasons against the transaction layout:
+/// `[challenge, user actions.., session, session index]`. `action_count` is the
+/// number of actions the request was built with; reasons for any other count
+/// cannot be attributed and map to `Internal`.
 #[cfg(feature = "aws")]
 fn classify_authentication_cancellation_codes(
     codes: &[Option<&str>],
+    action_count: usize,
 ) -> CommitMagicLinkAuthenticationError {
-    if codes.len() != 5 {
+    // At least one user action: the existing-user branch has two condition
+    // checks, a create has the profile and one or two email rows.
+    if action_count < 4 || codes.len() != action_count {
         return CommitMagicLinkAuthenticationError::Internal;
     }
+    let first_session_action = action_count - 2;
     let mut challenge_conflict = false;
     let mut user_conflict = false;
     let mut session_conflict = false;
     for (index, code) in codes.iter().enumerate() {
         match code {
             Some("ConditionalCheckFailed") if index == 0 => challenge_conflict = true,
-            Some("ConditionalCheckFailed") if index == 1 || index == 2 => user_conflict = true,
-            Some("ConditionalCheckFailed") if index == 3 || index == 4 => session_conflict = true,
+            Some("ConditionalCheckFailed") if index < first_session_action => {
+                user_conflict = true;
+            }
+            Some("ConditionalCheckFailed") => session_conflict = true,
             Some("None") | None => {}
             Some("TransactionConflict")
             | Some("ProvisionedThroughputExceeded")

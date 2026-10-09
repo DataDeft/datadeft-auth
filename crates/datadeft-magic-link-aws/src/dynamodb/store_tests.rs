@@ -168,7 +168,7 @@ fn session_read_builder_is_strongly_consistent() {
 fn authentication_request_uses_attempt_id_as_client_request_token() {
     let store = store();
     let command = command(MagicLinkAuthenticationUser::Create { user_id: user_id() });
-    let request = store
+    let (request, _) = store
         .authentication_transaction_request(&command)
         .expect("request");
     assert_eq!(
@@ -305,4 +305,33 @@ fn cleanup_grace_defaults_and_is_configurable() {
     assert_eq!(DEFAULT_CLEANUP_GRACE_SECS, 24 * 60 * 60);
     let tuned = store().with_cleanup_grace_secs(0);
     assert_eq!(tuned.cleanup_grace_secs, 0);
+}
+
+/// The action count the error classifier receives matches the transaction:
+/// five actions, or six for a create while a previous storage key is set.
+#[test]
+fn authentication_request_reports_its_action_count() {
+    let create = command(MagicLinkAuthenticationUser::Create { user_id: user_id() });
+    let existing = command(MagicLinkAuthenticationUser::Existing { user_id: user_id() });
+    let plain = store();
+    let rotating = store().with_previous_storage_hmac_key(StorageHmacKey::new([0x32; 32]));
+    for (store, command, expected) in [
+        (&plain, &create, 5),
+        (&plain, &existing, 5),
+        (&rotating, &create, 6),
+        (&rotating, &existing, 5),
+    ] {
+        let (request, count) = store
+            .authentication_transaction_request(command)
+            .expect("request");
+        assert_eq!(count, expected);
+        assert_eq!(
+            request
+                .as_input()
+                .get_transact_items()
+                .as_ref()
+                .map(Vec::len),
+            Some(expected)
+        );
+    }
 }
