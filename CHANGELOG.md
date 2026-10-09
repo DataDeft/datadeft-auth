@@ -4,6 +4,13 @@ All notable changes to this workspace are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crates follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1](https://github.com/DataDeft/datadeft-auth/compare/v0.4.0...v0.4.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **pow-axum:** resolve MAX_CLOCK_SKEW_SECS doc link; fail docs on warnings ([3de3104](https://github.com/DataDeft/datadeft-auth/commit/3de3104d27d5d8b21da1cb68ac01702c82fb018c))
+
 ## [0.4.0](https://github.com/DataDeft/datadeft-auth/compare/v0.3.0...v0.4.0) (2026-10-09)
 
 
