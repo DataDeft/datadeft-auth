@@ -11,7 +11,7 @@ use crate::hmac_key::EMAIL_LOOKUP_HMAC_PREFIX;
 use super::*;
 
 impl FakeDynamoDbInner {
-    pub(super) fn user_summary(&self, profile: &UserRecord) -> UserSummary {
+    fn user_summary(&self, profile: &UserRecord) -> UserSummary {
         let meta = self
             .disabled_meta
             .get(profile.user_id.as_str())
@@ -29,7 +29,7 @@ impl FakeDynamoDbInner {
         }
     }
 
-    pub(super) fn session_summary(
+    fn session_summary(
         session_hmac: &str,
         stored: &StoredSession,
     ) -> Result<SessionSummary, DependencyError> {
@@ -46,7 +46,7 @@ impl FakeDynamoDbInner {
 }
 
 /// Offset pagination for the fake: cursors are `o<offset>`.
-pub(super) fn fake_page<T>(
+fn fake_page<T>(
     items: Vec<T>,
     cursor: Option<&PageCursor>,
     limit: u32,

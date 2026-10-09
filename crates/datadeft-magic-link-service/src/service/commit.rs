@@ -19,12 +19,10 @@ use crate::types::{
     MagicLinkAuthenticationUser, SessionCookie, SessionId, UserId, UserRecord, validate_country,
 };
 
-use super::flow::*;
+use super::flow::{compare_candidate_verifier, validate_scanner_candidate_state};
 use super::*;
 
-pub(super) async fn load_scanner_authentication_state<
-    Authentication: MagicLinkAuthenticationRepository,
->(
+async fn load_scanner_authentication_state<Authentication: MagicLinkAuthenticationRepository>(
     authentication: &Authentication,
     lookup_hmac_key: &LookupHmacKey,
     config: &MagicLinkServiceConfig,
@@ -166,12 +164,12 @@ pub(super) fn mint_country(
     Ok(Some(country.to_owned()))
 }
 
-pub(super) struct AuthenticationPlan {
-    pub(super) command: CommitMagicLinkAuthentication,
-    pub(super) session_cookie: Zeroizing<String>,
+struct AuthenticationPlan {
+    command: CommitMagicLinkAuthentication,
+    session_cookie: Zeroizing<String>,
 }
 
-pub(super) fn plan_user<Rng: RngCore + CryptoRng + ?Sized>(
+fn plan_user<Rng: RngCore + CryptoRng + ?Sized>(
     user: Option<UserRecord>,
     expected_email: &datadeft_magic_link_core::NormalizedEmail,
     rng: &mut Rng,
@@ -192,7 +190,7 @@ pub(super) fn plan_user<Rng: RngCore + CryptoRng + ?Sized>(
 
 /// The user id and whether the account was created, derived from the planned
 /// user branch: the single source of truth, so no parallel state can drift.
-pub(super) fn user_outcome(user: &MagicLinkAuthenticationUser) -> (UserId, bool) {
+fn user_outcome(user: &MagicLinkAuthenticationUser) -> (UserId, bool) {
     match user {
         MagicLinkAuthenticationUser::Existing { user_id } => (user_id.clone(), false),
         MagicLinkAuthenticationUser::Create { user_id } => (user_id.clone(), true),
@@ -215,14 +213,14 @@ pub(super) fn authentication_expectation(
 
 /// Freshly generated per-attempt session material, shared by the initial plan
 /// and every SessionConflict replan so the two paths cannot drift.
-pub(super) struct SessionPlanParts {
-    pub(super) session_id: SessionId,
-    pub(super) session_expires_at_unix: u64,
-    pub(super) session_cookie: Zeroizing<String>,
-    pub(super) attempt_id: AuthenticationAttemptId,
+struct SessionPlanParts {
+    session_id: SessionId,
+    session_expires_at_unix: u64,
+    session_cookie: Zeroizing<String>,
+    attempt_id: AuthenticationAttemptId,
 }
 
-pub(super) fn new_session_plan_parts<Rng: RngCore + CryptoRng>(
+fn new_session_plan_parts<Rng: RngCore + CryptoRng>(
     session_keyring: &KeyRing<SessionCookie>,
     rng: &mut Rng,
     now_unix: u64,
@@ -249,7 +247,7 @@ pub(super) fn new_session_plan_parts<Rng: RngCore + CryptoRng>(
     })
 }
 
-pub(super) fn build_initial_authentication_plan<Rng: RngCore + CryptoRng>(
+fn build_initial_authentication_plan<Rng: RngCore + CryptoRng>(
     session_keyring: &KeyRing<SessionCookie>,
     rng: &mut Rng,
     magic_link: MagicLinkAuthenticationExpectation,
@@ -278,7 +276,7 @@ pub(super) fn build_initial_authentication_plan<Rng: RngCore + CryptoRng>(
     })
 }
 
-pub(super) fn replace_session_plan<Rng: RngCore + CryptoRng>(
+fn replace_session_plan<Rng: RngCore + CryptoRng>(
     plan: &mut AuthenticationPlan,
     session_keyring: &KeyRing<SessionCookie>,
     rng: &mut Rng,
@@ -300,9 +298,7 @@ pub(super) fn replace_session_plan<Rng: RngCore + CryptoRng>(
     Ok(())
 }
 
-pub(super) async fn commit_with_dependency_retries<
-    Authentication: MagicLinkAuthenticationRepository,
->(
+async fn commit_with_dependency_retries<Authentication: MagicLinkAuthenticationRepository>(
     authentication: &Authentication,
     command: &CommitMagicLinkAuthentication,
 ) -> Result<(), CommitMagicLinkAuthenticationError> {
@@ -318,7 +314,7 @@ pub(super) async fn commit_with_dependency_retries<
     Err(CommitMagicLinkAuthenticationError::DependencyUnavailable)
 }
 
-pub(super) fn mint_session_cookie<Rng>(
+fn mint_session_cookie<Rng>(
     session_keyring: &KeyRing<SessionCookie>,
     rng: &mut Rng,
     session_id: &SessionId,
@@ -343,7 +339,7 @@ where
 
 /// Draw `BYTES` random bytes and render `{prefix}_{lowercase hex}`: the
 /// canonical id shape the typed wrappers' service-built constructors expect.
-pub(super) fn generate_prefixed_hex_id<R: RngCore + CryptoRng + ?Sized, const BYTES: usize>(
+fn generate_prefixed_hex_id<R: RngCore + CryptoRng + ?Sized, const BYTES: usize>(
     rng: &mut R,
     prefix: &str,
 ) -> Result<String, MagicLinkServiceError> {
@@ -353,7 +349,7 @@ pub(super) fn generate_prefixed_hex_id<R: RngCore + CryptoRng + ?Sized, const BY
     Ok(format!("{prefix}_{}", hex::encode(bytes)))
 }
 
-pub(super) fn generate_user_id<R: RngCore + CryptoRng + ?Sized>(
+fn generate_user_id<R: RngCore + CryptoRng + ?Sized>(
     rng: &mut R,
 ) -> Result<UserId, MagicLinkServiceError> {
     Ok(UserId::from_service_built(
@@ -370,7 +366,7 @@ pub(super) fn generate_session_id<R: RngCore + CryptoRng + ?Sized>(
     >(rng, "sid")?))
 }
 
-pub(super) fn generate_authentication_attempt_id<R: RngCore + CryptoRng + ?Sized>(
+fn generate_authentication_attempt_id<R: RngCore + CryptoRng + ?Sized>(
     rng: &mut R,
 ) -> Result<AuthenticationAttemptId, MagicLinkServiceError> {
     Ok(AuthenticationAttemptId::from_service_built(

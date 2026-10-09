@@ -11,8 +11,8 @@ use datadeft_pow_core::{Challenge, Solution, mint_challenge, verify_solution};
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use super::state::*;
-use super::util::*;
+use super::state::AppState;
+use super::util::current_unix_millis;
 use super::*;
 
 pub(super) async fn pow_challenge(
@@ -53,10 +53,10 @@ pub(super) fn verify_pow_solution(
 
 #[derive(Debug, Serialize)]
 pub(super) struct PowChallengeJson {
-    pub(super) chg: String,
-    pub(super) dif: u8,
-    pub(super) tim: String,
-    pub(super) tag: String,
+    chg: String,
+    dif: u8,
+    tim: String,
+    tag: String,
 }
 
 impl From<Challenge> for PowChallengeJson {
@@ -81,7 +81,7 @@ pub(super) struct PowSolutionJson {
 }
 
 impl PowSolutionJson {
-    pub(super) fn into_solution(self) -> Solution {
+    fn into_solution(self) -> Solution {
         Solution {
             chg: self.chg,
             sol: self.sol,
@@ -95,7 +95,7 @@ impl PowSolutionJson {
 
 /// Single-use PoW proof enforcement: reject a tid that was already spent and
 /// drop expired entries.
-pub(super) fn consume_pow_tid(
+fn consume_pow_tid(
     replay: &Mutex<HashMap<String, u64>>,
     tid: &str,
     now_unix: u64,

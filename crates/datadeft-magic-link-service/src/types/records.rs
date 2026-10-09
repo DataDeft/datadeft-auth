@@ -4,7 +4,7 @@ use core::fmt;
 
 use datadeft_magic_link_core::{LookupHmac, NormalizedEmail, VerifierHash};
 
-use super::ids::*;
+use super::ids::{AuthenticationAttemptId, SessionId, UserId};
 
 /// Magic-link record written at request time. It contains keyed lookup material,
 /// never raw selectors or verifiers.

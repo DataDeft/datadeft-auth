@@ -12,7 +12,7 @@ use crate::types::{
     MagicLinkEmail, MagicLinkRecord, RequestMagicLinkCommand, RequestMagicLinkOutcome,
 };
 
-use super::limits::*;
+use super::limits::request_and_outbox_limits_deny;
 use super::*;
 
 /// Request-flow-only service. It does not require user/session repositories or a

@@ -7,6 +7,7 @@ use datadeft_magic_link_service::{
     UserSummary,
 };
 
+use super::items::{optional_s_strict, optional_u64, required_bool, required_s, required_u64};
 use super::*;
 
 pub(crate) const SESSION_PK_PREFIX: &str = "SESSION#";

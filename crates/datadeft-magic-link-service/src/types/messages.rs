@@ -8,7 +8,7 @@ use zeroize::Zeroize;
 
 use crate::error::{MagicLinkFlowError, MagicLinkServiceError};
 
-use super::ids::*;
+use super::ids::{SessionId, UserId};
 use super::*;
 
 /// Request command. Debug redacts the target account.

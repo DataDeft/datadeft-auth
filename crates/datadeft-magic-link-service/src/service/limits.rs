@@ -81,7 +81,7 @@ pub(super) async fn consume_limits_deny<Limiter: RateLimiter>(
 /// denied request therefore still consumes quota in every bucket, which only
 /// tightens limiting. A dependency error takes precedence over a denial.
 /// Limiter state is unknown, so the request fails closed as unavailable.
-pub(super) async fn any_limit_denied<Limiter: RateLimiter>(
+async fn any_limit_denied<Limiter: RateLimiter>(
     limiter: &Limiter,
     checks: impl IntoIterator<Item = (String, u32, u64)>,
     now_unix: u64,

@@ -157,7 +157,7 @@ impl fmt::Debug for AuthenticationAttemptId {
     }
 }
 
-pub(super) fn is_prefixed_hex_id(value: &str, prefix: &str, hex_len: usize) -> bool {
+fn is_prefixed_hex_id(value: &str, prefix: &str, hex_len: usize) -> bool {
     let Some(rest) = value.strip_prefix(prefix) else {
         return false;
     };
@@ -167,7 +167,7 @@ pub(super) fn is_prefixed_hex_id(value: &str, prefix: &str, hex_len: usize) -> b
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-pub(super) fn is_valid_key_component(value: &str, max_len: usize) -> bool {
+fn is_valid_key_component(value: &str, max_len: usize) -> bool {
     !value.is_empty()
         && value.len() <= max_len
         && value

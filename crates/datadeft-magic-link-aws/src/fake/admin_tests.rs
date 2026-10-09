@@ -4,7 +4,7 @@
 
 use datadeft_auth_token_core::test_support::CountingRng;
 use datadeft_magic_link_core::{LookupHmacKey, NormalizedEmail};
-use datadeft_magic_link_service::{Clock, DependencyError, SessionRepository, UserId};
+use datadeft_magic_link_service::{SessionRepository, UserId};
 
 use super::test_support::*;
 use super::*;
@@ -328,15 +328,6 @@ async fn admin_mutations_on_unknown_users_report_not_found() {
             .expect("nothing to revoke"),
         0
     );
-}
-
-/// A clock pinned to one instant, for admin calls at a later time.
-struct At(u64);
-
-impl Clock for At {
-    fn now_unix(&self) -> Result<u64, DependencyError> {
-        Ok(self.0)
-    }
 }
 
 /// The state a disable leaves behind when revoking then fails: disabled,

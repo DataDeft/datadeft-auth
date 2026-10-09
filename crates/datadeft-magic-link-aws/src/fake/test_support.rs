@@ -294,3 +294,12 @@ pub(super) async fn login_with_keys(
     )?;
     service.confirm_magic_link_flow(command).await
 }
+
+/// A clock pinned to one instant, for calls at a time other than [`FixedClock`].
+pub(super) struct At(pub(super) u64);
+
+impl Clock for At {
+    fn now_unix(&self) -> Result<u64, DependencyError> {
+        Ok(self.0)
+    }
+}

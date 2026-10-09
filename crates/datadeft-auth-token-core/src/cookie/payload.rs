@@ -7,7 +7,7 @@ use crate::keyring::{KeyId, KeyPurpose};
 use super::*;
 
 /// Bound cookie payload version byte (internal binary framing).
-pub(super) const PAYLOAD_V1: u8 = 1;
+const PAYLOAD_V1: u8 = 1;
 
 pub(super) fn max_body_bytes_for_parts<P: KeyPurpose>(typ: &str, kid: &str) -> usize {
     branca::MAX_PAYLOAD_BYTES
@@ -22,7 +22,7 @@ pub(super) fn max_cookie_token_bytes<P: KeyPurpose>(kid: &KeyId) -> usize {
     )
 }
 
-pub(super) fn bound_payload_overhead(typ: &str, kid: &str) -> usize {
+fn bound_payload_overhead(typ: &str, kid: &str) -> usize {
     1 + 4 + 1 + typ.len() + 1 + kid.len()
 }
 

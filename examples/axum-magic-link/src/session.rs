@@ -12,8 +12,8 @@ use datadeft_magic_link_axum::{
 use datadeft_magic_link_service::{MagicLinkFlowService, refresh_session_cookie, validate_session};
 use rand_core::OsRng;
 
-use super::state::*;
-use super::util::*;
+use super::state::{AppState, LocalClock};
+use super::util::{escape_html, is_same_origin_post};
 
 pub(super) async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let auth_state = state.clone();

@@ -9,7 +9,7 @@ use datadeft_magic_link_service::{NormalizedEmail, UserId};
 use crate::error::{AwsAdapterError, map_get_item_error, map_put_item_error, map_scan_error};
 use crate::hmac_key::StorageHmacKey;
 
-use super::items::*;
+use super::items::{av_s, required_s};
 use super::*;
 
 impl DynamoDbAuthStore {

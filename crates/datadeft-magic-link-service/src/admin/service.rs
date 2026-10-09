@@ -7,7 +7,7 @@ use crate::error::DependencyError;
 use crate::traits::Clock;
 use crate::types::UserId;
 
-use super::repository::*;
+use super::repository::AuthAdminRepository;
 use super::types::*;
 use super::*;
 
@@ -264,7 +264,7 @@ pub(super) fn clamp_limit(limit: u32) -> u32 {
     limit.clamp(1, MAX_ADMIN_PAGE_SIZE)
 }
 
-pub(super) fn map_admin_dependency_error(error: DependencyError) -> AdminError {
+fn map_admin_dependency_error(error: DependencyError) -> AdminError {
     match error {
         DependencyError::Unavailable | DependencyError::RateLimited => AdminError::Unavailable,
         DependencyError::ConditionalWriteFailed | DependencyError::Internal => AdminError::Internal,

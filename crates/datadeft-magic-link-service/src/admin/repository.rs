@@ -7,7 +7,7 @@ use datadeft_magic_link_core::NormalizedEmail;
 use crate::error::DependencyError;
 use crate::types::UserId;
 
-use super::types::*;
+use super::types::{AdminEvent, Page, PageCursor, SessionSummary, UserSummary};
 
 /// Storage for admin queries and audited mutations.
 ///

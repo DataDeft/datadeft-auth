@@ -98,7 +98,7 @@ impl fmt::Debug for AdminActor {
 
 /// Control characters plus invisible and direction-changing ones that would
 /// let an actor id or reason look different from what is stored.
-pub(super) fn has_control(value: &str) -> bool {
+fn has_control(value: &str) -> bool {
     value.chars().any(|ch| {
         ch.is_control()
             || matches!(

@@ -21,8 +21,8 @@ use crate::types::{
     SessionCookie, SessionId,
 };
 
-use super::commit::*;
-use super::limits::*;
+use super::commit::{authenticate_scanner_flow, mint_country};
+use super::limits::{consume_limits_deny, landing_limits_deny};
 use super::*;
 
 /// Canonical scanner-safe landing, confirmation, and revocation service.
@@ -223,7 +223,7 @@ where
 
 /// One landing lookup under `key`: the presented verifier hash and the record
 /// stored at `selector_lookup` (already derived under the same key).
-pub(super) async fn landing_candidate<Authentication: MagicLinkAuthenticationRepository>(
+async fn landing_candidate<Authentication: MagicLinkAuthenticationRepository>(
     authentication: &Authentication,
     key: &LookupHmacKey,
     selector_lookup: LookupHmac,
@@ -246,7 +246,7 @@ pub(super) async fn landing_candidate<Authentication: MagicLinkAuthenticationRep
     Ok((selector_lookup, presented_verifier_hash, candidate))
 }
 
-pub(super) fn validate_scanner_candidate(
+fn validate_scanner_candidate(
     config: &MagicLinkServiceConfig,
     candidate: Option<MagicLinkAuthenticationCandidate>,
     presented_verifier_hash: &VerifierHash,
@@ -308,12 +308,12 @@ pub(super) fn verifier_comparison_count() -> usize {
     VERIFIER_COMPARISON_COUNT.with(std::cell::Cell::get)
 }
 
-pub(super) fn note_verifier_comparison() {
+fn note_verifier_comparison() {
     #[cfg(test)]
     VERIFIER_COMPARISON_COUNT.with(|count| count.set(count.get() + 1));
 }
 
-pub(super) fn perform_dummy_verifier_comparison(presented_verifier_hash: &VerifierHash) {
+fn perform_dummy_verifier_comparison(presented_verifier_hash: &VerifierHash) {
     let opaque = core::hint::black_box(presented_verifier_hash);
     let result = opaque.matches_hash_constant_time(presented_verifier_hash);
     let _ = core::hint::black_box(result);

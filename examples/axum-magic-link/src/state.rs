@@ -17,11 +17,11 @@ use datadeft_magic_link_service::{
 use datadeft_pow_core::PowSecret;
 use rand_core::{OsRng, RngCore};
 
-use super::util::*;
+use super::util::current_unix;
 use super::*;
 
 #[derive(Debug)]
-pub(super) struct SetupError(&'static str);
+struct SetupError(&'static str);
 
 impl fmt::Display for SetupError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -96,10 +96,7 @@ pub(super) fn build_state() -> AppResult<AppState> {
     })
 }
 
-pub(super) fn development_keyring<P: KeyPurpose>(
-    kid: &str,
-    now_unix: u64,
-) -> AppResult<KeyRing<P>> {
+fn development_keyring<P: KeyPurpose>(kid: &str, now_unix: u64) -> AppResult<KeyRing<P>> {
     let key_id = KeyId::parse(kid)?;
     let root = RootSecret::new(random_32()?);
     let key = root.derive_key::<P>(&key_id)?;
@@ -118,7 +115,7 @@ pub(super) fn development_keyring<P: KeyPurpose>(
     .map_err(|error| Box::new(error) as Box<dyn Error + Send + Sync>)
 }
 
-pub(super) fn random_32() -> AppResult<[u8; 32]> {
+fn random_32() -> AppResult<[u8; 32]> {
     let mut bytes = [0_u8; 32];
     OsRng
         .try_fill_bytes(&mut bytes)

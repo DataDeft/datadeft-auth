@@ -26,7 +26,7 @@ use crate::hmac_key::{
 };
 use crate::window::fixed_window_index;
 
-use self::items::*;
+use self::items::{av_n, av_s};
 
 /// Default TTL grace applied to spent auth artifacts: 24 hours past their
 /// logical expiry. DynamoDB TTL deletion is asynchronous and best-effort, so

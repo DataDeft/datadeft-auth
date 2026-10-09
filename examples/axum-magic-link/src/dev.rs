@@ -5,8 +5,8 @@ use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use datadeft_magic_link_aws::FakeMagicLinkOutbox;
 
-use super::state::*;
-use super::util::*;
+use super::state::AppState;
+use super::util::escape_html;
 
 pub(super) async fn index() -> Html<&'static str> {
     Html(INDEX_HTML)
@@ -25,13 +25,13 @@ pub(super) async fn dev_latest_magic_link(State(state): State<AppState>) -> Resp
 
 /// Local-development helper: render the newest outbox email as a clickable
 /// relative magic link instead of sending real mail.
-pub(super) fn latest_magic_link(outbox: &FakeMagicLinkOutbox) -> Option<String> {
+fn latest_magic_link(outbox: &FakeMagicLinkOutbox) -> Option<String> {
     let email = outbox.recorded().ok()?.pop()?;
     let token = email.token.as_secret_value();
     Some(format!("/auth/magic-link?token={}", token.as_str()))
 }
 
-pub(super) const INDEX_HTML: &str = r#"<!doctype html>
+const INDEX_HTML: &str = r#"<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">

@@ -14,9 +14,9 @@ use datadeft_magic_link_service::{MagicLinkFlowService, MagicLinkRequestService}
 use rand_core::OsRng;
 use serde::Deserialize;
 
-use super::pow::*;
-use super::state::*;
-use super::util::*;
+use super::pow::{PowSolutionJson, verify_pow_solution};
+use super::state::{AppState, LocalClock};
+use super::util::escape_html;
 
 pub(super) async fn request_magic_link(
     State(state): State<AppState>,
@@ -28,7 +28,7 @@ pub(super) async fn request_magic_link(
     }
 }
 
-pub(super) async fn request_magic_link_inner(
+async fn request_magic_link_inner(
     state: AppState,
     request: Request,
 ) -> Result<Response, MagicLinkHttpError> {
@@ -173,7 +173,7 @@ pub(super) async fn confirm_route(State(state): State<AppState>, request: Reques
     }
 }
 
-pub(super) fn scanner_page(status: StatusCode, body: &'static str) -> Response {
+fn scanner_page(status: StatusCode, body: &'static str) -> Response {
     let mut response = (status, Html(body)).into_response();
     apply_magic_link_security_headers(response.headers_mut());
     response
@@ -186,9 +186,9 @@ pub(super) async fn auth_complete() -> Html<&'static str> {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct RequestMagicLinkWithPow {
-    pub(super) email: String,
-    pub(super) terms_accepted: bool,
-    pub(super) privacy_accepted: bool,
-    pub(super) pow: PowSolutionJson,
+struct RequestMagicLinkWithPow {
+    email: String,
+    terms_accepted: bool,
+    privacy_accepted: bool,
+    pow: PowSolutionJson,
 }

@@ -11,11 +11,11 @@ use datadeft_magic_link_service::{
 use crate::error::{AwsAdapterError, map_get_item_error, map_update_item_error};
 use crate::window::fixed_window_index;
 
-use super::items::*;
+use super::items::{av_n, av_s, optional_s, optional_u64, required_s, required_u64};
 use super::*;
 
 impl DynamoDbAuthStore {
-    pub(super) async fn revoke_session_item(
+    async fn revoke_session_item(
         &self,
         pk: String,
         revoked_at_unix: u64,
@@ -34,7 +34,7 @@ impl DynamoDbAuthStore {
         Ok(())
     }
 
-    pub(super) fn item_to_session(
+    fn item_to_session(
         session_id: &SessionId,
         item: &HashMap<String, AttributeValue>,
     ) -> Result<SessionRecord, AwsAdapterError> {
@@ -182,6 +182,6 @@ impl RateLimiter for DynamoDbAuthStore {
     }
 }
 
-pub(super) fn fixed_window_start(now_unix: u64, window_secs: u64) -> u64 {
+fn fixed_window_start(now_unix: u64, window_secs: u64) -> u64 {
     fixed_window_index(now_unix, window_secs).saturating_mul(window_secs)
 }
