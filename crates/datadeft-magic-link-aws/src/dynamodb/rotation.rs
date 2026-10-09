@@ -59,7 +59,11 @@ impl DynamoDbAuthStore {
             .client
             .put_item()
             .table_name(&self.table_name)
-            .set_item(Some(self.email_lookup_item(email, user_id)?))
+            .set_item(Some(Self::email_lookup_item(
+                self.storage_hmac_keys.current(),
+                email,
+                user_id,
+            )?))
             .condition_expression("attribute_not_exists(pk)")
             .send()
             .await
@@ -71,15 +75,19 @@ impl DynamoDbAuthStore {
         }
     }
 
-    /// The email lookup row, shared by user creation and lookup migration so
-    /// the commit's condition check and both writers agree on its shape.
+    /// The email lookup row under `key`, shared by user creation and lookup
+    /// migration so the commit's condition check and every writer agree on
+    /// its shape.
     pub(super) fn email_lookup_item(
-        &self,
+        key: &StorageHmacKey,
         email: &NormalizedEmail,
         user_id: &UserId,
     ) -> Result<HashMap<String, AttributeValue>, AwsAdapterError> {
         Ok(HashMap::from([
-            ("pk".to_owned(), av_s(self.pk_user_email(email)?)),
+            (
+                "pk".to_owned(),
+                av_s(Self::pk_user_email_under(key, email)?),
+            ),
             ("sk".to_owned(), av_s("PROFILE")),
             ("entity_type".to_owned(), av_s("user_email_lookup")),
             ("user_id".to_owned(), av_s(user_id.as_str())),

@@ -79,6 +79,14 @@ impl MagicLinkAuthenticationRepository for FakeDynamoDbAuthStore {
         let email_hmac = self
             .email_hmac(&command.magic_link.email)
             .map_err(|_| CommitMagicLinkAuthenticationError::Internal)?;
+        // A create also claims the previous-key row during a rotation, like
+        // the DynamoDB transaction does.
+        let previous_email_hmac = self
+            .storage_hmac_keys
+            .previous()
+            .map(|key| key.hmac(EMAIL_LOOKUP_HMAC_PREFIX, command.magic_link.email.as_str()))
+            .transpose()
+            .map_err(|_| CommitMagicLinkAuthenticationError::Internal)?;
         let mut inner = self
             .lock_inner()
             .map_err(|_| CommitMagicLinkAuthenticationError::Internal)?;
@@ -143,6 +151,9 @@ impl MagicLinkAuthenticationRepository for FakeDynamoDbAuthStore {
             }
             MagicLinkAuthenticationUser::Create { user_id } => {
                 if inner.user_id_by_email_hmac.contains_key(&email_hmac)
+                    || previous_email_hmac
+                        .as_ref()
+                        .is_some_and(|hmac| inner.user_id_by_email_hmac.contains_key(hmac))
                     || inner.user_profiles_by_id.contains_key(user_id.as_str())
                 {
                     return Err(CommitMagicLinkAuthenticationError::UserConflict);
@@ -185,6 +196,11 @@ impl MagicLinkAuthenticationRepository for FakeDynamoDbAuthStore {
             inner
                 .user_id_by_email_hmac
                 .insert(email_hmac, user_id.clone());
+            if let Some(previous_email_hmac) = previous_email_hmac {
+                inner
+                    .user_id_by_email_hmac
+                    .insert(previous_email_hmac, user_id.clone());
+            }
             inner
                 .user_profiles_by_id
                 .insert(user_id.as_str().to_owned(), user);

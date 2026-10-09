@@ -203,13 +203,21 @@ every admin endpoint before calling the service.
   the user's status every time. `disable_user` then revokes every session so
   the audit trail records each one ending. It is safe to retry: on an error
   the user may already be disabled, and calling again finishes revoking.
-- Enabling never restores a session from before the disable, even one whose
-  revocation failed: it stamps a `sessions_valid_after` watermark on the
-  profile, and validation accepts only sessions created strictly after it.
-  The user logs in again. The watermark uses the admin host's clock and the
-  session time the auth host's, so keep host clocks synchronized.
+- Enabling never restores a session from before the disable. `enable_user`
+  first revokes every session still live (finishing a disable whose
+  revocation failed or is still running) and re-enables only once that
+  succeeded; on an error the user stays disabled, so it is safe to retry. It
+  also stamps a `sessions_valid_after` watermark on the profile, and
+  validation accepts only sessions created strictly after it. The user logs
+  in again. The revocation step does not depend on clocks; the watermark
+  alone would not be enough, because a session's `created_at` comes from the
+  auth host's clock and may be up to the skew tolerance ahead of the admin
+  host's (`spec/tla/Session.tla`, `Inv_NoPreEnableSurvivor`).
 - `revoke_all_sessions` ends only active sessions; expired ones are already
-  over and are left untouched, so the work and audit trail stay bounded.
+  over and are left untouched, so the work and audit trail stay bounded. A
+  session counts as expired only once the clock-skew tolerance has passed
+  after its expiry, so an admin host whose clock runs ahead cannot skip a
+  session that a slower host still accepts.
 - Admin transactions use the audit event id as the DynamoDB idempotency token.
 - Audit events within the same second list in event-id order, not action
   order; use the timestamps.
@@ -551,7 +559,10 @@ previous document's HMAC keys only when they differ from the active ones.
    `previous_lookup_hmac_key` to `MagicLinkFlowService::previous_lookup_hmac_key`.
    Sessions and email lookups that miss under the new key retry under the
    previous one. A user found that way gets a lookup row under the new key.
-   Links issued just before the rotation stay usable.
+   A user created during the window gets lookup rows under both keys, so a
+   host still running the old key during a rolling deploy finds the account
+   instead of creating a second one (`spec/tla/KeyRotation.tla`). Links
+   issued just before the rotation stay usable.
 3. Before dropping the previous document, run
    `DynamoDbAuthStore::rekey_email_lookups` (needs `dynamodb:Scan`). It writes
    new-key lookup rows for users who did not log in during the window. It is

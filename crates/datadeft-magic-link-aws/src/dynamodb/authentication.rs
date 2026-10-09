@@ -168,16 +168,25 @@ impl DynamoDbAuthStore {
                     .condition_expression("attribute_not_exists(pk)")
                     .build()
                     .map_err(|_| AwsAdapterError::Internal)?;
-                let email_put = Put::builder()
-                    .table_name(&self.table_name)
-                    .set_item(Some(
-                        self.email_lookup_item(&command.magic_link.email, user_id)?,
-                    ))
-                    .condition_expression("attribute_not_exists(pk)")
-                    .build()
-                    .map_err(|_| AwsAdapterError::Internal)?;
                 actions.push(TransactWriteItem::builder().put(profile_put).build());
-                actions.push(TransactWriteItem::builder().put(email_put).build());
+                // During a storage-key rotation, also claim the previous-key
+                // row. A node still on the old key reads only that position,
+                // so without it a later login there would create a second
+                // account for the same email (spec/tla/KeyRotation.tla).
+                let keys = &self.storage_hmac_keys;
+                for key in core::iter::once(keys.current()).chain(keys.previous()) {
+                    let email_put = Put::builder()
+                        .table_name(&self.table_name)
+                        .set_item(Some(Self::email_lookup_item(
+                            key,
+                            &command.magic_link.email,
+                            user_id,
+                        )?))
+                        .condition_expression("attribute_not_exists(pk)")
+                        .build()
+                        .map_err(|_| AwsAdapterError::Internal)?;
+                    actions.push(TransactWriteItem::builder().put(email_put).build());
+                }
             }
         }
 
