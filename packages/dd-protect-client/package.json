@@ -1,6 +1,6 @@
 {
   "name": "@datadeft/protect-client",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Browser proof-of-work client and Web Worker for datadeft-pow-core.",
   "type": "module",
   "main": "./dist/protect.js",

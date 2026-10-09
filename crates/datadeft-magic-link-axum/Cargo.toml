@@ -16,16 +16,16 @@ workspace = true
 
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["form", "json"] }
-datadeft-magic-link-service = { path = "../datadeft-magic-link-service", version = "0.4.1" } # x-release-please-version
+datadeft-magic-link-service = { path = "../datadeft-magic-link-service", version = "0.4.2" } # x-release-please-version
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_urlencoded = "0.7"
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
-datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.1", features = ["test-support"] } # x-release-please-version
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.2", features = ["test-support"] } # x-release-please-version
 # SDK-free default build: provides the in-memory fakes for the quickstart doc.
-datadeft-magic-link-aws = { path = "../datadeft-magic-link-aws", version = "0.4.1" } # x-release-please-version
-datadeft-magic-link-core = { path = "../datadeft-magic-link-core", version = "0.4.1" } # x-release-please-version
+datadeft-magic-link-aws = { path = "../datadeft-magic-link-aws", version = "0.4.2" } # x-release-please-version
+datadeft-magic-link-core = { path = "../datadeft-magic-link-core", version = "0.4.2" } # x-release-please-version
 rand_core = { version = "0.6", features = ["getrandom"] }
 tokio = { version = "1", features = ["macros", "rt"] }

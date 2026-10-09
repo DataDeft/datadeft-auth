@@ -16,13 +16,13 @@ workspace = true
 
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["json"] }
-datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.1" } # x-release-please-version
-datadeft-pow-core = { path = "../datadeft-pow-core", version = "0.4.1" } # x-release-please-version
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.2" } # x-release-please-version
+datadeft-pow-core = { path = "../datadeft-pow-core", version = "0.4.2" } # x-release-please-version
 rand_core = "0.6"
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
-datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.1", features = ["test-support"] } # x-release-please-version
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.2", features = ["test-support"] } # x-release-please-version
 blake3 = "1"
 hex = "0.4"
 rand_core = { version = "0.6", features = ["getrandom"] }

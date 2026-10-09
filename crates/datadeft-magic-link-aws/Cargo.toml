@@ -24,7 +24,7 @@ aws = [
 ]
 
 [dependencies]
-datadeft-magic-link-service = { path = "../datadeft-magic-link-service", version = "0.4.1" } # x-release-please-version
+datadeft-magic-link-service = { path = "../datadeft-magic-link-service", version = "0.4.2" } # x-release-please-version
 aws-sdk-dynamodb = { version = "1", optional = true, default-features = false, features = ["rt-tokio"] }
 aws-sdk-secretsmanager = { version = "1", optional = true, default-features = false, features = ["rt-tokio"] }
 aws-sdk-sesv2 = { version = "1", optional = true, default-features = false, features = ["rt-tokio"] }
@@ -35,8 +35,8 @@ tokio = { version = "1", optional = true, default-features = false, features = [
 zeroize = { version = "1", default-features = false }
 
 [dev-dependencies]
-datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.1", features = ["test-support"] } # x-release-please-version
-datadeft-magic-link-core = { path = "../datadeft-magic-link-core", version = "0.4.1" } # x-release-please-version
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.2", features = ["test-support"] } # x-release-please-version
+datadeft-magic-link-core = { path = "../datadeft-magic-link-core", version = "0.4.2" } # x-release-please-version
 proptest = "1"
 rand_core = "0.6"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync"] }

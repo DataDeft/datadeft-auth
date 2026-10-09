@@ -15,13 +15,13 @@ include = ["src/**", "tests/**", "README.md", "LICENSE"]
 workspace = true
 
 [dependencies]
-datadeft-magic-link-core = { path = "../datadeft-magic-link-core", version = "0.4.1" } # x-release-please-version
-datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.1" } # x-release-please-version
+datadeft-magic-link-core = { path = "../datadeft-magic-link-core", version = "0.4.2" } # x-release-please-version
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.2" } # x-release-please-version
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 hex = "0.4"
 rand_core = "0.6"
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
-datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.1", features = ["test-support"] } # x-release-please-version
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.2", features = ["test-support"] } # x-release-please-version
 tokio = { version = "1", features = ["macros", "rt"] }
