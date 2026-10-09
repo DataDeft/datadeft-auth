@@ -1,5 +1,6 @@
 //! AuthAdminService: admin queries and audited mutations.
 
+use datadeft_auth_token_core::cookie::CLOCK_SKEW_TOLERANCE_SECS;
 use datadeft_magic_link_core::NormalizedEmail;
 use rand_core::{CryptoRng, RngCore};
 
@@ -136,8 +137,11 @@ where
 
     /// End every active session of the user ("log out everywhere"): those
     /// neither revoked nor expired. Expired sessions are already over and are
-    /// left as they are. Each revocation is audited on its own. Returns how
-    /// many sessions this call revoked; a second call returns 0.
+    /// left as they are. A session counts as expired only once the clock-skew
+    /// tolerance has also passed, so an admin clock that runs ahead cannot
+    /// skip a session that a slower validating node still accepts. Each
+    /// revocation is audited on its own. Returns how many sessions this call
+    /// revoked; a second call returns 0.
     ///
     /// Not atomic across sessions: on an error, call it again to finish. A
     /// session created while it runs can be missed, which is why
@@ -158,9 +162,10 @@ where
         // Only sessions still usable: session rows are kept forever, so
         // expired ones are already over and revoking them would only add
         // audit noise and unbounded work.
+        let live_cutoff = now_unix.saturating_sub(CLOCK_SKEW_TOLERANCE_SECS);
         for session in sessions
             .iter()
-            .filter(|session| session.status(now_unix) == SessionStatus::Active)
+            .filter(|session| session.status(live_cutoff) == SessionStatus::Active)
         {
             let event = self.event(
                 AdminAction::RevokeSession,
@@ -201,14 +206,33 @@ where
     }
 
     /// Enable a disabled user. No session from before this moment works
-    /// again, even one whose revocation failed: enabling stamps a
-    /// `sessions_valid_after` watermark that session validation enforces. The
-    /// user logs in again.
+    /// again: enabling first revokes every session still live (finishing a
+    /// disable whose revocation failed or is still running) and re-enables
+    /// only once that succeeded. It also stamps a `sessions_valid_after`
+    /// watermark that session validation enforces. The user logs in again.
+    ///
+    /// The revocation step does not rely on clocks. The watermark alone does:
+    /// a login node whose clock runs ahead can stamp a pre-disable session
+    /// after it (`spec/tla/Session.tla`, `Inv_NoPreEnableSurvivor`).
+    ///
+    /// Safe to retry: on an error the user stays disabled.
     pub async fn enable_user(
         &mut self,
         user_id: &UserId,
         actor: &AdminActor,
     ) -> Result<(), AdminError> {
+        match self
+            .admin
+            .get_user(user_id)
+            .await
+            .map_err(map_admin_dependency_error)?
+        {
+            None => return Err(AdminError::NotFound),
+            Some(user) if !user.disabled => return Err(AdminError::AlreadyInState),
+            Some(_) => {}
+        }
+        // The user is disabled, so no new session can start meanwhile.
+        self.revoke_all_sessions(user_id, actor).await?;
         self.set_disabled(AdminAction::EnableUser, user_id, actor)
             .await
     }
