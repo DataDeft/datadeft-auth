@@ -63,6 +63,14 @@ Findings the models produced:
   only, and `--allow-deadlock` hid stuck states, so the old liveness model
   passed even with its retry removed. Success is now an explicit terminal
   state and the model runs without `--allow-deadlock`.
+- **ADM-F1 (accepted, documented).** Concurrent admin actions on one user are
+  last-write-wins: an enable whose final write is delayed past another
+  admin's enable, a login, and a later disable undoes that disable and revives
+  a session whose revocation failed. Not reachable by users. The models run a
+  single admin process, so they do not explore it; the accepted behaviour is
+  pinned by `concurrent_admin_actions_are_last_write_wins`. Revisit with an
+  optimistic-concurrency counter on the profile if admin workflows become
+  concurrent in practice.
 
 The v0.2.0 solve-timing signal (`Verified::mint_to_verify_ms`, the proof-cookie
 solve-class byte) is deliberately outside the models. It is observational: it

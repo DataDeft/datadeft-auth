@@ -216,6 +216,13 @@ where
     /// after it (`spec/tla/Session.tla`, `Inv_NoPreEnableSurvivor`).
     ///
     /// Safe to retry: on an error the user stays disabled.
+    ///
+    /// Concurrent admin actions on one user are last-write-wins: the final
+    /// write only checks that the user is still disabled. A delayed enable
+    /// can therefore undo a disable another admin made after this call read
+    /// the user. Serialize admin actions per user, and re-read the user with
+    /// [`Self::get_user`] after an error or timeout (docs/security.md,
+    /// ADM-F1).
     pub async fn enable_user(
         &mut self,
         user_id: &UserId,

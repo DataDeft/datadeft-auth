@@ -403,6 +403,8 @@ impl RateLimiter for FakeDynamoDbAuthStore {
 mod test_support;
 
 #[cfg(test)]
+mod admin_race_tests;
+#[cfg(test)]
 mod admin_tests;
 #[cfg(test)]
 mod aggregate_tests;

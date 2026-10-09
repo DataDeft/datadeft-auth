@@ -221,6 +221,20 @@ every admin endpoint before calling the service.
 - Admin transactions use the audit event id as the DynamoDB idempotency token.
 - Audit events within the same second list in event-id order, not action
   order; use the timestamps.
+- Concurrent admin actions on the same user are last-write-wins (accepted
+  tradeoff, ADM-F1). The enable write is conditional only on the user still
+  being disabled, not on nothing having changed since `enable_user` read it.
+  If an enable's final write is delayed (a slow or retried request) until
+  after another admin has enabled, the user has logged in, and a third action
+  has disabled the user again, the delayed enable lands: the later disable is
+  undone, and a session from in between whose revocation had failed becomes
+  valid again. The user record (`get_user`) and the session list always show
+  the real state. The audit log does not order it correctly: an event carries
+  the time it was prepared, so the delayed enable lists before the disable it
+  overrode. It is not reachable by users, only by overlapping admin actions.
+  Applications should serialize admin actions per user (one in flight at a
+  time, no automatic retry of a timed-out enable), and after an error or a
+  timeout re-read the user with `get_user` before acting again.
 - "Append-only" is enforced by the library, not by IAM: the admin role needs
   `TransactWriteItems`, which could also overwrite rows. Enable DynamoDB
   point-in-time recovery or stream exports for tamper evidence.
