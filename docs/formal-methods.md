@@ -20,23 +20,49 @@ versions when each MVP starts.
 
 ## Claims to model
 
-| Claim | Safety property | Current evidence | Planned method |
+| Claim | Safety property | Model (`spec/tla`) | Code evidence |
 | --- | --- | --- | --- |
-| ML-INV-001 | `GET` landing never consumes a challenge. | Service and Axum tests | TLA+ invariant |
-| ML-INV-002 | One challenge has at most one consume. | Fake race tests and DynamoDB conditions | TLA+ state search |
-| ML-INV-003 | Confirmation pairs consume and session creation. | Repository contract tests | TLA+ transaction model |
-| ML-INV-004 | Wrong bound data cannot authenticate. | Tamper tests | TLA+ guards |
-| ML-INV-005 | Disabled-user failures do not burn a challenge. | Fake transaction tests | TLA+ invariant |
-| SES-INV-001 | Revoked or expired sessions never validate. | Session boundary tests | TLA+ session model |
-| POW-INV-001 | Accepted proof has valid challenge metadata. | PoW vectors and tamper tests | TLA+ plus Kani |
-| POW-INV-002 | Country policy never lowers difficulty. | TLA+ model (`Pow.tla`) | TLA+ plus property tests |
-| POW-INV-003 | An opt-in single-use proof cannot be replayed. | Not ready | TLA+ replay model |
-| BOUND-INV-001 | Parsers reject over-cap values safely. | Unit and property tests | Fuzzing and Kani |
+| ML-INV-001 | `GET` landing never consumes a challenge. | `MagicLink.tla` | Service and Axum tests; `model_flow_tests` |
+| ML-INV-002 | One challenge has at most one consume. | `MagicLink.tla`, `MagicLinkRace.tla` | Fake race tests, DynamoDB conditions; `model_flow_tests` |
+| ML-INV-003 | Confirmation pairs consume and session creation. | `MagicLink.tla` | Repository contract tests; `model_flow_tests` |
+| ML-INV-004 | Wrong bound data cannot authenticate. | `MagicLink.tla` | Tamper tests; `hmac_and_confirm_properties` |
+| ML-INV-005 | Disabled-user failures do not burn a challenge. | `MagicLink.tla` | Fake transaction tests; `model_flow_tests` |
+| SES-INV-001 | A revoked session never validates. | `Session.tla` | `model_session_tests` |
+| SES-INV-002/003 | No session validates past its absolute or idle lifetime. | `Session.tla` | `model_session_tests`, `model_boundary_tests`, `cookie_integrity` |
+| SES-INV-004/005 | A disabled owner's sessions, and sessions created at or before the enable watermark, never validate. | `Session.tla` (`SessionAdmin.cfg`) | `model_session_tests` |
+| SES-INV-006..008 | Refresh keeps `iat`, never passes the absolute lifetime, and only follows a same-request validation. | `Session.tla` | `model_boundary_tests`, `refresh_tests` |
+| SES-INV-009 | No session that existed at a re-enable validates afterwards, whatever the clocks say. | `Session.tla` (`SessionAdmin.cfg`) | `pre_disable_session_from_a_clock_ahead_node_stays_dead_after_enable` |
+| ROT-INV-001/002 | One email never has two accounts during a rolling storage-key rotation. | `KeyRotation.tla` | `rolling_rotation_*`, `model_rotation_tests` |
+| POW-INV-001 | Accepted proof met the production floor. | `Pow.tla` | PoW vectors, tamper tests; `pow_security` |
+| POW-INV-002 | A policy change after mint never lowers a challenge's difficulty. | `Pow.tla` | `pow_security` |
+| POW-INV-003 | An opt-in single-use proof cannot be replayed. | Not modeled: replay within the proof TTL is allowed by design; callers cap it with `Verified::tid`. | `pow_security` (tid stability) |
+| LIVE-001 | The happy path always reaches a session, including through an ambiguous commit and its retry. | `Liveness.tla` | `model_flow_tests` |
+| BOUND-INV-001 | Parsers reject over-cap values safely. | Out of scope for TLA+ | Totality property tests; fuzzing and Kani planned |
 
-ML-INV-001..005, SES-INV-001, and POW-INV-001..002 now have TLA+ models in
-[../spec/tla](../spec/tla), gated by the `formal-spec` CI job (`mise run spec`).
-POW-INV-003 and BOUND-INV-001 remain future work. Replay is opt-in, and parser
-bounds belong to fuzzing and Kani.
+`mise run spec` checks every model. `mise run spec-mutants` proves each
+invariant can fail: it breaks the model the way a plausible code bug would and
+requires the checker to report that exact violation. Both run in
+`mise run verify`. The `model_*_tests` in `datadeft-magic-link-aws` drive the
+real services and the fake store through random operation sequences and check
+the same invariants, which links the models to the code.
+
+Findings the models produced:
+
+- **SES-F1 (fixed in this release).** A login host whose clock runs ahead
+  stamps `created_at` after a quick re-enable's watermark, and `enable_user`
+  did not wait for the disable's revocation, so a pre-disable session could
+  validate again. `enable_user` now revokes every live session before it
+  re-enables. Counterexample: run `Session.tla` with
+  `EnableRevokesFirst = FALSE`.
+- **ROT-F1 (fixed in this release).** During a rolling storage-key rotation,
+  a user created on a host with the new key had a lookup row only under that
+  key; a later login on a host still on the old key created a second
+  account. Creation now also writes the previous-key row. Counterexample:
+  `KeyRotation.tla` with `DualWrite = FALSE`.
+- **LIVE-F1 (fixed in the model).** The checker evaluates leads-to on cycles
+  only, and `--allow-deadlock` hid stuck states, so the old liveness model
+  passed even with its retry removed. Success is now an explicit terminal
+  state and the model runs without `--allow-deadlock`.
 
 The v0.2.0 solve-timing signal (`Verified::mint_to_verify_ms`, the proof-cookie
 solve-class byte) is deliberately outside the models. It is observational: it

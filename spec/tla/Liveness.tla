@@ -63,7 +63,17 @@ Retry ==
     /\ pending' = FALSE
     /\ UNCHANGED << challenge, landed >>
 
+\* The flow is over once a session exists. Making success an explicit
+\* self-loop means every other end state is a deadlock: the model runs
+\* without --allow-deadlock, so a state where the flow gets stuck fails the
+\* check. The checker evaluates leads-to on cycles only, and this graph has
+\* none besides Done, so the deadlock check is what gives progress teeth.
+Done ==
+    /\ session = "Active"
+    /\ UNCHANGED vars
+
 Next ==
+    \/ Done
     \/ Request
     \/ Land
     \/ ConfirmDirect

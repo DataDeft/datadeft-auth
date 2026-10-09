@@ -24,112 +24,114 @@ default and liveness under `--check-liveness`.
 
 ```text
 spec/
-  README.md          this plan
+  README.md            this plan
   tla/
-    README.md        how to run each model and read the results
-    MagicLink.tla    magic-link authentication state machine
-    MagicLink.cfg    constants and invariants for MagicLink
+    README.md          how to run each model and read the results
+    MagicLink.tla      magic-link authentication state machine
     MagicLinkRace.tla  two confirmations racing over one challenge
-    MagicLinkRace.cfg  constants and invariants for MagicLinkRace
-    Session.tla      session validation lifecycle
-    Session.cfg      constants and invariants for Session
-    Pow.tla          proof-of-work admission difficulty
-    Pow.cfg          constants and invariants for Pow
-    Liveness.tla     happy-path progress (leads-to)
-    Liveness.cfg     properties for Liveness
+    Session.tla        session validation, refresh, revocation, disable/enable, clock skew
+    Session.cfg        validation and refresh (one session, no admin)
+    SessionAdmin.cfg   disable, revoke-all, enable (one session, no refresh)
+    KeyRotation.tla    first signup during a rolling storage-key rotation
+    Pow.tla            proof-of-work admission difficulty
+    Liveness.tla       happy-path progress
+    *.cfg              constants and invariants per model
+scripts/spec-mutants.ts  the mutation check (one mutant per invariant)
 ```
 
 ## How to run
 
-Each spec deadlocks at a terminal state (a consumed challenge, an expired
-challenge), so pass `--allow-deadlock`.
-
 ```sh
-tla spec/tla/MagicLink.tla --allow-deadlock
-tla spec/tla/Pow.tla --allow-deadlock
+mise run spec           # every model
+mise run spec-mutants   # every invariant must catch its mutant
 ```
 
-Both report "No errors found" today.
+Both are part of `mise run verify`. Most models end in terminal states, so
+they run with `--allow-deadlock`. `Liveness.tla` does not: see below.
 
 ## What each model covers
 
-The abstraction models control flow and the atomic transaction. It does not
-model the token grammar, selector, verifier, HMAC, or Branca. The model assumes
-the crypto checks are correct and asks whether the state machine around them is
-safe.
+The abstraction models control flow, clocks, and the atomic transactions. It
+does not model the token grammar, selector, verifier, HMAC, or Branca. The
+model assumes the crypto checks are correct and asks whether the state machine
+around them is safe. The crypto and parsers are covered by vector, tamper, and
+property tests in the crates.
 
 ### MagicLink.tla
 
-One magic-link challenge and one browser session. It checks these invariants
-from the formal-methods roadmap.
-
-| Invariant | Claim | Code anchor |
-| --- | --- | --- |
-| ML-INV-001 | A consumed challenge was consumed by a POST, never a GET landing. | `begin_magic_link_landing` is side-effect-free |
-| ML-INV-002 | At most one session per challenge. | atomic commit guard on `Issued` |
-| ML-INV-003 | Consume and session creation are one atomic pair. | `commit_magic_link_authentication` transaction |
-| ML-INV-004 | Only a correct selector, verifier, and account binding authenticates. A wrong binding is rejected before any consume. | flow-cookie constant-time binding checks |
-| ML-INV-005 | A disabled-user confirm does not burn the challenge. It stays reusable and works after re-enable. | `~userDisabled` guard on the atomic commit |
+One magic-link challenge and one browser session: ML-INV-001..005 (landing
+never consumes, at most one session, consume and session creation together,
+wrong binding rejected before any consume, a disabled user's confirm does not
+burn the challenge). Disabling a user also ends their session; that is
+modeled in `Session.tla`.
 
 ### MagicLinkRace.tla
 
-Two confirmations race over one challenge. It covers the atomic transaction, an
-ambiguous transaction result, and an exact-command retry.
-
-| Invariant | Claim | Code anchor |
-| --- | --- | --- |
-| ML-INV-002 (concurrent) | At most one session per challenge under racing confirmations and an ambiguous-then-retried commit. No double-spend. | atomic conditional transaction plus the attempt-id retry contract |
+Two confirmations race over one challenge, with an ambiguous transaction
+result and an exact retry: no double spend.
 
 ### Session.tla
 
-One session record and a moving clock. Validation interleaves with revoke and
-expiry.
+True time is separate from each host's clock reading: a reading is
+`now + off` with `off` in `0..Skew`, and `Tol` is the code's
+`CLOCK_SKEW_TOLERANCE_SECS`. The cookie carries `iat` (absolute bound) and the
+Branca timestamp (idle bound); the server row carries `created_at` from the
+login host's clock. Ghost variables record ground truth from true time and
+true event order at every accept, never from the guard's own readings, so an
+invariant fails when a guard is wrong.
 
-| Invariant | Claim | Code anchor |
-| --- | --- | --- |
-| SES-INV-001 | A revoked or expired session never validates. | `authenticate_session` strong read plus TTL checks |
+`Session.cfg` checks validation and refresh: revoked, past-idle, and
+past-absolute sessions never validate; refresh keeps `iat`, never mints past
+the absolute lifetime, and only follows a same-request validation.
+
+`SessionAdmin.cfg` checks the admin paths with injected revoke failures:
+disabled owners never validate, sessions at or before the enable watermark
+never validate, and no session that existed at a re-enable validates
+afterwards (`Inv_NoPreEnableSurvivor`). That last one failed for the 0.4.1
+code (`EnableRevokesFirst = FALSE`); see finding SES-F1 in
+[docs/formal-methods.md](../docs/formal-methods.md).
+
+### KeyRotation.tla
+
+Hosts on the old storage key and hosts on the new key (with the old one as
+previous) serve the same table during a rolling rotation. One email must never
+get two accounts. It failed for the 0.4.1 code (`DualWrite = FALSE`): finding
+ROT-F1.
 
 ### Pow.tla
 
-One challenge across a set of countries with mutable risk classes. The policy
-raises or lowers a country's required difficulty over time. It checks the
-difficulty guard and the mint-time monotonicity.
+One challenge, with a difficulty policy that can change after mint (modeled
+as per-country classes; the library takes one difficulty from `PowPolicy`, so
+classes are the application's concern). An accepted proof met the production
+floor and the difficulty bound into its challenge.
 
-| Invariant | Claim | Code anchor |
-| --- | --- | --- |
-| POW-INV-001 | An accepted proof met the production floor. | `verify_solution` difficulty floor |
-| POW-INV-002 | An accepted proof met the difficulty bound into its challenge. A policy decrease after mint cannot lower the bar. | tag-bound `dif`, `min_difficulty` check |
+Proof-cookie replay within its TTL is allowed by design (POW-INV-003 is not a
+library invariant): callers that need single use cap it with
+`Verified::tid`.
 
 ### Liveness.tla
 
-Happy-path progress. `tla-checker` 0.3.9 supports the leads-to operator (`~>`)
-but not raw `<>`, `[]`, or `WF` fairness, so this model uses leads-to. It has no
-expiry and no disable.
+Happy-path progress, including an ambiguous commit and its retry.
+`tla-checker` 0.3.9 has no `WF` fairness and evaluates leads-to on cycles
+only, so a stuck state that is a deadlock goes unnoticed under
+`--allow-deadlock`. Success is therefore an explicit terminal self-loop
+(`Done`) and the model runs without `--allow-deadlock`: any other end state is
+reported as a deadlock.
 
-| Property | Claim | Kind |
-| --- | --- | --- |
-| Live_ReachesSession | From the start, the flow always reaches a session, including through an ambiguous commit and its retry. | leads-to |
+## Mutation check
 
-Run it with `--check-liveness`.
+An invariant that no reachable state can violate proves nothing.
+`scripts/spec-mutants.ts` holds one mutant per invariant: an edit that mimics
+a plausible bug (a dropped guard, a re-stamped field, the 0.4.1 behaviour of a
+fixed finding). Each mutant runs with only its target invariant enabled, and
+the script fails unless the checker reports that exact violation.
 
-## What we still need to model
+## Limits
 
-The models cover ML-INV-001..005 (including the concurrent double-spend case),
-SES-INV-001, POW-INV-001..002 (across country risk classes), and happy-path
-progress. The next work items, in rough order:
-
-1. Conditional liveness under expiry and disable. This needs `WF` fairness,
-   which `tla-checker` 0.3.9 does not support. Run the same specs under TLC for
-   that, or a checker version that adds fairness.
-2. Scale the race model to three or more attempts and confirm the state count
-   stays tractable.
-
-Each new invariant should link a model action, a code path, and a test, per the
-MVP-023 evidence rule.
-
-## Bounds
-
-The constants stay small on purpose. Explicit-state checking explores every
-reachable state, so a small bound gives fast, exhaustive coverage of the
-interleavings that matter (`MaxTime = 2`, `MaxDiff = 2`). Raise a bound only
-when a new action needs more range to show a case.
+- A model check proves properties of the model within its bounds, not that the
+  Rust code matches it. The `model_*_tests` in `datadeft-magic-link-aws` run
+  the same invariants against the real services and the fake store.
+- Conditional liveness under expiry and disable needs fairness. Run the
+  models under TLC for that.
+- The bounds are small on purpose (one or two sessions, a few seconds of
+  time). Raise a bound only when a new action needs more range.

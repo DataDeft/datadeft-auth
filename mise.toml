@@ -47,15 +47,22 @@ tools = { "ubi:EmbarkStudios/cargo-deny" = "latest" }
 run = "cargo-deny check"
 
 [tasks.spec]
-description = "Run the TLA+ safety models (MVP-020)"
+description = "Run the TLA+ models (MVP-020)"
 tools = { "cargo:tla-checker" = "0.3.9" }
 run = """
 tla spec/tla/MagicLink.tla --allow-deadlock
 tla spec/tla/MagicLinkRace.tla --allow-deadlock
 tla spec/tla/Session.tla --allow-deadlock
+tla spec/tla/Session.tla --config spec/tla/SessionAdmin.cfg --allow-deadlock
+tla spec/tla/KeyRotation.tla --allow-deadlock
 tla spec/tla/Pow.tla --allow-deadlock
-tla spec/tla/Liveness.tla --check-liveness --allow-deadlock
+tla spec/tla/Liveness.tla --check-liveness
 """
+
+[tasks.spec-mutants]
+description = "Prove every TLA+ invariant can fail: each mutant must be caught"
+tools = { "cargo:tla-checker" = "0.3.9" }
+run = "bun scripts/spec-mutants.ts"
 
 [tasks.ts-verify]
 description = "Verify the npm package including its built and packed consumer surface"
@@ -86,7 +93,7 @@ run = "cargo +1.88.0 check --workspace --all-targets --all-features --locked"
 
 [tasks.verify]
 description = "Full verification: fmt-check + clippy + test + docs + audit + token-core-guard + ts-verify + spec"
-depends = ["fmt-check", "clippy", "test", "docs", "audit", "token-core-guard", "ts-verify", "spec", "release-check", "workflow-check"]
+depends = ["fmt-check", "clippy", "test", "docs", "audit", "token-core-guard", "ts-verify", "spec", "spec-mutants", "release-check", "workflow-check"]
 
 [tasks.js-lock]
 description = "Update Bun dependencies and normalize the lockfile for release-please"

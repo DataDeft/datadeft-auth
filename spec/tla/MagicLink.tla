@@ -113,11 +113,6 @@ ConfirmDisabledFails ==
     /\ UNCHANGED << challenge, session, landed, consumedByPost, authenticated,
                     userDisabled, sessionsCreated, rejectedWrongBinding, time >>
 
-\* Retry after an ambiguous result. The commit is idempotent. No second session.
-AmbiguousRetry ==
-    /\ challenge = "Consumed"
-    /\ UNCHANGED vars
-
 Expire ==
     /\ challenge = "Issued"
     /\ time >= MaxTime
@@ -161,7 +156,6 @@ Next ==
     \/ ConfirmCorrect
     \/ ConfirmWrongBinding
     \/ ConfirmDisabledFails
-    \/ AmbiguousRetry
     \/ Expire
     \/ Disable
     \/ Enable

@@ -8,14 +8,21 @@ See [../README.md](../README.md) for the plan and the invariant catalog.
 tla MagicLink.tla --allow-deadlock
 tla MagicLinkRace.tla --allow-deadlock
 tla Session.tla --allow-deadlock
+tla Session.tla --config SessionAdmin.cfg --allow-deadlock
+tla KeyRotation.tla --allow-deadlock
 tla Pow.tla --allow-deadlock
-tla Liveness.tla --check-liveness --allow-deadlock
+tla Liveness.tla --check-liveness
 ```
 
-Each command auto-loads the matching `.cfg`. A
-clean run ends with "Model checking complete. No errors found." and a state
+Each command auto-loads the matching `.cfg` unless `--config` names another.
+A clean run ends with "Model checking complete. No errors found." and a state
 count. A violation prints a numbered trace from the initial state to the bad
-state.
+state. To see a fixed finding's counterexample, flip its constant:
+
+```sh
+tla Session.tla --config SessionAdmin.cfg --allow-deadlock -c EnableRevokesFirst=FALSE
+tla KeyRotation.tla --allow-deadlock -c DualWrite=FALSE
+```
 
 ## Useful flags
 
@@ -30,26 +37,8 @@ state.
 
 ## Confirm an invariant has teeth
 
-An invariant that no reachable state can violate is worthless. Break the model
-on purpose and confirm the checker reports the counterexample.
-
-Example for POW-INV-002. In `Pow.tla`, the `SolveVerify` action accepts work
-against the bound difficulty:
-
-```text
-w >= mintedDiff
-```
-
-Change it to the current effective difficulty:
-
-```text
-w >= Effective
-```
-
-Run `tla Pow.tla --allow-deadlock`. The checker finds a trace: a challenge
-mints at difficulty 2, a policy update lowers the country requirement, and a
-proof with work 1 passes. That violates `Inv002_AcceptedMeetsMint`. Restore the
-guard and the run is clean again.
+`mise run spec-mutants` does this for every invariant; see
+`scripts/spec-mutants.ts`. To add an invariant, add a mutant that breaks it.
 
 ## Constants
 
@@ -57,9 +46,11 @@ guard and the run is clean again.
 | --- | --- | --- | --- |
 | MagicLink | `MaxTime` | 2 | Bounded clock for expiry. |
 | MagicLinkRace | `Attempts` | `{a1, a2}` | Confirm attempts racing over one challenge. |
-| Session | `TTL` | 1 | Session absolute lifetime. |
-| Session | `MaxTime` | 3 | Bounded clock. |
-| Pow | `Floor` | 1 | Production difficulty floor. |
-| Pow | `Base` | 1 | Configured base difficulty. |
-| Pow | `MaxDiff` | 2 | Upper bound on difficulty values. |
-| Pow | `Countries` | `{c1, c2}` | Country risk classes. |
+| Session | `Idle`, `Abs` | 4, 7 (admin: 2, 3) | Idle and absolute lifetimes. |
+| Session | `Tol`, `Skew` | 1, 1 | Code skew tolerance; real clock spread between hosts. |
+| Session | `MaxTime` | 10 (admin: 5) | Bound on true time. |
+| Session | `EnableRevokesFirst` | TRUE | The fix for SES-F1; FALSE is 0.4.1. |
+| KeyRotation | `Procs` | `{p1, p2}` | Signups for one email. |
+| KeyRotation | `DualWrite` | TRUE | The fix for ROT-F1; FALSE is 0.4.1. |
+| Pow | `Floor`, `Base`, `MaxDiff` | 1, 1, 2 | Difficulty floor, base, bound. |
+| Pow | `Countries` | `{c1, c2}` | Policy classes (application-level). |
