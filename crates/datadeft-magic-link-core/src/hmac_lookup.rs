@@ -237,12 +237,21 @@ fn decode_canonical_hmac(
 /// material bind a distinct `domain` and key, so their derived values are
 /// cryptographically unrelated to magic-link lookup values even for equal
 /// prefixes and inputs.
+///
+/// `domain` and `prefix` must not contain NUL, or the call fails with
+/// [`MagicLinkError::Internal`]. That keeps the framing injective: the first
+/// two NUL bytes always end `domain` and `prefix`, so no two distinct
+/// `(domain, prefix, value)` triples produce the same MAC input. `value` may
+/// contain any bytes.
 pub fn domain_separated_lookup_hmac(
     key: &LookupHmacKey,
     domain: &[u8],
     prefix: &str,
     value: &str,
 ) -> Result<String, MagicLinkError> {
+    if domain.contains(&0) || prefix.as_bytes().contains(&0) {
+        return Err(MagicLinkError::Internal);
+    }
     let mut mac =
         HmacSha256::new_from_slice(key.as_bytes()).map_err(|_| MagicLinkError::Internal)?;
     mac.update(domain);
