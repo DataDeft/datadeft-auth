@@ -4,6 +4,45 @@ All notable changes to this workspace are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crates follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0](https://github.com/DataDeft/datadeft-auth/compare/v0.3.0...v0.4.0) (2026-10-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** SessionRepository::is_user_active is replaced by is_session_owner_active(user_id, session_created_at_unix).
+* **service:** SessionRepository implementors must add is_user_active.
+* **pow:** PowError::MaxAgeTooLarge is renamed InvalidMaxAge and also covers zero.
+* max ages above these ceilings are now errors.
+* PowPolicy::with_clock_skew_secs now returns Result<PowPolicy, PowPolicyError>; PowError and PowPolicyError gain a variant.
+* **magic-link:** these six types no longer implement PartialEq/Eq.
+* **token-core:** read Verified fields through the new getters.
+* **aws:** MagicLinkFlowService has a new field, previous_lookup_hmac_key (use None when not rotating), and LoadedAuthSecrets has two new public fields.
+
+### Features
+
+* **aws:** DynamoDB admin API with an append-only audit trail ([f4cdf79](https://github.com/DataDeft/datadeft-auth/commit/f4cdf79b9a0e35b3a77337380f246da48c519cb1))
+* **service:** admin API for users, sessions, and an audit trail ([9a74f2c](https://github.com/DataDeft/datadeft-auth/commit/9a74f2cfeda0e95e03339e5809c2d2cef0e85862))
+* **service:** explicit sliding session refresh ([72b4d8d](https://github.com/DataDeft/datadeft-auth/commit/72b4d8d10d94ccadb4d3756e048dea94e1be3d32))
+* **service:** reject sessions of disabled users on every request ([6513289](https://github.com/DataDeft/datadeft-auth/commit/651328942ea9d4fcb9df90e7123385645fbe3b29))
+
+
+### Bug Fixes
+
+* **admin:** make disable retry-safe and enable never restore old sessions ([7fcdc09](https://github.com/DataDeft/datadeft-auth/commit/7fcdc09f88245b2a73e1afb5474c4082f84c0260))
+* **admin:** revoke only active sessions; strict re-enable watermark ([6b77300](https://github.com/DataDeft/datadeft-auth/commit/6b77300196da32f94499601a0bc3e9def5d10d70))
+* **aws:** keep session rows for the audit trail ([f31e11b](https://github.com/DataDeft/datadeft-auth/commit/f31e11b745a23fff4c8dba2c140987d2edcfd7d0))
+* **aws:** support rotating the storage and lookup HMAC keys ([dce7fbd](https://github.com/DataDeft/datadeft-auth/commit/dce7fbd47297b1fcfda98ac31a73caa8100b6543))
+* **axum:** skip malformed foreign cookies instead of failing auth ([fa07c39](https://github.com/DataDeft/datadeft-auth/commit/fa07c397513cc141a9433ca53e35c2ea4884a80d))
+* **axum:** use strict-origin referrer so confirmation POSTs carry Origin ([460b39d](https://github.com/DataDeft/datadeft-auth/commit/460b39d748f0f111e0d59ea47d5f6c4d02e09485))
+* cap configurable clock skew at 300 seconds ([24101bb](https://github.com/DataDeft/datadeft-auth/commit/24101bb2e3f326e652f423621435296d6fc58d35))
+* cap cookie and PoW challenge max age ([425f71b](https://github.com/DataDeft/datadeft-auth/commit/425f71b463de0cf7aac06584f277c34274fdc030))
+* **magic-link:** remove non-constant-time equality from secret types ([c7cd501](https://github.com/DataDeft/datadeft-auth/commit/c7cd501573442c7e1102366de488f0d3e79f8d66))
+* **pow:** reject a zero challenge max age in the core verifier ([86fe461](https://github.com/DataDeft/datadeft-auth/commit/86fe4617532ed2ed7f22958f1672198111e4d963))
+* **protect-client:** typed errors for non-JSON challenges; no body echo ([225caa3](https://github.com/DataDeft/datadeft-auth/commit/225caa336c098a8d0387a2462999b70f9a7dc87b))
+* **protect-client:** validate challenges; clamp workerCount to 1..=8 ([ce25eae](https://github.com/DataDeft/datadeft-auth/commit/ce25eae6e3b61badc200a8f1fe89452b8ee421bb))
+* **service:** refresh only a fresh validation; harden example ([27fbe0a](https://github.com/DataDeft/datadeft-auth/commit/27fbe0a7636896a4e9dad3ce17213c77b5ffce00))
+* **token-core:** make branca::Verified fields private ([7110f7c](https://github.com/DataDeft/datadeft-auth/commit/7110f7c73c79621e70b1c0da807c543e912e212b))
+
 ## [0.3.0](https://github.com/DataDeft/datadeft-auth/compare/v0.2.0...v0.3.0) (2026-10-08)
 
 First registry release (crates.io and npm). Breaking for PoW callers that read

@@ -15,7 +15,7 @@ include = ["src/**", "tests/**", "README.md", "LICENSE"]
 workspace = true
 
 [dependencies]
-datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.3.0" } # x-release-please-version
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.0" } # x-release-please-version
 blake3 = "1"
 hex = "0.4"
 hmac = "0.12"
@@ -26,7 +26,7 @@ time = { version = "0.3.47", default-features = false, features = ["formatting",
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
-datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.3.0", features = ["test-support"] } # x-release-please-version
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.4.0", features = ["test-support"] } # x-release-please-version
 proptest = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
