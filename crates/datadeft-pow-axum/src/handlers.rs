@@ -94,7 +94,7 @@ impl PowPolicy {
     /// Defaults to 60 seconds; use a stricter value such as 30, or zero
     /// for strict clocks. This does not extend the challenge's maximum age.
     /// Configure proof-cookie verification separately with the same bound.
-    /// Values above [`MAX_CLOCK_SKEW_SECS`] are rejected.
+    /// Values above [`datadeft_pow_core::MAX_CLOCK_SKEW_SECS`] are rejected.
     pub fn with_clock_skew_secs(mut self, clock_skew_secs: u64) -> Result<Self, PowPolicyError> {
         validate_clock_skew_secs(clock_skew_secs).map_err(|_| PowPolicyError::InvalidClockSkew)?;
         self.clock_skew_secs = clock_skew_secs;

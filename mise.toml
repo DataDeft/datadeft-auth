@@ -39,6 +39,7 @@ run = "cargo test --workspace --all-features"
 [tasks.docs]
 description = "Build documentation"
 run = "cargo doc --workspace --all-features --no-deps"
+env = { RUSTDOCFLAGS = "-D warnings" }
 
 [tasks.audit]
 description = "Dependency advisory and license check (cargo-deny, mise-managed prebuilt)"
