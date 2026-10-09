@@ -290,9 +290,10 @@ async fn disabling_a_user_blocks_login_and_every_session_until_enabled() {
             ]
         );
     }
+    // Sessions created after the re-enable are accepted.
     assert!(
         store
-            .is_session_owner_active(&user_id, 1_000)
+            .is_session_owner_active(&user_id, 1_001)
             .await
             .expect("status")
     );
@@ -396,10 +397,17 @@ async fn enabling_never_restores_sessions_from_before_the_disable() {
             .await
             .expect("status")
     );
-    // Sessions from after the re-enable work.
+    // Sessions from after the re-enable work. The watermark is strict: a
+    // session from the enable's own second does not count as "after".
+    assert!(
+        !store
+            .is_session_owner_active(&user_id, 2_000)
+            .await
+            .expect("status")
+    );
     assert!(
         store
-            .is_session_owner_active(&user_id, 2_000)
+            .is_session_owner_active(&user_id, 2_001)
             .await
             .expect("status")
     );
@@ -435,5 +443,33 @@ async fn index_rows_without_a_session_row_are_skipped() {
             .await
             .expect("disable"),
         1
+    );
+}
+
+#[tokio::test]
+async fn revoke_all_leaves_expired_sessions_alone() {
+    let (store, user_id) = store_with_two_sessions().await;
+    // Both sessions (created at 1_000) have expired by this far-future time.
+    let mut rng = CountingRng::starting_at(50);
+    let mut admin = AuthAdminService {
+        admin: &store,
+        clock: &At(1_000 + 400 * 24 * 60 * 60),
+        rng: &mut rng,
+    };
+    assert_eq!(
+        admin
+            .revoke_all_sessions(&user_id, &admin_actor())
+            .await
+            .expect("revoke all"),
+        0
+    );
+    // Nothing to audit: expired sessions were already over.
+    assert!(
+        admin
+            .list_admin_events(&user_id, None, 10)
+            .await
+            .expect("events")
+            .items
+            .is_empty()
     );
 }

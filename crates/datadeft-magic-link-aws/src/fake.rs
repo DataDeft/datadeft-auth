@@ -372,7 +372,7 @@ impl SessionRepository for FakeDynamoDbAuthStore {
         let fresh_enough = inner
             .sessions_valid_after
             .get(user_id.as_str())
-            .is_none_or(|valid_after| session_created_at_unix >= *valid_after);
+            .is_none_or(|valid_after| session_created_at_unix > *valid_after);
         Ok(enabled && fresh_enough)
     }
 }

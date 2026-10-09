@@ -134,9 +134,10 @@ where
         }
     }
 
-    /// End every session of the user that is not revoked yet ("log out
-    /// everywhere"). Each revocation is audited on its own. Returns how many
-    /// sessions this call revoked; a second call returns 0.
+    /// End every active session of the user ("log out everywhere"): those
+    /// neither revoked nor expired. Expired sessions are already over and are
+    /// left as they are. Each revocation is audited on its own. Returns how
+    /// many sessions this call revoked; a second call returns 0.
     ///
     /// Not atomic across sessions: on an error, call it again to finish. A
     /// session created while it runs can be missed, which is why
@@ -147,15 +148,19 @@ where
         user_id: &UserId,
         actor: &AdminActor,
     ) -> Result<u64, AdminError> {
+        let now_unix = self.now()?;
         let sessions = self
             .admin
             .list_sessions_for_user(user_id)
             .await
             .map_err(map_admin_dependency_error)?;
         let mut revoked = 0u64;
+        // Only sessions still usable: session rows are kept forever, so
+        // expired ones are already over and revoking them would only add
+        // audit noise and unbounded work.
         for session in sessions
             .iter()
-            .filter(|session| session.revoked_at_unix.is_none())
+            .filter(|session| session.status(now_unix) == SessionStatus::Active)
         {
             let event = self.event(
                 AdminAction::RevokeSession,

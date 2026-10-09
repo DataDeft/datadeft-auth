@@ -117,9 +117,11 @@ pub trait SessionRepository {
 
     /// Whether a session created at `session_created_at_unix` may still be
     /// used by its owner: the profile exists, is not disabled, and the session
-    /// is not older than the profile's `sessions_valid_after` watermark (set
-    /// when an admin re-enables the user, so enabling never restores sessions
-    /// from before the disable, even if revoking them failed).
+    /// was created strictly after the profile's `sessions_valid_after`
+    /// watermark (set when an admin re-enables the user, so enabling never
+    /// restores sessions from before the disable, even if revoking them
+    /// failed). The watermark comes from the admin host's clock, the session
+    /// time from the auth host's: keep host clocks synchronized.
     ///
     /// Called on every session validation, so disabling a user ends all of
     /// their sessions immediately. Must fail closed: a missing profile is

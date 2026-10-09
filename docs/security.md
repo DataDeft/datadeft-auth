@@ -205,7 +205,11 @@ every admin endpoint before calling the service.
   the user may already be disabled, and calling again finishes revoking.
 - Enabling never restores a session from before the disable, even one whose
   revocation failed: it stamps a `sessions_valid_after` watermark on the
-  profile, and validation rejects older sessions. The user logs in again.
+  profile, and validation accepts only sessions created strictly after it.
+  The user logs in again. The watermark uses the admin host's clock and the
+  session time the auth host's, so keep host clocks synchronized.
+- `revoke_all_sessions` ends only active sessions; expired ones are already
+  over and are left untouched, so the work and audit trail stay bounded.
 - Admin transactions use the audit event id as the DynamoDB idempotency token.
 - Audit events within the same second list in event-id order, not action
   order; use the timestamps.

@@ -122,7 +122,7 @@ impl SessionRepository for DynamoDbAuthStore {
             };
             // Sessions from before a re-enable stay invalid (watermark).
             let fresh_enough = optional_u64(item, "sessions_valid_after_unix")?
-                .is_none_or(|valid_after| session_created_at_unix >= valid_after);
+                .is_none_or(|valid_after| session_created_at_unix > valid_after);
             Ok(optional_s(item, "entity_type") == Some("user_profile")
                 && optional_s(item, "user_id") == Some(user_id.as_str())
                 && matches!(item.get("disabled"), Some(AttributeValue::Bool(false)))
