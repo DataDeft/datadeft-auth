@@ -410,3 +410,17 @@ mod aggregate_tests;
 mod flow_tests;
 #[cfg(test)]
 mod rotation_tests;
+
+#[cfg(test)]
+mod model_admin;
+#[cfg(test)]
+mod model_support;
+
+#[cfg(test)]
+mod model_boundary_tests;
+#[cfg(test)]
+mod model_flow_tests;
+#[cfg(test)]
+mod model_rotation_tests;
+#[cfg(test)]
+mod model_session_tests;
