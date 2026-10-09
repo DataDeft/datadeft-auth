@@ -4,6 +4,16 @@ All notable changes to this workspace are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crates follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2](https://github.com/DataDeft/datadeft-auth/compare/v0.4.1...v0.4.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* **admin:** enable_user revokes live sessions before re-enabling ([df18d26](https://github.com/DataDeft/datadeft-auth/commit/df18d260262a069ea5b7d367dacc0e20b513586c))
+* **aws:** claim the previous-key email row when creating a user ([6e95cb3](https://github.com/DataDeft/datadeft-auth/commit/6e95cb3a960a7f7892d71dd7313ba52ad0ca5437))
+* **aws:** classify sign-up cancellations by the transaction's real layout ([e5825e0](https://github.com/DataDeft/datadeft-auth/commit/e5825e0b46d5eb800ae581066b72fe0555337c87))
+* **magic-link-core:** reject NUL in lookup HMAC domain and prefix ([afb4685](https://github.com/DataDeft/datadeft-auth/commit/afb46854dcecc3c9591dde781bd6e542792c9bcd))
+
 ## [0.4.1](https://github.com/DataDeft/datadeft-auth/compare/v0.4.0...v0.4.1) (2026-10-09)
 
 
