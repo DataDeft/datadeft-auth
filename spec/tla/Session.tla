@@ -43,8 +43,9 @@ CONSTANTS
                     \* 0 is the current code. Tol is the candidate fix.
     WithAdmin,      \* explore disable / revoke_all / enable
     WithRefresh,    \* explore refresh_session_cookie
-    WatermarkStrict,   \* TRUE: accept created > wm (0.4); FALSE: created >= wm
-                       \* (0.5, so a login in the same second as the enable works)
+    WatermarkStrict,   \* TRUE: accept created > wm (the shipped code); FALSE:
+                       \* created >= wm (planned, so a login in the same second
+                       \* as the enable works; safe only with EnableRevokesFirst)
     EnableRevokesFirst \* enable_user revokes every live session before it
                        \* re-enables, and revoke_all keeps sessions within Tol
                        \* of expiry. FALSE is the 0.4.1 code, TRUE the fix.
@@ -337,9 +338,10 @@ Inv_NoAcceptPastIdle == ~accPastIdle
 Inv_NoAcceptDisabledOwner == ~accDisabled
 
 \* SES-INV-005: a session created before the enable watermark never validates
-\* (stored values). WatermarkStrict = FALSE (0.5) also accepts a session created
-\* in the watermark's own second, so an immediate re-login works; the revocation
-\* that enable runs first keeps pre-disable sessions out (SES-INV-009).
+\* (stored values). The shipped cutoff is strict (WatermarkStrict = TRUE). The
+\* planned WatermarkStrict = FALSE also accepts a session created in the
+\* watermark's own second, so an immediate re-login works; the revocation that
+\* enable runs first keeps pre-disable sessions out (SES-INV-009).
 Inv_NoAcceptAtOrBeforeWatermark == ~accWatermark
 
 \* SES-INV-006: refresh never changes iat. Every cookie of a session carries

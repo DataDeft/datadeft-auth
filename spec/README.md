@@ -33,8 +33,8 @@ spec/
     Session.cfg        validation and refresh (one session, no admin)
     SessionAdmin.cfg   disable, revoke-all, enable (one session, no refresh)
     KeyRotation.tla    first signup during a rolling storage-key rotation
-    PowBudget.tla      per-solve PoW budget across nodes (planned, 0.5.0)
-    Erasure.tla        user erasure (planned, 0.5.0; low priority)
+    PowBudget.tla      per-solve PoW budget across nodes (planned)
+    Erasure.tla        user erasure (planned; low priority)
     Pow.tla            proof-of-work admission difficulty
     Liveness.tla       happy-path progress
     *.cfg              constants and invariants per model
@@ -67,6 +67,9 @@ wrong binding rejected before any consume, a disabled user's confirm does not
 burn the challenge). Disabling a user also ends their session; that is
 modeled in `Session.tla`.
 
+`FlowStateRead` models a planned redirect landing mode. It is not in the code
+yet.
+
 ### MagicLinkRace.tla
 
 Two confirmations race over one challenge, with an ambiguous transaction
@@ -86,13 +89,17 @@ invariant fails when a guard is wrong.
 past-absolute sessions never validate; refresh keeps `iat`, never mints past
 the absolute lifetime, and only follows a same-request validation.
 
-Both configurations use the 0.5 re-enable cutoff (`WatermarkStrict = FALSE`:
-a session created in the enable's own second is accepted), which is safe
-because enable revokes first.
+Both configurations check the shipped re-enable cutoff
+(`WatermarkStrict = TRUE`): a session must be created strictly after the
+enable watermark. The `>=` cutoff (`WatermarkStrict = FALSE`, a session
+created in the enable's own second is accepted) is a planned change
+(CeleraTax #12). `mise run spec` checks it as an extra run of
+`SessionAdmin.cfg` with `-c WatermarkStrict=FALSE`. It is safe only because
+enable revokes first.
 
 `SessionAdmin.cfg` checks the admin paths with injected revoke failures:
 disabled owners never validate, sessions at or before the enable watermark
-never validate, and no session that existed at a re-enable validates
+never validate (`Inv_NoAcceptAtOrBeforeWatermark`, under the strict cutoff), and no session that existed at a re-enable validates
 afterwards (`Inv_NoPreEnableSurvivor`). That last one failed for the 0.4.1
 code (`EnableRevokesFirst = FALSE`); see finding SES-F1 in
 [docs/formal-methods.md](../docs/formal-methods.md).

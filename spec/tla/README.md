@@ -9,6 +9,7 @@ tla MagicLink.tla --allow-deadlock
 tla MagicLinkRace.tla --allow-deadlock
 tla Session.tla --allow-deadlock
 tla Session.tla --config SessionAdmin.cfg --allow-deadlock
+tla Session.tla --config SessionAdmin.cfg --allow-deadlock -c WatermarkStrict=FALSE
 tla KeyRotation.tla --allow-deadlock
 tla PowBudget.tla --allow-deadlock
 tla Erasure.tla --allow-deadlock
@@ -52,7 +53,22 @@ tla KeyRotation.tla --allow-deadlock -c DualWrite=FALSE
 | Session | `Tol`, `Skew` | 1, 1 | Code skew tolerance; real clock spread between hosts. |
 | Session | `MaxTime` | 10 (admin: 5) | Bound on true time. |
 | Session | `EnableRevokesFirst` | TRUE | The fix for SES-F1; FALSE is 0.4.1. |
+| Session | `WatermarkStrict` | TRUE | The shipped re-enable cutoff: accept only `created > wm`. FALSE is the planned `>=` cutoff, checked as an extra `SessionAdmin.cfg` run. |
+| Session | `WatermarkSlack` | 0 | Enable stores `wm = reading + WatermarkSlack`. 0 is the current code. |
+| Session | `RevokeMayFail` | TRUE | Revoke-all may stop part way (dependency error). |
 | KeyRotation | `Procs` | `{p1, p2}` | Signups for one email. |
 | KeyRotation | `DualWrite` | TRUE | The fix for ROT-F1; FALSE is 0.4.1. |
 | Pow | `Floor`, `Base`, `MaxDiff` | 1, 1, 2 | Difficulty floor, base, bound. |
 | Pow | `Countries` | `{c1, c2}` | Policy classes (application-level). |
+| PowBudget | `Nodes` | `{n1, n2}` | Nodes the one proof is presented to. |
+| PowBudget | `Budget` | 2 | Admissions per proof. |
+| PowBudget | `Lifetime` | 3 | Ticks the proof is valid. |
+| PowBudget | `Window` | 1 | Window length when `OverLifetime = FALSE`. |
+| PowBudget | `Shared` | TRUE | One budget counter for all nodes; FALSE is one per node. |
+| PowBudget | `OverLifetime` | TRUE | Budget counted over the proof's lifetime; FALSE is a window that refills. |
+| PowBudget | `FailClosed` | TRUE | An unavailable limiter denies; FALSE admits uncounted. |
+| Erasure | `Users` | `{u1, u2, u3}` | User ids. |
+| Erasure | `Links` | `{l1, l2, l3}` | Magic links for the erased email. |
+| Erasure | `ErasePendingLinks` | TRUE | The erase write also deletes pending links for the email. |
+| Erasure | `ErasedIsInactive` | TRUE | Validation rejects an erased owner at once, like a disabled one. |
+| Erasure | `EraseAllKeys` | TRUE | The erase write removes lookup rows under every storage key. |

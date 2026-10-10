@@ -54,6 +54,8 @@ tla spec/tla/MagicLink.tla --allow-deadlock
 tla spec/tla/MagicLinkRace.tla --allow-deadlock
 tla spec/tla/Session.tla --allow-deadlock
 tla spec/tla/Session.tla --config spec/tla/SessionAdmin.cfg --allow-deadlock
+# Planned >= re-enable cutoff (CeleraTax #12): must hold once enable revokes first.
+tla spec/tla/Session.tla --config spec/tla/SessionAdmin.cfg --allow-deadlock -c WatermarkStrict=FALSE
 tla spec/tla/KeyRotation.tla --allow-deadlock
 tla spec/tla/PowBudget.tla --allow-deadlock
 tla spec/tla/Erasure.tla --allow-deadlock
@@ -112,7 +114,7 @@ description = "Check the declared minimum Rust version (install rustup toolchain
 run = "cargo +1.88.0 check --workspace --all-targets --all-features --locked"
 
 [tasks.verify]
-description = "Full verification: fmt-check + clippy + test + docs + audit + token-core-guard + ts-verify + spec"
+description = "Full verification: fmt-check + clippy + test + docs + audit + token-core-guard + ts-verify + spec + spec-mutants + release-check + workflow-check"
 depends = ["fmt-check", "clippy", "test", "docs", "audit", "token-core-guard", "ts-verify", "spec", "spec-mutants", "release-check", "workflow-check"]
 
 [tasks.js-lock]

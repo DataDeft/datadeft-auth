@@ -163,7 +163,7 @@ const MUTANTS: Mutant[] = [
     name: "0.4.1 enable: re-enable without revoking first (finding SES-F1)",
     spec: "Session",
     config: "SessionAdmin",
-    constants: { EnableRevokesFirst: "FALSE" },
+    constants: { WatermarkStrict: "TRUE", EnableRevokesFirst: "FALSE" },
     expect: "Inv_NoPreEnableSurvivor",
   },
   // --- KeyRotation.tla -----------------------------------------------------
@@ -184,7 +184,7 @@ const MUTANTS: Mutant[] = [
     expect: "Inv_OneAccountPerEmail",
   },
   {
-    name: "0.5 cutoff (>=) without revoking first",
+    name: "planned cutoff (>=) without revoking first",
     spec: "Session",
     config: "SessionAdmin",
     constants: { WatermarkStrict: "FALSE", EnableRevokesFirst: "FALSE" },
