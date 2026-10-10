@@ -48,8 +48,8 @@ strings) are unchanged. Cookie bodies change only because they carry ids.
 
 ## 4. Work items
 
-Status: **Done** (on `main`, tested), **In progress**, **Proposed** (needs a
-maintainer decision, Section 10), **Deferred**.
+Status: **Done** (on `main`, tested), **In progress**, **Accepted** (decided
+in Section 10, not done yet), **Deferred**.
 
 ### 4.1 Hyphen ids (#1) — Done
 - Every library-minted id is `<tag>-<lowercase hex>`: `usr-` + 32, `sid-` + 64,
@@ -77,7 +77,7 @@ Library side done; the example's static page and the docs are next.
      the page can say "request a new link"; a dependency outage is the
      constant `503`, so the page can say "try again";
    - same-origin only: no CORS headers, `Cross-Origin-Resource-Policy:
-     same-origin`, and `Sec-Fetch-Site` must be `same-origin` (see 10.3);
+     same-origin`, and `Sec-Fetch-Site` must be present and `same-origin`;
    - `Cache-Control: no-store` plus the landing security headers;
    - throttled per selector like the landing; repeatable; read-only, never
      consumes (`spec/tla/MagicLink.tla`, `FlowStateRead`).
@@ -212,7 +212,7 @@ example ships both modes (next).
 - Every public refusal has a stable internal reason, never sent:
   `MagicLinkHttpError::reason()` and `ProofRejection::reason()`, distinct per
   cause, with no identifiers, emails or token material. No logging dependency.
-- Proposed (10.4): make the reason an enum, and give
+- Accepted, in progress: make the reason an enum, and give
   `RequestMagicLinkOutcome` an internal disposition (`Sent`,
   `Throttled(reason)`) so throttled requests, which answer the generic `200`,
   can be counted too.
@@ -231,7 +231,7 @@ example ships both modes (next).
 - The changelog gets a short "Security fixes" section advising 0.4.0 users to
   upgrade before rotating storage keys or using disable/enable in production.
 
-### 4.16 Admin concurrency: conditional writes — Proposed (10.1)
+### 4.16 Admin concurrency: conditional writes — Accepted, in progress
 Today concurrent admin actions on one user are last-write-wins: a delayed
 enable can undo a later disable (documented as ADM-F1).
 - Each user profile carries a `version`. Disable and enable write only if the
@@ -240,11 +240,8 @@ enable can undo a later disable (documented as ADM-F1).
   still completes revocation.
 - Size: about 300–500 lines, mostly tests (service, DynamoDB condition, fake,
   admin race tests, DynamoDB Local, a two-admin TLA+ model and mutant).
-- If declined: keep the documentation and the operating rule in
-  `security.md`: one admin action per user at a time; re-read after an error
-  or timeout.
 
-### 4.17 Protect client and the status contract — Done (naming in 10.2)
+### 4.17 Protect client and the status contract — Done
 - `@datadeft/protect-client` exports `protectedFetch(input, init, config,
   options)`:
   - `401` + `WWW-Authenticate: DD-PoW`: solve once, resend once;
@@ -341,18 +338,17 @@ Rules:
   `aws_storage_hmac_b64` → `storage_hmac_b64`; no value in two fields.
 - Account deletion stays `disable_user` until erasure ships (4.11).
 
-## 10. Decisions pending
+## 10. Decisions
 
-1. **4.16 conditional admin writes:** in 0.5.0, or keep last-write-wins with
-   the documented operating rule? Recommendation: in, since the release breaks
-   storage anyway.
-2. **4.17 client name:** keep `protectedFetch`, or rename to `fetchWithPow`?
-   Behaviour (including the `503` backoff) stays either way.
-3. **Flow-state `Sec-Fetch-Site`:** refuse a request without the header too
-   (every current browser sends it), or allow it? Recommendation: refuse.
-4. **Reasons:** an enum instead of string codes, plus the internal request
-   disposition for throttled requests? Recommendation: yes.
+Decided by the maintainers:
 
-Resolved: the flow-state route is app-chosen and validated against the confirm
-cookie path; erasure is deferred; no release candidates; shape errors are
-`400`.
+1. **4.16 conditional admin writes:** in 0.5.0.
+2. **4.17 client name:** `protectedFetch`, with the `503` backoff.
+3. **Flow-state `Sec-Fetch-Site`:** a request without the header is refused
+   (the generic `{ "usable": false }`).
+4. **Reasons:** typed enums, plus an internal `Sent` / `Throttled(reason)`
+   disposition on the request outcome.
+
+Also resolved: the flow-state route is app-chosen and validated against the
+confirm cookie path; erasure is deferred; no release candidates; shape errors
+are `400`.

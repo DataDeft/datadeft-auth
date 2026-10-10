@@ -123,6 +123,10 @@ async fn flow_state_without_a_usable_cookie_is_one_generic_answer() {
     for (name, headers) in [
         ("no cookie", flow_state_headers(None, Some("same-origin"))),
         (
+            "no Sec-Fetch-Site",
+            flow_state_headers(Some("dd_auth_confirm=value"), None),
+        ),
+        (
             "cross-site",
             flow_state_headers(Some("dd_auth_confirm=value"), Some("cross-site")),
         ),
@@ -160,7 +164,7 @@ async fn flow_state_without_a_usable_cookie_is_one_generic_answer() {
 
     // A cookie the service rejects gives the same answer.
     let response = magic_link_flow_state(
-        &flow_state_headers(Some("dd_auth_confirm=value"), None),
+        &flow_state_headers(Some("dd_auth_confirm=value"), Some("same-origin")),
         &config,
         |_command| async { Err(fixture_flow_error(FixtureFlowError::MagicLinkUnavailable).await) },
     )

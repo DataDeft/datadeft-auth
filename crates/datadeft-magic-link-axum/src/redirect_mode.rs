@@ -95,8 +95,8 @@ struct FlowStateBody<'a> {
 }
 
 /// Flow-state route of the redirect mode (`GET`). Same-origin only: a request
-/// whose `Sec-Fetch-Site` is present and not `same-origin` is treated as
-/// unusable, and no CORS headers are sent. Answers `no-store` with the
+/// without exactly `Sec-Fetch-Site: same-origin` is treated as unusable, and
+/// no CORS headers are sent. Answers `no-store` with the
 /// landing's security headers and `Cross-Origin-Resource-Policy: same-origin`.
 /// A dependency failure is the constant `503` (retry later); every other
 /// failure is the one `{ "usable": false }` answer, which also clears the
@@ -155,10 +155,12 @@ where
     response
 }
 
+/// Anything but exactly one `Sec-Fetch-Site: same-origin`, including a
+/// missing header: every current browser sends it.
 fn is_cross_site(headers: &HeaderMap) -> bool {
     let mut values = headers.get_all(SEC_FETCH_SITE).iter();
     match values.next() {
-        None => false,
+        None => true,
         Some(value) => value.as_bytes() != b"same-origin" || values.next().is_some(),
     }
 }
