@@ -1,7 +1,7 @@
 //! Two admin workflows on one user, interleaved deterministically: an
 //! `enable_user` whose final write is delayed (a slow or retried request)
 //! lands after another admin has enabled, the user has logged in again, and a
-//! third admin has disabled the user again.
+//! third admin has disabled the user again (ADM-F1, fixed in 0.5.0).
 
 use std::sync::Arc;
 
@@ -64,12 +64,18 @@ impl AuthAdminRepository for GatedEnable {
         self.store.revoke_session_audited(event).await
     }
 
-    async fn set_user_disabled_audited(&self, event: &AdminEvent) -> Result<(), DependencyError> {
+    async fn set_user_disabled_audited(
+        &self,
+        event: &AdminEvent,
+        expected_version: u64,
+    ) -> Result<(), DependencyError> {
         if event.action == AdminAction::EnableUser {
             self.reached.notify_one();
             self.release.notified().await;
         }
-        self.store.set_user_disabled_audited(event).await
+        self.store
+            .set_user_disabled_audited(event, expected_version)
+            .await
     }
 
     async fn list_admin_events(
@@ -82,15 +88,14 @@ impl AuthAdminRepository for GatedEnable {
     }
 }
 
-/// Accepted tradeoff ADM-F1 (docs/security.md): concurrent admin actions on
-/// one user are last-write-wins. X's enable observed an earlier disabled
-/// period; its delayed write lands after Y's enable, a login (S1), and Z's
-/// disable whose revocation of S1 failed. The write succeeds, Z's disable is
-/// undone, and S1 validates again. The user record shows the real state; the
-/// audit log lists X's enable before Z's disable. If this test starts failing,
-/// the behaviour changed: update the docs with it.
+/// ADM-F1 (docs/security.md): X's enable observed an earlier disabled period;
+/// its delayed write lands after Y's enable, a login (S1), and Z's disable
+/// whose revocation of S1 failed. Admin writes are conditional on the
+/// version they read, so X's write fails with `Conflict`: Z's disable holds,
+/// S1 stays rejected, and the audit log has no enable from X. (Under 0.4 the
+/// write succeeded and silently undid Z's disable.)
 #[tokio::test]
-async fn concurrent_admin_actions_are_last_write_wins() {
+async fn a_stale_admin_write_conflicts_instead_of_undoing_a_later_one() {
     let mut h = Harness::new(41);
     h.login_at(T0, 0).await;
     let id = h.only_user();
@@ -124,9 +129,10 @@ async fn concurrent_admin_actions_are_last_write_wins() {
             .await
             .expect("Y enable");
         let s1 = h.login_at(T0 + 30, 0).await;
-        // Z disables; the revocation of S1 fails (call 2 is the revoke).
+        // Z disables; the revocation of S1 fails (calls: read, write, list,
+        // then the revoke).
         h.clock.set(T0 + 40);
-        let failing = FailingAdmin::new(&store, Fault::FailAt(2));
+        let failing = FailingAdmin::new(&store, Fault::FailAt(3));
         assert_eq!(
             h.admin_with(&failing).disable_user(&id, &actor()).await,
             Err(AdminError::Unavailable)
@@ -136,15 +142,14 @@ async fn concurrent_admin_actions_are_last_write_wins() {
         s1
     });
 
-    // X's delayed enable lands and wins.
-    assert_eq!(x_result, Ok(()));
+    // X's delayed enable lost the race and wrote nothing.
+    assert_eq!(x_result, Err(AdminError::Conflict));
     let user = store.get_user(&id).await.expect("get").expect("user");
-    assert!(!user.disabled, "the user record shows the real state");
+    assert!(user.disabled, "Z's disable holds");
     h.clock.set(T0 + 50);
-    assert!(h.validate(&s1, None).await.is_ok(), "S1 is live again");
+    assert!(h.validate(&s1, None).await.is_err(), "S1 stays rejected");
 
-    // The audit log lists events by their prepared time: X's enable (T0+10)
-    // sorts below Z's disable (T0+40) although it was applied last.
+    // The audit log has every applied toggle and nothing from X.
     let events = store
         .list_admin_events(&id, None, 100)
         .await
@@ -160,7 +165,6 @@ async fn concurrent_admin_actions_are_last_write_wins() {
         vec![
             (AdminAction::DisableUser, T0 + 40),
             (AdminAction::EnableUser, T0 + 20),
-            (AdminAction::EnableUser, T0 + 10),
             (AdminAction::DisableUser, T0 + 1),
         ]
     );

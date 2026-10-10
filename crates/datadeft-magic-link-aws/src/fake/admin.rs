@@ -26,6 +26,11 @@ impl FakeDynamoDbInner {
             terms_version: profile.terms_version.clone(),
             privacy_version: profile.privacy_version.clone(),
             consented_at_unix: profile.consented_at_unix,
+            admin_version: self
+                .admin_versions
+                .get(profile.user_id.as_str())
+                .copied()
+                .unwrap_or(0),
         }
     }
 
@@ -186,7 +191,11 @@ impl AuthAdminRepository for FakeDynamoDbAuthStore {
         Ok(())
     }
 
-    async fn set_user_disabled_audited(&self, event: &AdminEvent) -> Result<(), DependencyError> {
+    async fn set_user_disabled_audited(
+        &self,
+        event: &AdminEvent,
+        expected_version: u64,
+    ) -> Result<(), DependencyError> {
         let disable = match event.action {
             AdminAction::DisableUser => true,
             AdminAction::EnableUser => false,
@@ -194,14 +203,24 @@ impl AuthAdminRepository for FakeDynamoDbAuthStore {
         };
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
+        // Every condition first, like DynamoDB: a failure writes nothing.
+        let version = inner
+            .admin_versions
+            .get(event.user_id.as_str())
+            .copied()
+            .unwrap_or(0);
+        let next_version = version.checked_add(1).ok_or(DependencyError::Internal)?;
         let profile = inner
             .user_profiles_by_id
             .get_mut(event.user_id.as_str())
             .ok_or(DependencyError::ConditionalWriteFailed)?;
-        if profile.disabled == disable {
+        if profile.disabled == disable || version != expected_version {
             return Err(DependencyError::ConditionalWriteFailed);
         }
         profile.disabled = disable;
+        inner
+            .admin_versions
+            .insert(event.user_id.as_str().to_owned(), next_version);
         let meta = if disable {
             DisabledMeta {
                 at_unix: Some(event.at_unix),

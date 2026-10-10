@@ -231,15 +231,15 @@ example ships both modes (next).
 - The changelog gets a short "Security fixes" section advising 0.4.0 users to
   upgrade before rotating storage keys or using disable/enable in production.
 
-### 4.16 Admin concurrency: conditional writes — Accepted, in progress
+### 4.16 Admin concurrency: conditional writes — Done
 Today concurrent admin actions on one user are last-write-wins: a delayed
 enable can undo a later disable (documented as ADM-F1).
 - Each user profile carries a `version`. Disable and enable write only if the
   version is still the one they read; a lost race returns
   `AdminError::Conflict` and the admin re-reads and decides. A retried disable
   still completes revocation.
-- Size: about 300–500 lines, mostly tests (service, DynamoDB condition, fake,
-  admin race tests, DynamoDB Local, a two-admin TLA+ model and mutant).
+- Checked in `spec/tla/AdminRace.tla` (0.4's last-write-wins is a killed
+  mutant), the admin race test, the model tests, and against DynamoDB Local.
 
 ### 4.17 Protect client and the status contract — Done
 - `@datadeft/protect-client` exports `protectedFetch(input, init, config,

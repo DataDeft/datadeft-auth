@@ -105,20 +105,36 @@ impl DynamoDbAuthStore {
     pub(crate) fn set_user_disabled_transaction(
         &self,
         event: &AdminEvent,
+        expected_version: u64,
     ) -> Result<Vec<TransactWriteItem>, AwsAdapterError> {
+        let next_version = expected_version
+            .checked_add(1)
+            .ok_or(AwsAdapterError::Internal)?;
+        // A profile no admin has touched has no version yet: that is 0.
+        let version_condition = if expected_version == 0 {
+            "attribute_not_exists(admin_version)"
+        } else {
+            "admin_version = :expected_version"
+        };
         let builder = Update::builder()
             .table_name(&self.table_name)
             .key("pk", av_s(Self::pk_user_id(&event.user_id)))
             .key("sk", av_s("PROFILE"))
-            .condition_expression(
-                "entity_type = :profile AND user_id = :user AND disabled = :current",
-            )
+            .condition_expression(format!(
+                "entity_type = :profile AND user_id = :user AND disabled = :current AND {version_condition}"
+            ))
             .expression_attribute_values(":profile", av_s("user_profile"))
-            .expression_attribute_values(":user", av_s(event.user_id.as_str()));
+            .expression_attribute_values(":user", av_s(event.user_id.as_str()))
+            .expression_attribute_values(":next_version", av_n(next_version));
+        let builder = if expected_version == 0 {
+            builder
+        } else {
+            builder.expression_attribute_values(":expected_version", av_n(expected_version))
+        };
         let builder = match event.action {
             AdminAction::DisableUser => builder
                 .update_expression(
-                    "SET disabled = :target, disabled_at_unix = :at, disabled_by = :actor",
+                    "SET disabled = :target, disabled_at_unix = :at, disabled_by = :actor, admin_version = :next_version",
                 )
                 .expression_attribute_values(":current", av_bool(false))
                 .expression_attribute_values(":target", av_bool(true))
@@ -128,7 +144,7 @@ impl DynamoDbAuthStore {
             // invalid, even one whose revocation failed.
             AdminAction::EnableUser => builder
                 .update_expression(
-                    "SET disabled = :target, sessions_valid_after_unix = :at REMOVE disabled_at_unix, disabled_by",
+                    "SET disabled = :target, sessions_valid_after_unix = :at, admin_version = :next_version REMOVE disabled_at_unix, disabled_by",
                 )
                 .expression_attribute_values(":current", av_bool(true))
                 .expression_attribute_values(":target", av_bool(false))
@@ -395,10 +411,17 @@ impl AuthAdminRepository for DynamoDbAuthStore {
         .map_err(DependencyError::from)
     }
 
-    async fn set_user_disabled_audited(&self, event: &AdminEvent) -> Result<(), DependencyError> {
+    async fn set_user_disabled_audited(
+        &self,
+        event: &AdminEvent,
+        expected_version: u64,
+    ) -> Result<(), DependencyError> {
         async {
-            self.transact(event, self.set_user_disabled_transaction(event)?)
-                .await
+            self.transact(
+                event,
+                self.set_user_disabled_transaction(event, expected_version)?,
+            )
+            .await
         }
         .await
         .map_err(DependencyError::from)

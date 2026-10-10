@@ -218,15 +218,6 @@ impl Model {
         Ok(revoked)
     }
 
-    /// `set_disabled` for a user that has never logged in: the conditional
-    /// write fails and the follow-up read finds nothing.
-    fn set_disabled_unknown(budget: &mut Budget) -> Result<(), AdminError> {
-        match (budget.call(), budget.call()) {
-            (Fate::Normal, Fate::Normal) => Err(AdminError::NotFound),
-            _ => Err(AdminError::Unavailable),
-        }
-    }
-
     /// `set_disabled(disable)` for a known user, replayed.
     fn set_disabled(
         &mut self,
@@ -254,16 +245,23 @@ impl Model {
         }
     }
 
+    /// `disable_user`: read the user, write only if enabled (conditional on
+    /// the version read; one admin at a time here, so it never conflicts),
+    /// then revoke every live session.
     fn disable(&mut self, user: usize, budget: &mut Budget) -> Result<u64, AdminError> {
-        let set = if self.users[user].id.is_none() {
-            Self::set_disabled_unknown(budget)
-        } else {
-            self.set_disabled(user, true, budget)
-        };
-        match set {
-            Ok(()) | Err(AdminError::AlreadyInState) => self.revoke_all(user, budget),
-            Err(error) => Err(error),
+        if budget.call() != Fate::Normal {
+            return Err(AdminError::Unavailable);
         }
+        if self.users[user].id.is_none() {
+            return Err(AdminError::NotFound);
+        }
+        if !self.users[user].disabled {
+            match self.set_disabled(user, true, budget) {
+                Ok(()) | Err(AdminError::AlreadyInState) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        self.revoke_all(user, budget)
     }
 
     /// `enable_user`: read the user, revoke every live session, then write.

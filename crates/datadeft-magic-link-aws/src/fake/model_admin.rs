@@ -140,9 +140,16 @@ impl AuthAdminRepository for FailingAdmin {
         self.guarded(self.store.revoke_session_audited(event)).await
     }
 
-    async fn set_user_disabled_audited(&self, event: &AdminEvent) -> Result<(), DependencyError> {
-        self.guarded(self.store.set_user_disabled_audited(event))
-            .await
+    async fn set_user_disabled_audited(
+        &self,
+        event: &AdminEvent,
+        expected_version: u64,
+    ) -> Result<(), DependencyError> {
+        self.guarded(
+            self.store
+                .set_user_disabled_audited(event, expected_version),
+        )
+        .await
     }
 
     async fn list_admin_events(

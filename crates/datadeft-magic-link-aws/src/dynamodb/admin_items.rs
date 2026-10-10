@@ -73,6 +73,7 @@ pub(crate) fn item_to_user_summary(
         terms_version: optional_s_strict(item, "terms_version")?.map(str::to_owned),
         privacy_version: optional_s_strict(item, "privacy_version")?.map(str::to_owned),
         consented_at_unix: optional_u64(item, "consented_at_unix")?,
+        admin_version: optional_u64(item, "admin_version")?.unwrap_or(0),
     })
 }
 

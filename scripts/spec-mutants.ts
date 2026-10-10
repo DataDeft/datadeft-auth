@@ -190,6 +190,13 @@ const MUTANTS: Mutant[] = [
     constants: { WatermarkStrict: "FALSE", EnableRevokesFirst: "FALSE" },
     expect: "Inv_NoPreEnableSurvivor",
   },
+  // --- AdminRace.tla -------------------------------------------------------
+  {
+    name: "0.4 admin writes: last-write-wins (finding ADM-F1)",
+    spec: "AdminRace",
+    constants: { Versioned: "FALSE" },
+    expect: "Inv_NoStaleWrite",
+  },
   // --- PowBudget.tla -------------------------------------------------------
   {
     name: "per-node budget counters",

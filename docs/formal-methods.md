@@ -33,7 +33,8 @@ versions when each MVP starts.
 | SES-INV-006..008 | Refresh keeps `iat`, never passes the absolute lifetime, and only follows a same-request validation. | `Session.tla` | `model_boundary_tests`, `refresh_tests` |
 | SES-INV-009 | No session that existed at a re-enable validates afterwards, whatever the clocks say. | `Session.tla` (`SessionAdmin.cfg`) | `pre_disable_session_from_a_clock_ahead_node_stays_dead_after_enable` |
 | ROT-INV-001/002 | One email never has two accounts during a rolling storage-key rotation. | `KeyRotation.tla` | `rolling_rotation_*`, `model_rotation_tests` |
-| POW-INV-004 | One PoW solve buys at most its budget of admissions across all nodes and its lifetime (planned). | `PowBudget.tla` | Not implemented yet |
+| POW-INV-004 | One PoW solve buys at most its budget of admissions across all nodes and its lifetime. | `PowBudget.tla` | `admission_tests`, `lifetime_limit_never_refills_against_dynamodb` |
+| ADM-INV-001 | No admin write applies on top of a change it did not see. | `AdminRace.tla` | `a_stale_admin_write_conflicts_instead_of_undoing_a_later_one`, `a_stale_admin_write_is_refused_against_dynamodb` |
 | ERASE-INV-001..005 | Erasure leaves no lookup to the user, no address in the profile, no valid session, no account from an older link; re-signup is a new user (planned, low priority). | `Erasure.tla` | Not implemented yet |
 | POW-INV-001 | Accepted proof met the production floor. | `Pow.tla` | PoW vectors, tamper tests; `pow_security` |
 | POW-INV-002 | A policy change after mint never lowers a challenge's difficulty. | `Pow.tla` | `pow_security` |
@@ -71,14 +72,14 @@ Findings the models produced:
   only, and `--allow-deadlock` hid stuck states, so the old liveness model
   passed even with its retry removed. Success is now an explicit terminal
   state and the model runs without `--allow-deadlock`.
-- **ADM-F1 (accepted, documented).** Concurrent admin actions on one user are
-  last-write-wins: an enable whose final write is delayed past another
-  admin's enable, a login, and a later disable undoes that disable and revives
-  a session whose revocation failed. Not reachable by users. The models run a
-  single admin process, so they do not explore it; the accepted behaviour is
-  pinned by `concurrent_admin_actions_are_last_write_wins`. Revisit with an
-  optimistic-concurrency counter on the profile if admin workflows become
-  concurrent in practice.
+- **ADM-F1 (fixed in 0.5.0).** Concurrent admin actions on one user were
+  last-write-wins: an enable whose final write was delayed past another
+  admin's enable, a login, and a later disable undid that disable and revived
+  a session whose revocation failed. Not reachable by users. Admin writes are
+  now conditional on the profile's `admin_version`; the stale write fails with
+  `AdminError::Conflict`. `AdminRace.tla` checks it (the 0.4 behaviour is a
+  killed mutant), and `a_stale_admin_write_conflicts_instead_of_undoing_a_later_one`
+  pins it in code.
 
 The v0.2.0 solve-timing signal (`Verified::mint_to_verify_ms`, the proof-cookie
 solve-class byte) is deliberately outside the models. It is observational: it

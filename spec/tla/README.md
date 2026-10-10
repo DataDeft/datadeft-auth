@@ -11,6 +11,7 @@ tla Session.tla --allow-deadlock
 tla Session.tla --config SessionAdmin.cfg --allow-deadlock
 tla KeyRotation.tla --allow-deadlock
 tla PowBudget.tla --allow-deadlock
+tla AdminRace.tla --allow-deadlock
 tla Erasure.tla --allow-deadlock
 tla Pow.tla --allow-deadlock
 tla Liveness.tla --check-liveness
@@ -59,6 +60,9 @@ tla KeyRotation.tla --allow-deadlock -c DualWrite=FALSE
 | KeyRotation | `DualWrite` | TRUE | The fix for ROT-F1; FALSE is 0.4.1. |
 | Pow | `Floor`, `Base`, `MaxDiff` | 1, 1, 2 | Difficulty floor, base, bound. |
 | Pow | `Countries` | `{c1, c2}` | Policy classes (application-level). |
+| AdminRace | `Admins` | `{a1, a2}` | Admins acting on one user concurrently. |
+| AdminRace | `MaxActs` | 2 | Read-then-write actions per admin. |
+| AdminRace | `Versioned` | TRUE | Writes are conditional on the version read; FALSE is 0.4's last-write-wins. |
 | PowBudget | `Nodes` | `{n1, n2}` | Nodes the one proof is presented to. |
 | PowBudget | `Budget` | 2 | Admissions per proof. |
 | PowBudget | `Lifetime` | 3 | Ticks the proof is valid. |

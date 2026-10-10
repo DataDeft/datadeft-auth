@@ -474,3 +474,59 @@ async fn disable_and_enable_against_dynamodb() {
         .await
     );
 }
+
+/// ADM-F1 against the real condition expression: an admin write based on a
+/// version another admin has since bumped is refused, and the service maps
+/// the lost race to `AdminError::Conflict`.
+#[tokio::test]
+#[ignore = "needs DynamoDB Local: mise run dynamodb-local-test"]
+async fn a_stale_admin_write_is_refused_against_dynamodb() {
+    use datadeft_magic_link_service::{AdminAction, AdminEvent, AdminEventId, AuthAdminRepository};
+
+    let client = client().await;
+    let store = DynamoDbAuthStore::new(
+        client.clone(),
+        table(&client, "adminrace").await,
+        StorageHmacKey::new([0x31; 32]),
+    );
+    let keys = keys();
+    let mut rng = OsRng;
+    let user = login(&store, &keys, &mut rng, "race@example.test")
+        .await
+        .authentication()
+        .user_id()
+        .clone();
+    let stale = store.get_user(&user).await.expect("get").expect("user");
+    assert_eq!(stale.admin_version, 0);
+
+    let actor = AdminActor::new("ops", None).expect("actor");
+    let mut admin = AuthAdminService {
+        admin: &store,
+        clock: &WallClock,
+        rng: &mut rng,
+    };
+    admin.disable_user(&user, &actor).await.expect("disable");
+    admin.enable_user(&user, &actor).await.expect("enable");
+    let fresh = store.get_user(&user).await.expect("get").expect("user");
+    assert_eq!(fresh.admin_version, 2);
+    assert!(!fresh.disabled);
+
+    // A disable prepared from the stale read (version 0) must not apply.
+    let stale_disable = AdminEvent {
+        event_id: AdminEventId::parse(&format!("evt-{}", random_hex(16))).expect("id"),
+        at_unix: now(),
+        action: AdminAction::DisableUser,
+        user_id: user.clone(),
+        session: None,
+        actor: actor.clone(),
+    };
+    assert_eq!(
+        store
+            .set_user_disabled_audited(&stale_disable, stale.admin_version)
+            .await,
+        Err(DependencyError::ConditionalWriteFailed)
+    );
+    let after = store.get_user(&user).await.expect("get").expect("user");
+    assert!(!after.disabled, "nothing was written");
+    assert_eq!(after.admin_version, 2);
+}

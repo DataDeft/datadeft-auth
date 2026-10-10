@@ -77,6 +77,10 @@ no data migration is provided, and every existing session ends.
   between EU countries and stay exact elsewhere. Drop edge rewrites of the
   country header. `ValidatedSession::country()` returns the pinned value,
   which is `EU` for a session in the group.
+- **Admin writes are conditional:** `AuthAdminRepository::
+  set_user_disabled_audited` takes the `admin_version` the caller read, and
+  `UserSummary` carries it. A lost race returns `AdminError::Conflict`
+  (nothing written); re-read and decide again.
 - **Request outcome:** `request_magic_link` returns
   `RequestMagicLinkOutcome::Sent` or `Throttled(RequestThrottle)` instead of a
   unit struct. Count it; the public answer stays the same `200`.

@@ -190,17 +190,23 @@ where
     /// sessions are rejected regardless); calling again finishes revoking.
     /// Calling it for an already-disabled user just completes revocation and
     /// is not an error.
+    ///
+    /// Returns [`AdminError::Conflict`] if another admin enabled or changed
+    /// the user between this call's read and its write; nothing is written.
     pub async fn disable_user(
         &mut self,
         user_id: &UserId,
         actor: &AdminActor,
     ) -> Result<u64, AdminError> {
-        match self
-            .set_disabled(AdminAction::DisableUser, user_id, actor)
-            .await
-        {
-            Ok(()) | Err(AdminError::AlreadyInState) => {}
-            Err(error) => return Err(error),
+        let user = self.read_user(user_id).await?;
+        if !user.disabled {
+            match self
+                .set_disabled(AdminAction::DisableUser, user_id, user.admin_version, actor)
+                .await
+            {
+                Ok(()) | Err(AdminError::AlreadyInState) => {}
+                Err(error) => return Err(error),
+            }
         }
         self.revoke_all_sessions(user_id, actor).await
     }
@@ -219,51 +225,65 @@ where
     ///
     /// Safe to retry: on an error the user stays disabled.
     ///
-    /// Concurrent admin actions on one user are last-write-wins: the final
-    /// write only checks that the user is still disabled. A delayed enable
-    /// can therefore undo a disable another admin made after this call read
-    /// the user. Serialize admin actions per user, and re-read the user with
-    /// [`Self::get_user`] after an error or timeout (docs/security.md,
+    /// The final write is conditional on the user's `admin_version` from this
+    /// call's read: if another admin disabled, enabled, or changed the user in
+    /// between (for example a disable made while this enable was revoking),
+    /// nothing is written and the result is [`AdminError::Conflict`]. Re-read
+    /// the user with [`Self::get_user`] and decide again (docs/security.md,
     /// ADM-F1).
     pub async fn enable_user(
         &mut self,
         user_id: &UserId,
         actor: &AdminActor,
     ) -> Result<(), AdminError> {
-        match self
-            .admin
-            .get_user(user_id)
-            .await
-            .map_err(map_admin_dependency_error)?
-        {
-            None => return Err(AdminError::NotFound),
-            Some(user) if !user.disabled => return Err(AdminError::AlreadyInState),
-            Some(_) => {}
+        let user = self.read_user(user_id).await?;
+        if !user.disabled {
+            return Err(AdminError::AlreadyInState);
         }
         // The user is disabled, so no new session can start meanwhile.
         self.revoke_all_sessions(user_id, actor).await?;
-        self.set_disabled(AdminAction::EnableUser, user_id, actor)
+        self.set_disabled(AdminAction::EnableUser, user_id, user.admin_version, actor)
             .await
     }
 
+    async fn read_user(&self, user_id: &UserId) -> Result<UserSummary, AdminError> {
+        self.admin
+            .get_user(user_id)
+            .await
+            .map_err(map_admin_dependency_error)?
+            .ok_or(AdminError::NotFound)
+    }
+
+    /// The conditional write; on a failed condition, a re-read tells a
+    /// missing user, a user already in the target state, and a lost race
+    /// apart.
     async fn set_disabled(
         &mut self,
         action: AdminAction,
         user_id: &UserId,
+        expected_version: u64,
         actor: &AdminActor,
     ) -> Result<(), AdminError> {
         let event = self.event(action, user_id, None, actor)?;
-        match self.admin.set_user_disabled_audited(&event).await {
+        match self
+            .admin
+            .set_user_disabled_audited(&event, expected_version)
+            .await
+        {
             Ok(()) => Ok(()),
             Err(DependencyError::ConditionalWriteFailed) => {
+                let target_disabled = action == AdminAction::DisableUser;
                 match self
                     .admin
                     .get_user(user_id)
                     .await
                     .map_err(map_admin_dependency_error)?
                 {
-                    Some(_) => Err(AdminError::AlreadyInState),
                     None => Err(AdminError::NotFound),
+                    Some(user) if user.disabled == target_disabled => {
+                        Err(AdminError::AlreadyInState)
+                    }
+                    Some(_) => Err(AdminError::Conflict),
                 }
             }
             Err(error) => Err(map_admin_dependency_error(error)),

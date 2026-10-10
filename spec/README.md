@@ -33,7 +33,8 @@ spec/
     Session.cfg        validation and refresh (one session, no admin)
     SessionAdmin.cfg   disable, revoke-all, enable (one session, no refresh)
     KeyRotation.tla    first signup during a rolling storage-key rotation
-    PowBudget.tla      per-solve PoW budget across nodes (planned)
+    PowBudget.tla      per-solve PoW budget across nodes
+    AdminRace.tla      two admins disabling and enabling one user concurrently
     Erasure.tla        user erasure (planned; low priority)
     Pow.tla            proof-of-work admission difficulty
     Liveness.tla       happy-path progress
@@ -110,10 +111,18 @@ previous) serve the same table during a rolling rotation. One email must never
 get two accounts. It failed for the 0.4.1 code (`DualWrite = FALSE`): finding
 ROT-F1.
 
+### AdminRace.tla
+
+Two admins read a user and later write the opposite state, interleaving
+freely. No write applies on top of a change it did not see
+(`Inv_NoStaleWrite`) only because writes are conditional on the profile
+version read. It failed for the 0.4 code (`Versioned = FALSE`): finding
+ADM-F1.
+
 ### PowBudget.tla
 
-One solved proof presented to several nodes over its lifetime. The planned
-per-solve budget holds (at most N admissions per solve) only with all three
+One solved proof presented to several nodes over its lifetime. The per-solve
+budget holds (at most N admissions per solve) only with all three
 design rules: one shared counter (not per node), counted over the proof's
 lifetime (not a window that refills), and failing closed when the limiter is
 unavailable. Each rule has a mutant.

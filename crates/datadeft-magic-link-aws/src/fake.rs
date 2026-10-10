@@ -68,6 +68,7 @@ struct FakeDynamoDbInner {
     rate_counters: HashMap<String, u32>,
     lifetime_counters: HashMap<String, (u32, u64)>,
     disabled_meta: HashMap<String, DisabledMeta>,
+    admin_versions: HashMap<String, u64>,
     /// Per user: sessions created before this time are not valid (set on
     /// re-enable).
     sessions_valid_after: HashMap<String, u64>,

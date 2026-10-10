@@ -20,6 +20,9 @@ pub enum AdminError {
     /// The target is already in the requested state: the session is already
     /// revoked, or the user is already disabled / enabled.
     AlreadyInState,
+    /// Another admin changed the user after this action read it. Nothing was
+    /// written; re-read the user with `get_user` and decide again.
+    Conflict,
     /// A dependency is temporarily unavailable. Callers may retry.
     Unavailable,
     /// Storage returned an inconsistent record, or an invariant broke.
@@ -32,6 +35,7 @@ impl fmt::Display for AdminError {
             Self::InvalidInput => "invalid admin input",
             Self::NotFound => "not found",
             Self::AlreadyInState => "already in the requested state",
+            Self::Conflict => "changed by another admin action",
             Self::Unavailable => "admin operation unavailable",
             Self::Internal => "internal admin error",
         })
@@ -246,6 +250,10 @@ pub struct UserSummary {
     pub terms_version: Option<String>,
     pub privacy_version: Option<String>,
     pub consented_at_unix: Option<u64>,
+    /// Bumped by every disable and enable; `0` until the first. Admin writes
+    /// are conditional on the version they read, so concurrent admin actions
+    /// cannot silently overwrite each other.
+    pub admin_version: u64,
 }
 
 /// Lifecycle state of a session at a given time.

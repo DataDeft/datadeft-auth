@@ -336,14 +336,17 @@ async fn admin_mutations_on_unknown_users_report_not_found() {
 async fn disable_without_revoking(store: &FakeDynamoDbAuthStore, user_id: &UserId) {
     use datadeft_magic_link_service::{AdminEvent, AdminEventId, AuthAdminRepository};
     store
-        .set_user_disabled_audited(&AdminEvent {
-            event_id: AdminEventId::parse("evt-000102030405060708090a0b0c0d0e0f").expect("id"),
-            at_unix: 1_500,
-            action: AdminAction::DisableUser,
-            user_id: user_id.clone(),
-            session: None,
-            actor: admin_actor(),
-        })
+        .set_user_disabled_audited(
+            &AdminEvent {
+                event_id: AdminEventId::parse("evt-000102030405060708090a0b0c0d0e0f").expect("id"),
+                at_unix: 1_500,
+                action: AdminAction::DisableUser,
+                user_id: user_id.clone(),
+                session: None,
+                actor: admin_actor(),
+            },
+            0,
+        )
         .await
         .expect("disable");
 }

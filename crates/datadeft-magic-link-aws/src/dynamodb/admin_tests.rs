@@ -97,7 +97,7 @@ fn revoke_transaction_is_owner_checked_final_and_audited() {
 fn disable_and_enable_transactions_require_the_opposite_state() {
     let store = store();
     let disable = store
-        .set_user_disabled_transaction(&event(AdminAction::DisableUser, None))
+        .set_user_disabled_transaction(&event(AdminAction::DisableUser, None), 0)
         .expect("disable");
     let update = disable[0].update().expect("update");
     assert_eq!(
@@ -114,13 +114,26 @@ fn disable_and_enable_transactions_require_the_opposite_state() {
     assert_eq!(attribute(values, ":current"), Some(&av_bool(false)));
     assert_eq!(attribute(values, ":target"), Some(&av_bool(true)));
     assert!(update.update_expression().contains("disabled_by = :actor"));
+    // Version 0: no admin has written yet, so the attribute must be absent.
+    assert!(
+        update
+            .condition_expression()
+            .expect("condition")
+            .contains("attribute_not_exists(admin_version)")
+    );
+    assert!(
+        update
+            .update_expression()
+            .contains("admin_version = :next_version")
+    );
+    assert_eq!(attribute(values, ":next_version"), Some(&av_n(1)));
     assert_eq!(
         disable[1].put().expect("audit").item().get("action"),
         Some(&av_s("disable_user"))
     );
 
     let enable = store
-        .set_user_disabled_transaction(&event(AdminAction::EnableUser, None))
+        .set_user_disabled_transaction(&event(AdminAction::EnableUser, None), 4)
         .expect("enable");
     let update = enable[0].update().expect("update");
     let values = update.expression_attribute_values();
@@ -138,6 +151,15 @@ fn disable_and_enable_transactions_require_the_opposite_state() {
             .contains("sessions_valid_after_unix = :at")
     );
     assert_eq!(attribute(values, ":at"), Some(&av_n(1_234)));
+    // Conditional on the version the admin read; the write bumps it.
+    assert!(
+        update
+            .condition_expression()
+            .expect("condition")
+            .contains("admin_version = :expected_version")
+    );
+    assert_eq!(attribute(values, ":expected_version"), Some(&av_n(4)));
+    assert_eq!(attribute(values, ":next_version"), Some(&av_n(5)));
 }
 
 #[test]
@@ -155,7 +177,7 @@ fn mismatched_actions_are_rejected() {
     );
     assert!(
         store
-            .set_user_disabled_transaction(&event(AdminAction::RevokeSession, Some(HANDLE)))
+            .set_user_disabled_transaction(&event(AdminAction::RevokeSession, Some(HANDLE)), 0)
             .is_err()
     );
 }
