@@ -381,12 +381,12 @@ impl LoadedAuthSecrets {
         previous: Option<&AuthSecretDocument>,
     ) -> Result<Self, AwsAdapterError> {
         let lookup_bytes = Zeroizing::new(decode_key(&active.magic_link_lookup_hmac_b64)?);
-        let storage_bytes = Zeroizing::new(decode_key(&active.aws_storage_hmac_b64)?);
+        let storage_bytes = Zeroizing::new(decode_key(&active.storage_hmac_b64)?);
         let previous_lookup = previous_if_rotated(&lookup_bytes, previous, |document| {
             &document.magic_link_lookup_hmac_b64
         })?;
         let previous_storage = previous_if_rotated(&storage_bytes, previous, |document| {
-            &document.aws_storage_hmac_b64
+            &document.storage_hmac_b64
         })?;
         let confirm_keyring = KeyringRoots::from_documents(active, previous, |document| {
             &document.magic_link_confirm_cookie_root_b64
@@ -469,7 +469,7 @@ struct AuthSecretDocument {
     mint_until_unix: u64,
     verify_until_unix: u64,
     magic_link_lookup_hmac_b64: String,
-    aws_storage_hmac_b64: String,
+    storage_hmac_b64: String,
     session_cookie_root_b64: String,
     magic_link_confirm_cookie_root_b64: String,
     pow_challenge_secret_b64: String,
@@ -480,7 +480,7 @@ impl AuthSecretDocument {
     fn parse(json: &str) -> Result<Self, AwsAdapterError> {
         let parsed: Self = serde_json::from_str(json).map_err(|_| AwsAdapterError::Internal)?;
         if parsed.magic_link_lookup_hmac_b64.len() > KEY_B64_BYTES
-            || parsed.aws_storage_hmac_b64.len() > KEY_B64_BYTES
+            || parsed.storage_hmac_b64.len() > KEY_B64_BYTES
             || parsed.session_cookie_root_b64.len() > KEY_B64_BYTES
             || parsed.magic_link_confirm_cookie_root_b64.len() > KEY_B64_BYTES
             || parsed.pow_challenge_secret_b64.len() > KEY_B64_BYTES
@@ -505,7 +505,7 @@ impl AuthSecretDocument {
     fn ensure_distinct_keys(&self) -> Result<(), AwsAdapterError> {
         let fields = [
             &self.magic_link_lookup_hmac_b64,
-            &self.aws_storage_hmac_b64,
+            &self.storage_hmac_b64,
             &self.session_cookie_root_b64,
             &self.magic_link_confirm_cookie_root_b64,
             &self.pow_challenge_secret_b64,
@@ -529,7 +529,7 @@ impl AuthSecretDocument {
 impl Drop for AuthSecretDocument {
     fn drop(&mut self) {
         self.magic_link_lookup_hmac_b64.zeroize();
-        self.aws_storage_hmac_b64.zeroize();
+        self.storage_hmac_b64.zeroize();
         self.session_cookie_root_b64.zeroize();
         self.magic_link_confirm_cookie_root_b64.zeroize();
         self.pow_challenge_secret_b64.zeroize();

@@ -84,13 +84,13 @@ pub(super) fn build_state() -> AppResult<AppState> {
         ..
     } = secrets;
 
-    let session_cookie = SessionCookieConfig::local_development(&config)?;
+    let session_cookie = SessionCookieConfig::insecure_local(&config)?;
     let http_config = MagicLinkScannerFlowConfig::new(
         SameOriginRedirect::parse("/auth/magic-link/consume")
             .map_err(|_| SetupError("invalid magic-link POST action"))?,
         SameOriginPostConfig::parse(LOCAL_ORIGIN)?,
         session_cookie,
-        ConfirmCookieConfig::local_development_defaults(),
+        ConfirmCookieConfig::insecure_local_defaults(),
     )?;
 
     Ok(AppState {
@@ -122,7 +122,7 @@ fn development_secret_document(now_unix: u64) -> AppResult<String> {
         "mint_until_unix": mint_until,
         "verify_until_unix": verify_until,
         "magic_link_lookup_hmac_b64": key()?,
-        "aws_storage_hmac_b64": key()?,
+        "storage_hmac_b64": key()?,
         "session_cookie_root_b64": key()?,
         "magic_link_confirm_cookie_root_b64": key()?,
         "pow_challenge_secret_b64": key()?,

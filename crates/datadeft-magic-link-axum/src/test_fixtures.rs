@@ -32,8 +32,8 @@ pub(crate) fn scanner_config() -> MagicLinkScannerFlowConfig {
     MagicLinkScannerFlowConfig::new(
         SameOriginRedirect::parse("/auth/magic-link/confirm").expect("post action"),
         SameOriginPostConfig::parse("https://example.test").expect("origin"),
-        SessionCookieConfig::production(&policy()).expect("session policy"),
-        ConfirmCookieConfig::production_defaults(),
+        SessionCookieConfig::secure(&policy()).expect("session policy"),
+        ConfirmCookieConfig::secure_defaults(),
     )
     .expect("scanner config")
 }

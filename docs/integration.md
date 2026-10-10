@@ -48,6 +48,13 @@ lockfiles. No git credentials or vendored TypeScript are needed.
 pre-1.0 and has no production deployments, so the policy is to start from a
 fresh table and secret document: no data migration is provided.
 
+- **Cookie config constructors:** `production(...)` is now `secure(...)`,
+  `local_development(...)` is `insecure_local(...)`, and the `*_defaults()`
+  constructors follow (`secure_defaults()`, `insecure_local_defaults()`), on
+  `SessionCookieConfig`, `ConfirmCookieConfig` and `PowProofCookieConfig`. The
+  `secure()` getter is now `is_secure()`.
+- **Secret field rename:** `aws_storage_hmac_b64` is now `storage_hmac_b64`.
+  A document with the old name no longer loads.
 - **Auth secret document:** add `pow_challenge_secret_b64` and
   `pow_proof_cookie_root_b64` (32 random bytes each, independent of the other
   fields), and keep `kid` at 12 bytes or fewer. Remove app-owned PoW key

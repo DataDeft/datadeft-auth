@@ -110,8 +110,8 @@
 //!     let http_config = MagicLinkScannerFlowConfig::new(
 //!         SameOriginRedirect::parse("/auth/magic-link/consume").expect("post action"),
 //!         SameOriginPostConfig::parse("https://example.test").expect("origin"),
-//!         SessionCookieConfig::production(&config).expect("session cookie"),
-//!         ConfirmCookieConfig::production_defaults(),
+//!         SessionCookieConfig::secure(&config).expect("session cookie"),
+//!         ConfirmCookieConfig::secure_defaults(),
 //!     )
 //!     .expect("scanner config");
 //!     let mut storage_key = [0u8; 32];

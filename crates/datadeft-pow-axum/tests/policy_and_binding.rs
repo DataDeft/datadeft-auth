@@ -57,7 +57,7 @@ fn admit(request: &PowSolutionRequest, policy: PowPolicy) -> Result<String, PowF
         policy,
         request,
         &keyring(),
-        &PowProofCookieConfig::production_defaults(),
+        &PowProofCookieConfig::secure_defaults(),
         &mut rng,
         at(TIM_UNIX + 1),
         |_| None,

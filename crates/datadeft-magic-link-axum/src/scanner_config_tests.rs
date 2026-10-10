@@ -19,10 +19,10 @@ fn country_header_defaults_to_cloudfront_and_is_configurable() {
 fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
     let post = SameOriginRedirect::parse("/auth/confirm?fixed=1").expect("post");
     let origin = SameOriginPostConfig::parse("https://example.test").expect("origin");
-    let session = SessionCookieConfig::production(&policy()).expect("session");
+    let session = SessionCookieConfig::secure(&policy()).expect("session");
 
     for path in ["/auth/confirm", "/auth/", "/auth"] {
-        let confirm_cookie = ConfirmCookieConfig::production("flow", path).expect("flow");
+        let confirm_cookie = ConfirmCookieConfig::secure("flow", path).expect("flow");
         assert!(
             MagicLinkScannerFlowConfig::new(
                 post.clone(),
@@ -33,7 +33,7 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
             .is_ok()
         );
     }
-    let false_prefix = ConfirmCookieConfig::production("flow", "/aut").expect("flow");
+    let false_prefix = ConfirmCookieConfig::secure("flow", "/aut").expect("flow");
     assert_eq!(
         MagicLinkScannerFlowConfig::new(
             post.clone(),
@@ -46,7 +46,7 @@ fn scanner_config_checks_every_cookie_collision_and_path_boundary() {
     );
 
     let session_flow = session.clone().with_name("flow").expect("session name");
-    let confirm_cookie = ConfirmCookieConfig::production("flow", "/auth").expect("flow");
+    let confirm_cookie = ConfirmCookieConfig::secure("flow", "/auth").expect("flow");
     assert_eq!(
         MagicLinkScannerFlowConfig::new(post.clone(), origin.clone(), session_flow, confirm_cookie,)
             .unwrap_err(),

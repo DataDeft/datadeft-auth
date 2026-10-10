@@ -6,7 +6,7 @@ fn session_cookie_uses_validated_idle_policy_and_clear_parity() {
     let mut service = policy();
     service.session_idle_secs = 1234;
     service.session_absolute_secs = 5678;
-    let config = SessionCookieConfig::production(&service).expect("policy");
+    let config = SessionCookieConfig::secure(&service).expect("policy");
     assert_eq!(config.max_age_secs(), 1234);
 
     let set = session_set_cookie_header(&config, "v1.active.cookie")
@@ -33,15 +33,15 @@ fn session_cookie_uses_validated_idle_policy_and_clear_parity() {
 fn invalid_session_policy_and_insecure_samesite_none_are_rejected() {
     let mut invalid = policy();
     invalid.session_idle_secs = 0;
-    assert!(SessionCookieConfig::production(&invalid).is_err());
+    assert!(SessionCookieConfig::secure(&invalid).is_err());
 
-    let local = SessionCookieConfig::local_development(&policy()).expect("local");
+    let local = SessionCookieConfig::insecure_local(&policy()).expect("local");
     assert_eq!(
         local.with_same_site(SameSite::None).unwrap_err(),
         CookieConfigError::SameSiteNoneRequiresSecure
     );
     assert_eq!(
-        SessionCookieConfig::production(&policy())
+        SessionCookieConfig::secure(&policy())
             .expect("production")
             .with_name("__Host-session")
             .unwrap_err(),
@@ -54,16 +54,16 @@ fn precomputed_clear_headers_match_freshly_built_ones() {
     // The from_static default constants and every construction path must stay
     // byte-for-byte in lockstep with cookie_header's wire format.
     let cases = [
-        (ConfirmCookieConfig::production_defaults()),
-        (ConfirmCookieConfig::local_development_defaults()),
-        (ConfirmCookieConfig::production("custom_flow", "/custom").expect("custom flow")),
+        (ConfirmCookieConfig::secure_defaults()),
+        (ConfirmCookieConfig::insecure_local_defaults()),
+        (ConfirmCookieConfig::secure("custom_flow", "/custom").expect("custom flow")),
     ];
     for flow in cases {
         let fresh = cookie_header(
             flow.name(),
             "",
             flow.path(),
-            flow.secure(),
+            flow.is_secure(),
             flow.same_site(),
             Some(0),
             true,
@@ -73,9 +73,9 @@ fn precomputed_clear_headers_match_freshly_built_ones() {
     }
 
     let sessions = [
-        SessionCookieConfig::production(&policy()).expect("production"),
-        SessionCookieConfig::local_development(&policy()).expect("local"),
-        SessionCookieConfig::production(&policy())
+        SessionCookieConfig::secure(&policy()).expect("production"),
+        SessionCookieConfig::insecure_local(&policy()).expect("local"),
+        SessionCookieConfig::secure(&policy())
             .expect("production")
             .with_name("custom_session")
             .expect("name")
@@ -89,7 +89,7 @@ fn precomputed_clear_headers_match_freshly_built_ones() {
             session.name(),
             "",
             session.path(),
-            session.secure(),
+            session.is_secure(),
             session.same_site(),
             Some(0),
             true,
@@ -101,11 +101,11 @@ fn precomputed_clear_headers_match_freshly_built_ones() {
 
 #[test]
 fn confirm_cookie_defaults_lifetime_and_clear_are_strict() {
-    let production = ConfirmCookieConfig::production_defaults();
+    let production = ConfirmCookieConfig::secure_defaults();
     let flow = &production;
     assert_eq!(flow.name(), "dd_auth_confirm");
     assert_eq!(flow.path(), "/auth");
-    assert!(flow.secure());
+    assert!(flow.is_secure());
     assert_eq!(flow.same_site(), SameSite::Lax);
 
     let set = set_confirm_cookie_header(flow, "flow-value", 300)
@@ -128,8 +128,8 @@ fn confirm_cookie_defaults_lifetime_and_clear_are_strict() {
     assert!(set_confirm_cookie_header(flow, "flow-value", 0).is_err());
     assert!(set_confirm_cookie_header(flow, "flow-value", 301).is_err());
 
-    let local = ConfirmCookieConfig::local_development_defaults();
-    assert!(!local.secure());
+    let local = ConfirmCookieConfig::insecure_local_defaults();
+    assert!(!local.is_secure());
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn cookie_setup_rejects_invalid_paths() {
         "auth", "/auth?x", "/auth#x", "/auth%x", "/auth\\x", "/auth;x",
     ] {
         assert_eq!(
-            ConfirmCookieConfig::production("flow", path).unwrap_err(),
+            ConfirmCookieConfig::secure("flow", path).unwrap_err(),
             CookieConfigError::InvalidPath
         );
     }

@@ -8,7 +8,7 @@ use crate::test_fixtures::{policy, response_parts};
 
 #[tokio::test]
 async fn session_auth_parser_skips_dependency_on_malformed_input() {
-    let config = SessionCookieConfig::production(&policy()).expect("session");
+    let config = SessionCookieConfig::secure(&policy()).expect("session");
     let mut malformed_headers = Vec::new();
     for cookie in [
         None,
@@ -54,7 +54,7 @@ async fn session_auth_parser_skips_dependency_on_malformed_input() {
 
 #[tokio::test]
 async fn session_auth_maps_invalid_unavailable_and_internal_dispositions() {
-    let config = SessionCookieConfig::production(&policy()).expect("session");
+    let config = SessionCookieConfig::secure(&policy()).expect("session");
     let cases = [
         (
             SessionValidationError::InvalidSession,

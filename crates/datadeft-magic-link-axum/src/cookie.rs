@@ -79,14 +79,14 @@ pub struct ConfirmCookieConfig {
 }
 
 impl ConfirmCookieConfig {
-    pub fn production(
+    pub fn secure(
         name: impl Into<String>,
         path: impl Into<String>,
     ) -> Result<Self, CookieConfigError> {
         Self::build(name.into(), path.into(), true)
     }
 
-    pub fn local_development(
+    pub fn insecure_local(
         name: impl Into<String>,
         path: impl Into<String>,
     ) -> Result<Self, CookieConfigError> {
@@ -109,7 +109,7 @@ impl ConfirmCookieConfig {
 
     /// Default production confirm-cookie policy (`dd_auth_confirm`, `/auth`, Secure).
     #[must_use]
-    pub fn production_defaults() -> Self {
+    pub fn secure_defaults() -> Self {
         Self {
             name: DEFAULT_CONFIRM_COOKIE_NAME.to_owned(),
             path: DEFAULT_CONFIRM_COOKIE_PATH.to_owned(),
@@ -121,8 +121,8 @@ impl ConfirmCookieConfig {
 
     /// Default local-HTTP confirm-cookie policy (no `Secure` attribute).
     #[must_use]
-    pub fn local_development_defaults() -> Self {
-        let mut defaults = Self::production_defaults();
+    pub fn insecure_local_defaults() -> Self {
+        let mut defaults = Self::secure_defaults();
         defaults.secure = false;
         defaults.clear_header = HeaderValue::from_static(DEFAULT_CONFIRM_CLEAR_HEADER_INSECURE);
         defaults
@@ -139,7 +139,7 @@ impl ConfirmCookieConfig {
     }
 
     #[must_use]
-    pub fn secure(&self) -> bool {
+    pub fn is_secure(&self) -> bool {
         self.secure
     }
 
@@ -162,7 +162,7 @@ pub struct SessionCookieConfig {
 
 impl SessionCookieConfig {
     /// Build production cookie policy from validated service session policy.
-    pub fn production(policy: &MagicLinkServiceConfig) -> Result<Self, MagicLinkConfigError> {
+    pub fn secure(policy: &MagicLinkServiceConfig) -> Result<Self, MagicLinkConfigError> {
         let max_age = policy.session_max_age()?;
         Ok(Self {
             name: DEFAULT_SESSION_COOKIE_NAME.to_owned(),
@@ -175,10 +175,8 @@ impl SessionCookieConfig {
     }
 
     /// Build explicit local-HTTP cookie policy from validated service policy.
-    pub fn local_development(
-        policy: &MagicLinkServiceConfig,
-    ) -> Result<Self, MagicLinkConfigError> {
-        let mut config = Self::production(policy)?;
+    pub fn insecure_local(policy: &MagicLinkServiceConfig) -> Result<Self, MagicLinkConfigError> {
+        let mut config = Self::secure(policy)?;
         config.secure = false;
         config.clear_header = HeaderValue::from_static(DEFAULT_SESSION_CLEAR_HEADER_INSECURE);
         Ok(config)
@@ -231,7 +229,7 @@ impl SessionCookieConfig {
     }
 
     #[must_use]
-    pub fn secure(&self) -> bool {
+    pub fn is_secure(&self) -> bool {
         self.secure
     }
 
@@ -253,7 +251,7 @@ pub fn session_set_cookie_header(
         config.name(),
         token,
         config.path(),
-        config.secure(),
+        config.is_secure(),
         config.same_site(),
         Some(config.max_age_secs()),
         false,
@@ -287,7 +285,7 @@ pub fn set_confirm_cookie_header(
         config.name(),
         value,
         config.path(),
-        config.secure(),
+        config.is_secure(),
         config.same_site(),
         Some(max_age_secs),
         false,

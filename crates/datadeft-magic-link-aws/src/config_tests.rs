@@ -19,7 +19,7 @@ fn secret_json(kid: &str, base: u8, mint_until_unix: u64, verify_until_unix: u64
   "mint_until_unix": {mint_until_unix},
   "verify_until_unix": {verify_until_unix},
   "magic_link_lookup_hmac_b64": "{}",
-  "aws_storage_hmac_b64": "{}",
+  "storage_hmac_b64": "{}",
   "session_cookie_root_b64": "{}",
   "magic_link_confirm_cookie_root_b64": "{}",
   "pow_challenge_secret_b64": "{}",
@@ -154,7 +154,7 @@ fn loaded_auth_secrets_keeps_previous_hmac_keys_only_when_rotated() {
   "mint_until_unix": 1,
   "verify_until_unix": 4000000,
   "magic_link_lookup_hmac_b64": "{}",
-  "aws_storage_hmac_b64": "{}",
+  "storage_hmac_b64": "{}",
   "session_cookie_root_b64": "{}",
   "magic_link_confirm_cookie_root_b64": "{}",
   "pow_challenge_secret_b64": "{}",
@@ -281,7 +281,7 @@ fn secret_key_bytes_debug_is_redacted() {
 fn one_value_in_two_key_fields_is_refused() {
     let fields = [
         "magic_link_lookup_hmac_b64",
-        "aws_storage_hmac_b64",
+        "storage_hmac_b64",
         "session_cookie_root_b64",
         "magic_link_confirm_cookie_root_b64",
         "pow_challenge_secret_b64",

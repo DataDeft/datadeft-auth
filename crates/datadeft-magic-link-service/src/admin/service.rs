@@ -183,11 +183,13 @@ where
 
     /// Disable the user: login is blocked and every session is rejected from
     /// the next request on. Then revoke all sessions, so the audit trail shows
-    /// each one ending. Returns how many sessions this call revoked.
+    /// each one ending. Returns how many sessions this call revoked: `0` on a
+    /// repeat call once every session is revoked.
     ///
     /// Safe to retry. On an error the user may already be disabled (their
     /// sessions are rejected regardless); calling again finishes revoking.
-    /// Calling it for an already-disabled user just completes revocation.
+    /// Calling it for an already-disabled user just completes revocation and
+    /// is not an error.
     pub async fn disable_user(
         &mut self,
         user_id: &UserId,

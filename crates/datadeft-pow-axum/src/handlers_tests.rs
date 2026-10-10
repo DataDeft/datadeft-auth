@@ -70,7 +70,7 @@ fn policy_rejects_out_of_range_inputs() {
 fn admission_applies_configured_clock_skew() {
     let secret = secret();
     let keyring = keyring();
-    let config = PowProofCookieConfig::production_defaults();
+    let config = PowProofCookieConfig::secure_defaults();
     let challenge =
         mint_pow_challenge(&secret, policy(), at(TIM_UNIX), [7; 16]).expect("challenge mints");
     let solution = solve(&challenge);
@@ -111,7 +111,7 @@ fn admission_applies_configured_clock_skew() {
 fn create_then_validate_round_trips_into_a_parseable_proof_cookie() {
     let secret = secret();
     let keyring = keyring();
-    let config = PowProofCookieConfig::production_defaults();
+    let config = PowProofCookieConfig::secure_defaults();
     let mut rng = PerCallRng::starting_at(0xa0);
 
     let challenge =
@@ -160,7 +160,7 @@ fn create_then_validate_round_trips_into_a_parseable_proof_cookie() {
 fn tampered_solution_is_rejected_generically() {
     let secret = secret();
     let keyring = keyring();
-    let config = PowProofCookieConfig::production_defaults();
+    let config = PowProofCookieConfig::secure_defaults();
     let mut rng = PerCallRng::starting_at(0xa0);
 
     let challenge =
@@ -188,7 +188,7 @@ fn tampered_solution_is_rejected_generically() {
 fn expired_challenge_is_rejected() {
     let secret = secret();
     let keyring = keyring();
-    let config = PowProofCookieConfig::production_defaults();
+    let config = PowProofCookieConfig::secure_defaults();
     let mut rng = PerCallRng::starting_at(0xa0);
 
     let challenge =

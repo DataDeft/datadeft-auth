@@ -201,8 +201,10 @@ every admin endpoint before calling the service.
   `display_id()` (`sess_xxxxxxxx`) in UIs; pass the full handle back.
 - Disabling a user takes effect on the next request: `validate_session` checks
   the user's status every time. `disable_user` then revokes every session so
-  the audit trail records each one ending. It is safe to retry: on an error
-  the user may already be disabled, and calling again finishes revoking.
+  the audit trail records each one ending. It returns how many sessions that
+  call revoked. It is safe to retry: on an error the user may already be
+  disabled, and calling again finishes revoking. A repeat call on a disabled
+  user is not an error; it returns `0` once nothing is left to revoke.
 - Enabling never restores a session from before the disable. `enable_user`
   first revokes every session still live (finishing a disable whose
   revocation failed or is still running) and re-enables only once that
@@ -502,7 +504,7 @@ Each `SecretRef` must resolve to one JSON document.
   "mint_until_unix": 1790000000,
   "verify_until_unix": 1792600000,
   "magic_link_lookup_hmac_b64": "<32 bytes, standard base64>",
-  "aws_storage_hmac_b64": "<32 bytes, standard base64>",
+  "storage_hmac_b64": "<32 bytes, standard base64>",
   "session_cookie_root_b64": "<32 bytes, standard base64>",
   "magic_link_confirm_cookie_root_b64": "<32 bytes, standard base64>",
   "pow_challenge_secret_b64": "<32 bytes, standard base64>",

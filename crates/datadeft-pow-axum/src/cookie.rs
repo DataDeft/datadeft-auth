@@ -17,6 +17,11 @@ pub const DEFAULT_POW_PROOF_COOKIE_NAME: &str = "dd_pow";
 pub const DEFAULT_POW_PROOF_COOKIE_PATH: &str = "/";
 
 const COOKIE_EPOCH: &str = "Thu, 01 Jan 1970 00:00:00 GMT";
+// Pinned against `build_clear_cookie_header` by a test, so the defaults need
+// no fallible construction.
+const DEFAULT_CLEAR_HEADER: &str = "dd_pow=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
+const DEFAULT_CLEAR_HEADER_INSECURE: &str =
+    "dd_pow=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
 const MAX_COOKIE_VALUE_BYTES: usize = 4096;
 
 /// SameSite policy for cookie helper output.
@@ -71,9 +76,9 @@ pub struct PowProofCookieConfig {
 }
 
 impl PowProofCookieConfig {
-    /// Validated production policy (`Secure`, Lax) with a caller-chosen name,
+    /// Validated `Secure`, Lax policy with a caller-chosen name,
     /// path, and lifetime.
-    pub fn production(
+    pub fn secure(
         name: impl Into<String>,
         path: impl Into<String>,
         ttl_secs: u64,
@@ -83,7 +88,7 @@ impl PowProofCookieConfig {
 
     /// Validated local-HTTP policy (no `Secure`) for development over plain
     /// HTTP.
-    pub fn local_development(
+    pub fn insecure_local(
         name: impl Into<String>,
         path: impl Into<String>,
         ttl_secs: u64,
@@ -91,26 +96,27 @@ impl PowProofCookieConfig {
         Self::build(name.into(), path.into(), false, ttl_secs)
     }
 
-    /// Default production policy (`dd_pow`, `/`, Secure, 3 h).
+    /// Default policy (`dd_pow`, `/`, `Secure`, 3 h).
     #[must_use]
-    pub fn production_defaults() -> Self {
-        Self::production(
-            DEFAULT_POW_PROOF_COOKIE_NAME,
-            DEFAULT_POW_PROOF_COOKIE_PATH,
-            DEFAULT_POW_PROOF_TTL_SECS,
-        )
-        .expect("default proof-cookie policy is valid")
+    pub fn secure_defaults() -> Self {
+        Self {
+            name: DEFAULT_POW_PROOF_COOKIE_NAME.to_owned(),
+            path: DEFAULT_POW_PROOF_COOKIE_PATH.to_owned(),
+            secure: true,
+            same_site: SameSite::Lax,
+            ttl_secs: DEFAULT_POW_PROOF_TTL_SECS,
+            clear_header: HeaderValue::from_static(DEFAULT_CLEAR_HEADER),
+        }
     }
 
-    /// Default local-HTTP policy (no `Secure`).
+    /// Default local-HTTP policy (no `Secure`), for development over plain HTTP
+    /// only.
     #[must_use]
-    pub fn local_development_defaults() -> Self {
-        Self::local_development(
-            DEFAULT_POW_PROOF_COOKIE_NAME,
-            DEFAULT_POW_PROOF_COOKIE_PATH,
-            DEFAULT_POW_PROOF_TTL_SECS,
-        )
-        .expect("default proof-cookie policy is valid")
+    pub fn insecure_local_defaults() -> Self {
+        let mut defaults = Self::secure_defaults();
+        defaults.secure = false;
+        defaults.clear_header = HeaderValue::from_static(DEFAULT_CLEAR_HEADER_INSECURE);
+        defaults
     }
 
     fn build(
@@ -161,7 +167,7 @@ impl PowProofCookieConfig {
     }
 
     #[must_use]
-    pub fn secure(&self) -> bool {
+    pub fn is_secure(&self) -> bool {
         self.secure
     }
 
