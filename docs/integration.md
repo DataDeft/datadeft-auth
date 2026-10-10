@@ -60,6 +60,11 @@ fresh table and secret document: no data migration is provided.
   selects one cookie from the `Cookie` fields: exactly one occurrence, a
   bounded unquoted value, malformed foreign cookies skipped. Use it instead of
   parsing `Cookie` headers by hand.
+- **Session rejections:** `SessionAuthRejection::kind()` returns a
+  `SessionRejectionKind` (`Invalid`, `Unavailable`, `Internal`), and
+  `clear_cookie_header()` the header that clears the cookie on `Invalid`. Apps
+  with their own error envelope read these instead of inferring the reason
+  from the rendered status.
 - **Auth secret document:** add `pow_challenge_secret_b64` and
   `pow_proof_cookie_root_b64` (32 random bytes each, independent of the other
   fields), and keep `kid` at 12 bytes or fewer. Remove app-owned PoW key

@@ -41,6 +41,11 @@ async fn session_auth_parser_skips_dependency_on_malformed_input() {
         .await
         .expect_err("rejection");
         assert!(!called.get());
+        assert_eq!(rejection.kind(), SessionRejectionKind::Invalid);
+        assert_eq!(
+            rejection.clear_cookie_header(),
+            Some(&clear_session_cookie_header(&config))
+        );
         let (status, headers, body) = response_parts(rejection.into_response()).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_eq!(headers.get_all(SET_COOKIE).iter().count(), 1);
@@ -58,21 +63,24 @@ async fn session_auth_maps_invalid_unavailable_and_internal_dispositions() {
     let cases = [
         (
             SessionValidationError::InvalidSession,
+            SessionRejectionKind::Invalid,
             StatusCode::UNAUTHORIZED,
             1,
         ),
         (
             SessionValidationError::Unavailable,
+            SessionRejectionKind::Unavailable,
             StatusCode::SERVICE_UNAVAILABLE,
             0,
         ),
         (
             SessionValidationError::Internal,
+            SessionRejectionKind::Internal,
             StatusCode::INTERNAL_SERVER_ERROR,
             0,
         ),
     ];
-    for (error, status, clear_count) in cases {
+    for (error, kind, status, clear_count) in cases {
         let mut headers = HeaderMap::new();
         headers.insert(COOKIE, HeaderValue::from_static("dd_session=secret-cookie"));
         let called = Rc::new(Cell::new(false));
@@ -87,6 +95,12 @@ async fn session_auth_maps_invalid_unavailable_and_internal_dispositions() {
         .expect_err("rejection");
         assert!(called.get());
         assert_eq!(format!("{rejection:?}"), "SessionAuthRejection(..)");
+        assert_eq!(rejection.kind(), kind);
+        assert_eq!(
+            rejection.clear_cookie_header().is_some(),
+            clear_count == 1,
+            "{kind:?}"
+        );
         let response = rejection.into_response();
         assert_eq!(response.status(), status);
         assert_eq!(

@@ -37,17 +37,44 @@ impl Drop for SessionCookieValue {
     }
 }
 
+/// Why [`authenticate_session`] rejected a request. Carries no cookie or
+/// session data.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum SessionHttpError {
-    Unauthorized,
+pub enum SessionRejectionKind {
+    /// No usable session: the cookie is missing, malformed, duplicated,
+    /// expired, revoked, or belongs to a disabled user. The client signs in
+    /// again; the rejection carries a header that clears the cookie.
+    Invalid,
+    /// A dependency failed. The session may be fine; retry later.
     Unavailable,
+    /// The server faulted.
     Internal,
 }
 
-/// Opaque redacted rejection returned by [`authenticate_session`].
+/// Redacted rejection returned by [`authenticate_session`].
+///
+/// [`IntoResponse`] renders the library's own response. Apps with their own
+/// error envelope read [`Self::kind`] and append [`Self::clear_cookie_header`]
+/// instead.
 pub struct SessionAuthRejection {
-    disposition: SessionHttpError,
+    kind: SessionRejectionKind,
     clear_cookie: Option<HeaderValue>,
+}
+
+impl SessionAuthRejection {
+    /// Why the request was rejected.
+    #[must_use]
+    pub fn kind(&self) -> SessionRejectionKind {
+        self.kind
+    }
+
+    /// The `Set-Cookie` header that clears the session cookie. Present only
+    /// for [`SessionRejectionKind::Invalid`]; send it with any response you
+    /// render for this rejection.
+    #[must_use]
+    pub fn clear_cookie_header(&self) -> Option<&HeaderValue> {
+        self.clear_cookie.as_ref()
+    }
 }
 
 impl fmt::Debug for SessionAuthRejection {
@@ -58,15 +85,15 @@ impl fmt::Debug for SessionAuthRejection {
 
 impl IntoResponse for SessionAuthRejection {
     fn into_response(self) -> Response {
-        let error = match self.disposition {
-            SessionHttpError::Unauthorized => MagicLinkHttpError::Forbidden,
-            SessionHttpError::Unavailable => MagicLinkHttpError::Unavailable,
-            SessionHttpError::Internal => MagicLinkHttpError::Internal,
+        let error = match self.kind {
+            SessionRejectionKind::Invalid => MagicLinkHttpError::Forbidden,
+            SessionRejectionKind::Unavailable => MagicLinkHttpError::Unavailable,
+            SessionRejectionKind::Internal => MagicLinkHttpError::Internal,
         };
-        let status = match self.disposition {
-            SessionHttpError::Unauthorized => StatusCode::UNAUTHORIZED,
-            SessionHttpError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
-            SessionHttpError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+        let status = match self.kind {
+            SessionRejectionKind::Invalid => StatusCode::UNAUTHORIZED,
+            SessionRejectionKind::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+            SessionRejectionKind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let mut response = (status, Json(ErrorBody::from(error))).into_response();
         if let Some(clear) = self.clear_cookie {
@@ -97,11 +124,11 @@ where
         Ok(session) => Ok(session),
         Err(SessionValidationError::InvalidSession) => Err(session_unauthorized(cookie_config)),
         Err(SessionValidationError::Unavailable) => Err(SessionAuthRejection {
-            disposition: SessionHttpError::Unavailable,
+            kind: SessionRejectionKind::Unavailable,
             clear_cookie: None,
         }),
         Err(SessionValidationError::Internal) => Err(SessionAuthRejection {
-            disposition: SessionHttpError::Internal,
+            kind: SessionRejectionKind::Internal,
             clear_cookie: None,
         }),
     }
@@ -109,7 +136,7 @@ where
 
 fn session_unauthorized(config: &SessionCookieConfig) -> SessionAuthRejection {
     SessionAuthRejection {
-        disposition: SessionHttpError::Unauthorized,
+        kind: SessionRejectionKind::Invalid,
         clear_cookie: Some(clear_session_cookie_header(config)),
     }
 }

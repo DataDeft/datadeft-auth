@@ -204,4 +204,6 @@ pub use handlers::{
 };
 pub use origin::{OriginConfigError, SameOriginPostConfig, SameOriginRedirect};
 pub use scanner_config::{MagicLinkScannerFlowConfig, MagicLinkScannerFlowConfigError};
-pub use session_auth::{SessionAuthRejection, SessionCookieValue, authenticate_session};
+pub use session_auth::{
+    SessionAuthRejection, SessionCookieValue, SessionRejectionKind, authenticate_session,
+};
