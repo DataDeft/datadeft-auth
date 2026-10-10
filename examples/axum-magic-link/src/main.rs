@@ -66,6 +66,8 @@ fn app(state: AppState) -> Router {
 type AppResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 #[cfg(test)]
+mod contract_tests;
+#[cfg(test)]
 mod flow_tests;
 #[cfg(test)]
 mod tests;

@@ -168,8 +168,8 @@ modes.
 - Missing, invalid or expired proof → `401` + `WWW-Authenticate: DD-PoW`.
   Exhausted budget or store failure → the constant `503`.
 - Tests: N admissions then `503`; a re-posted solution shares the budget; a
-  store failure fails closed; DynamoDB Local proves no refill across windows.
-  Remaining: a two-node concurrent-spend test.
+  store failure fails closed; DynamoDB Local proves no refill across windows
+  and that 20 concurrent spends from two nodes admit exactly the budget.
 
 ### 4.9 Public strict cookie selector (#9) — Done
 - `cookie_header::select_cookie` in token-core: exactly one occurrence across
@@ -271,9 +271,9 @@ Rules:
   dropped the email; the landing redirect is the same for every link state.
 - Apps may use non-leaking `4xx` on their own routes.
 - Statuses are not configurable.
-- **Acceptance:** contract tests per crate (done for the error types, session
-  rejections, PoW rejections and the redirect mode); a single table test over
-  every handler outcome (open). `security.md` "HTTP response contract" (done).
+- **Acceptance (met):** contract tests per crate, plus one table over every
+  library refusal across both Axum crates (`examples/axum-magic-link`,
+  `contract_tests`); `security.md` "HTTP response contract".
 
 ## 6. Documentation
 

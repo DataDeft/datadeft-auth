@@ -530,3 +530,61 @@ async fn a_stale_admin_write_is_refused_against_dynamodb() {
     assert!(!after.disabled, "nothing was written");
     assert_eq!(after.admin_version, 2);
 }
+
+/// The per-solve budget under concurrency: two nodes (two stores on one
+/// table) spending the same solve's budget at once never admit more than the
+/// limit. DynamoDB's conditional update is the only coordination.
+#[tokio::test]
+#[ignore = "needs DynamoDB Local: mise run dynamodb-local-test"]
+async fn concurrent_lifetime_spends_never_exceed_the_limit() {
+    use std::sync::Arc;
+
+    let client = client().await;
+    let table = table(&client, "budgetrace").await;
+    let nodes = [
+        Arc::new(DynamoDbAuthStore::new(
+            client.clone(),
+            table.clone(),
+            StorageHmacKey::new([0x31; 32]),
+        )),
+        Arc::new(DynamoDbAuthStore::new(
+            client,
+            table,
+            StorageHmacKey::new([0x31; 32]),
+        )),
+    ];
+    let key = RateLimitKey::parse(&format!("pow:budget:{}", random_hex(32))).expect("key");
+    let now = 1_000_000_000;
+    let spends: Vec<_> = (0..20)
+        .map(|index| {
+            let store = Arc::clone(&nodes[index % 2]);
+            let key = key.clone();
+            async move {
+                store
+                    .check_lifetime_limit(&key, 5, now + 3_600, now)
+                    .await
+                    .expect("spend")
+            }
+        })
+        .collect();
+    let decisions = futures_join_all(spends).await;
+    let allowed = decisions
+        .iter()
+        .filter(|decision| **decision == RateLimitDecision::Allowed)
+        .count();
+    assert_eq!(allowed, 5, "exactly the budget, across both nodes");
+}
+
+/// `join_all` without a futures dependency: spawn each spend on the runtime.
+async fn futures_join_all<F>(futures: Vec<F>) -> Vec<F::Output>
+where
+    F: core::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    let handles: Vec<_> = futures.into_iter().map(tokio::spawn).collect();
+    let mut outputs = Vec::with_capacity(handles.len());
+    for handle in handles {
+        outputs.push(handle.await.expect("task"));
+    }
+    outputs
+}
