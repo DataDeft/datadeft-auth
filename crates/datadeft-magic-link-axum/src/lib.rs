@@ -188,6 +188,8 @@ pub use cookie::{
     DEFAULT_SESSION_COOKIE_PATH, SameSite, SessionCookieConfig, clear_confirm_cookie_header,
     clear_session_cookie_header, session_set_cookie_header, set_confirm_cookie_header,
 };
+/// The strict incoming-cookie selector shared with `datadeft-pow-axum`.
+pub use datadeft_magic_link_service::cookie_header::{CookieHeaderError, select_cookie};
 pub use error::{ErrorBody, GenericAcceptedBody, MagicLinkHttpError, generic_accepted_response};
 pub use extract::{
     APPLICATION_JSON, CLOUDFRONT_VIEWER_COUNTRY, FORM_URLENCODED, GuardedBody,

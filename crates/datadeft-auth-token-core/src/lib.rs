@@ -13,6 +13,8 @@
 //! - [`cookie`]: `v1.{kid}.{token}` cookie wrappers, fixed binary payload
 //!   framing, `typ`/`kid` binding inside the encrypted payload, mandatory idle
 //!   and absolute freshness checks, and generic verification failures.
+//! - [`cookie_header`]: strict selection of one cookie from incoming `Cookie`
+//!   header fields, tolerant of malformed foreign cookies.
 //! - [`TokenError`]: typed errors that do not carry token bytes, cookie values,
 //!   key material, or raw identifiers.
 //!
@@ -41,6 +43,7 @@
 pub mod base62;
 pub mod branca;
 pub mod cookie;
+pub mod cookie_header;
 pub mod error;
 pub mod keyring;
 #[cfg(any(test, feature = "test-support"))]

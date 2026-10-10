@@ -55,6 +55,11 @@ fresh table and secret document: no data migration is provided.
   `secure()` getter is now `is_secure()`.
 - **Secret field rename:** `aws_storage_hmac_b64` is now `storage_hmac_b64`.
   A document with the old name no longer loads.
+- **Strict cookie reading:** `select_cookie` (in
+  `datadeft_auth_token_core::cookie_header`, re-exported by both Axum crates)
+  selects one cookie from the `Cookie` fields: exactly one occurrence, a
+  bounded unquoted value, malformed foreign cookies skipped. Use it instead of
+  parsing `Cookie` headers by hand.
 - **Auth secret document:** add `pow_challenge_secret_b64` and
   `pow_proof_cookie_root_b64` (32 random bytes each, independent of the other
   fields), and keep `kid` at 12 bytes or fewer. Remove app-owned PoW key

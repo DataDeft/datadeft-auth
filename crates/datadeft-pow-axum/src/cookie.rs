@@ -9,6 +9,7 @@
 use core::fmt;
 
 use axum::http::HeaderValue;
+use datadeft_auth_token_core::cookie_header::is_cookie_octet;
 use datadeft_pow_core::{DEFAULT_POW_PROOF_TTL_SECS, POW_PROOF_MAX_AGE_SECS};
 
 /// Conservative default proof-cookie name.
@@ -248,11 +249,6 @@ fn is_valid_cookie_value(value: &str) -> bool {
         && value.len() <= MAX_COOKIE_VALUE_BYTES
         && value.bytes().all(is_cookie_octet)
         && !value.starts_with('"')
-}
-
-/// RFC 6265 `cookie-octet`.
-fn is_cookie_octet(byte: u8) -> bool {
-    matches!(byte, 0x21 | 0x23..=0x2B | 0x2D..=0x3A | 0x3C..=0x5B | 0x5D..=0x7E)
 }
 
 fn build_clear_cookie_header(

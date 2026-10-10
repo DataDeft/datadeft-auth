@@ -43,6 +43,8 @@ pub use admin::{
     UserSummary,
 };
 pub use config::{MagicLinkConfigError, MagicLinkServiceConfig, RateLimitConfig};
+/// Strict incoming-cookie selection, shared by the Axum adapters.
+pub use datadeft_auth_token_core::cookie_header;
 pub use datadeft_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 pub use datadeft_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkConfirmCookie, NormalizedEmail, VerifierHash,

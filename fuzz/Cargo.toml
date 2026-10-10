@@ -92,3 +92,9 @@ path = "fuzz_targets/request_json.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "cookie_header"
+path = "fuzz_targets/cookie_header.rs"
+test = false
+doc = false

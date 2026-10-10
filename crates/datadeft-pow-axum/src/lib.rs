@@ -28,6 +28,10 @@ pub use cookie::{
     DEFAULT_POW_PROOF_COOKIE_NAME, DEFAULT_POW_PROOF_COOKIE_PATH, PowCookieConfigError,
     PowCookieError, PowProofCookieConfig, SameSite,
 };
+/// The strict incoming-cookie selector shared with `datadeft-magic-link-axum`:
+/// read the proof cookie with
+/// `select_cookie(headers.get_all(COOKIE).iter().map(HeaderValue::as_bytes), config.name())`.
+pub use datadeft_auth_token_core::cookie_header::{CookieHeaderError, select_cookie};
 pub use handlers::{
     DEFAULT_POW_CHALLENGE_MAX_AGE_SECS, PowAdmission, PowChallengeResponse, PowFlowError,
     PowPolicy, PowPolicyError, PowSolutionRequest, mint_pow_challenge, verify_pow_solution,
