@@ -67,6 +67,11 @@ no data migration is provided, and every existing session ends.
   (local part included, a documented policy); `MagicLinkRequestJson` uses it.
   `NormalizedEmail::parse` is renamed `from_normalized` and only validates: it
   refuses uppercase and surrounding whitespace. Drop app-side normalization.
+- **Country groups:** `MagicLinkServiceConfig::country_policy` (default
+  `CountryPolicy::Exact`) can be `CountryPolicy::eu27()`: sessions then move
+  between EU countries and stay exact elsewhere. Drop edge rewrites of the
+  country header. `ValidatedSession::country()` returns the pinned value,
+  which is `EU` for a session in the group.
 - **Strict cookie reading:** `select_cookie` (in
   `datadeft_auth_token_core::cookie_header`, re-exported by both Axum crates)
   selects one cookie from the `Cookie` fields: exactly one occurrence, a

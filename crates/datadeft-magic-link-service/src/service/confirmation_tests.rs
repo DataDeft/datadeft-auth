@@ -85,6 +85,42 @@ async fn scanner_confirmation_atomically_authenticates_and_replay_clears() {
     assert_eq!(repository.sessions.borrow().len(), 1);
 }
 
+/// CeleraTax #6: confirmation binds the pinned value, the group tag for an
+/// EU country and the country itself otherwise.
+#[tokio::test]
+async fn confirmation_binds_the_country_group_tag() {
+    for (request_country, bound) in [("HU", "EU"), ("AT", "EU"), ("GB", "GB")] {
+        let repository = FakeRepository::default();
+        *repository.candidate.borrow_mut() = Some(candidate());
+        let mut rng = CountingRng::starting_at(0);
+        let mut config = config();
+        config.country_policy = crate::CountryPolicy::eu27();
+        let landing = begin_flow(
+            &repository,
+            &AllowLimiter::default(),
+            &FixedClock::at(NOW),
+            &mut rng,
+            token(VERIFIER).as_secret_value().to_string(),
+            config.clone(),
+        )
+        .await
+        .expect("landing");
+        let outcome = confirm_flow(
+            &repository,
+            &AllowLimiter::default(),
+            &FixedClock::at(NOW),
+            &mut rng,
+            landing.confirm_cookie_value().to_owned(),
+            landing.confirmation_value().to_owned(),
+            Some(request_country.to_owned()),
+            config,
+        )
+        .await
+        .expect("confirmation");
+        assert_eq!(outcome.authentication().country(), Some(bound));
+    }
+}
+
 #[tokio::test]
 async fn confirmation_rejects_cookie_nonce_verifier_account_and_stale_mismatches() {
     for case in 0..8 {

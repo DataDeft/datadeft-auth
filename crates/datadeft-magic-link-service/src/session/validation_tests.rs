@@ -5,6 +5,8 @@
 use datadeft_auth_token_core::keyring::KeyPurpose;
 use datadeft_auth_token_core::test_support::test_keyring_with_windows;
 
+use crate::CountryPolicy;
+
 use super::test_support::*;
 use super::*;
 
@@ -418,6 +420,64 @@ async fn country_locked_sessions_require_the_same_trusted_country() {
     // Country mismatches are rejected before any repository lookup: only the
     // three successful validations above reached the repository.
     assert_eq!(sessions.find_calls.get(), 3);
+}
+
+/// CeleraTax #6: under the EU-27 policy a session is pinned to `EU` and
+/// moves freely between EU countries; outside the EU pinning stays exact.
+#[tokio::test]
+async fn eu_group_sessions_move_within_the_group_only() {
+    let keyring = keyring();
+    let sessions = TestSessions::with_record(record(800));
+    let clock = TestClock::at(900);
+    let mut config = config();
+    config.country_policy = CountryPolicy::eu27();
+    let check = |cookie: &str, country: Option<&'static str>| {
+        let cookie = cookie.to_owned();
+        let (keyring, sessions, clock, config) = (&keyring, &sessions, &clock, &config);
+        async move {
+            validate_session(&cookie, country, keyring, sessions, clock, config)
+                .await
+                .is_ok()
+        }
+    };
+
+    // Bound at confirmation as the group tag.
+    let eu = cookie(&keyring, 900, 800, Some("EU"));
+    assert!(check(&eu, Some("HU")).await, "EU -> EU");
+    assert!(check(&eu, Some("AT")).await, "EU -> EU");
+    assert!(!check(&eu, Some("GB")).await, "EU -> non-EU");
+    assert!(!check(&eu, Some("CH")).await, "EU -> non-EU");
+    assert!(!check(&eu, None).await, "missing country fails closed");
+
+    // Outside every group: exact match only.
+    let gb = cookie(&keyring, 900, 800, Some("GB"));
+    assert!(check(&gb, Some("GB")).await);
+    assert!(!check(&gb, Some("US")).await);
+    assert!(!check(&gb, Some("FR")).await);
+
+    // A session bound to an exact EU country (before the policy changed)
+    // fails closed: HU now pins to EU.
+    let exact_hu = cookie(&keyring, 900, 800, Some("HU"));
+    assert!(!check(&exact_hu, Some("HU")).await);
+
+    // Unlocked sessions are unaffected.
+    let unlocked = cookie(&keyring, 900, 800, None);
+    assert!(check(&unlocked, Some("HU")).await);
+    assert!(check(&unlocked, None).await);
+}
+
+#[tokio::test]
+async fn an_eu_tagged_session_fails_closed_under_exact_policy() {
+    let keyring = keyring();
+    let sessions = TestSessions::with_record(record(800));
+    let clock = TestClock::at(900);
+    let eu = cookie(&keyring, 900, 800, Some("EU"));
+    assert_eq!(
+        validate_session(&eu, Some("HU"), &keyring, &sessions, &clock, &config())
+            .await
+            .unwrap_err(),
+        SessionValidationError::InvalidSession
+    );
 }
 
 #[tokio::test]

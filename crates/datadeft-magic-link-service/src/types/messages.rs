@@ -265,6 +265,8 @@ impl MagicLinkAuthenticationOutcome {
         self.user_created
     }
 
+    /// The country the new session is pinned to: the country itself, or
+    /// its group's tag under [`CountryPolicy::Groups`](crate::CountryPolicy).
     #[must_use]
     pub fn country(&self) -> Option<&str> {
         self.country.as_deref()

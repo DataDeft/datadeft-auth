@@ -26,6 +26,7 @@
 
 pub mod admin;
 pub mod config;
+pub mod country;
 pub mod error;
 pub mod service;
 pub mod session;
@@ -43,6 +44,9 @@ pub use admin::{
     UserSummary,
 };
 pub use config::{MagicLinkConfigError, MagicLinkServiceConfig, RateLimitConfig};
+pub use country::{
+    CountryGroup, CountryPolicy, CountryPolicyError, EU27_COUNTRIES, EU27_GROUP_TAG,
+};
 /// Strict incoming-cookie selection, shared by the Axum adapters.
 pub use datadeft_auth_token_core::cookie_header;
 pub use datadeft_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};

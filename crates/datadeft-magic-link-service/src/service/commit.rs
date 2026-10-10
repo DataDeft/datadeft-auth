@@ -154,14 +154,15 @@ pub(super) fn mint_country(
     config: &MagicLinkServiceConfig,
     country: Option<&str>,
 ) -> Result<Option<String>, MagicLinkServiceError> {
+    let pin = |country: &str| config.country_policy.pin(country).to_owned();
     if !config.enforce_country {
-        return Ok(country.map(str::to_owned));
+        return Ok(country.map(pin));
     }
     let Some(country) = country else {
         return Err(MagicLinkServiceError::MagicLinkUnavailable);
     };
     validate_country(country)?;
-    Ok(Some(country.to_owned()))
+    Ok(Some(pin(country)))
 }
 
 struct AuthenticationPlan {

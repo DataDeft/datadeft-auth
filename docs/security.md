@@ -85,6 +85,22 @@ A session without country stays unlocked. It skips the country check.
 
 The lock only works when the edge strips or overwrites the header. The origin must not be directly reachable.
 
+#### Country groups
+
+`MagicLinkServiceConfig::country_policy` is `CountryPolicy::Exact` by default.
+`CountryPolicy::eu27()` (or custom `CountryGroup`s) pins a country inside a
+group to the group's tag (`EU`) instead, so a session moves freely between
+the group's countries; any other country stays pinned exactly. The same
+mapping runs when the session is bound and on every validation. A session
+bound under one policy fails closed under another.
+
+Trade-off: a group weakens the lock on purpose. A stolen session cookie then
+works from any country in the group, not only the victim's. Choose the
+smallest group your users need. It is still much safer than rewriting the
+trusted header at the edge, which would also hide the real country from
+everything else. Never put a country in two groups; configuration validation
+refuses it.
+
 ### Scanner-safe response contract
 
 The magic-link HTTP flow uses two steps. This prevents link scanners from burning or completing login.

@@ -6,6 +6,7 @@ use datadeft_auth_token_core::cookie::MaxAge;
 use datadeft_auth_token_core::keyring::KeyPurpose;
 use datadeft_magic_link_core::confirm_cookie::MagicLinkConfirmCookie;
 
+use crate::country::CountryPolicy;
 use crate::types::SessionCookie;
 
 use crate::types::{
@@ -35,6 +36,9 @@ pub enum MagicLinkConfigError {
     ZeroRateLimit,
     /// At least one rate-limit window was zero.
     ZeroRateLimitWindow,
+    /// The country policy is malformed
+    /// ([`CountryPolicyError`](crate::country::CountryPolicyError)).
+    InvalidCountryPolicy,
 }
 
 impl fmt::Display for MagicLinkConfigError {
@@ -57,6 +61,7 @@ impl fmt::Display for MagicLinkConfigError {
             }
             Self::ZeroRateLimit => f.write_str("rate-limit threshold must be nonzero"),
             Self::ZeroRateLimitWindow => f.write_str("rate-limit window must be nonzero"),
+            Self::InvalidCountryPolicy => f.write_str("invalid country policy"),
         }
     }
 }
@@ -116,6 +121,10 @@ pub struct MagicLinkServiceConfig {
     /// (for example CloudFront with direct-origin access blocked): with it
     /// enabled, confirmations without a country fail generically.
     pub enforce_country: bool,
+    /// How a session's country is pinned: exactly (default), or to a group
+    /// such as [`CountryPolicy::eu27`] so moving within the group keeps the
+    /// session. Applied when the session is bound and on every validation.
+    pub country_policy: CountryPolicy,
     pub rate_limits: RateLimitConfig,
 }
 
@@ -130,6 +139,7 @@ impl MagicLinkServiceConfig {
             session_idle_secs: DEFAULT_SESSION_IDLE_SECS,
             session_absolute_secs: DEFAULT_SESSION_ABSOLUTE_SECS,
             enforce_country: false,
+            country_policy: CountryPolicy::Exact,
             rate_limits: RateLimitConfig::default(),
         }
     }
@@ -149,6 +159,9 @@ impl MagicLinkServiceConfig {
             return Err(MagicLinkConfigError::MagicLinkFlowTtlExceedsCookieCap);
         }
         self.session_max_age()?;
+        self.country_policy
+            .validate()
+            .map_err(|_| MagicLinkConfigError::InvalidCountryPolicy)?;
         self.rate_limits.validate()
     }
 

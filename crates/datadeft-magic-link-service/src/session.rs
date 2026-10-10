@@ -84,7 +84,9 @@ impl ValidatedSession {
         &self.session
     }
 
-    /// Country context authenticated inside the session cookie, when present.
+    /// The pinned country authenticated inside the session cookie, when
+    /// present: the country itself, or its group's tag (for example `EU`)
+    /// under [`CountryPolicy::Groups`](crate::CountryPolicy).
     #[must_use]
     pub fn country(&self) -> Option<&str> {
         self.country.as_deref()
@@ -108,10 +110,11 @@ impl fmt::Debug for ValidatedSession {
 ///
 /// # Country pinning
 ///
-/// A session issued with a trusted-edge country locks to that country:
+/// A session issued with a trusted-edge country locks to that country, or to
+/// its group's tag under [`CountryPolicy::Groups`](crate::CountryPolicy):
 /// `request_country` (the current request's trusted-edge signal, never
-/// client-supplied input) must match it on every validation, and an absent
-/// signal does not satisfy the lock: fail closed. Sessions issued without a
+/// client-supplied input), pinned the same way, must match it on every
+/// validation, and an absent signal does not satisfy the lock: fail closed. Sessions issued without a
 /// country are unlocked and skip the check, so deployments without an edge
 /// country header are unaffected.
 ///
@@ -138,8 +141,10 @@ where
             .map_err(|_| SessionValidationError::InvalidSession)?;
     let body = decode_session_cookie_body(verified.body())
         .map_err(|_| SessionValidationError::InvalidSession)?;
+    // Compare pinned values: a session bound to a group tag (CountryPolicy)
+    // accepts any country of that group.
     if let Some(bound_country) = body.country.as_deref()
-        && request_country != Some(bound_country)
+        && request_country.map(|country| config.country_policy.pin(country)) != Some(bound_country)
     {
         return Err(SessionValidationError::InvalidSession);
     }
