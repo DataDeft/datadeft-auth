@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+use datadeft_auth_token_core::cookie::CLOCK_SKEW_TOLERANCE_SECS;
 use datadeft_magic_link_core::NormalizedEmail;
 
 use crate::types::UserId;
@@ -279,6 +280,18 @@ impl SessionSummary {
         } else {
             SessionStatus::Active
         }
+    }
+
+    /// Whether some host could still accept the session at `now_unix`: not
+    /// revoked, and not past its expiry by more than the clock-skew tolerance
+    /// (a host whose clock runs behind may still be inside the window). Bulk
+    /// revocation uses this instead of [`Self::status`], which is for display.
+    pub(crate) fn may_still_validate(&self, now_unix: u64) -> bool {
+        self.revoked_at_unix.is_none()
+            && self
+                .expires_at_unix
+                .saturating_add(CLOCK_SKEW_TOLERANCE_SECS)
+                >= now_unix
     }
 }
 

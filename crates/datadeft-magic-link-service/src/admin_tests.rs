@@ -135,3 +135,24 @@ fn stored_actors_stay_readable_when_limits_tighten() {
     assert!(AdminActor::new(long.clone(), None).is_err());
     assert_eq!(AdminActor::from_stored(long.clone(), None).id(), long);
 }
+
+#[test]
+fn bulk_revocation_reaches_sessions_until_the_skew_tolerance_past_expiry() {
+    let session = SessionSummary {
+        handle: SessionHandle::parse(HANDLE).expect("handle"),
+        user_id: UserId::parse("usr_000102030405060708090a0b0c0d0e0f").expect("user id"),
+        email: NormalizedEmail::parse("user@example.test").expect("email"),
+        created_at_unix: 100,
+        expires_at_unix: 200,
+        revoked_at_unix: None,
+        revoked_by: None,
+    };
+    let tolerance = datadeft_auth_token_core::cookie::CLOCK_SKEW_TOLERANCE_SECS;
+    assert!(session.may_still_validate(200 + tolerance));
+    assert!(!session.may_still_validate(200 + tolerance + 1));
+    let revoked = SessionSummary {
+        revoked_at_unix: Some(150),
+        ..session
+    };
+    assert!(!revoked.may_still_validate(150));
+}

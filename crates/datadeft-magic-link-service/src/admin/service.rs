@@ -1,6 +1,5 @@
 //! AuthAdminService: admin queries and audited mutations.
 
-use datadeft_auth_token_core::cookie::CLOCK_SKEW_TOLERANCE_SECS;
 use datadeft_magic_link_core::NormalizedEmail;
 use rand_core::{CryptoRng, RngCore};
 
@@ -162,10 +161,9 @@ where
         // Only sessions still usable: session rows are kept forever, so
         // expired ones are already over and revoking them would only add
         // audit noise and unbounded work.
-        let live_cutoff = now_unix.saturating_sub(CLOCK_SKEW_TOLERANCE_SECS);
         for session in sessions
             .iter()
-            .filter(|session| session.status(live_cutoff) == SessionStatus::Active)
+            .filter(|session| session.may_still_validate(now_unix))
         {
             let event = self.event(
                 AdminAction::RevokeSession,
@@ -211,9 +209,11 @@ where
     /// only once that succeeded. It also stamps a `sessions_valid_after`
     /// watermark that session validation enforces. The user logs in again.
     ///
-    /// The revocation step does not rely on clocks. The watermark alone does:
-    /// a login node whose clock runs ahead can stamp a pre-disable session
-    /// after it (`spec/tla/Session.tla`, `Inv_NoPreEnableSurvivor`).
+    /// The revocation step does not depend on when a session was created; it
+    /// only uses the admin clock to skip sessions already expired beyond the
+    /// clock-skew tolerance. The watermark alone would not be enough: a login
+    /// node whose clock runs ahead can stamp a pre-disable session after it
+    /// (`spec/tla/Session.tla`, `Inv_NoPreEnableSurvivor`).
     ///
     /// Safe to retry: on an error the user stays disabled.
     ///
