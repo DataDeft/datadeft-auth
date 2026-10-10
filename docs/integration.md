@@ -77,6 +77,12 @@ no data migration is provided, and every existing session ends.
   between EU countries and stay exact elsewhere. Drop edge rewrites of the
   country header. `ValidatedSession::country()` returns the pinned value,
   which is `EU` for a session in the group.
+- **Response contract** (docs/security.md, "HTTP response contract"): shape
+  errors are one generic `400` (`UnsupportedMediaType` and `PayloadTooLarge`
+  included), every fault is the constant `503` (`Internal` no longer answers
+  `500`), `MagicLinkHttpError::Forbidden` is removed (the library sends no
+  `403`), and an invalid session is `401` + `WWW-Authenticate: DD-Session`.
+  Alert on the internal `reason()` counts, not raw `5xx` rates.
 - **PoW statuses and the per-solve budget:** a rejected solution and a
   missing or invalid proof answer `401` with `WWW-Authenticate: DD-PoW`
   (`PowFlowError` and `ProofRejection` implement `IntoResponse`); faults and

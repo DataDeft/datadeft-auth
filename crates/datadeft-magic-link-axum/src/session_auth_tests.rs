@@ -76,7 +76,7 @@ async fn session_auth_maps_invalid_unavailable_and_internal_dispositions() {
         (
             SessionValidationError::Internal,
             SessionRejectionKind::Internal,
-            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::SERVICE_UNAVAILABLE,
             0,
         ),
     ];
@@ -103,6 +103,14 @@ async fn session_auth_maps_invalid_unavailable_and_internal_dispositions() {
         );
         let response = rejection.into_response();
         assert_eq!(response.status(), status);
+        // Only an invalid session asks the client to sign in again.
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::WWW_AUTHENTICATE)
+                .and_then(|value| value.to_str().ok()),
+            (kind == SessionRejectionKind::Invalid).then_some("DD-Session"),
+        );
         assert_eq!(
             response.headers().get_all(SET_COOKIE).iter().count(),
             clear_count

@@ -5,7 +5,7 @@ use core::fmt;
 use core::future::Future;
 
 use axum::Json;
-use axum::http::header::SET_COOKIE;
+use axum::http::header::{CACHE_CONTROL, SET_COOKIE, WWW_AUTHENTICATE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use datadeft_magic_link_service::{SessionValidationError, ValidatedSession};
@@ -83,19 +83,35 @@ impl fmt::Debug for SessionAuthRejection {
     }
 }
 
+/// `WWW-Authenticate` value for a missing or expired session.
+pub const DD_SESSION_AUTH_SCHEME: &str = "DD-Session";
+
 impl IntoResponse for SessionAuthRejection {
+    /// `Invalid` is `401` + `WWW-Authenticate: DD-Session` with the header
+    /// that clears the cookie; `Unavailable` and `Internal` are the constant
+    /// `503`.
     fn into_response(self) -> Response {
-        let error = match self.kind {
-            SessionRejectionKind::Invalid => MagicLinkHttpError::Forbidden,
-            SessionRejectionKind::Unavailable => MagicLinkHttpError::Unavailable,
-            SessionRejectionKind::Internal => MagicLinkHttpError::Internal,
+        let mut response = match self.kind {
+            SessionRejectionKind::Invalid => {
+                let mut response = (
+                    StatusCode::UNAUTHORIZED,
+                    Json(ErrorBody {
+                        error: "unauthorized",
+                        message: "Sign in again.",
+                    }),
+                )
+                    .into_response();
+                let headers = response.headers_mut();
+                headers.insert(
+                    WWW_AUTHENTICATE,
+                    HeaderValue::from_static(DD_SESSION_AUTH_SCHEME),
+                );
+                headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+                response
+            }
+            SessionRejectionKind::Unavailable => MagicLinkHttpError::Unavailable.into_response(),
+            SessionRejectionKind::Internal => MagicLinkHttpError::Internal.into_response(),
         };
-        let status = match self.kind {
-            SessionRejectionKind::Invalid => StatusCode::UNAUTHORIZED,
-            SessionRejectionKind::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
-            SessionRejectionKind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-        let mut response = (status, Json(ErrorBody::from(error))).into_response();
         if let Some(clear) = self.clear_cookie {
             response.headers_mut().append(SET_COOKIE, clear);
         }

@@ -2,17 +2,23 @@
 //! generic accepted response for magic-link endpoints.
 
 use axum::Json;
-use axum::http::StatusCode;
+use axum::http::header::CACHE_CONTROL;
+use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use datadeft_magic_link_service::MagicLinkServiceError;
 use serde::Serialize;
 
 /// Public HTTP error variants for general-purpose request-magic-link helpers.
 /// Variants never carry email, token, session id, or key material.
+///
+/// The response contract: shape errors (bad JSON or email syntax, wrong
+/// content type, oversize body) are one generic `400`, which leaks nothing;
+/// every dependency or server fault is the constant `503`, identical to the
+/// one `datadeft-pow-axum` sends. The library never sends `403` or `500`.
+/// Log [`Self::reason`] internally; it is never sent.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MagicLinkHttpError {
     BadRequest,
-    Forbidden,
     UnsupportedMediaType,
     PayloadTooLarge,
     MagicLinkUnavailable,
@@ -20,29 +26,29 @@ pub enum MagicLinkHttpError {
     Internal,
 }
 
+/// `error` code of the constant `503` body.
+pub const UNAVAILABLE_ERROR_CODE: &str = "unavailable";
+/// `message` of the constant `503` body.
+pub const UNAVAILABLE_MESSAGE: &str = "The service is temporarily unavailable. Try again later.";
+
 impl MagicLinkHttpError {
     #[must_use]
     pub fn status(self) -> StatusCode {
         match self {
-            Self::BadRequest | Self::MagicLinkUnavailable => StatusCode::BAD_REQUEST,
-            Self::Forbidden => StatusCode::FORBIDDEN,
-            Self::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
-            Self::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
-            Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::BadRequest
+            | Self::UnsupportedMediaType
+            | Self::PayloadTooLarge
+            | Self::MagicLinkUnavailable => StatusCode::BAD_REQUEST,
+            Self::Unavailable | Self::Internal => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 
     #[must_use]
     pub fn code(self) -> &'static str {
         match self {
-            Self::BadRequest => "bad_request",
-            Self::Forbidden => "forbidden",
-            Self::UnsupportedMediaType => "unsupported_media_type",
-            Self::PayloadTooLarge => "payload_too_large",
+            Self::BadRequest | Self::UnsupportedMediaType | Self::PayloadTooLarge => "bad_request",
             Self::MagicLinkUnavailable => "magic_link_unavailable",
-            Self::Unavailable => "unavailable",
-            Self::Internal => "internal",
+            Self::Unavailable | Self::Internal => UNAVAILABLE_ERROR_CODE,
         }
     }
 
@@ -52,10 +58,21 @@ impl MagicLinkHttpError {
             Self::BadRequest | Self::UnsupportedMediaType | Self::PayloadTooLarge => {
                 "Invalid request."
             }
-            Self::Forbidden => "Forbidden.",
             Self::MagicLinkUnavailable => "You cannot use this magic link. Request a new one.",
-            Self::Unavailable => "The service is temporarily unavailable. Try again later.",
-            Self::Internal => "Internal server error.",
+            Self::Unavailable | Self::Internal => UNAVAILABLE_MESSAGE,
+        }
+    }
+
+    /// Stable internal reason code for logs and metrics, never sent.
+    #[must_use]
+    pub fn reason(self) -> &'static str {
+        match self {
+            Self::BadRequest => "bad_request",
+            Self::UnsupportedMediaType => "unsupported_media_type",
+            Self::PayloadTooLarge => "payload_too_large",
+            Self::MagicLinkUnavailable => "magic_link_unavailable",
+            Self::Unavailable => "dependency_unavailable",
+            Self::Internal => "internal",
         }
     }
 }
@@ -73,7 +90,11 @@ impl From<MagicLinkServiceError> for MagicLinkHttpError {
 
 impl IntoResponse for MagicLinkHttpError {
     fn into_response(self) -> Response {
-        (self.status(), Json(ErrorBody::from(self))).into_response()
+        let mut response = (self.status(), Json(ErrorBody::from(self))).into_response();
+        response
+            .headers_mut()
+            .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        response
     }
 }
 

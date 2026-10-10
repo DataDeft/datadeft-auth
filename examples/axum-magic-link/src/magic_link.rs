@@ -6,22 +6,40 @@ use axum::http::header::{LOCATION, SET_COOKIE};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use datadeft_magic_link_axum::{
-    APPLICATION_JSON, MagicLinkFlowResponseError, MagicLinkHttpError, MagicLinkRequestJson,
+    APPLICATION_JSON, MagicLinkFlowResponseError, MagicLinkHttpError,
     apply_magic_link_security_headers, clear_confirm_cookie_header, generic_accepted_response,
-    guarded_body, magic_link_confirmation, magic_link_landing,
+    guarded_body, magic_link_confirmation, magic_link_landing, parse_magic_link_request_json,
 };
 use datadeft_magic_link_service::{MagicLinkFlowService, MagicLinkRequestService};
+use datadeft_pow_axum::admit_proof;
 use rand_core::OsRng;
-use serde::Deserialize;
 
-use super::pow::{PowSolutionJson, verify_pow_solution};
+use super::pow::SharedProofBudget;
 use super::state::{AppState, LocalClock};
-use super::util::escape_html;
+use super::util::{current_unix, escape_html};
 
 pub(super) async fn request_magic_link(
     State(state): State<AppState>,
     request: Request,
 ) -> Response {
+    // Gate on the dd_pow cookie and spend one unit of its solve's budget: a
+    // missing proof is 401 + DD-PoW, an exhausted budget the constant 503.
+    let Ok(now_unix) = current_unix() else {
+        return MagicLinkHttpError::Unavailable.into_response();
+    };
+    if let Err(rejection) = admit_proof(
+        request.headers(),
+        &state.pow_proof_keyring,
+        &state.pow_cookie,
+        state.pow_policy,
+        state.proof_budget,
+        &SharedProofBudget(&state.auth),
+        now_unix,
+    )
+    .await
+    {
+        return rejection.into_response();
+    }
     match request_magic_link_inner(state, request).await {
         Ok(response) => response,
         Err(error) => error.into_response(),
@@ -33,16 +51,7 @@ async fn request_magic_link_inner(
     request: Request,
 ) -> Result<Response, MagicLinkHttpError> {
     let guarded = guarded_body(request, &[APPLICATION_JSON], 4096).await?;
-    let body: RequestMagicLinkWithPow =
-        serde_json::from_slice(&guarded.bytes).map_err(|_| MagicLinkHttpError::BadRequest)?;
-    verify_pow_solution(&state, body.pow).map_err(|_| MagicLinkHttpError::Forbidden)?;
-    let command = MagicLinkRequestJson {
-        email: body.email,
-        terms_accepted: body.terms_accepted,
-        privacy_accepted: body.privacy_accepted,
-        locale: body.locale,
-    }
-    .into_command()?;
+    let command = parse_magic_link_request_json(&guarded.bytes)?;
 
     let mut rng = OsRng;
     let mut service = MagicLinkRequestService {
@@ -184,14 +193,4 @@ pub(super) async fn auth_complete() -> Html<&'static str> {
     Html(
         "<!doctype html><h1>Signed in</h1><p>The scanner-safe POST completed. Try <a href=\"/me\">/me</a>.</p>",
     )
-}
-
-#[derive(Debug, Deserialize)]
-struct RequestMagicLinkWithPow {
-    email: String,
-    terms_accepted: bool,
-    privacy_accepted: bool,
-    #[serde(default)]
-    locale: Option<String>,
-    pow: PowSolutionJson,
 }

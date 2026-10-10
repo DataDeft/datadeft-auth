@@ -78,10 +78,11 @@ pub struct MagicLinkLanding {
 ///   not enumerable. For a landing, use the **same HTTP status you return on
 ///   success**. For a confirmation, use a single generic failure. On confirmation,
 ///   clear the confirm cookie with [`clear_confirm_cookie_header`].
-/// - [`Unavailable`](Self::Unavailable): a dependency was down. Respond 503 and
-///   **preserve** the confirm cookie so the user can retry.
-/// - [`Internal`](Self::Internal): an internal error. Respond 500. Clearing the
-///   confirm cookie on confirmation is fine.
+/// - [`Unavailable`](Self::Unavailable): a dependency was down. Respond with the
+///   constant `503` and **preserve** the confirm cookie so the user can retry.
+/// - [`Internal`](Self::Internal): an internal error. Respond with the constant
+///   `503` too (the library never sends `500`). Clearing the confirm cookie on
+///   confirmation is fine.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MagicLinkFlowResponseError {
     Rejected,

@@ -1,111 +1,91 @@
-//! Proof-of-work admission: challenge route, solution check, and the replay set.
-
-use std::collections::HashMap;
-use std::sync::Mutex;
+//! Proof-of-work admission through `datadeft-pow-axum`: the challenge and
+//! validate routes, and the per-solve budget over the shared limiter.
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Request, State};
 use axum::http::StatusCode;
-use datadeft_magic_link_service::DependencyError;
-use datadeft_pow_core::{Challenge, Solution, mint_challenge, verify_solution};
+use axum::http::header::SET_COOKIE;
+use axum::response::{IntoResponse, Response};
+use datadeft_magic_link_aws::FakeDynamoDbAuthStore;
+use datadeft_magic_link_axum::{APPLICATION_JSON, MagicLinkHttpError, guarded_body};
+use datadeft_magic_link_service::{RateLimitDecision, RateLimitKey, RateLimiter};
+use datadeft_pow_axum::{
+    PowFlowError, PowSolutionRequest, ProofBudget, ProofBudgetDecision, ProofBudgetUnavailable,
+    mint_pow_challenge, verify_pow_solution,
+};
 use rand_core::{OsRng, RngCore};
-use serde::{Deserialize, Serialize};
 
 use super::state::AppState;
 use super::util::current_unix_millis;
-use super::*;
 
-pub(super) async fn pow_challenge(
-    State(state): State<AppState>,
-) -> Result<Json<PowChallengeJson>, (StatusCode, &'static str)> {
+/// `POST /auth/pow/create`: a fresh challenge.
+pub(super) async fn pow_create(State(state): State<AppState>) -> Response {
     let mut entropy = [0_u8; 16];
-    OsRng
-        .try_fill_bytes(&mut entropy)
-        .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "randomness unavailable\n"))?;
-    let now = current_unix_millis()
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "clock unavailable\n"))?;
-    let challenge = mint_challenge(&state.pow_secret, POW_DIFFICULTY, now, entropy)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "pow unavailable\n"))?;
-    Ok(Json(PowChallengeJson::from(challenge)))
+    if OsRng.try_fill_bytes(&mut entropy).is_err() {
+        return PowFlowError::Internal.into_response();
+    }
+    let Ok(now) = current_unix_millis() else {
+        return PowFlowError::Internal.into_response();
+    };
+    match mint_pow_challenge(&state.pow_secret, state.pow_policy, now, entropy) {
+        Ok(challenge) => Json(challenge).into_response(),
+        Err(error) => error.into_response(),
+    }
 }
 
-pub(super) fn verify_pow_solution(
-    state: &AppState,
-    body: PowSolutionJson,
-) -> Result<(), datadeft_pow_core::PowError> {
-    let now = current_unix_millis().map_err(|_| datadeft_pow_core::PowError::InvalidTimestamp)?;
-    let verified = verify_solution(
+/// `POST /auth/pow/validate`: verify a solution and set the `dd_pow` cookie.
+/// A failed solution answers `401` + `WWW-Authenticate: DD-PoW`.
+pub(super) async fn pow_validate(State(state): State<AppState>, request: Request) -> Response {
+    let guarded = match guarded_body(request, &[APPLICATION_JSON], 1024).await {
+        Ok(guarded) => guarded,
+        Err(error) => return error.into_response(),
+    };
+    let Ok(solution) = serde_json::from_slice::<PowSolutionRequest>(&guarded.bytes) else {
+        return MagicLinkHttpError::BadRequest.into_response();
+    };
+    let Ok(now) = current_unix_millis() else {
+        return PowFlowError::Internal.into_response();
+    };
+    match verify_pow_solution(
         &state.pow_secret,
-        &body.into_solution(),
+        state.pow_policy,
+        &solution,
+        &state.pow_proof_keyring,
+        &state.pow_cookie,
+        &mut OsRng,
         now,
-        POW_CHALLENGE_TTL_SECS,
-        POW_DIFFICULTY,
-    )?;
-    // The replay table keeps whole-second bookkeeping.
-    let now_unix = now.as_secs();
-    let expires_at_unix = now_unix
-        .checked_add(POW_CHALLENGE_TTL_SECS)
-        .ok_or(datadeft_pow_core::PowError::InvalidTimestamp)?;
-    consume_pow_tid(&state.pow_replay, &verified.tid, now_unix, expires_at_unix)
-        .map_err(|_| datadeft_pow_core::PowError::InvalidSolution)?;
-    Ok(())
+        |_| None,
+    ) {
+        Ok(admission) => {
+            (StatusCode::NO_CONTENT, [(SET_COOKIE, admission.set_cookie)]).into_response()
+        }
+        Err(error) => error.into_response(),
+    }
 }
 
-#[derive(Debug, Serialize)]
-pub(super) struct PowChallengeJson {
-    chg: String,
-    dif: u8,
-    tim: String,
-    tag: String,
-}
+/// The per-solve budget over the shared limiter's lifetime counter
+/// (docs/integration.md, "Per-solve budget"). With DynamoDB, the same few
+/// lines run over `DynamoDbAuthStore`.
+pub(super) struct SharedProofBudget<'a>(pub(super) &'a FakeDynamoDbAuthStore);
 
-impl From<Challenge> for PowChallengeJson {
-    fn from(value: Challenge) -> Self {
-        Self {
-            chg: value.chg,
-            dif: value.dif,
-            tim: value.tim,
-            tag: value.tag,
+impl ProofBudget for SharedProofBudget<'_> {
+    async fn spend(
+        &self,
+        tid: &str,
+        per_solve: u32,
+        expires_at_unix: u64,
+        now_unix: u64,
+    ) -> Result<ProofBudgetDecision, ProofBudgetUnavailable> {
+        let key = RateLimitKey::parse(&format!("pow:budget:{tid}"))
+            .map_err(|_| ProofBudgetUnavailable)?;
+        match self
+            .0
+            .check_lifetime_limit(&key, per_solve, expires_at_unix, now_unix)
+            .await
+        {
+            Ok(RateLimitDecision::Allowed) => Ok(ProofBudgetDecision::Spent),
+            Ok(RateLimitDecision::Denied) => Ok(ProofBudgetDecision::Exhausted),
+            Err(_) => Err(ProofBudgetUnavailable),
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct PowSolutionJson {
-    pub(super) chg: String,
-    pub(super) sol: String,
-    pub(super) non: String,
-    pub(super) dif: u8,
-    pub(super) tim: String,
-    pub(super) tag: String,
-}
-
-impl PowSolutionJson {
-    fn into_solution(self) -> Solution {
-        Solution {
-            chg: self.chg,
-            sol: self.sol,
-            non: self.non,
-            dif: self.dif,
-            tim: self.tim,
-            tag: self.tag,
-        }
-    }
-}
-
-/// Single-use PoW proof enforcement: reject a tid that was already spent and
-/// drop expired entries.
-fn consume_pow_tid(
-    replay: &Mutex<HashMap<String, u64>>,
-    tid: &str,
-    now_unix: u64,
-    expires_at_unix: u64,
-) -> Result<(), DependencyError> {
-    let mut tids = replay.lock().map_err(|_| DependencyError::Internal)?;
-    tids.retain(|_, expires_at| *expires_at > now_unix);
-    if tids.contains_key(tid) {
-        return Err(DependencyError::ConditionalWriteFailed);
-    }
-    tids.insert(tid.to_owned(), expires_at_unix);
-    Ok(())
 }

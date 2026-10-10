@@ -43,7 +43,7 @@ fn solve(challenge: &serde_json::Value) -> serde_json::Value {
         .find(|(_, hex)| hex.starts_with(&prefix))
         .expect("solution");
     serde_json::json!({
-        "chg": chg, "sol": sol, "non": non.to_string(), "dif": dif,
+        "chg": chg, "sol": sol, "non": non.to_string(),
         "tim": challenge["tim"], "tag": challenge["tag"],
     })
 }
@@ -70,37 +70,59 @@ async fn sign_in_end_to_end_through_the_router() {
     let outbox = state.outbox.clone();
     let app = app(state);
 
-    // Proof of work, then the link request.
+    // Without a proof the request is 401 + DD-PoW.
+    let request_link = |pow_cookie: Option<&str>| {
+        let body = serde_json::json!({
+            "email": "e2e@example.test", "terms_accepted": true, "privacy_accepted": true,
+            "locale": "hu",
+        });
+        let mut request =
+            Request::post("/auth/magic-link/request").header(CONTENT_TYPE, "application/json");
+        if let Some(pow_cookie) = pow_cookie {
+            request = request.header(COOKIE, pow_cookie);
+        }
+        request.body(Body::from(body.to_string())).expect("req")
+    };
+    let unproven = send(&app, request_link(None)).await;
+    assert_eq!(unproven.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        unproven
+            .headers()
+            .get("www-authenticate")
+            .and_then(|v| v.to_str().ok()),
+        Some("DD-PoW")
+    );
+
+    // Solve once; the validate route sets the dd_pow cookie.
     let challenge = send(
         &app,
-        Request::get("/auth/pow/challenge")
+        Request::post("/auth/pow/create")
             .body(Body::empty())
             .expect("req"),
     )
     .await;
     assert_eq!(challenge.status(), StatusCode::OK);
     let challenge: serde_json::Value = serde_json::from_str(&text(challenge).await).expect("json");
-    let request = serde_json::json!({
-        "email": "e2e@example.test", "terms_accepted": true, "privacy_accepted": true,
-        "pow": solve(&challenge),
-    });
-    let requested = send(
+    let validated = send(
         &app,
-        Request::post("/auth/magic-link/request")
+        Request::post("/auth/pow/validate")
             .header(CONTENT_TYPE, "application/json")
-            .body(Body::from(request.to_string()))
+            .body(Body::from(solve(&challenge).to_string()))
             .expect("req"),
     )
     .await;
+    assert_eq!(validated.status(), StatusCode::NO_CONTENT);
+    let pow_cookie = cookie(&validated, "dd_pow").expect("dd_pow cookie");
+
+    let requested = send(&app, request_link(Some(&pow_cookie))).await;
     assert_eq!(requested.status(), StatusCode::OK);
-    let token = outbox
-        .recorded()
-        .expect("outbox")
-        .pop()
-        .expect("email")
-        .token
-        .as_secret_value()
-        .to_string();
+    let email = outbox.recorded().expect("outbox").pop().expect("email");
+    // The request's locale hint resolved against the app's allowlist.
+    assert_eq!(
+        email.locale.as_ref().map(|locale| locale.as_str()),
+        Some("hu")
+    );
+    let token = email.token.as_secret_value().to_string();
     let landing_uri = format!("/auth/magic-link?token={token}");
 
     // A scanner fetches the link twice; neither fetch consumes it.
@@ -178,4 +200,17 @@ async fn sign_in_end_to_end_through_the_router() {
     )
     .await;
     assert_ne!(replay.status(), StatusCode::SEE_OTHER);
+
+    // One solve buys five requests over its lifetime; the sixth is the
+    // constant 503, whatever the reason.
+    for _ in 1..5 {
+        let again = send(&app, request_link(Some(&pow_cookie))).await;
+        assert_eq!(again.status(), StatusCode::OK);
+    }
+    let exhausted = send(&app, request_link(Some(&pow_cookie))).await;
+    assert_eq!(exhausted.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        text(exhausted).await,
+        r#"{"error":"unavailable","message":"The service is temporarily unavailable. Try again later."}"#
+    );
 }

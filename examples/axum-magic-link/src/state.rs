@@ -1,9 +1,8 @@
 //! App state, the development clock, keys, and startup errors.
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -15,6 +14,9 @@ use datadeft_magic_link_axum::{
 use datadeft_magic_link_service::{
     Clock, CountryPolicy, DependencyError, KeyRing, LocaleAllowlist, LookupHmacKey,
     MagicLinkConfirmCookie, MagicLinkServiceConfig, SessionCookie,
+};
+use datadeft_pow_axum::{
+    DEFAULT_POW_CHALLENGE_MAX_AGE_SECS, PowPolicy, PowProofCookieConfig, ProofBudgetPolicy,
 };
 use datadeft_pow_core::{PowProofCookie, PowSecret};
 use rand_core::{OsRng, RngCore};
@@ -39,15 +41,16 @@ pub(super) struct AppState {
     /// the rate limiter, mirroring the DynamoDB adapter's storage shape.
     pub(super) auth: FakeDynamoDbAuthStore,
     pub(super) outbox: FakeMagicLinkOutbox,
-    /// App-owned PoW replay set (tid -> expiry). PoW admission is outside the
-    /// magic-link protocol, so its replay store is application code.
-    pub(super) pow_replay: Arc<Mutex<HashMap<String, u64>>>,
     pub(super) config: MagicLinkServiceConfig,
     pub(super) http_config: Arc<MagicLinkScannerFlowConfig>,
     pub(super) lookup_hmac_key: Arc<LookupHmacKey>,
     pub(super) confirm_keyring: Arc<KeyRing<MagicLinkConfirmCookie>>,
     pub(super) session_keyring: Arc<KeyRing<SessionCookie>>,
     pub(super) pow_secret: Arc<PowSecret>,
+    pub(super) pow_policy: PowPolicy,
+    pub(super) pow_proof_keyring: Arc<KeyRing<PowProofCookie>>,
+    pub(super) pow_cookie: PowProofCookieConfig,
+    pub(super) proof_budget: ProofBudgetPolicy,
 }
 
 /// Wall clock for the example. The library never reads the clock itself. The
@@ -78,8 +81,7 @@ pub(super) fn build_state() -> AppResult<AppState> {
     let secrets = LoadedAuthSecrets::from_json(&development_secret_document(now_unix)?, None)
         .map_err(|_| SetupError("invalid development secret document"))?;
     // Built at startup so a `kid` too long for the proof cookie fails here.
-    // The proof cookie itself arrives with the per-solve PoW budget.
-    secrets
+    let pow_proof_keyring = secrets
         .pow_proof_keyring::<PowProofCookie>()
         .map_err(|_| SetupError("invalid PoW proof-cookie keyring"))?;
     let pow_secret = Arc::new(PowSecret::new(*secrets.pow_challenge_secret.as_bytes()));
@@ -103,13 +105,20 @@ pub(super) fn build_state() -> AppResult<AppState> {
     Ok(AppState {
         auth: FakeDynamoDbAuthStore::new(storage_hmac_key),
         outbox: FakeMagicLinkOutbox::default(),
-        pow_replay: Arc::default(),
         config,
         http_config: Arc::new(http_config),
         lookup_hmac_key: Arc::new(lookup_hmac_key),
         confirm_keyring: Arc::new(confirm_keyring),
         session_keyring: Arc::new(session_keyring),
         pow_secret,
+        pow_policy: PowPolicy::new(POW_DIFFICULTY, DEFAULT_POW_CHALLENGE_MAX_AGE_SECS)
+            .map_err(|_| SetupError("invalid PoW policy"))?,
+        pow_proof_keyring: Arc::new(pow_proof_keyring),
+        // Local HTTP: no `Secure`. Production uses `secure_defaults()`.
+        pow_cookie: PowProofCookieConfig::insecure_local_defaults(),
+        // Each solve buys this many magic-link requests over its lifetime
+        // (CeleraTax #8).
+        proof_budget: ProofBudgetPolicy::new(5).map_err(|_| SetupError("invalid PoW budget"))?,
     })
 }
 

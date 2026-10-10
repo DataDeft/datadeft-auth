@@ -64,7 +64,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         const non = String(nonce);
         const sol = await sha256(challenge.chg + non);
         if (sol.startsWith(target)) {
-          return { chg: challenge.chg, sol, non, dif: challenge.dif, tim: challenge.tim, tag: challenge.tag };
+          return { chg: challenge.chg, sol, non, tim: challenge.tim, tag: challenge.tag };
         }
         nonce += 1;
       }
@@ -72,20 +72,30 @@ const INDEX_HTML: &str = r#"<!doctype html>
     document.getElementById('login-form').addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
-      status.textContent = 'Minting and solving local proof of work...';
-      const challenge = await fetch('/auth/pow/challenge').then((response) => response.json());
-      const pow = await solvePow(challenge);
-      status.textContent = 'Requesting magic link...';
-      const response = await fetch('/auth/magic-link/request', {
+      const requestLink = () => fetch('/auth/magic-link/request', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           email: form.get('email'),
           terms_accepted: form.get('terms') === 'on',
           privacy_accepted: form.get('privacy') === 'on',
-          pow,
+          locale: document.documentElement.lang,
         }),
       });
+      status.textContent = 'Requesting magic link...';
+      let response = await requestLink();
+      // 401 + WWW-Authenticate: DD-PoW: solve once, then retry. Production
+      // apps use @datadeft/protect-client for this.
+      if (response.status === 401 && response.headers.get('www-authenticate') === 'DD-PoW') {
+        status.textContent = 'Solving local proof of work...';
+        const challenge = await fetch('/auth/pow/create', { method: 'POST' }).then((r) => r.json());
+        await fetch('/auth/pow/validate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(await solvePow(challenge)),
+        });
+        response = await requestLink();
+      }
       if (response.ok) {
         status.innerHTML = 'Request accepted. Open <a href="/dev/latest-magic-link">the development outbox</a>.';
       } else {

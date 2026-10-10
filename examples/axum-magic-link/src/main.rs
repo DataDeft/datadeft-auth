@@ -1,13 +1,11 @@
 //! Local Axum example wiring `datadeft-magic-link-service`, `datadeft-magic-link-axum`,
 //! the in-memory fakes from `datadeft-magic-link-aws` (default, SDK-free build), and
-//! `datadeft-pow-core` together.
+//! the PoW crates together.
 //!
 //! This binary is intentionally local-development only. It uses the
 //! crate-shipped in-memory fakes for storage/rate limiting/outbox, generates
 //! fresh development secrets at startup, and exposes a
-//! `/dev/latest-magic-link` helper instead of sending email. The only
-//! app-owned storage here is the PoW replay set, which is deliberately outside
-//! the magic-link protocol.
+//! `/dev/latest-magic-link` helper instead of sending email.
 
 mod dev;
 mod magic_link;
@@ -31,7 +29,6 @@ use self::state::*;
 const LOCAL_ORIGIN: &str = "http://127.0.0.1:3000";
 const LISTEN_ADDR: &str = "127.0.0.1:3000";
 const POW_DIFFICULTY: u8 = 3;
-const POW_CHALLENGE_TTL_SECS: u64 = 5 * 60;
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
@@ -47,7 +44,8 @@ async fn main() -> AppResult<()> {
 fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(index))
-        .route("/auth/pow/challenge", get(pow_challenge))
+        .route("/auth/pow/create", post(pow_create))
+        .route("/auth/pow/validate", post(pow_validate))
         .route("/auth/magic-link/request", post(request_magic_link))
         .route("/auth/magic-link", get(landing_route))
         .route("/auth/magic-link/consume", post(confirm_route))

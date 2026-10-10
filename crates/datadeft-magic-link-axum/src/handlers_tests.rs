@@ -457,7 +457,6 @@ async fn rejected_landing_and_error_bodies_never_reflect_the_token() {
 
     for http_error in [
         MagicLinkHttpError::BadRequest,
-        MagicLinkHttpError::Forbidden,
         MagicLinkHttpError::UnsupportedMediaType,
         MagicLinkHttpError::PayloadTooLarge,
         MagicLinkHttpError::MagicLinkUnavailable,

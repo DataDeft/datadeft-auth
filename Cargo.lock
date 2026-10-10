@@ -434,6 +434,7 @@ dependencies = [
  "datadeft-magic-link-aws",
  "datadeft-magic-link-axum",
  "datadeft-magic-link-service",
+ "datadeft-pow-axum",
  "datadeft-pow-core",
  "rand_core 0.6.4",
  "serde",
@@ -809,6 +810,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tokio",
 ]
 
 [[package]]

@@ -18,8 +18,13 @@ and `Set-Cookie` headers. Your application owns the router, body limits,
   `PowChallengeResponse` as JSON.
 - `POST /…/pow/validate` → deserialize a `PowSolutionRequest`, call
   `verify_pow_solution`, and on success append `PowAdmission::set_cookie`.
-  Map `PowFlowError::Rejected` to `403` and `PowFlowError::Internal` to
-  `500`.
+  On failure return the `PowFlowError`: it renders `401` +
+  `WWW-Authenticate: DD-PoW` for a rejected solution and the constant `503`
+  for a fault.
+- Every gated route → `admit_proof` with a `ProofBudget` over a shared
+  counter: it verifies the `dd_pow` cookie and spends one unit of its solve's
+  budget. Return the `ProofRejection` on failure: `401` + `DD-PoW` without a
+  usable proof, the constant `503` once the budget is spent.
 - Record `PowAdmission::mint_to_verify_ms` in your metrics. Count `None`
   separately.
 

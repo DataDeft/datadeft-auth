@@ -6,8 +6,8 @@ use axum::http::header::{LOCATION, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use datadeft_magic_link_axum::{
-    apply_magic_link_security_headers, authenticate_session, clear_session_cookie_header,
-    session_set_cookie_header, viewer_country_from,
+    MagicLinkHttpError, apply_magic_link_security_headers, authenticate_session,
+    clear_session_cookie_header, session_set_cookie_header, viewer_country_from,
 };
 use datadeft_magic_link_service::{MagicLinkFlowService, refresh_session_cookie, validate_session};
 use rand_core::OsRng;
@@ -65,10 +65,7 @@ pub(super) async fn me(State(state): State<AppState>, headers: HeaderMap) -> Res
                         Ok(header) => {
                             response.headers_mut().append(SET_COOKIE, header);
                         }
-                        Err(_) => {
-                            return (StatusCode::INTERNAL_SERVER_ERROR, "internal error\n")
-                                .into_response();
-                        }
+                        Err(_) => return MagicLinkHttpError::Internal.into_response(),
                     }
                 }
                 // Not due yet: keep the current cookie.
@@ -86,6 +83,8 @@ pub(super) async fn me(State(state): State<AppState>, headers: HeaderMap) -> Res
 }
 
 pub(super) async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    // A cross-site logout is the app's own refusal: 403 is the app's status,
+    // which the library never sends.
     if !is_same_origin_post(&headers) {
         return (StatusCode::FORBIDDEN, "forbidden\n").into_response();
     }
@@ -131,7 +130,7 @@ pub(super) async fn logout(State(state): State<AppState>, headers: HeaderMap) ->
         .await
         .is_err()
     {
-        return (StatusCode::SERVICE_UNAVAILABLE, "logout unavailable\n").into_response();
+        return MagicLinkHttpError::Unavailable.into_response();
     }
 
     let mut response = Response::new(Body::empty());

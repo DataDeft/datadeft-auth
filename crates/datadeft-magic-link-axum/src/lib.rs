@@ -190,7 +190,10 @@ pub use cookie::{
 };
 /// The strict incoming-cookie selector shared with `datadeft-pow-axum`.
 pub use datadeft_magic_link_service::cookie_header::{CookieHeaderError, select_cookie};
-pub use error::{ErrorBody, GenericAcceptedBody, MagicLinkHttpError, generic_accepted_response};
+pub use error::{
+    ErrorBody, GenericAcceptedBody, MagicLinkHttpError, UNAVAILABLE_ERROR_CODE,
+    UNAVAILABLE_MESSAGE, generic_accepted_response,
+};
 pub use extract::{
     APPLICATION_JSON, CLOUDFRONT_VIEWER_COUNTRY, FORM_URLENCODED, GuardedBody,
     MAX_MAGIC_LINK_BODY_BYTES, MAX_MAGIC_LINK_LANDING_QUERY_BYTES, MagicLinkConfirmationBody,
@@ -205,5 +208,6 @@ pub use handlers::{
 pub use origin::{OriginConfigError, SameOriginPostConfig, SameOriginRedirect};
 pub use scanner_config::{MagicLinkScannerFlowConfig, MagicLinkScannerFlowConfigError};
 pub use session_auth::{
-    SessionAuthRejection, SessionCookieValue, SessionRejectionKind, authenticate_session,
+    DD_SESSION_AUTH_SCHEME, SessionAuthRejection, SessionCookieValue, SessionRejectionKind,
+    authenticate_session,
 };

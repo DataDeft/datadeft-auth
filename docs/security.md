@@ -787,6 +787,36 @@ The confirmation page mitigates login CSRF by showing the account. Offer a stron
   Reply-To would let anyone send our genuine login emails with their own
   reply address: phishing from our domain.
 
+## HTTP response contract
+
+One supported mapping, not configurable. Clients act on it; nothing else
+about a refusal is public.
+
+| Response | Meaning | Client action |
+| --- | --- | --- |
+| `401` + `WWW-Authenticate: DD-PoW` | The proof of work is missing, invalid or expired, or a posted solution failed. | Solve a challenge, retry once. |
+| `401` + `WWW-Authenticate: DD-Session` | The session is missing, invalid, expired or revoked. The response clears the cookie. | Sign in again. |
+| `400`, one generic body | A shape error that leaks nothing: bad JSON, an invalid email address, wrong content type, oversize body. | Fix the request; do not retry. |
+| `503`, one constant body, `no-store` | Everything security-sensitive or failed: rate limits, quotas, an exhausted per-solve budget, dependency or server faults. | Back off with equal jitter and retry. Never retry without jitter. |
+| `403` | Never sent by the library. It is the app's, for business authorization. | App-defined. |
+
+Exceptions, so they reveal nothing either: the magic-link request answers the
+same generic `200` whether it sent, throttled or dropped the email; the
+landing answers the same page for every link state; the confirmation answers
+one human page on failure.
+
+Rules:
+
+- The `503` body and headers are byte-identical for every reason, across
+  `datadeft-magic-link-axum` and `datadeft-pow-axum`.
+- Log the internal reason (`MagicLinkHttpError::reason`,
+  `ProofRejection::reason`) and count it; never send it.
+- Alert on the reason counts, not on raw `5xx` rates: a bot flood is many
+  `503`s by design. Point load-balancer health checks at a dedicated health
+  endpoint.
+- A non-leaking `4xx` is fine only where it reveals nothing about accounts,
+  links, limits or quotas.
+
 ## Rate limiting and abuse controls
 
 Magic-link owns these limiter domains:
