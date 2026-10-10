@@ -37,9 +37,10 @@ where
     ServiceClock: Clock,
     Rng: RngCore + CryptoRng,
 {
-    /// Request a magic link. Throttled request/outbox paths return the same
-    /// generic accepted outcome as a send so callers cannot enumerate accounts
-    /// or throttling policy from the public response.
+    /// Request a magic link. A throttled request returns
+    /// [`RequestMagicLinkOutcome::Throttled`] for the app's logs and metrics;
+    /// the public response must stay the same generic accepted answer as a
+    /// send, so callers cannot enumerate accounts or throttling policy.
     pub async fn request_magic_link(
         &mut self,
         command: RequestMagicLinkCommand,
@@ -55,7 +56,7 @@ where
             .ok_or(MagicLinkServiceError::Internal)?;
         let email_lookup = email_lookup_hmac(self.lookup_hmac_key, command.email())?;
 
-        if request_and_outbox_limits_deny(
+        if let Some(throttle) = request_and_outbox_limits_deny(
             self.limiter,
             &self.config,
             email_lookup.as_storage_value(),
@@ -63,7 +64,7 @@ where
         )
         .await?
         {
-            return Ok(RequestMagicLinkOutcome);
+            return Ok(RequestMagicLinkOutcome::Throttled(throttle));
         }
 
         let token = MagicLinkToken::generate(self.rng)?;
@@ -100,6 +101,6 @@ where
             .await
             .map_err(map_dependency_error)?;
 
-        Ok(RequestMagicLinkOutcome)
+        Ok(RequestMagicLinkOutcome::Sent)
     }
 }

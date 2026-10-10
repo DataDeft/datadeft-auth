@@ -314,9 +314,43 @@ impl fmt::Debug for MagicLinkEmail {
     }
 }
 
-/// Generic accepted request response.
+/// What a magic-link request did. Internal only: the public response is the
+/// same generic accepted answer for both, so nobody can tell from outside
+/// whether an email was sent. Log and count it.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct RequestMagicLinkOutcome;
+pub enum RequestMagicLinkOutcome {
+    /// The link was stored and handed to the outbox.
+    Sent,
+    /// A per-email limit refused it; nothing was stored or sent.
+    Throttled(RequestThrottle),
+}
+
+/// The per-email bucket that throttled a request (the first in this order).
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RequestThrottle {
+    /// Requests for the address in the short window.
+    EmailShortWindow,
+    /// Requests for the address per day.
+    EmailDaily,
+    /// Emails sent to the address per hour.
+    OutboxHourly,
+    /// Emails sent to the address per day.
+    OutboxDaily,
+}
+
+impl RequestMagicLinkOutcome {
+    /// Stable label for logs and metrics, never sent to the client.
+    #[must_use]
+    pub fn reason(self) -> &'static str {
+        match self {
+            Self::Sent => "sent",
+            Self::Throttled(RequestThrottle::EmailShortWindow) => "throttled_email_short_window",
+            Self::Throttled(RequestThrottle::EmailDaily) => "throttled_email_daily",
+            Self::Throttled(RequestThrottle::OutboxHourly) => "throttled_outbox_hourly",
+            Self::Throttled(RequestThrottle::OutboxDaily) => "throttled_outbox_daily",
+        }
+    }
+}
 
 /// Canonical successful magic-link authentication result.
 pub struct MagicLinkAuthenticationOutcome {

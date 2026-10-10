@@ -41,7 +41,7 @@ async fn request_handler_preserves_generic_success_regression() {
         .expect("request");
     let response = handle_magic_link_request_json(request, |command| async move {
         assert_eq!(command.email().as_str(), "user@example.com");
-        Ok(RequestMagicLinkOutcome)
+        Ok(RequestMagicLinkOutcome::Sent)
     })
     .await;
     let (status, _, body) = response_parts(response).await;

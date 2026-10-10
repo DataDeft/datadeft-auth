@@ -86,9 +86,10 @@ impl fmt::Debug for AdmittedProof {
     }
 }
 
-/// Why [`admit_proof`] refused a request. Log [`Self::reason`] internally;
-/// the public response ([`IntoResponse`]) never says which it was beyond
-/// `401` versus `503`.
+/// Why [`admit_proof`] refused a request: the typed reason, with
+/// [`Self::reason`] as its stable label for logs and metrics. The public
+/// response ([`IntoResponse`]) never says which it was beyond `401` versus
+/// `503`.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ProofRejection {
     /// No usable proof cookie: missing, malformed, duplicated, forged, or

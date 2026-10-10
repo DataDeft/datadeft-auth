@@ -38,11 +38,16 @@ pub(super) async fn request_magic_link(
     )
     .await
     {
+        // The reason stays internal: log and count it, never send it.
+        eprintln!("magic-link request refused: {}", rejection.reason());
         return rejection.into_response();
     }
     match request_magic_link_inner(state, request).await {
         Ok(response) => response,
-        Err(error) => error.into_response(),
+        Err(error) => {
+            eprintln!("magic-link request refused: {}", error.reason());
+            error.into_response()
+        }
     }
 }
 
@@ -63,10 +68,12 @@ async fn request_magic_link_inner(
         lookup_hmac_key: state.lookup_hmac_key.as_ref(),
         config: state.config.clone(),
     };
-    service
+    let outcome = service
         .request_magic_link(command)
         .await
         .map_err(MagicLinkHttpError::from)?;
+    // Sent or throttled: the same public 200 either way; count the outcome.
+    eprintln!("magic-link request: {}", outcome.reason());
     Ok(generic_accepted_response())
 }
 

@@ -809,8 +809,12 @@ Rules:
 
 - The `503` body and headers are byte-identical for every reason, across
   `datadeft-magic-link-axum` and `datadeft-pow-axum`.
-- Log the internal reason (`MagicLinkHttpError::reason`,
-  `ProofRejection::reason`) and count it; never send it.
+- Log the internal reason and count it; never send it. The typed reasons are
+  `MagicLinkHttpError`, `ProofRejection`, `SessionRejectionKind`, and, for
+  the request endpoint whose public answer is always the same `200`,
+  `RequestMagicLinkOutcome` (`Sent` or `Throttled(RequestThrottle)`). Each has
+  a stable `reason()` label for metrics, with no identifiers, emails or token
+  material.
 - Alert on the reason counts, not on raw `5xx` rates: a bot flood is many
   `503`s by design. Point load-balancer health checks at a dedicated health
   endpoint.

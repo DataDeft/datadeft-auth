@@ -77,6 +77,9 @@ no data migration is provided, and every existing session ends.
   between EU countries and stay exact elsewhere. Drop edge rewrites of the
   country header. `ValidatedSession::country()` returns the pinned value,
   which is `EU` for a session in the group.
+- **Request outcome:** `request_magic_link` returns
+  `RequestMagicLinkOutcome::Sent` or `Throttled(RequestThrottle)` instead of a
+  unit struct. Count it; the public answer stays the same `200`.
 - **Response contract** (docs/security.md, "HTTP response contract"): shape
   errors are one generic `400` (`UnsupportedMediaType` and `PayloadTooLarge`
   included), every fault is the constant `503` (`Internal` no longer answers

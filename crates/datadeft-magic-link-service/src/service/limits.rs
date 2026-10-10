@@ -5,7 +5,7 @@ use futures_util::future::join_all;
 use crate::config::MagicLinkServiceConfig;
 use crate::error::MagicLinkServiceError;
 use crate::traits::{RateLimitDecision, RateLimiter};
-use crate::types::RateLimitKey;
+use crate::types::{RateLimitKey, RequestThrottle};
 
 use super::*;
 
@@ -20,18 +20,19 @@ pub(super) async fn landing_limits_deny<Limiter: RateLimiter>(
         config.rate_limits.landing_selector_limit,
         config.rate_limits.landing_selector_window_secs,
     )];
-    any_limit_denied(limiter, checks, now_unix).await
+    Ok(first_denied(limiter, checks, now_unix).await?.is_some())
 }
 
 /// Request-path limits: the request and outbox email buckets, checked as one
 /// concurrent batch. With a network-backed limiter each check is a round
 /// trip, so sequential awaits would serialize four of them per request.
+/// Returns the first bucket (in [`RequestThrottle`] order) that denied.
 pub(super) async fn request_and_outbox_limits_deny<Limiter: RateLimiter>(
     limiter: &Limiter,
     config: &MagicLinkServiceConfig,
     email_lookup: &str,
     now_unix: u64,
-) -> Result<bool, MagicLinkServiceError> {
+) -> Result<Option<RequestThrottle>, MagicLinkServiceError> {
     let limits = &config.rate_limits;
     let checks = [
         (
@@ -55,7 +56,15 @@ pub(super) async fn request_and_outbox_limits_deny<Limiter: RateLimiter>(
             limits.outbox_email_daily_window_secs,
         ),
     ];
-    any_limit_denied(limiter, checks, now_unix).await
+    const BUCKETS: [RequestThrottle; 4] = [
+        RequestThrottle::EmailShortWindow,
+        RequestThrottle::EmailDaily,
+        RequestThrottle::OutboxHourly,
+        RequestThrottle::OutboxDaily,
+    ];
+    Ok(first_denied(limiter, checks, now_unix)
+        .await?
+        .and_then(|index| BUCKETS.get(index).copied()))
 }
 
 pub(super) async fn consume_limits_deny<Limiter: RateLimiter>(
@@ -69,11 +78,11 @@ pub(super) async fn consume_limits_deny<Limiter: RateLimiter>(
         config.rate_limits.consume_selector_limit,
         config.magic_link_ttl_secs,
     )];
-    any_limit_denied(limiter, checks, now_unix).await
+    Ok(first_denied(limiter, checks, now_unix).await?.is_some())
 }
 
-/// Run every `(key, limit, window_secs)` check concurrently. Report whether
-/// any bucket denied.
+/// Run every `(key, limit, window_secs)` check concurrently. Report the
+/// position of the first bucket that denied, if any.
 ///
 /// Concurrency is an accounting choice as well as a latency one. The limiter
 /// consults every bucket (and advances its counter) even when another bucket
@@ -81,11 +90,11 @@ pub(super) async fn consume_limits_deny<Limiter: RateLimiter>(
 /// denied request therefore still consumes quota in every bucket, which only
 /// tightens limiting. A dependency error takes precedence over a denial.
 /// Limiter state is unknown, so the request fails closed as unavailable.
-async fn any_limit_denied<Limiter: RateLimiter>(
+async fn first_denied<Limiter: RateLimiter>(
     limiter: &Limiter,
     checks: impl IntoIterator<Item = (String, u32, u64)>,
     now_unix: u64,
-) -> Result<bool, MagicLinkServiceError> {
+) -> Result<Option<usize>, MagicLinkServiceError> {
     let checks: Vec<(RateLimitKey, u32, u64)> = checks
         .into_iter()
         .map(|(key, limit, window_secs)| {
@@ -97,9 +106,11 @@ async fn any_limit_denied<Limiter: RateLimiter>(
     }))
     .await;
 
-    let mut denied = false;
-    for decision in decisions {
-        denied |= decision.map_err(map_dependency_error)? == RateLimitDecision::Denied;
+    let mut denied = None;
+    for (index, decision) in decisions.into_iter().enumerate() {
+        if decision.map_err(map_dependency_error)? == RateLimitDecision::Denied {
+            denied = denied.or(Some(index));
+        }
     }
     Ok(denied)
 }

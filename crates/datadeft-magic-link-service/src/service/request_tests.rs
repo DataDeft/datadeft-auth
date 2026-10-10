@@ -5,7 +5,7 @@
 use datadeft_auth_token_core::test_support::CountingRng;
 use datadeft_magic_link_core::NormalizedEmail;
 
-use crate::types::RequestMagicLinkCommand;
+use crate::types::{RequestMagicLinkCommand, RequestMagicLinkOutcome, RequestThrottle};
 
 use super::test_support::*;
 use super::*;
@@ -27,7 +27,7 @@ async fn request_side_repository_remains_put_only_and_stores_no_user_id() {
         lookup_hmac_key: &key,
         config: config(),
     };
-    service
+    let outcome = service
         .request_magic_link(RequestMagicLinkCommand::new(
             NormalizedEmail::from_normalized("account@example.test").expect("email"),
             true,
@@ -35,15 +35,31 @@ async fn request_side_repository_remains_put_only_and_stores_no_user_id() {
         ))
         .await
         .expect("request");
+    assert_eq!(outcome, RequestMagicLinkOutcome::Sent);
+    assert_eq!(outcome.reason(), "sent");
     assert_eq!(repository.request_records.borrow().len(), 1);
     assert_eq!(outbox.messages.borrow().len(), 1);
 }
 
 #[tokio::test]
 async fn request_rate_limit_denials_are_generic_and_suppress_side_effects() {
-    for denied_prefix in [
-        "magic-link:request:email:short:",
-        "magic-link:outbox:email:hourly:",
+    for (denied_prefix, throttle) in [
+        (
+            "magic-link:request:email:short:",
+            RequestThrottle::EmailShortWindow,
+        ),
+        (
+            "magic-link:request:email:daily:",
+            RequestThrottle::EmailDaily,
+        ),
+        (
+            "magic-link:outbox:email:hourly:",
+            RequestThrottle::OutboxHourly,
+        ),
+        (
+            "magic-link:outbox:email:daily:",
+            RequestThrottle::OutboxDaily,
+        ),
     ] {
         let repository = FakeRepository::default();
         let limiter = AllowLimiter::default();
@@ -57,7 +73,8 @@ async fn request_rate_limit_denials_are_generic_and_suppress_side_effects() {
             config(),
         )
         .await;
-        assert_eq!(result, Ok(RequestMagicLinkOutcome));
+        // Internal only: the public response is the same generic 200.
+        assert_eq!(result, Ok(RequestMagicLinkOutcome::Throttled(throttle)));
         assert!(repository.request_records.borrow().is_empty());
         assert!(outbox.messages.borrow().is_empty());
     }

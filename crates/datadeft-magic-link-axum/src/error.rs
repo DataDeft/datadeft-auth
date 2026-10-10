@@ -15,7 +15,9 @@ use serde::Serialize;
 /// content type, oversize body) are one generic `400`, which leaks nothing;
 /// every dependency or server fault is the constant `503`, identical to the
 /// one `datadeft-pow-axum` sends. The library never sends `403` or `500`.
-/// Log [`Self::reason`] internally; it is never sent.
+///
+/// The variant is the typed reason; [`Self::reason`] is its stable label for
+/// logs and metrics. Neither is ever sent.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MagicLinkHttpError {
     BadRequest,
