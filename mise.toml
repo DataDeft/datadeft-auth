@@ -70,6 +70,15 @@ sleep 2
 DYNAMODB_LOCAL_ENDPOINT=http://localhost:18000 cargo test -p datadeft-magic-link-aws --features aws --test dynamodb_local -- --ignored --test-threads 1
 """
 
+[tasks.fuzz]
+description = "Fuzz every untrusted-input parser for 60 s each (cargo-fuzz, nightly)"
+dir = "fuzz"
+run = """
+for target in $(cargo +nightly fuzz list); do
+  cargo +nightly fuzz run "$target" -- -max_total_time=60 -max_len=4096 || exit 1
+done
+"""
+
 [tasks.spec-mutants]
 description = "Prove every TLA+ invariant can fail: each mutant must be caught"
 tools = { "cargo:tla-checker" = "0.3.9" }

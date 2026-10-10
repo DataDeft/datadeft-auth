@@ -1,0 +1,94 @@
+[package]
+name = "datadeft-auth-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "cargo-fuzz targets for the datadeft-auth parsers of untrusted input"
+
+# Standalone: not a member of the library workspace.
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = "0.4"
+datadeft-auth-token-core = { path = "../crates/datadeft-auth-token-core", features = ["test-support"] }
+datadeft-magic-link-core = { path = "../crates/datadeft-magic-link-core" }
+datadeft-magic-link-service = { path = "../crates/datadeft-magic-link-service" }
+datadeft-magic-link-axum = { path = "../crates/datadeft-magic-link-axum" }
+datadeft-pow-core = { path = "../crates/datadeft-pow-core" }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "base62_decode"
+path = "fuzz_targets/base62_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "branca_decode"
+path = "fuzz_targets/branca_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bound_cookie_parse"
+path = "fuzz_targets/bound_cookie_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session_body"
+path = "fuzz_targets/session_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "normalized_email"
+path = "fuzz_targets/normalized_email.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "magic_link_token"
+path = "fuzz_targets/magic_link_token.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pow_proof_cookie"
+path = "fuzz_targets/pow_proof_cookie.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pow_solution"
+path = "fuzz_targets/pow_solution.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "confirm_cookie"
+path = "fuzz_targets/confirm_cookie.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "request_json"
+path = "fuzz_targets/request_json.rs"
+test = false
+doc = false
+bench = false
