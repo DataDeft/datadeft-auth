@@ -41,6 +41,8 @@ mod api_tests;
 #[cfg(test)]
 mod confirmation_tests;
 #[cfg(test)]
+mod flow_state_tests;
+#[cfg(test)]
 mod landing_tests;
 #[cfg(test)]
 mod request_tests;

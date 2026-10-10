@@ -335,12 +335,77 @@ pub fn verify_magic_link_confirm(
     now_unix: u64,
     max_age_secs: u64,
 ) -> Result<VerifiedMagicLinkConfirm, TokenError> {
+    let submitted_confirmation =
+        parse_confirmation(confirmation_value).map_err(|_| TokenError::InvalidToken)?;
+    let (verified, confirmation) =
+        open_confirm_cookie(cookie_value, keyring, now_unix, max_age_secs)?;
+    if !confirmation.matches_constant_time(&submitted_confirmation) {
+        return Err(TokenError::InvalidToken);
+    }
+    Ok(verified)
+}
+
+/// A confirm cookie opened without a submitted confirmation: its bindings
+/// plus the confirmation value it carries.
+pub struct ReadMagicLinkConfirm {
+    verified: VerifiedMagicLinkConfirm,
+    confirmation: MagicLinkConfirmationValue,
+}
+
+impl ReadMagicLinkConfirm {
+    /// Authenticated, fresh bindings.
+    #[must_use]
+    pub fn verified(&self) -> &VerifiedMagicLinkConfirm {
+        &self.verified
+    }
+
+    /// The confirmation value a same-origin page submits with the POST.
+    #[must_use]
+    pub fn confirmation(&self) -> &MagicLinkConfirmationValue {
+        &self.confirmation
+    }
+
+    /// Take the confirmation value, without copying it.
+    #[must_use]
+    pub fn into_confirmation(self) -> MagicLinkConfirmationValue {
+        self.confirmation
+    }
+}
+
+impl fmt::Debug for ReadMagicLinkConfirm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ReadMagicLinkConfirm(..)")
+    }
+}
+
+/// Open a confirm cookie for the read-only flow-state step of the redirect
+/// landing mode: same authentication, age, and expiry checks as
+/// [`verify_magic_link_confirm`], but returns the confirmation value instead
+/// of requiring it. Never consumes anything; the cookie alone is not enough to
+/// sign in, which still takes the same-origin POST.
+pub fn read_magic_link_confirm(
+    cookie_value: &str,
+    keyring: &KeyRing<MagicLinkConfirmCookie>,
+    now_unix: u64,
+    max_age_secs: u64,
+) -> Result<ReadMagicLinkConfirm, TokenError> {
+    let (verified, confirmation) =
+        open_confirm_cookie(cookie_value, keyring, now_unix, max_age_secs)?;
+    Ok(ReadMagicLinkConfirm {
+        verified,
+        confirmation: MagicLinkConfirmationValue(hex::encode(&confirmation.0)),
+    })
+}
+
+fn open_confirm_cookie(
+    cookie_value: &str,
+    keyring: &KeyRing<MagicLinkConfirmCookie>,
+    now_unix: u64,
+    max_age_secs: u64,
+) -> Result<(VerifiedMagicLinkConfirm, MagicLinkConfirmNonce), TokenError> {
     if max_age_secs == 0 || max_age_secs > MAGIC_LINK_CONFIRM_MAX_AGE_SECS {
         return Err(TokenError::InvalidToken);
     }
-
-    let submitted_confirmation =
-        parse_confirmation(confirmation_value).map_err(|_| TokenError::InvalidToken)?;
     let verified = parse_bound_cookie::<MagicLinkConfirmCookie>(
         cookie_value,
         keyring,
@@ -352,23 +417,19 @@ pub fn verify_magic_link_confirm(
 
     let expires_at = u64::from(decoded.expires_at_unix);
     let iat = u64::from(verified.iat());
-    let confirmation_matches = decoded
-        .confirmation
-        .matches_constant_time(&submitted_confirmation);
-    if expires_at < iat
-        || now_unix > expires_at
-        || expires_at > iat.saturating_add(max_age_secs)
-        || !confirmation_matches
-    {
+    if expires_at < iat || now_unix > expires_at || expires_at > iat.saturating_add(max_age_secs) {
         return Err(TokenError::InvalidToken);
     }
 
-    Ok(VerifiedMagicLinkConfirm {
-        selector: decoded.selector,
-        verifier: decoded.verifier,
-        account: decoded.account,
-        expires_at_unix: decoded.expires_at_unix,
-    })
+    Ok((
+        VerifiedMagicLinkConfirm {
+            selector: decoded.selector,
+            verifier: decoded.verifier,
+            account: decoded.account,
+            expires_at_unix: decoded.expires_at_unix,
+        },
+        decoded.confirmation,
+    ))
 }
 
 struct MagicLinkConfirmNonce([u8; MAGIC_LINK_CONFIRM_NONCE_BYTES]);

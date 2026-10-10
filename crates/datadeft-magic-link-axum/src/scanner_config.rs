@@ -14,6 +14,9 @@ use crate::origin::{SameOriginPostConfig, SameOriginRedirect};
 pub enum MagicLinkScannerFlowConfigError {
     DuplicateCookieName,
     ConfirmCookiePathDoesNotCoverPostAction,
+    /// The confirm cookie's `Path` does not cover the flow-state route, so
+    /// the browser would not send it there.
+    ConfirmCookiePathDoesNotCoverFlowState,
 }
 
 impl fmt::Display for MagicLinkScannerFlowConfigError {
@@ -22,6 +25,9 @@ impl fmt::Display for MagicLinkScannerFlowConfigError {
             Self::DuplicateCookieName => "confirm cookie names must be pairwise distinct",
             Self::ConfirmCookiePathDoesNotCoverPostAction => {
                 "confirm cookie path does not cover confirmation action"
+            }
+            Self::ConfirmCookiePathDoesNotCoverFlowState => {
+                "confirm cookie path does not cover the flow-state route"
             }
         })
     }
@@ -42,6 +48,29 @@ pub struct MagicLinkScannerFlowConfig {
     session_cookie: SessionCookieConfig,
     confirm_cookie: ConfirmCookieConfig,
     country_header: HeaderName,
+    redirect_landing: Option<RedirectLanding>,
+}
+
+/// The redirect landing mode's two routes: the static confirm page the
+/// landing redirects to, and the flow-state route that page reads.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RedirectLanding {
+    page: SameOriginRedirect,
+    flow_state: SameOriginRedirect,
+}
+
+impl RedirectLanding {
+    /// The same-origin static confirm page every landing outcome redirects to.
+    #[must_use]
+    pub fn page(&self) -> &SameOriginRedirect {
+        &self.page
+    }
+
+    /// The same-origin flow-state route the page reads (`GET`).
+    #[must_use]
+    pub fn flow_state(&self) -> &SameOriginRedirect {
+        &self.flow_state
+    }
 }
 
 impl MagicLinkScannerFlowConfig {
@@ -68,7 +97,35 @@ impl MagicLinkScannerFlowConfig {
             session_cookie,
             confirm_cookie,
             country_header: HeaderName::from_static(CLOUDFRONT_VIEWER_COUNTRY),
+            redirect_landing: None,
         })
+    }
+
+    /// Enable the redirect landing mode (docs/security.md, "Redirect landing
+    /// mode"): the landing answers `303` to `page` for every outcome, and the
+    /// static page reads `{ account, confirmation }` from `flow_state`. The
+    /// confirm cookie's `Path` must cover `flow_state` as well as the POST
+    /// action.
+    pub fn with_redirect_landing(
+        mut self,
+        page: SameOriginRedirect,
+        flow_state: SameOriginRedirect,
+    ) -> Result<Self, MagicLinkScannerFlowConfigError> {
+        let path = flow_state
+            .as_str()
+            .split_once('?')
+            .map_or(flow_state.as_str(), |(path, _)| path);
+        if !cookie_path_covers(self.confirm_cookie.path(), path) {
+            return Err(MagicLinkScannerFlowConfigError::ConfirmCookiePathDoesNotCoverFlowState);
+        }
+        self.redirect_landing = Some(RedirectLanding { page, flow_state });
+        Ok(self)
+    }
+
+    /// The redirect landing mode's routes, when enabled.
+    #[must_use]
+    pub fn redirect_landing(&self) -> Option<&RedirectLanding> {
+        self.redirect_landing.as_ref()
     }
 
     /// Use a different trusted-edge country header (for example Cloudflare's

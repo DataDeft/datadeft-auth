@@ -3,7 +3,7 @@
 use datadeft_auth_token_core::keyring::KeyRing;
 use datadeft_magic_link_core::confirm_cookie::{
     MagicLinkConfirmBindings, MagicLinkConfirmCookie, mint_magic_link_confirm,
-    verify_magic_link_confirm,
+    read_magic_link_confirm, verify_magic_link_confirm,
 };
 use datadeft_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkToken, VerifierHash, confirm_account_binding,
@@ -18,7 +18,7 @@ use crate::traits::{Clock, MagicLinkAuthenticationRepository, RateLimiter, Sessi
 use crate::types::{
     BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome, ConfirmMagicLinkFlowCommand,
     ConfirmMagicLinkFlowOutcome, MagicLinkAccountIdentity, MagicLinkAuthenticationCandidate,
-    SessionCookie, SessionId,
+    MagicLinkFlowState, ReadMagicLinkFlowStateCommand, SessionCookie, SessionId,
 };
 
 use super::commit::{authenticate_scanner_flow, mint_country};
@@ -151,6 +151,69 @@ where
             flow,
             account_identity,
             cookie_max_age_secs,
+        })
+    }
+
+    /// The read-only flow-state step of the redirect landing mode: from the
+    /// confirm cookie alone, the account and the confirmation value a static
+    /// same-origin page needs to show and submit. Throttled per selector like
+    /// the landing; checks the backing link (verifier, account binding, not
+    /// consumed, not expired) without writing anything, so it is repeatable
+    /// and never consumes the link or creates a session
+    /// (`spec/tla/MagicLink.tla`, `FlowStateRead`). Every failure is the same
+    /// `MagicLinkUnavailable`.
+    pub async fn read_magic_link_flow_state(
+        &mut self,
+        command: ReadMagicLinkFlowStateCommand,
+    ) -> Result<MagicLinkFlowState, MagicLinkFlowError> {
+        validate_config(&self.config).map_err(MagicLinkFlowError::from_public_error)?;
+        let now_unix = self
+            .clock
+            .now_unix()
+            .map_err(map_dependency_error)
+            .map_err(MagicLinkFlowError::from_public_error)?;
+        let read = read_magic_link_confirm(
+            command.confirm_cookie(),
+            self.confirm_keyring,
+            now_unix,
+            self.config.magic_link_flow_ttl_secs,
+        )
+        .map_err(|_| flow_error(MagicLinkServiceError::MagicLinkUnavailable))?;
+        let verified = read.verified();
+
+        let selector_lookup = selector_lookup_hmac_from_confirm_binding(verified.selector());
+        let presented_verifier_hash = verifier_hash_from_confirm_binding(verified.verifier());
+        if landing_limits_deny(
+            self.limiter,
+            &self.config,
+            selector_lookup.as_storage_value(),
+            now_unix,
+        )
+        .await
+        .map_err(MagicLinkFlowError::from_public_error)?
+        {
+            return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
+        }
+        let candidate = self
+            .authentication
+            .find_magic_link_for_authentication(&selector_lookup)
+            .await
+            .map_err(map_dependency_error)
+            .map_err(MagicLinkFlowError::from_public_error)?;
+        let candidate =
+            validate_scanner_candidate(&self.config, candidate, &presented_verifier_hash, now_unix)
+                .map_err(MagicLinkFlowError::from_public_error)?;
+        let email_lookup = email_lookup_hmac(self.lookup_hmac_key, &candidate.email)
+            .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+        let account_binding = confirm_account_binding(&email_lookup)
+            .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
+        if !verified.account().matches_constant_time(&account_binding) {
+            return Err(flow_error(MagicLinkServiceError::MagicLinkUnavailable));
+        }
+
+        Ok(MagicLinkFlowState {
+            account_identity: MagicLinkAccountIdentity::from_normalized_email(&candidate.email),
+            confirmation: read.into_confirmation(),
         })
     }
 

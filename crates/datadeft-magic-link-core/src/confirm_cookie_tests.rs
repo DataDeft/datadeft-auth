@@ -521,3 +521,46 @@ fn confirm_nonce_meets_entropy_minimum_and_is_fresh_per_mint() {
         second.confirmation().as_value()
     );
 }
+
+/// The redirect mode's read-only step: the cookie alone yields its bindings
+/// and the confirmation it carries, under the same freshness rules, and
+/// verification with that confirmation still succeeds afterwards.
+#[test]
+fn read_returns_the_carried_confirmation_under_the_same_checks() {
+    let ring = confirm_ring(0x74, "confirm-active");
+    let minted = mint_confirm(&ring, 1_000, 1_300);
+    let cookie = minted.cookie().as_secret_value();
+
+    let read = read_magic_link_confirm(cookie, &ring, 1_000, MAGIC_LINK_CONFIRM_MAX_AGE_SECS)
+        .expect("reads");
+    assert_eq!(
+        read.confirmation().as_value(),
+        minted.confirmation().as_value()
+    );
+    assert!(
+        read.verified()
+            .account()
+            .matches_constant_time(&ConfirmAccountBinding::new(
+                [0x33; MAGIC_LINK_CONFIRM_BINDING_BYTES]
+            ))
+    );
+    assert_eq!(format!("{read:?}"), "ReadMagicLinkConfirm(..)");
+    // Reading is repeatable and consumes nothing.
+    assert!(read_magic_link_confirm(cookie, &ring, 1_100, 300).is_ok());
+    assert!(
+        verify_magic_link_confirm(cookie, read.confirmation().as_value(), &ring, 1_100, 300)
+            .is_ok()
+    );
+
+    // Same freshness and integrity checks as verification.
+    assert!(read_magic_link_confirm(cookie, &ring, 1_301, 300).is_err());
+    assert!(read_magic_link_confirm(cookie, &ring, 1_000, 0).is_err());
+    assert!(read_magic_link_confirm(cookie, &ring, 1_000, 301).is_err());
+    let other_ring = confirm_ring(0x75, "confirm-active");
+    assert!(read_magic_link_confirm(cookie, &other_ring, 1_000, 300).is_err());
+    let mut tampered = cookie.to_owned().into_bytes();
+    let last = tampered.len() - 1;
+    tampered[last] = if tampered[last] == b'A' { b'B' } else { b'A' };
+    let tampered = String::from_utf8(tampered).expect("ascii");
+    assert!(read_magic_link_confirm(&tampered, &ring, 1_000, 300).is_err());
+}

@@ -177,6 +177,7 @@ mod error;
 mod extract;
 mod handlers;
 mod origin;
+mod redirect_mode;
 mod scanner_config;
 mod session_auth;
 
@@ -206,7 +207,10 @@ pub use handlers::{
     magic_link_landing,
 };
 pub use origin::{OriginConfigError, SameOriginPostConfig, SameOriginRedirect};
-pub use scanner_config::{MagicLinkScannerFlowConfig, MagicLinkScannerFlowConfigError};
+pub use redirect_mode::{magic_link_flow_state, magic_link_landing_redirect};
+pub use scanner_config::{
+    MagicLinkScannerFlowConfig, MagicLinkScannerFlowConfigError, RedirectLanding,
+};
 pub use session_auth::{
     DD_SESSION_AUTH_SCHEME, SessionAuthRejection, SessionCookieValue, SessionRejectionKind,
     authenticate_session,

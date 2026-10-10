@@ -19,8 +19,8 @@ pub use confirm_cookie::{
     ConfirmAccountBinding, ConfirmSelectorBinding, ConfirmVerifierBinding,
     MAGIC_LINK_CONFIRM_BINDING_BYTES, MAGIC_LINK_CONFIRM_MAX_AGE_SECS, MagicLinkConfirmBindings,
     MagicLinkConfirmCookie, MagicLinkConfirmCookieValue, MagicLinkConfirmationValue,
-    MintedMagicLinkConfirm, VerifiedMagicLinkConfirm, mint_magic_link_confirm,
-    verify_magic_link_confirm,
+    MintedMagicLinkConfirm, ReadMagicLinkConfirm, VerifiedMagicLinkConfirm,
+    mint_magic_link_confirm, read_magic_link_confirm, verify_magic_link_confirm,
 };
 pub use email::NormalizedEmail;
 pub use error::MagicLinkError;

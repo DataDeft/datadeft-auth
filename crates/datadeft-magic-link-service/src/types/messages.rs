@@ -2,7 +2,9 @@
 
 use core::fmt;
 
-use datadeft_magic_link_core::confirm_cookie::MintedMagicLinkConfirm;
+use datadeft_magic_link_core::confirm_cookie::{
+    MagicLinkConfirmationValue, MintedMagicLinkConfirm,
+};
 use datadeft_magic_link_core::{MagicLinkToken, NormalizedEmail};
 use zeroize::Zeroize;
 
@@ -177,6 +179,60 @@ impl BeginMagicLinkLandingOutcome {
 impl fmt::Debug for BeginMagicLinkLandingOutcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("BeginMagicLinkLandingOutcome(..)")
+    }
+}
+
+/// Read-only flow-state request of the redirect landing mode: only the
+/// confirm cookie.
+pub struct ReadMagicLinkFlowStateCommand {
+    confirm_cookie: String,
+}
+
+impl ReadMagicLinkFlowStateCommand {
+    #[must_use]
+    pub fn new(confirm_cookie: String) -> Self {
+        Self { confirm_cookie }
+    }
+
+    pub(crate) fn confirm_cookie(&self) -> &str {
+        &self.confirm_cookie
+    }
+}
+
+impl fmt::Debug for ReadMagicLinkFlowStateCommand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ReadMagicLinkFlowStateCommand(..)")
+    }
+}
+
+impl Drop for ReadMagicLinkFlowStateCommand {
+    fn drop(&mut self) {
+        self.confirm_cookie.zeroize();
+    }
+}
+
+/// What a same-origin confirm page needs: the account it signs in to, and the
+/// confirmation value to submit with the POST.
+pub struct MagicLinkFlowState {
+    pub(crate) account_identity: MagicLinkAccountIdentity,
+    pub(crate) confirmation: MagicLinkConfirmationValue,
+}
+
+impl MagicLinkFlowState {
+    #[must_use]
+    pub fn account_identity(&self) -> &MagicLinkAccountIdentity {
+        &self.account_identity
+    }
+
+    #[must_use]
+    pub fn confirmation_value(&self) -> &str {
+        self.confirmation.as_value()
+    }
+}
+
+impl fmt::Debug for MagicLinkFlowState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MagicLinkFlowState(..)")
     }
 }
 

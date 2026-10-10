@@ -201,7 +201,7 @@ where
     })
 }
 
-fn map_flow_error(error: MagicLinkFlowError) -> MagicLinkFlowResponseError {
+pub(crate) fn map_flow_error(error: MagicLinkFlowError) -> MagicLinkFlowResponseError {
     match (error.public_error(), error.temporary_state_action()) {
         (
             MagicLinkServiceError::BadRequest | MagicLinkServiceError::MagicLinkUnavailable,
