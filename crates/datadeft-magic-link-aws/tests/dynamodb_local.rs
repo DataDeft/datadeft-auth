@@ -320,16 +320,16 @@ async fn cancelled_creates_classify_by_reason_with_and_without_rotation() {
         let mut rng = OsRng;
 
         let (user_1, user_2) = (
-            format!("usr_{}", random_hex(16)),
-            format!("usr_{}", random_hex(16)),
+            format!("usr-{}", random_hex(16)),
+            format!("usr-{}", random_hex(16)),
         );
         let first = seeded_commit(
             &store,
             &mut rng,
             "race@example.test",
             &user_1,
-            &format!("aid_{}", random_hex(16)),
-            &format!("sid_{}", random_hex(32)),
+            &format!("aid-{}", random_hex(16)),
+            &format!("sid-{}", random_hex(32)),
         )
         .await;
         store
@@ -339,9 +339,9 @@ async fn cancelled_creates_classify_by_reason_with_and_without_rotation() {
 
         // The same link again: the challenge condition fails.
         let replay = CommitMagicLinkAuthentication {
-            attempt_id: AuthenticationAttemptId::parse(&format!("aid_{}", random_hex(16)))
+            attempt_id: AuthenticationAttemptId::parse(&format!("aid-{}", random_hex(16)))
                 .expect("attempt"),
-            session_id: SessionId::parse(&format!("sid_{}", random_hex(32))).expect("session"),
+            session_id: SessionId::parse(&format!("sid-{}", random_hex(32))).expect("session"),
             ..first.clone()
         };
         assert_eq!(
@@ -360,8 +360,8 @@ async fn cancelled_creates_classify_by_reason_with_and_without_rotation() {
             &mut rng,
             "race@example.test",
             &user_2,
-            &format!("aid_{}", random_hex(16)),
-            &format!("sid_{}", random_hex(32)),
+            &format!("aid-{}", random_hex(16)),
+            &format!("sid-{}", random_hex(32)),
         )
         .await;
         assert_eq!(

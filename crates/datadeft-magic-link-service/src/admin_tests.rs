@@ -34,8 +34,8 @@ fn session_handle_accepts_only_the_stored_hash_shape() {
 #[test]
 fn session_handle_display_id_is_a_short_label() {
     let handle = SessionHandle::parse(HANDLE).expect("valid handle");
-    assert_eq!(handle.display_id(), "sess_3f9a1c2e");
-    assert_eq!(format!("{handle:?}"), "SessionHandle(sess_3f9a1c2e)");
+    assert_eq!(handle.display_id(), "sess-3f9a1c2e");
+    assert_eq!(format!("{handle:?}"), "SessionHandle(sess-3f9a1c2e)");
     // The short label is not a valid handle, so it can never address a session.
     assert!(SessionHandle::parse(&handle.display_id()).is_err());
 }
@@ -88,9 +88,10 @@ fn page_cursor_accepts_only_url_safe_base64() {
 
 #[test]
 fn admin_event_id_and_action_round_trip() {
-    let id = "evt_000102030405060708090a0b0c0d0e0f";
+    let id = "evt-000102030405060708090a0b0c0d0e0f";
     assert_eq!(AdminEventId::parse(id).expect("id").as_str(), id);
     assert!(AdminEventId::parse("evt_00").is_err());
+    assert!(AdminEventId::parse(&id.replace('-', "_")).is_err());
     for action in [
         AdminAction::RevokeSession,
         AdminAction::DisableUser,
@@ -105,7 +106,7 @@ fn admin_event_id_and_action_round_trip() {
 fn session_status_prefers_revocation_over_expiry() {
     let session = SessionSummary {
         handle: SessionHandle::parse(HANDLE).expect("handle"),
-        user_id: UserId::parse("usr_000102030405060708090a0b0c0d0e0f").expect("user id"),
+        user_id: UserId::parse("usr-000102030405060708090a0b0c0d0e0f").expect("user id"),
         email: NormalizedEmail::parse("user@example.test").expect("email"),
         created_at_unix: 100,
         expires_at_unix: 200,
@@ -140,7 +141,7 @@ fn stored_actors_stay_readable_when_limits_tighten() {
 fn bulk_revocation_reaches_sessions_until_the_skew_tolerance_past_expiry() {
     let session = SessionSummary {
         handle: SessionHandle::parse(HANDLE).expect("handle"),
-        user_id: UserId::parse("usr_000102030405060708090a0b0c0d0e0f").expect("user id"),
+        user_id: UserId::parse("usr-000102030405060708090a0b0c0d0e0f").expect("user id"),
         email: NormalizedEmail::parse("user@example.test").expect("email"),
         created_at_unix: 100,
         expires_at_unix: 200,

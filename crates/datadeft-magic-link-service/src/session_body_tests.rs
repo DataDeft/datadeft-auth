@@ -33,7 +33,7 @@ fn session_hkdf_vector_is_pinned() {
 #[test]
 fn session_cookie_body_round_trips() {
     let sid =
-        SessionId::parse("sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+        SessionId::parse("sid-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
             .expect("sid");
     let encoded = encode_session_cookie_body(&sid, Some("HU")).expect("encode");
     let decoded = decode_session_cookie_body(&encoded).expect("decode");
@@ -54,7 +54,7 @@ fn malformed_session_cookie_body_is_rejected_with_session_vocabulary() {
 
 #[test]
 fn invalid_country_shape_in_session_cookie_body_is_rejected() {
-    let sid = b"sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+    let sid = b"sid-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
     let mut encoded = Vec::new();
     encoded.push(1);
     encoded.push(u8::try_from(sid.len()).expect("sid length fits"));
@@ -70,7 +70,7 @@ fn invalid_country_shape_in_session_cookie_body_is_rejected() {
 #[test]
 fn encoding_invalid_country_shape_is_rejected() {
     let sid =
-        SessionId::parse("sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+        SessionId::parse("sid-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
             .expect("sid");
 
     assert_eq!(
@@ -91,14 +91,14 @@ use datadeft_auth_token_core::keyring::{KeyPurpose, KeyRing};
 use datadeft_auth_token_core::test_support::{FixedBytesRng, test_keyring};
 use datadeft_magic_link_core::MagicLinkConfirmCookie;
 
-const SID: &str = "sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+const SID: &str = "sid-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 
 fn sid_from_seed(seed: u8) -> SessionId {
     let bytes: [u8; 32] = core::array::from_fn(|i| {
         seed.wrapping_mul(31)
             .wrapping_add((i as u8).wrapping_mul(seed | 1))
     });
-    SessionId::parse(&format!("sid_{}", hex::encode(bytes))).expect("generated sid")
+    SessionId::parse(&format!("sid-{}", hex::encode(bytes))).expect("generated sid")
 }
 
 fn reencodes(body: &SessionCookieBody) -> Vec<u8> {
@@ -291,7 +291,7 @@ fn session_cookie_golden_value_and_single_edits_are_rejected() {
     let value = mint_with(&ring, &body);
     assert_eq!(
         value,
-        "v1.session-active.1cvR6OEpuO38jsjYKybSqZiPuQpoAJRIqyuPinjG9yOzapVUJAzYsNBITbuG43wc89HecbOAt66OVagxgUfGOfr22JOiTg7MDJlKdhngAxiV9sIUoOuLpqhQKKNA3XUNNIQDhfpaEEUrkf65HYIU0QQZ04qgW6kOx6pzSxpolAxdwova4XbG0yzeiu5Zmp3VA6jqdNQDV"
+        "v1.session-active.1cvR6OEpuO38jsjYKybSqZiPuQpoAJRIqyuPinjG9yOzapVUJAzYsNBITbuG43wc89HecbOAt66OVagxgUfGOfr1w1HJx0Qop85kIDIm42COckWGIwR0UsU0YytUd0jpUjTzdfiRzy590C3OlMY7Kro5aooao8CGGAxUZ4t0YLIjlfZ94aqTXLLOdyG7UKluqzBzuNgIn"
     );
     let fixed = MaxAge::fixed(60);
     let parsed = parse_bound_cookie(&value, &ring, COOKIE_NOW, fixed).expect("parse");
@@ -318,7 +318,7 @@ fn session_cookie_golden_value_and_single_edits_are_rejected() {
 #[test]
 fn largest_session_body_matches_the_declared_minimum() {
     let id =
-        SessionId::parse("sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+        SessionId::parse("sid-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
             .expect("session id");
     let body = encode_session_cookie_body(&id, Some("AT")).expect("body");
     assert_eq!(body.len(), SESSION_BODY_MAX_BYTES);

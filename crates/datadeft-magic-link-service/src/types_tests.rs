@@ -10,9 +10,9 @@ use crate::error::{MagicLinkFlowError, MagicLinkServiceError};
 
 #[test]
 fn ids_are_validated_and_redacted() {
-    let user = UserId::parse("usr_000102030405060708090a0b0c0d0e0f").expect("user id");
+    let user = UserId::parse("usr-000102030405060708090a0b0c0d0e0f").expect("user id");
     let session =
-        SessionId::parse("sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+        SessionId::parse("sid-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
             .expect("session id");
 
     assert_eq!(format!("{user:?}"), "UserId(..)");
@@ -44,9 +44,40 @@ fn country_shape_is_strict() {
     );
 }
 
+/// CeleraTax #1: ids use `<tag>-<hex>`. The 0.4 underscore form is refused,
+/// not migrated.
+#[test]
+fn ids_accept_only_the_hyphen_form() {
+    let user = format!("usr-{}", "0a".repeat(16));
+    let session = format!("sid-{}", "0a".repeat(32));
+    let attempt = format!("aid-{}", "0a".repeat(16));
+    assert_eq!(UserId::parse(&user).expect("user").as_str(), user);
+    assert_eq!(
+        SessionId::parse(&session).expect("session").as_str(),
+        session
+    );
+    assert_eq!(
+        AuthenticationAttemptId::parse(&attempt)
+            .expect("attempt")
+            .as_str(),
+        attempt
+    );
+    assert!(UserId::parse(&user.replace('-', "_")).is_err());
+    assert!(SessionId::parse(&session.replace('-', "_")).is_err());
+    assert!(AuthenticationAttemptId::parse(&attempt.replace('-', "_")).is_err());
+    assert_eq!(
+        format!("{:?}", UserId::parse(&user).expect("user")),
+        "UserId(..)"
+    );
+    assert_eq!(
+        format!("{:?}", SessionId::parse(&session).expect("session")),
+        "SessionId(..)"
+    );
+}
+
 #[test]
 fn authentication_attempt_id_grammar_is_strict_and_debug_is_redacted() {
-    let canonical = "aid_000102030405060708090a0b0c0d0e0f";
+    let canonical = "aid-000102030405060708090a0b0c0d0e0f";
     let attempt_id = AuthenticationAttemptId::parse(canonical).expect("canonical attempt id");
 
     assert_eq!(attempt_id.as_str(), canonical);
@@ -54,10 +85,10 @@ fn authentication_attempt_id_grammar_is_strict_and_debug_is_redacted() {
 
     for malformed in [
         "000102030405060708090a0b0c0d0e0f",
-        "aid_000102030405060708090a0b0c0d0e0",
-        "aid_000102030405060708090a0b0c0d0e0f0",
-        "aid_000102030405060708090A0B0C0D0E0F",
-        "aid_000102030405060708090a0b0c0d0e0g",
+        "aid-000102030405060708090a0b0c0d0e0",
+        "aid-000102030405060708090a0b0c0d0e0f0",
+        "aid-000102030405060708090A0B0C0D0E0F",
+        "aid-000102030405060708090a0b0c0d0e0g",
         "aid__000102030405060708090a0b0c0d0e0f",
     ] {
         assert_eq!(
@@ -142,9 +173,9 @@ fn confirmation_country_validation_maps_to_clear_bad_request() {
 #[test]
 fn authentication_dto_debug_redacts_identity_and_secret_derived_values() {
     let email_value = "account@example.test";
-    let user_id_value = "usr_000102030405060708090a0b0c0d0e0f";
-    let session_id_value = "sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
-    let attempt_id_value = "aid_101112131415161718191a1b1c1d1e1f";
+    let user_id_value = "usr-000102030405060708090a0b0c0d0e0f";
+    let session_id_value = "sid-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+    let attempt_id_value = "aid-101112131415161718191a1b1c1d1e1f";
     let verifier_hash_value =
         "mlv_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
     let email = NormalizedEmail::parse(email_value).expect("normalized email");

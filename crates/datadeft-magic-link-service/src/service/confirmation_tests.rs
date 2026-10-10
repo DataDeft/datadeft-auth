@@ -187,7 +187,7 @@ async fn scanner_confirmation_disabled_user_is_generic_and_does_not_burn_link() 
     let repository = FakeRepository::default();
     *repository.candidate.borrow_mut() = Some(candidate());
     *repository.user.borrow_mut() =
-        Some(existing_user("usr_000102030405060708090a0b0c0d0e0f", true));
+        Some(existing_user("usr-000102030405060708090a0b0c0d0e0f", true));
     let mut rng = CountingRng::starting_at(0);
     let landing = begin_flow(
         &repository,
@@ -465,11 +465,11 @@ async fn natural_create_user_session_collision_is_fully_atomic() {
     let initial_candidate = candidate();
     *repository.candidate.borrow_mut() = Some(initial_candidate.clone());
     let colliding_id =
-        SessionId::parse("sid_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        SessionId::parse("sid-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .expect("session id");
     let existing_session = SessionRecord {
         session_id: colliding_id.clone(),
-        user_id: UserId::parse("usr_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").expect("user id"),
+        user_id: UserId::parse("usr-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").expect("user id"),
         email: NormalizedEmail::parse("existing@example.test").expect("email"),
         created_at_unix: NOW - 10,
         revoked_at_unix: None,
@@ -517,7 +517,7 @@ async fn fake_authentication_reads_require_exact_selector_and_email_arguments() 
     let repository = FakeRepository::default();
     *repository.candidate.borrow_mut() = Some(candidate());
     *repository.user.borrow_mut() =
-        Some(existing_user("usr_000102030405060708090a0b0c0d0e0f", false));
+        Some(existing_user("usr-000102030405060708090a0b0c0d0e0f", false));
     let wrong_selector =
         selector_lookup_hmac(&LookupHmacKey::new([0x99; 32]), token(VERIFIER).selector())
             .expect("wrong selector lookup");

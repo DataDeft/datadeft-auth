@@ -44,9 +44,16 @@ lockfiles. No git credentials or vendored TypeScript are needed.
 
 ### Upgrading from 0.4
 
-0.5.0 is a breaking release. No stored data shape changed. The library is
-pre-1.0 and has no production deployments, so the policy is to start from a
-fresh table and secret document: no data migration is provided.
+0.5.0 is a breaking release. The library is pre-1.0 and has no production
+deployments, so upgrading means a fresh table and a fresh secret document:
+no data migration is provided, and every existing session ends.
+
+- **Hyphen ids:** user, session, attempt and admin event ids are now
+  `usr-`, `sid-`, `aid-` and `evt-` followed by lowercase hex, and session
+  display ids are `sess-`. Parsers refuse the 0.4 underscore form, so stored
+  0.4 users, sessions and audit events, and every live session cookie (it
+  carries the session id), stop working: start from an empty table. Keyed
+  lookup values (`emh_`, `mlh_`, `mlv_`, `sih_`, `rlh_`) are unchanged.
 
 - **Cookie config constructors:** `production(...)` is now `secure(...)`,
   `local_development(...)` is `insecure_local(...)`, and the `*_defaults()`

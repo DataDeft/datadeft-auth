@@ -173,13 +173,13 @@ pub(super) fn command() -> RequestMagicLinkCommand {
     )
 }
 
-pub(super) const USER_ID: &str = "usr_000102030405060708090a0b0c0d0e0f";
+pub(super) const USER_ID: &str = "usr-000102030405060708090a0b0c0d0e0f";
 pub(super) const SESSION_ID: &str =
-    "sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+    "sid-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 pub(super) const OTHER_SESSION_ID: &str =
-    "sid_101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f";
-pub(super) const ATTEMPT_ID: &str = "aid_000102030405060708090a0b0c0d0e0f";
-pub(super) const OTHER_ATTEMPT_ID: &str = "aid_101112131415161718191a1b1c1d1e1f";
+    "sid-101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f";
+pub(super) const ATTEMPT_ID: &str = "aid-000102030405060708090a0b0c0d0e0f";
+pub(super) const OTHER_ATTEMPT_ID: &str = "aid-101112131415161718191a1b1c1d1e1f";
 
 pub(super) fn authentication_fixture(
     branch: MagicLinkAuthenticationUser,

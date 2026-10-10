@@ -132,6 +132,23 @@ Rules:
 - Preserve required entropy after encoding.
 - Fail closed on generation failure.
 - Draw magic-link selectors and verifiers independently.
+
+### Identifier formats
+
+Library-minted ids use one form, `<tag>-<lowercase hex>`, and parsers accept
+nothing else (the 0.4 underscore form is refused):
+
+| Id | Form | Random bits |
+| --- | --- | ---: |
+| User id | `usr-` + 32 hex | 128 |
+| Session id | `sid-` + 64 hex | 256 |
+| Authentication attempt id | `aid-` + 32 hex | 128 |
+| Admin event id | `evt-` + 32 hex | 128 |
+| Session display id | `sess-` + 8 hex | (label only) |
+
+Ids are validated on input and redacted in `Debug`. Keyed lookup values
+(`emh_`, `mlh_`, `mlv_`, `sih_`, `rlh_`) are storage material, not ids, and
+keep their underscore form.
 - Do not derive selector from verifier.
 - Do not derive verifier from selector.
 - Do not slice one random block for both values.
@@ -198,7 +215,7 @@ every admin endpoint before calling the service.
   transaction: both or neither.
 - Sessions are addressed by `SessionHandle`, the keyed hash they are stored
   under, never by the raw session id, which is not stored. Show
-  `display_id()` (`sess_xxxxxxxx`) in UIs; pass the full handle back.
+  `display_id()` (`sess-xxxxxxxx`) in UIs; pass the full handle back.
 - Disabling a user takes effect on the next request: `validate_session` checks
   the user's status every time. `disable_user` then revokes every session so
   the audit trail records each one ending. It returns how many sessions that

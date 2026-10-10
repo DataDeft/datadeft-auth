@@ -29,7 +29,7 @@ pub const MAX_PAGE_CURSOR_BYTES: usize = 1024;
 const SESSION_HANDLE_PREFIX: &str = "sih_";
 const SESSION_HANDLE_HEX_LEN: usize = 64;
 const SESSION_DISPLAY_HEX_LEN: usize = 8;
-const ADMIN_EVENT_ID_PREFIX: &str = "evt_";
+const ADMIN_EVENT_ID_PREFIX: &str = "evt-";
 const ADMIN_EVENT_ID_BYTES: usize = 16;
 
 #[cfg(test)]

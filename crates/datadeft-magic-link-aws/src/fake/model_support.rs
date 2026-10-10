@@ -38,7 +38,7 @@ pub(super) const FLOW_TTL: u64 = 60;
 pub(super) const EMAILS: [&str; 2] = ["carol@example.test", "dave@example.test"];
 
 /// A user id that never exists in any model run.
-pub(super) const UNKNOWN_USER: &str = "usr_ffffffffffffffffffffffffffffffff";
+pub(super) const UNKNOWN_USER: &str = "usr-ffffffffffffffffffffffffffffffff";
 
 pub(super) fn model_config() -> MagicLinkServiceConfig {
     let mut config = MagicLinkServiceConfig::new("terms-v1", "privacy-v1");

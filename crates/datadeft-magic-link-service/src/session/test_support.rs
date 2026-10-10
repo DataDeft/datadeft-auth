@@ -124,19 +124,19 @@ pub(super) fn keyring() -> KeyRing<SessionCookie> {
 }
 
 pub(super) fn session_id() -> SessionId {
-    SessionId::parse("sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+    SessionId::parse("sid-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
         .expect("session id")
 }
 
 pub(super) fn other_session_id() -> SessionId {
-    SessionId::parse("sid_ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+    SessionId::parse("sid-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
         .expect("other session id")
 }
 
 pub(super) fn record(created_at_unix: u64) -> SessionRecord {
     SessionRecord {
         session_id: session_id(),
-        user_id: UserId::parse("usr_000102030405060708090a0b0c0d0e0f").expect("user id"),
+        user_id: UserId::parse("usr-000102030405060708090a0b0c0d0e0f").expect("user id"),
         email: NormalizedEmail::parse("session-user@example.com").expect("email"),
         created_at_unix,
         revoked_at_unix: None,

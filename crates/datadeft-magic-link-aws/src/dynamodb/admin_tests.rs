@@ -10,9 +10,9 @@ use datadeft_magic_link_service::{
 use super::items::av_bool;
 use super::*;
 
-const USER_ID: &str = "usr_000102030405060708090a0b0c0d0e0f";
+const USER_ID: &str = "usr-000102030405060708090a0b0c0d0e0f";
 const HANDLE: &str = "sih_3f9a1c2e00000000000000000000000000000000000000000000000000000001";
-const EVENT_ID: &str = "evt_000102030405060708090a0b0c0d0e0f";
+const EVENT_ID: &str = "evt-000102030405060708090a0b0c0d0e0f";
 
 fn store() -> DynamoDbAuthStore {
     let config = aws_sdk_dynamodb::Config::builder()

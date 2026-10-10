@@ -147,12 +147,12 @@ impl SessionHandle {
         &self.0
     }
 
-    /// Short label for display, e.g. `sess_3f9a1c2e`. Never use it to address
+    /// Short label for display, e.g. `sess-3f9a1c2e`. Never use it to address
     /// a session; mutations take the full handle.
     #[must_use]
     pub fn display_id(&self) -> String {
         let hex = &self.0[SESSION_HANDLE_PREFIX.len()..];
-        format!("sess_{}", &hex[..SESSION_DISPLAY_HEX_LEN])
+        format!("sess-{}", &hex[..SESSION_DISPLAY_HEX_LEN])
     }
 }
 
@@ -167,7 +167,7 @@ impl fmt::Debug for SessionHandle {
 pub struct AdminEventId(String);
 
 impl AdminEventId {
-    /// Parse an event id: `evt_` followed by 32 lowercase hex characters.
+    /// Parse an event id: `evt-` followed by 32 lowercase hex characters.
     pub fn parse(value: &str) -> Result<Self, AdminError> {
         let hex = value
             .strip_prefix(ADMIN_EVENT_ID_PREFIX)

@@ -337,7 +337,7 @@ where
     .map_err(MagicLinkServiceError::from)
 }
 
-/// Draw `BYTES` random bytes and render `{prefix}_{lowercase hex}`: the
+/// Draw `BYTES` random bytes and render `{prefix}-{lowercase hex}`: the
 /// canonical id shape the typed wrappers' service-built constructors expect.
 fn generate_prefixed_hex_id<R: RngCore + CryptoRng + ?Sized, const BYTES: usize>(
     rng: &mut R,
@@ -346,7 +346,7 @@ fn generate_prefixed_hex_id<R: RngCore + CryptoRng + ?Sized, const BYTES: usize>
     let mut bytes = [0u8; BYTES];
     rng.try_fill_bytes(&mut bytes)
         .map_err(|_| MagicLinkServiceError::Unavailable)?;
-    Ok(format!("{prefix}_{}", hex::encode(bytes)))
+    Ok(format!("{prefix}-{}", hex::encode(bytes)))
 }
 
 fn generate_user_id<R: RngCore + CryptoRng + ?Sized>(

@@ -88,7 +88,7 @@ async fn admin_queries_return_users_and_sessions() {
             .all(|(_, status)| *status == SessionStatus::Active)
     );
     for (session, _) in &sessions {
-        assert!(session.handle.display_id().starts_with("sess_"));
+        assert!(session.handle.display_id().starts_with("sess-"));
         assert_eq!(session.user_id, user_id);
     }
     let active = admin.list_active_sessions(None, 10).await.expect("active");
@@ -107,7 +107,7 @@ async fn revoking_one_session_is_final_audited_and_owner_checked() {
     let handle = sessions[0].0.handle.clone();
 
     // Another user cannot be named as the owner.
-    let stranger = UserId::parse("usr_ffffffffffffffffffffffffffffffff").expect("user id");
+    let stranger = UserId::parse("usr-ffffffffffffffffffffffffffffffff").expect("user id");
     assert_eq!(
         admin
             .revoke_session(&stranger, &handle, &admin_actor())
@@ -307,7 +307,7 @@ async fn admin_mutations_on_unknown_users_report_not_found() {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
     let mut rng = CountingRng::starting_at(50);
     let mut admin = admin_service(&store, &mut rng);
-    let unknown = UserId::parse("usr_000102030405060708090a0b0c0d0e0f").expect("user id");
+    let unknown = UserId::parse("usr-000102030405060708090a0b0c0d0e0f").expect("user id");
     assert_eq!(
         admin
             .disable_user(&unknown, &admin_actor())
@@ -337,7 +337,7 @@ async fn disable_without_revoking(store: &FakeDynamoDbAuthStore, user_id: &UserI
     use datadeft_magic_link_service::{AdminEvent, AdminEventId, AuthAdminRepository};
     store
         .set_user_disabled_audited(&AdminEvent {
-            event_id: AdminEventId::parse("evt_000102030405060708090a0b0c0d0e0f").expect("id"),
+            event_id: AdminEventId::parse("evt-000102030405060708090a0b0c0d0e0f").expect("id"),
             at_unix: 1_500,
             action: AdminAction::DisableUser,
             user_id: user_id.clone(),

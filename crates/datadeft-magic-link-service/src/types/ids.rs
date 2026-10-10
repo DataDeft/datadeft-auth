@@ -47,19 +47,19 @@ pub struct UserId(String);
 
 impl UserId {
     pub fn parse(value: &str) -> Result<Self, MagicLinkServiceError> {
-        if is_prefixed_hex_id(value, "usr_", 32) {
+        if is_prefixed_hex_id(value, "usr-", 32) {
             Ok(Self(value.to_owned()))
         } else {
             Err(MagicLinkServiceError::Internal)
         }
     }
 
-    /// Wrap an id the service generated itself (`usr_` + 32 lowercase hex),
+    /// Wrap an id the service generated itself (`usr-` + 32 lowercase hex),
     /// without re-scanning or re-allocating it. Debug builds re-check the
     /// canonical form. Untrusted input must go through [`Self::parse`].
     pub(crate) fn from_service_built(value: String) -> Self {
         debug_assert!(
-            is_prefixed_hex_id(&value, "usr_", 32),
+            is_prefixed_hex_id(&value, "usr-", 32),
             "service-built user id must be canonical"
         );
         Self(value)
@@ -84,19 +84,19 @@ pub struct SessionId(String);
 
 impl SessionId {
     pub fn parse(value: &str) -> Result<Self, MagicLinkServiceError> {
-        if is_prefixed_hex_id(value, "sid_", 64) {
+        if is_prefixed_hex_id(value, "sid-", 64) {
             Ok(Self(value.to_owned()))
         } else {
             Err(MagicLinkServiceError::Internal)
         }
     }
 
-    /// Wrap an id the service generated itself (`sid_` + 64 lowercase hex),
+    /// Wrap an id the service generated itself (`sid-` + 64 lowercase hex),
     /// without re-scanning or re-allocating it. Debug builds re-check the
     /// canonical form. Untrusted input must go through [`Self::parse`].
     pub(crate) fn from_service_built(value: String) -> Self {
         debug_assert!(
-            is_prefixed_hex_id(&value, "sid_", 64),
+            is_prefixed_hex_id(&value, "sid-", 64),
             "service-built session id must be canonical"
         );
         Self(value)
@@ -116,7 +116,7 @@ impl fmt::Debug for SessionId {
 
 /// Transaction-scoped idempotency id for one exact authentication plan.
 ///
-/// The canonical representation is `aid_` followed by 32 lowercase hexadecimal
+/// The canonical representation is `aid-` followed by 32 lowercase hexadecimal
 /// characters encoding an independent 128-bit CSPRNG draw. It is not
 /// authentication state and must not be persisted. See
 /// [`MagicLinkAuthenticationRepository`](crate::traits::MagicLinkAuthenticationRepository)
@@ -127,19 +127,19 @@ pub struct AuthenticationAttemptId(String);
 impl AuthenticationAttemptId {
     /// Parse the single canonical authentication-attempt id representation.
     pub fn parse(value: &str) -> Result<Self, MagicLinkServiceError> {
-        if is_prefixed_hex_id(value, "aid_", 32) {
+        if is_prefixed_hex_id(value, "aid-", 32) {
             Ok(Self(value.to_owned()))
         } else {
             Err(MagicLinkServiceError::Internal)
         }
     }
 
-    /// Wrap an id the service generated itself (`aid_` + 32 lowercase hex),
+    /// Wrap an id the service generated itself (`aid-` + 32 lowercase hex),
     /// without re-scanning or re-allocating it. Debug builds re-check the
     /// canonical form. Untrusted input must go through [`Self::parse`].
     pub(crate) fn from_service_built(value: String) -> Self {
         debug_assert!(
-            is_prefixed_hex_id(&value, "aid_", 32),
+            is_prefixed_hex_id(&value, "aid-", 32),
             "service-built attempt id must be canonical"
         );
         Self(value)

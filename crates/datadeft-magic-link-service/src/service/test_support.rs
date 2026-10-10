@@ -179,7 +179,7 @@ impl MagicLinkAuthenticationRepository for FakeRepository {
                 && self.install_winner_on_user_conflict.replace(false)
             {
                 *self.user.borrow_mut() =
-                    Some(existing_user("usr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false));
+                    Some(existing_user("usr-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false));
             }
             return Err(error);
         }
@@ -387,10 +387,10 @@ pub(super) fn create_commit_command(session_id: SessionId) -> CommitMagicLinkAut
     CommitMagicLinkAuthentication {
         magic_link: authentication_expectation(&expected_selector_lookup(), &candidate),
         now_unix: NOW,
-        attempt_id: AuthenticationAttemptId::parse("aid_000102030405060708090a0b0c0d0e0f")
+        attempt_id: AuthenticationAttemptId::parse("aid-000102030405060708090a0b0c0d0e0f")
             .expect("attempt id"),
         user: MagicLinkAuthenticationUser::Create {
-            user_id: UserId::parse("usr_000102030405060708090a0b0c0d0e0f").expect("user id"),
+            user_id: UserId::parse("usr-000102030405060708090a0b0c0d0e0f").expect("user id"),
         },
         session_id,
         session_expires_at_unix: NOW + 300,

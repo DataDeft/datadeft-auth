@@ -12,9 +12,9 @@ use datadeft_magic_link_service::{
 use super::items::av_bool;
 use super::*;
 
-const USER_ID: &str = "usr_000102030405060708090a0b0c0d0e0f";
-const SESSION_ID: &str = "sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
-const ATTEMPT_ID: &str = "aid_000102030405060708090a0b0c0d0e0f";
+const USER_ID: &str = "usr-000102030405060708090a0b0c0d0e0f";
+const SESSION_ID: &str = "sid-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+const ATTEMPT_ID: &str = "aid-000102030405060708090a0b0c0d0e0f";
 const VERIFIER_HASH: &str = "mlv_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 
 fn store() -> DynamoDbAuthStore {
@@ -127,7 +127,7 @@ fn authentication_user_parser_requires_boolean_disabled_and_exact_linkage() {
             let mut item = item_with_user(av_bool(false));
             item.insert(
                 "user_id".to_owned(),
-                av_s("usr_101112131415161718191a1b1c1d1e1f"),
+                av_s("usr-101112131415161718191a1b1c1d1e1f"),
             );
             item
         },

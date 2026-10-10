@@ -143,7 +143,7 @@ async fn aggregate_disabled_user_and_user_conflicts_do_not_burn_link() {
         let planned_id = if disabled {
             UserId::parse(USER_ID).expect("user id")
         } else {
-            UserId::parse("usr_101112131415161718191a1b1c1d1e1f").expect("other user id")
+            UserId::parse("usr-101112131415161718191a1b1c1d1e1f").expect("other user id")
         };
         let (store, record, command) = authentication_fixture(
             MagicLinkAuthenticationUser::Existing {
@@ -356,9 +356,9 @@ async fn aggregate_replay_race_has_exactly_one_commit() {
         let task_store = store.clone();
         let mut task_command = base_command.clone();
         task_command.attempt_id =
-            AuthenticationAttemptId::parse(&format!("aid_{index:032x}")).expect("race attempt id");
+            AuthenticationAttemptId::parse(&format!("aid-{index:032x}")).expect("race attempt id");
         task_command.session_id =
-            SessionId::parse(&format!("sid_{index:064x}")).expect("race session id");
+            SessionId::parse(&format!("sid-{index:064x}")).expect("race session id");
         tasks.push(tokio::spawn(async move {
             task_store
                 .commit_magic_link_authentication(&task_command)

@@ -130,7 +130,7 @@ async fn storage_key_change_without_previous_key_splits_accounts() {
 #[tokio::test]
 async fn fake_user_status_fails_closed_for_unknown_users() {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
-    let unknown = UserId::parse("usr_000102030405060708090a0b0c0d0e0f").expect("user id");
+    let unknown = UserId::parse("usr-000102030405060708090a0b0c0d0e0f").expect("user id");
     assert!(
         !store
             .is_session_owner_active(&unknown, 0)
