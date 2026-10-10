@@ -337,6 +337,61 @@ async fn disable_between_landing_read_and_confirmation_commit_does_not_burn_link
     );
 }
 
+/// A lifetime budget never refills: no window boundary resets it, and it
+/// is separate from the windowed counter of the same key.
+#[tokio::test]
+async fn fake_lifetime_limit_never_refills() {
+    let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));
+    let key = RateLimitKey::parse("pow:proof:budget").expect("rate key");
+    let expires = 10_000;
+    for now in [100, 3_700, 7_300] {
+        assert_eq!(
+            store
+                .check_lifetime_limit(&key, 3, expires, now)
+                .await
+                .expect("spend"),
+            RateLimitDecision::Allowed,
+            "{now}"
+        );
+    }
+    // Hours later, past any fixed window: still spent.
+    assert_eq!(
+        store
+            .check_lifetime_limit(&key, 3, expires, 9_999)
+            .await
+            .expect("exhausted"),
+        RateLimitDecision::Denied
+    );
+    // The windowed counter of the same key is independent.
+    assert_eq!(
+        store
+            .check_rate_limit(&key, 1, 60, 100)
+            .await
+            .expect("windowed"),
+        RateLimitDecision::Allowed
+    );
+    // An expiry not after now is refused outright.
+    let other = RateLimitKey::parse("pow:proof:other").expect("rate key");
+    assert_eq!(
+        store
+            .check_lifetime_limit(&other, 3, 500, 500)
+            .await
+            .expect("expired"),
+        RateLimitDecision::Denied
+    );
+    // A store failure is an error, never an admission.
+    store
+        .set_next_error(AwsAdapterError::DependencyUnavailable)
+        .expect("inject");
+    assert_eq!(
+        store
+            .check_lifetime_limit(&other, 3, 10_000, 600)
+            .await
+            .unwrap_err(),
+        DependencyError::Unavailable
+    );
+}
+
 #[tokio::test]
 async fn fake_limiter_uses_fixed_windows_from_service_clock() {
     let store = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32]));

@@ -19,7 +19,8 @@ use datadeft_magic_link_service::{
     MagicLinkAuthenticationExpectation, MagicLinkAuthenticationRepository,
     MagicLinkAuthenticationUser, MagicLinkConfirmCookie, MagicLinkFlowService, MagicLinkRecord,
     MagicLinkRepository, MagicLinkRequestService, MagicLinkServiceConfig, NormalizedEmail,
-    RequestMagicLinkCommand, SessionCookie, SessionId, UserId, validate_session,
+    RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkCommand, SessionCookie,
+    SessionId, UserId, validate_session,
 };
 use rand_core::{OsRng, RngCore};
 
@@ -202,6 +203,47 @@ async fn login_logout_and_relogin_against_dynamodb() {
         "existing user found"
     );
     assert_eq!(second.authentication().user_id(), first.user_id());
+}
+
+/// The per-solve PoW budget's storage: one counter per key for its whole
+/// lifetime, never refilled by a window boundary, and independent of the
+/// windowed counter of the same key.
+#[tokio::test]
+#[ignore = "needs DynamoDB Local: mise run dynamodb-local-test"]
+async fn lifetime_limit_never_refills_against_dynamodb() {
+    let client = client().await;
+    let store = DynamoDbAuthStore::new(
+        client.clone(),
+        table(&client, "lifetime").await,
+        StorageHmacKey::new([0x31; 32]),
+    );
+    let key = RateLimitKey::parse(&format!("pow:{}", random_hex(32))).expect("key");
+    let expires = 2_000_000_000;
+    let mut decisions = Vec::new();
+    for now in [1_000_000_000, 1_000_003_600, 1_000_007_200, 1_000_086_400] {
+        decisions.push(
+            store
+                .check_lifetime_limit(&key, 3, expires, now)
+                .await
+                .expect("spend"),
+        );
+    }
+    assert_eq!(
+        decisions,
+        [
+            RateLimitDecision::Allowed,
+            RateLimitDecision::Allowed,
+            RateLimitDecision::Allowed,
+            RateLimitDecision::Denied,
+        ]
+    );
+    assert_eq!(
+        store
+            .check_rate_limit(&key, 1, 60, 1_000_000_000)
+            .await
+            .expect("windowed"),
+        RateLimitDecision::Allowed
+    );
 }
 
 #[tokio::test]

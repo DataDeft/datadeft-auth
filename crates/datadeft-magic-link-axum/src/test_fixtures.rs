@@ -129,6 +129,16 @@ impl RateLimiter for FixtureLimiter {
     ) -> Result<RateLimitDecision, DependencyError> {
         Ok(RateLimitDecision::Allowed)
     }
+
+    async fn check_lifetime_limit(
+        &self,
+        _key: &RateLimitKey,
+        _limit: u32,
+        _expires_at_unix: u64,
+        _now_unix: u64,
+    ) -> Result<RateLimitDecision, DependencyError> {
+        Ok(RateLimitDecision::Allowed)
+    }
 }
 
 pub(crate) struct FixtureClock {

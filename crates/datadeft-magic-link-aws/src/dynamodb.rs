@@ -133,6 +133,16 @@ impl DynamoDbAuthStore {
             self.hmac(RATE_LOOKUP_HMAC_PREFIX, &storage_key)?
         ))
     }
+
+    /// One counter per key for its whole lifetime: no window index, so it
+    /// never shares a partition with a windowed counter of the same key.
+    fn pk_lifetime_rate(&self, key: &RateLimitKey) -> Result<String, AwsAdapterError> {
+        let storage_key = format!("{}:lifetime", key.as_str());
+        Ok(format!(
+            "RL#{}",
+            self.hmac(RATE_LOOKUP_HMAC_PREFIX, &storage_key)?
+        ))
+    }
 }
 
 impl fmt::Debug for DynamoDbAuthStore {

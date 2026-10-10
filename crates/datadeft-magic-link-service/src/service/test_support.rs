@@ -73,6 +73,16 @@ impl AllowLimiter {
 }
 
 impl RateLimiter for AllowLimiter {
+    async fn check_lifetime_limit(
+        &self,
+        key: &RateLimitKey,
+        limit: u32,
+        _expires_at_unix: u64,
+        now_unix: u64,
+    ) -> Result<RateLimitDecision, DependencyError> {
+        self.check_rate_limit(key, limit, 1, now_unix).await
+    }
+
     async fn check_rate_limit(
         &self,
         key: &RateLimitKey,

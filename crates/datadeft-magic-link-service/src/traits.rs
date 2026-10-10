@@ -143,12 +143,33 @@ pub enum RateLimitDecision {
 
 /// Rate limiter dependency. Returning [`RateLimitDecision::Denied`] is a normal
 /// policy outcome, and the service maps it to generic public behavior.
+///
+/// Implementations must be shared by every node (one counter per key across
+/// the deployment) and must return an error, never `Allowed`, when the
+/// counter store fails.
 pub trait RateLimiter {
+    /// Count one use of `key` in the fixed window of `window_secs` containing
+    /// `now_unix`; deny once `limit` uses were counted in that window.
     fn check_rate_limit(
         &self,
         key: &RateLimitKey,
         limit: u32,
         window_secs: u64,
+        now_unix: u64,
+    ) -> impl Future<Output = Result<RateLimitDecision, DependencyError>> + Send;
+
+    /// Count one use of `key` against a budget that never refills: the first
+    /// use fixes the counter's expiry at `expires_at_unix`, and every later
+    /// use counts against the same `limit`, whatever window the clock is in.
+    /// Deny once `limit` uses were counted, or when `expires_at_unix` is not
+    /// after `now_unix`. Set the expiry past the last moment the key can be
+    /// used: an expired counter may keep counting until storage cleanup
+    /// removes it. Used for per-solve proof-of-work budgets.
+    fn check_lifetime_limit(
+        &self,
+        key: &RateLimitKey,
+        limit: u32,
+        expires_at_unix: u64,
         now_unix: u64,
     ) -> impl Future<Output = Result<RateLimitDecision, DependencyError>> + Send;
 }

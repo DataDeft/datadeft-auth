@@ -181,6 +181,52 @@ impl RateLimiter for DynamoDbAuthStore {
         .await
         .map_err(DependencyError::from)
     }
+
+    async fn check_lifetime_limit(
+        &self,
+        key: &RateLimitKey,
+        limit: u32,
+        expires_at_unix: u64,
+        now_unix: u64,
+    ) -> Result<RateLimitDecision, DependencyError> {
+        if expires_at_unix <= now_unix {
+            return Ok(RateLimitDecision::Denied);
+        }
+        let pk = self.pk_lifetime_rate(key).map_err(DependencyError::from)?;
+        let ttl = expires_at_unix.saturating_add(self.cleanup_grace_secs);
+        async {
+            // The first use fixes the expiry (if_not_exists); the count only
+            // grows, so the budget never refills while the row lives.
+            let result = self
+                .client
+                .update_item()
+                .table_name(&self.table_name)
+                .key("pk", av_s(pk))
+                .key("sk", av_s("COUNTER"))
+                .update_expression("SET #entity_type = if_not_exists(#entity_type, :entity), #expires = if_not_exists(#expires, :expires), #ttl = if_not_exists(#ttl, :ttl) ADD #count :one")
+                .condition_expression("attribute_not_exists(#count) OR #count < :limit")
+                .expression_attribute_names("#entity_type", "entity_type")
+                .expression_attribute_names("#expires", "expires_at_unix")
+                .expression_attribute_names("#ttl", "ttl")
+                .expression_attribute_names("#count", "count")
+                .expression_attribute_values(":entity", av_s("lifetime_counter"))
+                .expression_attribute_values(":expires", av_n(expires_at_unix))
+                .expression_attribute_values(":ttl", av_n(ttl))
+                .expression_attribute_values(":one", av_n(1))
+                .expression_attribute_values(":limit", av_n(limit))
+                .send()
+                .await;
+            match result {
+                Ok(_) => Ok(RateLimitDecision::Allowed),
+                Err(error) => match map_update_item_error(error) {
+                    AwsAdapterError::ConditionalWriteFailed => Ok(RateLimitDecision::Denied),
+                    other => Err(other),
+                },
+            }
+        }
+        .await
+        .map_err(DependencyError::from)
+    }
 }
 
 fn fixed_window_start(now_unix: u64, window_secs: u64) -> u64 {

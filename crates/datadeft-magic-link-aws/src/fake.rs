@@ -66,6 +66,7 @@ struct FakeDynamoDbInner {
     user_session_index: HashMap<String, Vec<UserSessionIndexEntry>>,
     authentication_attempts: HashMap<String, CommitMagicLinkAuthentication>,
     rate_counters: HashMap<String, u32>,
+    lifetime_counters: HashMap<String, (u32, u64)>,
     disabled_meta: HashMap<String, DisabledMeta>,
     /// Per user: sessions created before this time are not valid (set on
     /// re-enable).
@@ -395,6 +396,32 @@ impl RateLimiter for FakeDynamoDbAuthStore {
             return Ok(RateLimitDecision::Denied);
         }
         *counter += 1;
+        Ok(RateLimitDecision::Allowed)
+    }
+
+    async fn check_lifetime_limit(
+        &self,
+        key: &RateLimitKey,
+        limit: u32,
+        expires_at_unix: u64,
+        now_unix: u64,
+    ) -> Result<RateLimitDecision, DependencyError> {
+        let rate_hmac = format!("{}:lifetime", self.rate_hmac(key)?);
+        let mut inner = self.lock_inner()?;
+        Self::take_next_error(&mut inner)?;
+        if expires_at_unix <= now_unix {
+            return Ok(RateLimitDecision::Denied);
+        }
+        // The first use fixes the expiry; like DynamoDB, the count never
+        // resets while the row exists.
+        let (count, _expires) = inner
+            .lifetime_counters
+            .entry(rate_hmac)
+            .or_insert((0, expires_at_unix));
+        if *count >= limit {
+            return Ok(RateLimitDecision::Denied);
+        }
+        *count += 1;
         Ok(RateLimitDecision::Allowed)
     }
 }
