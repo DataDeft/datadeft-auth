@@ -1,5 +1,11 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { protect, ProtectError, type ProtectConfig } from "./protect";
+import {
+    backoffDelayMs,
+    protect,
+    protectedFetch,
+    ProtectError,
+    type ProtectConfig,
+} from "./protect";
 
 // -- Helpers ------------------------------------------------------------------
 
@@ -503,5 +509,138 @@ describe("ProtectError", () => {
     test("status is undefined for non-server errors", () => {
         const e = new ProtectError("network", "offline");
         expect(e.status).toBeUndefined();
+    });
+});
+
+// -- protectedFetch -----------------------------------------------------------
+
+describe("protectedFetch", () => {
+    const API = "/api/v1/magic-link/request";
+    const config: ProtectConfig = {
+        workerUrl: "./worker.js",
+        createUrl: CREATE_URL,
+        validateUrl: VALIDATE_URL,
+        workerCount: 1,
+    };
+    const powRequired = () =>
+        new Response("{}", { status: 401, headers: { "WWW-Authenticate": "DD-PoW" } });
+    const unavailable = () => new Response("{}", { status: 503 });
+
+    test("solves once on 401 DD-PoW and retries the request once", async () => {
+        installWorker(SolvingMockWorker);
+        const calls: string[] = [];
+        let apiCalls = 0;
+        mockFetch((url) => {
+            calls.push(url);
+            if (url === CREATE_URL) return jsonResponse(CHALLENGE);
+            if (url === VALIDATE_URL) return new Response(null, { status: 204 });
+            apiCalls += 1;
+            return apiCalls === 1 ? powRequired() : jsonResponse({ status: "ok" });
+        });
+
+        const response = await protectedFetch(API, { method: "POST", body: "{}" }, config);
+
+        expect(response.status).toBe(200);
+        expect(calls).toEqual([API, CREATE_URL, VALIDATE_URL, API]);
+    });
+
+    test("solves at most once: a second DD-PoW challenge is returned", async () => {
+        installWorker(SolvingMockWorker);
+        let solves = 0;
+        mockFetch((url) => {
+            if (url === CREATE_URL) {
+                solves += 1;
+                return jsonResponse(CHALLENGE);
+            }
+            if (url === VALIDATE_URL) return new Response(null, { status: 204 });
+            return powRequired();
+        });
+
+        const response = await protectedFetch(API, { method: "POST", body: "{}" }, config);
+
+        expect(response.status).toBe(401);
+        expect(solves).toBe(1);
+    });
+
+    test("passes the app's own 401 and 403 through untouched", async () => {
+        for (const status of [401, 403]) {
+            let calls = 0;
+            mockFetch(() => {
+                calls += 1;
+                return new Response("{}", { status });
+            });
+            const response = await protectedFetch(API, undefined, config);
+            expect(response.status).toBe(status);
+            expect(calls).toBe(1);
+        }
+    });
+
+    test("backs off with equal jitter on 503 for a repeatable request", async () => {
+        const waits: number[] = [];
+        let calls = 0;
+        mockFetch(() => {
+            calls += 1;
+            return calls < 3 ? unavailable() : jsonResponse({ status: "ok" });
+        });
+
+        const response = await protectedFetch(API, undefined, config, {
+            sleep: (ms) => {
+                waits.push(ms);
+                return Promise.resolve();
+            },
+            random: () => 0,
+        });
+
+        expect(response.status).toBe(200);
+        expect(waits).toEqual([500, 1_000]);
+    });
+
+    test("gives up after the configured retries and returns the 503", async () => {
+        const waits: number[] = [];
+        mockFetch(() => unavailable());
+
+        const response = await protectedFetch(API, { method: "GET" }, config, {
+            unavailableRetries: 2,
+            sleep: (ms) => {
+                waits.push(ms);
+                return Promise.resolve();
+            },
+            random: () => 0.999_999,
+        });
+
+        expect(response.status).toBe(503);
+        expect(waits.length).toBe(2);
+    });
+
+    test("does not repeat a POST after 503 unless told it is repeatable", async () => {
+        let calls = 0;
+        mockFetch(() => {
+            calls += 1;
+            return unavailable();
+        });
+        const noWait = () => Promise.resolve();
+
+        await protectedFetch(API, { method: "POST", body: "{}" }, config, { sleep: noWait });
+        expect(calls).toBe(1);
+
+        calls = 0;
+        await protectedFetch(API, { method: "POST", body: "{}" }, config, {
+            repeatable: true,
+            sleep: noWait,
+        });
+        expect(calls).toBe(4);
+    });
+});
+
+describe("backoffDelayMs", () => {
+    test("equal jitter: at least half of the doubling step, capped at 30 s", () => {
+        expect([1, 2, 3, 4].map((retry) => backoffDelayMs(retry, () => 0))).toEqual([
+            500, 1_000, 2_000, 4_000,
+        ]);
+        expect([1, 2, 3, 4].map((retry) => backoffDelayMs(retry, () => 0.999_999))).toEqual([
+            999, 1_999, 3_999, 7_999,
+        ]);
+        expect(backoffDelayMs(20, () => 0)).toBe(15_000);
+        expect(backoffDelayMs(20, () => 0.999_999)).toBe(29_999);
     });
 });

@@ -55,6 +55,38 @@ A challenge response that is not JSON, or not a well-formed challenge (string
 `chg`/`tim`/`tag`, integer `dif` in 1–64), fails with `ProtectError("server")`
 before any worker starts. Error messages never include the response body.
 
+## Calling a protected API: `protectedFetch`
+
+The server answers with one response contract
+([docs/security.md](https://github.com/DataDeft/datadeft-auth/blob/main/docs/security.md),
+"HTTP response contract"). `protectedFetch` follows it, so you rarely call
+`protect` yourself:
+
+```ts
+import { protectedFetch } from "@datadeft/protect-client";
+
+const response = await protectedFetch(
+  "/api/v1/magic-link/request",
+  { method: "POST", headers: { "content-type": "application/json" }, body },
+  { workerUrl: "/pow-worker.js", createUrl, validateUrl },
+  { repeatable: true }, // this POST is safe to send again after a 503
+);
+```
+
+- `401` + `WWW-Authenticate: DD-PoW`: it runs `protect` once and sends the
+  request again, once.
+- `503`: for a repeatable request (`GET`, `HEAD`, `OPTIONS`, or
+  `repeatable: true`) it waits an equal-jitter backoff (half of
+  `min(30 s, 1 s × 2^(n-1))` plus a random share of the other half) and
+  retries, 3 times by default (`unavailableRetries`, at most 6). Retrying
+  without jitter looks like a bot.
+- Anything else, including your app's own `401` and `403`, comes back as
+  is. It acts only on the `DD-PoW` scheme, never on a bare `401`.
+
+It returns the last `Response`. Pass a body that can be sent twice (a string,
+`Blob`, `FormData` or `URLSearchParams`). `ProtectError` is thrown only when
+the admission itself fails.
+
 ## Serve the worker
 
 Create an application entry file, for example `src/pow-worker.ts`:

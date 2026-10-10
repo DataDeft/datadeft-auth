@@ -319,3 +319,114 @@ export async function protect(config: ProtectConfig): Promise<void> {
         throw new ProtectError("server", "solution validation failed", validateResp.status);
     }
 }
+
+// -- protectedFetch -----------------------------------------------------------
+
+/** `WWW-Authenticate` scheme the server sends when a proof of work is needed. */
+export const DD_POW_AUTH_SCHEME = "DD-PoW";
+
+/** Backoff after a `503`: equal jitter, doubling from 1 s, capped at 30 s. */
+const BACKOFF_BASE_MS = 1_000;
+const BACKOFF_CAP_MS = 30_000;
+/** Retries after a `503` by default: four attempts in all. */
+const DEFAULT_UNAVAILABLE_RETRIES = 3;
+/** Most retries accepted after a `503`. */
+const MAX_UNAVAILABLE_RETRIES = 6;
+
+/** Settings for {@link protectedFetch} beyond the admission config. */
+export interface ProtectedFetchOptions {
+    /**
+     * Whether the request may be sent again after a `503`. Default: true for
+     * `GET`, `HEAD` and `OPTIONS`, false otherwise. Set it for a `POST` that
+     * is safe to repeat, such as a magic-link request.
+     */
+    repeatable?: boolean;
+    /**
+     * Retries after a `503` for a repeatable request, clamped to `0..=6`.
+     * Default: 3. Each waits an equal-jitter delay: half of
+     * `min(30 s, 1 s * 2^(retry - 1))` plus a random share of the other half.
+     */
+    unavailableRetries?: number;
+    /** Wait function. Default: `setTimeout`. For tests. */
+    sleep?: (ms: number) => Promise<void>;
+    /** Uniform random in `[0, 1)`. Default: `Math.random`. For tests. */
+    random?: () => number;
+}
+
+/**
+ * Equal-jitter backoff delay before retry number `retry` (1-based): never
+ * shorter than half the exponential step, so retries spread out without ever
+ * hammering the server.
+ */
+export function backoffDelayMs(retry: number, random: () => number = Math.random): number {
+    const exponent = Math.max(0, Math.min(retry - 1, 30));
+    const step = Math.min(BACKOFF_CAP_MS, BACKOFF_BASE_MS * 2 ** exponent);
+    const share = Math.min(Math.max(random(), 0), 1);
+    return Math.floor(step / 2 + share * (step / 2));
+}
+
+/** True for `401` + `WWW-Authenticate: DD-PoW`. */
+function isProofOfWorkChallenge(response: Response): boolean {
+    if (response.status !== 401) {
+        return false;
+    }
+    const scheme = (response.headers.get("WWW-Authenticate") ?? "").trim().split(/[\s,]/)[0];
+    return scheme === DD_POW_AUTH_SCHEME;
+}
+
+function isRepeatableByDefault(input: RequestInfo | URL, init?: RequestInit): boolean {
+    const method = (
+        init?.method ?? (input instanceof Request ? input.method : "GET")
+    ).toUpperCase();
+    return method === "GET" || method === "HEAD" || method === "OPTIONS";
+}
+
+/**
+ * `fetch` that follows the server's response contract:
+ *
+ * - `401` + `WWW-Authenticate: DD-PoW`: run {@link protect} once, then send
+ *   the request again, once.
+ * - `503`: for a repeatable request, wait an equal-jitter backoff and retry
+ *   (see {@link ProtectedFetchOptions}).
+ * - Anything else, including the app's own `401`/`403`: returned as is.
+ *
+ * The last response is returned; inspect its status as with `fetch`. Pass a
+ * body that can be sent twice (a string, `Blob`, `FormData`, or
+ * `URLSearchParams`), not a stream. A `Request` input is cloned per attempt.
+ *
+ * @throws {ProtectError} when the proof-of-work admission itself fails.
+ */
+export async function protectedFetch(
+    input: RequestInfo | URL,
+    init: RequestInit | undefined,
+    config: ProtectConfig,
+    options: ProtectedFetchOptions = {},
+): Promise<Response> {
+    const send = () => fetch(input instanceof Request ? input.clone() : input, init);
+    const sleep =
+        options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    const random = options.random ?? Math.random;
+    const repeatable = options.repeatable ?? isRepeatableByDefault(input, init);
+    const retries = repeatable
+        ? Math.min(
+              MAX_UNAVAILABLE_RETRIES,
+              Math.max(0, Math.floor(options.unavailableRetries ?? DEFAULT_UNAVAILABLE_RETRIES)),
+          )
+        : 0;
+
+    let solved = false;
+    let response = await send();
+    for (let retry = 1; ; retry++) {
+        if (!solved && isProofOfWorkChallenge(response)) {
+            solved = true;
+            await protect(config);
+            response = await send();
+            continue;
+        }
+        if (response.status !== 503 || retry > retries) {
+            return response;
+        }
+        await sleep(backoffDelayMs(retry, random));
+        response = await send();
+    }
+}

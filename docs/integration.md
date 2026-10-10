@@ -83,6 +83,10 @@ no data migration is provided, and every existing session ends.
   `500`), `MagicLinkHttpError::Forbidden` is removed (the library sends no
   `403`), and an invalid session is `401` + `WWW-Authenticate: DD-Session`.
   Alert on the internal `reason()` counts, not raw `5xx` rates.
+- **Browser client:** `@datadeft/protect-client` adds `protectedFetch`: it
+  solves on `401` + `DD-PoW` and retries once, and backs off with equal jitter
+  on `503` for repeatable requests. Replace status inference in the frontend
+  with it.
 - **PoW statuses and the per-solve budget:** a rejected solution and a
   missing or invalid proof answer `401` with `WWW-Authenticate: DD-PoW`
   (`PowFlowError` and `ProofRejection` implement `IntoResponse`); faults and
