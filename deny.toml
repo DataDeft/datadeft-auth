@@ -16,6 +16,9 @@ allow = [
     "BSD-3-Clause",
     "Unicode-3.0",
     "CC0-1.0",
+    # rustls / aws-lc (the HTTP client the DynamoDB Local tests use).
+    "ISC",
+    "MIT-0",
 ]
 confidence-threshold = 0.93
 

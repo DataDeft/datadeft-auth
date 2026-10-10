@@ -61,6 +61,15 @@ tla spec/tla/Pow.tla --allow-deadlock
 tla spec/tla/Liveness.tla --check-liveness
 """
 
+[tasks.dynamodb-local-test]
+description = "Integration tests against DynamoDB Local (needs Docker)"
+run = """
+docker run --rm -d --name datadeft-dynamodb-local -p 18000:8000 amazon/dynamodb-local -jar DynamoDBLocal.jar -inMemory -sharedDb >/dev/null
+trap 'docker stop datadeft-dynamodb-local >/dev/null' EXIT
+sleep 2
+DYNAMODB_LOCAL_ENDPOINT=http://localhost:18000 cargo test -p datadeft-magic-link-aws --features aws --test dynamodb_local -- --ignored --test-threads 1
+"""
+
 [tasks.spec-mutants]
 description = "Prove every TLA+ invariant can fail: each mutant must be caught"
 tools = { "cargo:tla-checker" = "0.3.9" }
