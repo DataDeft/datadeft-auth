@@ -23,6 +23,26 @@ your application owns the router and renders responses.
 - Apply `apply_magic_link_security_headers` to every landing and confirmation
   response.
 
+## Two landing modes
+
+- **Server-rendered:** `magic_link_landing` returns the account and the
+  confirmation value; your server renders the confirm page with a same-origin
+  `POST` form. The token never leaves the server.
+- **Redirect, for static UIs:** `magic_link_landing_redirect` answers `303` to
+  one configured static page for every link state, and the page reads
+  `{ usable, account, confirmation }` from `magic_link_flow_state`, then posts
+  the confirmation. The static page must follow the rules in
+  `docs/security.md` ("Redirect landing mode").
+
+Never serve the token-bearing landing as JSON for a static page's JavaScript to
+fetch: that puts the token in JavaScript.
+
+## Status codes
+
+`400` for shape errors, `401` + `WWW-Authenticate: DD-Session` for an invalid
+session, and one constant `503` for every fault. The crate never sends `403` or
+`500`. See `docs/security.md`, "HTTP response contract".
+
 ## Mandatory deployment gate
 
 The magic-link token is in the landing request target before any handler runs.

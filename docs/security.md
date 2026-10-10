@@ -769,6 +769,40 @@ Scanner safety protects against GET-only scanners. Active scanners that submit f
 
 The confirmation page mitigates login CSRF by showing the account. Offer a stronger mode when the app needs one.
 
+### Redirect landing mode
+
+For UIs served as static files (`MagicLinkScannerFlowConfig::
+with_redirect_landing`). The token still never reaches JavaScript:
+
+1. The emailed link hits the landing `GET`, which validates without
+   consuming, sets the `HttpOnly` confirm cookie, and answers `303` to one
+   configured same-origin page for every link state. An unusable link gets a
+   cookie-clearing header instead of a cookie. `Location` never carries the
+   token, selector, verifier or confirmation value.
+2. The page `GET`s the flow-state route. It reads only the confirm cookie,
+   requires exactly `Sec-Fetch-Site: same-origin`, sends no CORS headers,
+   sends `Cross-Origin-Resource-Policy: same-origin` and the landing's security
+   headers, is throttled per selector like the landing, and never writes. It
+   answers `{ "usable": true, "account": …, "confirmation": … }`, or
+   `{ "usable": false }` (clearing the cookie) for anything unusable; an outage
+   is the constant `503`.
+3. The page posts `{ confirmation }` same-origin to the confirmation route,
+   exactly as the server-rendered form does.
+
+The confirm cookie's `Path` must cover the flow-state route and the
+confirmation route; configuration refuses it otherwise.
+
+The static page holds the account and the confirmation value, so it gets the
+landing page's rules:
+
+- A strict CSP: scripts only from the same origin, no third-party scripts,
+  styles, fonts or analytics, no error beacons that send page content,
+  `frame-ancestors 'none'`.
+- `Referrer-Policy: strict-origin` and `Cache-Control: no-store`.
+- No shared navigation or session scripts: it shows the account and posts the
+  confirmation, nothing else. On `{ "usable": false }` it offers "request a new
+  link"; on `503` it asks to retry later.
+
 ### Email language and Reply-To
 
 - The email language comes from `MagicLinkServiceConfig::locales`, an

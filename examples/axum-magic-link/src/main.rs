@@ -10,6 +10,7 @@
 mod dev;
 mod magic_link;
 mod pow;
+mod redirect_mode;
 mod session;
 mod state;
 mod util;
@@ -23,6 +24,7 @@ use axum::routing::{get, post};
 use self::dev::*;
 use self::magic_link::*;
 use self::pow::*;
+use self::redirect_mode::*;
 use self::session::*;
 use self::state::*;
 
@@ -49,6 +51,11 @@ fn app(state: AppState) -> Router {
         .route("/auth/magic-link/request", post(request_magic_link))
         .route("/auth/magic-link", get(landing_route))
         .route("/auth/magic-link/consume", post(confirm_route))
+        // Redirect landing mode, for static UIs.
+        .route("/auth/magic-link/open", get(redirect_landing_route))
+        .route("/auth/magic-link/flow-state", get(flow_state_route))
+        .route("/login/confirm", get(confirm_page))
+        .route("/login/confirm.js", get(confirm_page_script))
         .route("/auth/complete", get(auth_complete))
         .route("/me", get(me))
         .route("/logout", post(logout))

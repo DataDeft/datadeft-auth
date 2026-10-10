@@ -14,21 +14,21 @@ pub(super) async fn index() -> Html<&'static str> {
 
 pub(super) async fn dev_latest_magic_link(State(state): State<AppState>) -> Response {
     match latest_magic_link(&state.outbox) {
-        Some(link) => Html(format!(
-            "<!doctype html><h1>Development outbox</h1><p>This endpoint exposes a local-only bearer magic link for the example app.</p><p><a href=\"{}\">Continue sign in</a></p>",
-            escape_html(&link),
+        Some(query) => Html(format!(
+            "<!doctype html><h1>Development outbox</h1><p>This endpoint exposes a local-only bearer magic link for the example app.</p><p><a href=\"/auth/magic-link{query}\">Continue sign in (server-rendered page)</a></p><p><a href=\"/auth/magic-link/open{query}\">Continue sign in (redirect mode, static page)</a></p>",
+            query = escape_html(&query),
         ))
         .into_response(),
         None => (StatusCode::NOT_FOUND, "no development magic-link email queued\n").into_response(),
     }
 }
 
-/// Local-development helper: render the newest outbox email as a clickable
-/// relative magic link instead of sending real mail.
+/// Local-development helper: the newest outbox email's `?token=…` query, to
+/// render as clickable links instead of sending real mail.
 fn latest_magic_link(outbox: &FakeMagicLinkOutbox) -> Option<String> {
     let email = outbox.recorded().ok()?.pop()?;
     let token = email.token.as_secret_value();
-    Some(format!("/auth/magic-link?token={}", token.as_str()))
+    Some(format!("?token={}", token.as_str()))
 }
 
 const INDEX_HTML: &str = r#"<!doctype html>

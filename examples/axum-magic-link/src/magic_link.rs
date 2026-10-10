@@ -127,9 +127,11 @@ pub(super) async fn landing_route(State(state): State<AppState>, request: Reques
             StatusCode::SERVICE_UNAVAILABLE,
             "Service temporarily unavailable.",
         ),
-        Err(MagicLinkFlowResponseError::Internal) => {
-            scanner_page(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error.")
-        }
+        // The library never sends 500: faults are the same 503 as outages.
+        Err(MagicLinkFlowResponseError::Internal) => scanner_page(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Service temporarily unavailable.",
+        ),
     }
 }
 
@@ -184,9 +186,11 @@ pub(super) async fn confirm_route(State(state): State<AppState>, request: Reques
             StatusCode::SERVICE_UNAVAILABLE,
             "Service temporarily unavailable.",
         ),
-        Err(MagicLinkFlowResponseError::Internal) => {
-            scanner_page(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error.")
-        }
+        // The library never sends 500: faults are the same 503 as outages.
+        Err(MagicLinkFlowResponseError::Internal) => scanner_page(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Service temporarily unavailable.",
+        ),
     }
 }
 

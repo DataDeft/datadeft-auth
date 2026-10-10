@@ -84,6 +84,9 @@ no data migration is provided, and every existing session ends.
 - **Request outcome:** `request_magic_link` returns
   `RequestMagicLinkOutcome::Sent` or `Throttled(RequestThrottle)` instead of a
   unit struct. Count it; the public answer stays the same `200`.
+- **Redirect landing mode:** new, for static confirm pages
+  (`with_redirect_landing`, `magic_link_landing_redirect`,
+  `magic_link_flow_state`); the server-rendered mode is unchanged.
 - **Response contract** (docs/security.md, "HTTP response contract"): shape
   errors are one generic `400` (`UnsupportedMediaType` and `PayloadTooLarge`
   included), every fault is the constant `503` (`Internal` no longer answers
@@ -191,10 +194,20 @@ results plus prepared cookie headers. Your application renders the responses.
 1. Request. `POST` to `request_magic_link`. It validates consent and the
    normalized email, mints a selector and a verifier, stores the record under
    keyed lookup material (never the raw token), and hands the URL to your outbox.
-2. Landing. `GET` to `magic_link_landing` (`begin_magic_link_landing`). This is
-   side-effect-free and repeatable. It sets the `dd_auth_confirm` cookie. It
-   never consumes the token. Render the account page and a same-origin `POST`
-   form.
+2. Landing. `GET`, side-effect-free and repeatable; it sets the
+   `dd_auth_confirm` cookie and never consumes the token. Pick one mode:
+   - **Server-rendered:** `magic_link_landing` (`begin_magic_link_landing`).
+     Render the account and a same-origin `POST` form.
+   - **Redirect, for UIs served as static files:** enable it with
+     `MagicLinkScannerFlowConfig::with_redirect_landing(page, flow_state)`.
+     `magic_link_landing_redirect` answers `303` to `page` for every link state;
+     the page `GET`s `flow_state` (`magic_link_flow_state`,
+     `read_magic_link_flow_state`) for `{ usable, account, confirmation }`,
+     shows the account, and posts the confirmation. Follow the static page rules
+     in [security.md](security.md) ("Redirect landing mode").
+
+   Never return the token-bearing landing as JSON for a static page to fetch:
+   that puts the token in JavaScript.
 3. Confirm. `POST` to `magic_link_confirmation` (`confirm_magic_link_flow`).
    Same-origin only. It consumes the token and creates the session in one atomic
    transaction, and it issues the `dd_session` cookie. Clear `dd_auth_confirm`

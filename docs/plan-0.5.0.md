@@ -60,8 +60,7 @@ in Section 10, not done yet), **Deferred**.
   material, not ids, and keep their underscores.
 - `docs/security.md` has an identifier-format table.
 
-### 4.2 Redirect landing mode and flow state (#2) — In progress
-Library side done; the example's static page and the docs are next.
+### 4.2 Redirect landing mode and flow state (#2) — Done
 
 1. `GET /…/landing?token=…` (`magic_link_landing_redirect`) validates without
    consuming and answers `303` to **one** app-configured same-origin page for
@@ -98,13 +97,13 @@ Static confirm page rules (new section in `security.md`):
 The server-rendered mode stays supported; both are documented with when to
 use each.
 
-**Acceptance:** no token material in any redirect (done); flow state works
-with the cookie alone and fails generically (done); round trip landing → flow
-state → confirm (done in the service; example next); cross-site flow-state
-requests refused (done); repeated scanner GETs burn nothing (done); the
-example ships both modes (next).
+**Acceptance (all met):** no token material in any redirect; flow state works
+with the cookie alone and fails generically; round trip landing → flow state →
+confirm through the example router; cross-site and header-less flow-state
+requests refused; repeated scanner GETs burn nothing; the example ships both
+modes.
 
-### 4.3 Quickstart (#3) — Open
+### 4.3 Quickstart (#3) — Done
 - The `datadeft-magic-link-axum` quickstart shows the server-rendered mode and
   the redirect mode. Nothing implies the token is held in JavaScript.
 

@@ -214,3 +214,139 @@ async fn sign_in_end_to_end_through_the_router() {
         r#"{"error":"unavailable","message":"The service is temporarily unavailable. Try again later."}"#
     );
 }
+
+/// Redirect landing mode end to end: the link redirects to the static page
+/// with no token in `Location`, the page reads the flow state (repeatably,
+/// burning nothing), posts the confirmation, and the user is signed in.
+#[tokio::test]
+async fn redirect_mode_end_to_end_through_the_router() {
+    use datadeft_magic_link_service::{
+        MagicLinkRequestService, NormalizedEmail, RequestMagicLinkCommand,
+    };
+    use rand_core::OsRng;
+
+    let state = build_state().expect("state");
+    let mut rng = OsRng;
+    MagicLinkRequestService {
+        magic_links: &state.auth,
+        limiter: &state.auth,
+        outbox: &state.outbox,
+        clock: &LocalClock,
+        rng: &mut rng,
+        lookup_hmac_key: state.lookup_hmac_key.as_ref(),
+        config: state.config.clone(),
+    }
+    .request_magic_link(RequestMagicLinkCommand::new(
+        NormalizedEmail::from_normalized("static@example.test").expect("email"),
+        true,
+        true,
+    ))
+    .await
+    .expect("request");
+    let token = state
+        .outbox
+        .recorded()
+        .expect("outbox")
+        .pop()
+        .expect("email")
+        .token
+        .as_secret_value()
+        .to_string();
+    let app = app(state);
+
+    // A scanner follows the link twice: each time a 303 to the same page.
+    let open = format!("/auth/magic-link/open?token={token}");
+    let mut confirm_cookie = String::new();
+    for _ in 0..2 {
+        let landed = send(&app, Request::get(&open).body(Body::empty()).expect("req")).await;
+        assert_eq!(landed.status(), StatusCode::SEE_OTHER);
+        let location = landed
+            .headers()
+            .get(LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .expect("location");
+        assert_eq!(location, "/login/confirm", "one target, no token");
+        confirm_cookie = cookie(&landed, "dd_auth_confirm").expect("confirm cookie");
+    }
+
+    // The static page carries its own strict headers.
+    let page = send(
+        &app,
+        Request::get("/login/confirm")
+            .body(Body::empty())
+            .expect("req"),
+    )
+    .await;
+    assert_eq!(page.status(), StatusCode::OK);
+    let csp = page
+        .headers()
+        .get("content-security-policy")
+        .and_then(|v| v.to_str().ok())
+        .expect("csp")
+        .to_owned();
+    assert!(csp.contains("script-src 'self'") && csp.contains("frame-ancestors 'none'"));
+    assert!(!text(page).await.contains(&token));
+
+    // The page reads the flow state; reading again burns nothing.
+    let flow_state = || {
+        Request::get("/auth/magic-link/flow-state")
+            .header(COOKIE, &confirm_cookie)
+            .header("sec-fetch-site", "same-origin")
+            .body(Body::empty())
+            .expect("req")
+    };
+    let mut confirmation = String::new();
+    for _ in 0..2 {
+        let read = send(&app, flow_state()).await;
+        assert_eq!(read.status(), StatusCode::OK);
+        let body: serde_json::Value = serde_json::from_str(&text(read).await).expect("json");
+        assert_eq!(body["usable"], true);
+        assert_eq!(body["account"], "static@example.test");
+        confirmation = body["confirmation"]
+            .as_str()
+            .expect("confirmation")
+            .to_owned();
+    }
+    // A cross-site read gets nothing.
+    let cross = send(
+        &app,
+        Request::get("/auth/magic-link/flow-state")
+            .header(COOKIE, &confirm_cookie)
+            .header("sec-fetch-site", "cross-site")
+            .body(Body::empty())
+            .expect("req"),
+    )
+    .await;
+    let cross: serde_json::Value = serde_json::from_str(&text(cross).await).expect("json");
+    assert_eq!(cross, serde_json::json!({ "usable": false }));
+
+    // The page posts the confirmation same-origin, as JSON.
+    let confirmed = send(
+        &app,
+        Request::post("/auth/magic-link/consume")
+            .header(CONTENT_TYPE, "application/json")
+            .header(COOKIE, &confirm_cookie)
+            .header(ORIGIN, LOCAL_ORIGIN)
+            .body(Body::from(
+                serde_json::json!({ "confirmation": confirmation }).to_string(),
+            ))
+            .expect("req"),
+    )
+    .await;
+    assert_eq!(confirmed.status(), StatusCode::SEE_OTHER);
+    let session = cookie(&confirmed, "dd_session").expect("session cookie");
+    let me = send(
+        &app,
+        Request::get("/me")
+            .header(COOKIE, &session)
+            .body(Body::empty())
+            .expect("req"),
+    )
+    .await;
+    assert_eq!(me.status(), StatusCode::OK);
+
+    // The link is used: its flow state is no longer usable.
+    let after: serde_json::Value =
+        serde_json::from_str(&text(send(&app, flow_state()).await).await).expect("json");
+    assert_eq!(after, serde_json::json!({ "usable": false }));
+}
