@@ -17,64 +17,15 @@
 use datadeft_auth_token_core::TokenError;
 use datadeft_auth_token_core::base62;
 use datadeft_auth_token_core::branca;
+use datadeft_auth_token_core::test_support::{FailOnCallRng, FixedBytesRng};
 use proptest::prelude::*;
-use rand_core::{CryptoRng, OsRng, RngCore};
+use rand_core::OsRng;
 
 const ALPHABET: &[u8; 62] = base62::ENCODE_STD;
 const KEY: [u8; branca::KEY_BYTES] = [0x11; branca::KEY_BYTES];
 
-/// Returns the same fixed nonce on every draw.
-struct FixedNonceRng([u8; branca::NONCE_BYTES]);
-
-impl RngCore for FixedNonceRng {
-    fn next_u32(&mut self) -> u32 {
-        0
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        0
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        assert_eq!(dest.len(), branca::NONCE_BYTES, "one Branca nonce draw");
-        dest.copy_from_slice(&self.0);
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        self.fill_bytes(dest);
-        Ok(())
-    }
-}
-
-impl CryptoRng for FixedNonceRng {}
-
-/// Every draw fails: models an exhausted or broken entropy source.
-struct BrokenRng;
-
-impl RngCore for BrokenRng {
-    fn next_u32(&mut self) -> u32 {
-        0
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        0
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        dest.fill(0);
-    }
-
-    fn try_fill_bytes(&mut self, _dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        Err(rand_core::Error::from(
-            core::num::NonZeroU32::new(rand_core::Error::CUSTOM_START).expect("nonzero"),
-        ))
-    }
-}
-
-impl CryptoRng for BrokenRng {}
-
 fn mint(payload: &[u8], nonce: [u8; branca::NONCE_BYTES], timestamp: u32) -> String {
-    branca::encode(payload, &KEY, &mut FixedNonceRng(nonce), timestamp).expect("encode")
+    branca::encode(payload, &KEY, &mut FixedBytesRng(nonce), timestamp).expect("encode")
 }
 
 // --- Golden / entropy ------------------------------------------------------
@@ -90,7 +41,7 @@ fn deterministic_rng_reproduces_official_golden_vector() {
     for pair in nonce.chunks_mut(2) {
         pair.copy_from_slice(&[0xbe, 0xef]);
     }
-    let token = branca::encode(b"Hello world!", key, &mut FixedNonceRng(nonce), 0).expect("encode");
+    let token = branca::encode(b"Hello world!", key, &mut FixedBytesRng(nonce), 0).expect("encode");
     assert_eq!(
         token,
         "870S4BYxgHw0KnP3W9fgVUHEhT5g86vJ17etaC5Kh5uIraWHCI1psNQGv298ZmjPwoYbjDQ9chy2z"
@@ -103,7 +54,7 @@ fn deterministic_rng_reproduces_official_golden_vector() {
 #[test]
 fn failing_rng_yields_entropy_unavailable_not_a_weak_token() {
     assert_eq!(
-        branca::encode(b"payload", &KEY, &mut BrokenRng, 1).unwrap_err(),
+        branca::encode(b"payload", &KEY, &mut FailOnCallRng::failing_on(0), 1).unwrap_err(),
         TokenError::EntropyUnavailable
     );
 }

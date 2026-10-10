@@ -536,10 +536,6 @@ fn refresh(
     push_cookie(m, next);
 }
 
-fn pick<T: Clone>(items: &[T], index: u8) -> Option<T> {
-    (!items.is_empty()).then(|| items[usize::from(index) % items.len()].clone())
-}
-
 async fn apply(h: &mut Harness, m: &mut Model, op: &Op) {
     match *op {
         Op::Login { user, country } => {

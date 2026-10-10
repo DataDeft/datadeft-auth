@@ -171,7 +171,32 @@ pub(super) struct Harness {
     outbox: crate::FakeMagicLinkOutbox,
 }
 
+/// `items[index % len]`, or `None` when empty: how random ops pick a target.
+pub(super) fn pick<T: Clone>(items: &[T], index: u8) -> Option<T> {
+    (!items.is_empty()).then(|| items[usize::from(index) % items.len()].clone())
+}
+
 impl Harness {
+    /// Log `email(user)` in at `at` and return the session cookie value.
+    pub(super) async fn login_at(&mut self, at: u64, user: usize) -> String {
+        self.clock.set(at);
+        let outcome = self.login(&email(user), None).await.expect("login");
+        outcome.authentication().session_cookie_value().to_owned()
+    }
+
+    /// The id of the store's only user.
+    pub(super) fn only_user(&self) -> UserId {
+        self.store
+            .lock_inner()
+            .expect("lock")
+            .user_profiles_by_id
+            .values()
+            .next()
+            .expect("user")
+            .user_id
+            .clone()
+    }
+
     pub(super) fn new(seed: u64) -> Self {
         Self {
             store: FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x24; 32])),

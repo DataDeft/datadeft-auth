@@ -11,12 +11,6 @@ use datadeft_auth_token_core::cookie::CLOCK_SKEW_TOLERANCE_SECS;
 
 use super::model_support::*;
 
-async fn login_at(h: &mut Harness, at: u64, user: usize) -> String {
-    h.clock.set(at);
-    let outcome = h.login(&email(user), None).await.expect("login");
-    outcome.authentication().session_cookie_value().to_owned()
-}
-
 async fn validate_at(
     h: &mut Harness,
     at: u64,
@@ -37,17 +31,8 @@ async fn refresh_at(h: &mut Harness, at: u64, cookie: &str) -> Option<String> {
 #[tokio::test]
 async fn enable_watermark_is_strict_and_a_same_second_login_is_dead_on_arrival() {
     let mut h = Harness::new(1);
-    let old = login_at(&mut h, T0, 0).await;
-    let id = h
-        .store
-        .lock_inner()
-        .expect("lock")
-        .user_profiles_by_id
-        .values()
-        .next()
-        .expect("user")
-        .user_id
-        .clone();
+    let old = h.login_at(T0, 0).await;
+    let id = h.only_user();
     let store = h.store.clone();
     h.admin_with(&store)
         .disable_user(&id, &actor())
@@ -66,20 +51,20 @@ async fn enable_watermark_is_strict_and_a_same_second_login_is_dead_on_arrival()
     );
     // A login in the enable's own second consumes its link and returns a
     // cookie, but the session is not strictly after the watermark.
-    let same_second = login_at(&mut h, T0 + 10, 0).await;
+    let same_second = h.login_at(T0 + 10, 0).await;
     assert_eq!(
         validate_at(&mut h, T0 + 10, &same_second).await.err(),
         Some(SessionValidationError::InvalidSession)
     );
     // One second later is after the watermark.
-    let next_second = login_at(&mut h, T0 + 11, 0).await;
+    let next_second = h.login_at(T0 + 11, 0).await;
     assert!(validate_at(&mut h, T0 + 11, &next_second).await.is_ok());
 }
 
 #[tokio::test]
 async fn refresh_is_due_at_exactly_half_the_idle_lifetime() {
     let mut h = Harness::new(2);
-    let cookie = login_at(&mut h, T0, 0).await;
+    let cookie = h.login_at(T0, 0).await;
     assert!(
         refresh_at(&mut h, T0 + IDLE / 2 - 1, &cookie)
             .await
@@ -91,7 +76,7 @@ async fn refresh_is_due_at_exactly_half_the_idle_lifetime() {
 #[tokio::test]
 async fn refresh_refuses_a_validation_older_than_the_skew_window() {
     let mut h = Harness::new(3);
-    let cookie = login_at(&mut h, T0, 0).await;
+    let cookie = h.login_at(T0, 0).await;
     let at = T0 + IDLE / 2;
     let validated = validate_at(&mut h, at, &cookie).await.expect("valid");
     h.clock.set(at + SKEW);
@@ -111,7 +96,7 @@ async fn refresh_refuses_a_validation_older_than_the_skew_window() {
 #[tokio::test]
 async fn idle_bound_is_inclusive() {
     let mut h = Harness::new(4);
-    let cookie = login_at(&mut h, T0, 0).await;
+    let cookie = h.login_at(T0, 0).await;
     assert!(validate_at(&mut h, T0 + IDLE, &cookie).await.is_ok());
     assert_eq!(
         validate_at(&mut h, T0 + IDLE + 1, &cookie).await.err(),
@@ -122,7 +107,7 @@ async fn idle_bound_is_inclusive() {
 #[tokio::test]
 async fn future_skew_bound_is_inclusive() {
     let mut h = Harness::new(5);
-    let cookie = login_at(&mut h, T0, 0).await;
+    let cookie = h.login_at(T0, 0).await;
     assert!(validate_at(&mut h, T0 - SKEW, &cookie).await.is_ok());
     assert_eq!(
         validate_at(&mut h, T0 - SKEW - 1, &cookie).await.err(),
@@ -133,7 +118,7 @@ async fn future_skew_bound_is_inclusive() {
 #[tokio::test]
 async fn sliding_refresh_never_passes_the_absolute_lifetime() {
     let mut h = Harness::new(6);
-    let mut cookie = login_at(&mut h, T0, 0).await;
+    let mut cookie = h.login_at(T0, 0).await;
     // Keep the session active with a refresh every 301 seconds.
     let mut at = T0;
     while at + 301 <= T0 + ABSOLUTE - IDLE / 2 {
@@ -159,8 +144,8 @@ async fn sliding_refresh_never_passes_the_absolute_lifetime() {
 #[tokio::test]
 async fn revoke_all_covers_a_session_until_the_skew_tolerance_past_expiry() {
     let mut h = Harness::new(7);
-    login_at(&mut h, T0, 0).await;
-    login_at(&mut h, T0, 1).await;
+    h.login_at(T0, 0).await;
+    h.login_at(T0, 1).await;
     let ids: Vec<_> = {
         let inner = h.store.lock_inner().expect("lock");
         let mut users: Vec<_> = inner
@@ -260,17 +245,8 @@ async fn pre_disable_session_from_a_clock_ahead_node_stays_dead_after_enable() {
 
     let mut h = Harness::new(10);
     // Login node clock: SKEW ahead of the admin/validating clock T0.
-    let cookie = login_at(&mut h, T0 + SKEW, 0).await;
-    let id = h
-        .store
-        .lock_inner()
-        .expect("lock")
-        .user_profiles_by_id
-        .values()
-        .next()
-        .expect("user")
-        .user_id
-        .clone();
+    let cookie = h.login_at(T0 + SKEW, 0).await;
+    let id = h.only_user();
     h.clock.set(T0);
     assert!(
         h.validate(&cookie, None).await.is_ok(),

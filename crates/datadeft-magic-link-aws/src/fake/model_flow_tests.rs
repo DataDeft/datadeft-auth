@@ -318,10 +318,6 @@ fn op() -> impl Strategy<Value = Op> {
 
 // --- driver ----------------------------------------------------------------
 
-fn pick<T: Clone>(items: &[T], index: u8) -> Option<T> {
-    (!items.is_empty()).then(|| items[usize::from(index) % items.len()].clone())
-}
-
 /// Change the last character of the selector (`part` 1) or verifier (`part`
 /// 2) to another lowercase hex digit.
 fn tamper(token: &str, part: usize) -> String {

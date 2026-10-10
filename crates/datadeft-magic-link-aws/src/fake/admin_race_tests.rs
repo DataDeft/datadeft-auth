@@ -82,24 +82,6 @@ impl AuthAdminRepository for GatedEnable {
     }
 }
 
-async fn login_at(h: &mut Harness, at: u64) -> String {
-    h.clock.set(at);
-    let outcome = h.login(&email(0), None).await.expect("login");
-    outcome.authentication().session_cookie_value().to_owned()
-}
-
-fn only_user(h: &Harness) -> UserId {
-    h.store
-        .lock_inner()
-        .expect("lock")
-        .user_profiles_by_id
-        .values()
-        .next()
-        .expect("user")
-        .user_id
-        .clone()
-}
-
 /// Accepted tradeoff ADM-F1 (docs/security.md): concurrent admin actions on
 /// one user are last-write-wins. X's enable observed an earlier disabled
 /// period; its delayed write lands after Y's enable, a login (S1), and Z's
@@ -110,8 +92,8 @@ fn only_user(h: &Harness) -> UserId {
 #[tokio::test]
 async fn concurrent_admin_actions_are_last_write_wins() {
     let mut h = Harness::new(41);
-    login_at(&mut h, T0).await;
-    let id = only_user(&h);
+    h.login_at(T0, 0).await;
+    let id = h.only_user();
     let store = h.store.clone();
     h.clock.set(T0 + 1);
     h.admin_with(&store)
@@ -141,7 +123,7 @@ async fn concurrent_admin_actions_are_last_write_wins() {
             .enable_user(&id, &actor())
             .await
             .expect("Y enable");
-        let s1 = login_at(&mut h, T0 + 30).await;
+        let s1 = h.login_at(T0 + 30, 0).await;
         // Z disables; the revocation of S1 fails (call 2 is the revoke).
         h.clock.set(T0 + 40);
         let failing = FailingAdmin::new(&store, Fault::FailAt(2));
