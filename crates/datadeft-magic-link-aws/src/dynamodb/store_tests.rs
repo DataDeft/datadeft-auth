@@ -44,7 +44,7 @@ fn command(user: MagicLinkAuthenticationUser) -> CommitMagicLinkAuthentication {
         magic_link: MagicLinkAuthenticationExpectation {
             selector_lookup_hmac: selector_lookup_hmac(&lookup_key, &selector)
                 .expect("selector lookup hmac"),
-            email: NormalizedEmail::parse("atomic@example.test").expect("email"),
+            email: NormalizedEmail::from_normalized("atomic@example.test").expect("email"),
             expires_at_unix: 2_000,
             terms_version: "terms-v1".to_owned(),
             privacy_version: "privacy-v1".to_owned(),
@@ -105,7 +105,7 @@ fn authentication_candidate_parser_requires_canonical_verifier_hash() {
 
 #[test]
 fn authentication_user_parser_requires_boolean_disabled_and_exact_linkage() {
-    let email = NormalizedEmail::parse("atomic@example.test").expect("email");
+    let email = NormalizedEmail::from_normalized("atomic@example.test").expect("email");
     assert!(
         !DynamoDbAuthStore::item_to_authentication_user(
             &item_with_user(av_bool(false)),

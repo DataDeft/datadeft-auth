@@ -1,8 +1,11 @@
-//! Exact-match normalized email boundary.
+//! Normalized email identity.
 //!
-//! This type validates structure only. It does not trim, lowercase, fold Gmail
-//! dots, strip plus tags, or apply provider-specific alias rules. The consuming
-//! application supplies the normalized value and this crate compares it exactly.
+//! One rule, owned here: trim surrounding whitespace, then lowercase the whole
+//! address in ASCII, local part included. Lowercasing the local part is a
+//! policy choice (RFC 5321 lets a host treat `Alice@` and `alice@` as two
+//! mailboxes; practically none do). No other folding: Gmail dots, plus tags
+//! and provider-specific alias rules are kept as typed. Identity is then an
+//! exact match on the normalized value.
 
 use core::fmt;
 
@@ -13,14 +16,29 @@ const MAX_LOCAL_LEN: usize = 64;
 const MAX_DOMAIN_LEN: usize = 253;
 const MAX_LABEL_LEN: usize = 63;
 
-/// App-provided normalized email value, validated before HMAC/storage use.
+/// A validated email address in normalized form, ready for HMAC and storage
+/// use. Every value of this type is normalized: build it from user input with
+/// [`Self::normalize`]. `Debug` and errors never contain the address.
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct NormalizedEmail(String);
 
 impl NormalizedEmail {
-    /// Validate an already-normalized email value.
-    pub fn parse(value: &str) -> Result<Self, MagicLinkError> {
-        if is_valid_email_shape(value) {
+    /// Normalize user input (trim, then ASCII-lowercase) and validate it.
+    /// `" Alice@Example.COM "` and `"alice@example.com"` give the same value.
+    pub fn normalize(input: &str) -> Result<Self, MagicLinkError> {
+        let trimmed = input.trim();
+        // Refuse before allocating: no valid address is longer.
+        if trimmed.len() > MAX_EMAIL_LEN {
+            return Err(MagicLinkError::InvalidEmail);
+        }
+        Self::from_normalized(&trimmed.to_ascii_lowercase())
+    }
+
+    /// Validate a value that is already normalized, such as one read back
+    /// from storage. Only validates: a value with uppercase letters or
+    /// surrounding whitespace is refused, not converted.
+    pub fn from_normalized(value: &str) -> Result<Self, MagicLinkError> {
+        if is_valid_email_shape(value) && !value.bytes().any(|byte| byte.is_ascii_uppercase()) {
             Ok(Self(value.to_owned()))
         } else {
             Err(MagicLinkError::InvalidEmail)

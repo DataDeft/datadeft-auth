@@ -52,7 +52,7 @@ impl fmt::Debug for MagicLinkRequestJson {
 impl MagicLinkRequestJson {
     pub fn into_command(self) -> Result<RequestMagicLinkCommand, MagicLinkHttpError> {
         let email =
-            NormalizedEmail::parse(&self.email).map_err(|_| MagicLinkHttpError::BadRequest)?;
+            NormalizedEmail::normalize(&self.email).map_err(|_| MagicLinkHttpError::BadRequest)?;
         Ok(RequestMagicLinkCommand::new(
             email,
             self.terms_accepted,

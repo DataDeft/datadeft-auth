@@ -4,14 +4,14 @@ use axum::http::{HeaderValue, Method};
 use super::*;
 
 #[test]
-fn request_json_regression_preserves_email_and_consent() {
+fn request_json_normalizes_the_email_and_keeps_consent() {
     let body = br#"{
-        "email":"User@example.com",
+        "email":"  User+Tag@Example.com ",
         "terms_accepted":true,
         "privacy_accepted":true
     }"#;
     let command = parse_magic_link_request_json(body).expect("command");
-    assert_eq!(command.email().as_str(), "User@example.com");
+    assert_eq!(command.email().as_str(), "user+tag@example.com");
     assert!(command.terms_accepted());
     assert!(command.privacy_accepted());
 }

@@ -45,7 +45,7 @@ fn final_scanner_flow_surface_is_available() {
     accepts_state_action(None);
 
     let request = RequestMagicLinkCommand::new(
-        NormalizedEmail::parse("public-api@example.test").expect("normalized email"),
+        NormalizedEmail::from_normalized("public-api@example.test").expect("normalized email"),
         true,
         true,
     );

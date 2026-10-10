@@ -128,9 +128,9 @@ fn scanner_commands_are_bounded_and_debug_redacts_all_sensitive_fields() {
 
 #[test]
 fn account_identity_is_exact_and_redacted() {
-    let email = NormalizedEmail::parse("Exact.Account+tag@example.test").expect("email");
+    let email = NormalizedEmail::from_normalized("exact.account+tag@example.test").expect("email");
     let identity = MagicLinkAccountIdentity::from_normalized_email(&email);
-    assert_eq!(identity.as_str(), "Exact.Account+tag@example.test");
+    assert_eq!(identity.as_str(), "exact.account+tag@example.test");
     assert_eq!(format!("{identity:?}"), "MagicLinkAccountIdentity(..)");
 }
 
@@ -178,7 +178,7 @@ fn authentication_dto_debug_redacts_identity_and_secret_derived_values() {
     let attempt_id_value = "aid-101112131415161718191a1b1c1d1e1f";
     let verifier_hash_value =
         "mlv_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
-    let email = NormalizedEmail::parse(email_value).expect("normalized email");
+    let email = NormalizedEmail::from_normalized(email_value).expect("normalized email");
     let user_id = UserId::parse(user_id_value).expect("user id");
     let session_id = SessionId::parse(session_id_value).expect("session id");
     let attempt_id =

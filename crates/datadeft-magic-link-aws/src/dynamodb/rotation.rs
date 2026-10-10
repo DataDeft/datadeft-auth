@@ -33,7 +33,7 @@ impl DynamoDbAuthStore {
                 .await
                 .map_err(map_scan_error)?;
             for item in output.items() {
-                let email = NormalizedEmail::parse(required_s(item, "email_normalized")?)
+                let email = NormalizedEmail::from_normalized(required_s(item, "email_normalized")?)
                     .map_err(|_| AwsAdapterError::Internal)?;
                 let user_id = UserId::parse(required_s(item, "user_id")?)
                     .map_err(|_| AwsAdapterError::Internal)?;

@@ -208,13 +208,23 @@ fn valid_email() -> impl Strategy<Value = String> {
 proptest! {
     #![proptest_config(ProptestConfig { cases: 128, ..ProptestConfig::default() })]
 
-    /// Structurally valid values are accepted byte-for-byte: no trimming,
-    /// lowercasing, dot folding, or plus-tag stripping.
+    /// Normalization is trim + ASCII lowercase and nothing else: no dot
+    /// folding or plus-tag stripping. `from_normalized` accepts exactly the
+    /// values already in that form.
     #[test]
-    fn valid_emails_are_accepted_exactly(email in valid_email()) {
-        let parsed = NormalizedEmail::parse(&email).expect("valid email");
-        prop_assert_eq!(parsed.as_str(), email.as_str());
-        prop_assert_eq!(format!("{parsed:?}"), "NormalizedEmail(..)");
+    fn valid_emails_normalize_to_their_lowercase_form(
+        email in valid_email(),
+        pad in "[ \t\r\n]{0,3}",
+    ) {
+        let lower = email.to_ascii_lowercase();
+        let normalized = NormalizedEmail::normalize(&format!("{pad}{email}{pad}"))
+            .expect("valid email");
+        prop_assert_eq!(normalized.as_str(), lower.as_str());
+        prop_assert_eq!(format!("{normalized:?}"), "NormalizedEmail(..)");
+        prop_assert_eq!(
+            NormalizedEmail::from_normalized(&email).is_ok(),
+            email == lower
+        );
     }
 
     /// Any ASCII control character (CR, LF, NUL, TAB, DEL, ...), space,
@@ -231,7 +241,7 @@ proptest! {
         let mut bytes = email.into_bytes();
         bytes.insert(pos.index(bytes.len() + 1), bad);
         let edited = String::from_utf8(bytes).expect("ascii");
-        prop_assert_eq!(NormalizedEmail::parse(&edited).unwrap_err(), MagicLinkError::InvalidEmail);
+        prop_assert_eq!(NormalizedEmail::from_normalized(&edited).unwrap_err(), MagicLinkError::InvalidEmail);
     }
 
     /// Display-name forms and multi-address lists are rejected.
@@ -248,7 +258,7 @@ proptest! {
             format!("\"{name}\" <{a}>"),
             format!("{a}{sep}{b}"),
         ] {
-            prop_assert!(NormalizedEmail::parse(&value).is_err(), "{:?}", value);
+            prop_assert!(NormalizedEmail::from_normalized(&value).is_err(), "{:?}", value);
         }
     }
 
@@ -263,7 +273,7 @@ proptest! {
         let mut chars: Vec<char> = email.chars().collect();
         chars.insert(pos.index(chars.len() + 1), ch);
         let edited: String = chars.into_iter().collect();
-        prop_assert!(NormalizedEmail::parse(&edited).is_err());
+        prop_assert!(NormalizedEmail::from_normalized(&edited).is_err());
     }
 
     /// Totality, and every accepted value satisfies the documented invariants.
@@ -271,7 +281,7 @@ proptest! {
     fn email_parse_is_total_and_accepted_values_meet_invariants(
         raw in "\\PC{0,300}|[\\x00-\\x7f]{0,300}",
     ) {
-        if let Ok(email) = NormalizedEmail::parse(&raw) {
+        if let Ok(email) = NormalizedEmail::from_normalized(&raw) {
             let value = email.as_str();
             prop_assert!(value.is_ascii() && !value.is_empty() && value.len() <= 254);
             prop_assert!(!value.bytes().any(|b| b.is_ascii_control() || b == b' '));
@@ -288,27 +298,26 @@ fn email_length_caps_are_exact() {
     let domain189 = format!("{}.{}.{}", label('b', 63), label('c', 63), label('d', 61));
     let at_cap = format!("{local64}@{domain189}");
     assert_eq!(at_cap.len(), 254);
-    assert!(NormalizedEmail::parse(&at_cap).is_ok());
+    assert!(NormalizedEmail::from_normalized(&at_cap).is_ok());
     // One more byte in the domain: 255 total, rejected.
     let domain190 = format!("{}.{}.{}", label('b', 63), label('c', 63), label('d', 62));
-    assert!(NormalizedEmail::parse(&format!("{local64}@{domain190}")).is_err());
+    assert!(NormalizedEmail::from_normalized(&format!("{local64}@{domain190}")).is_err());
     // Local part 65 bytes, label 64 bytes: rejected.
-    assert!(NormalizedEmail::parse(&format!("{}@example.com", label('a', 65))).is_err());
-    assert!(NormalizedEmail::parse(&format!("a@{}.com", label('b', 64))).is_err());
-    assert!(NormalizedEmail::parse(&format!("a@{}.com", label('b', 63))).is_ok());
-    assert!(NormalizedEmail::parse("").is_err());
+    assert!(NormalizedEmail::from_normalized(&format!("{}@example.com", label('a', 65))).is_err());
+    assert!(NormalizedEmail::from_normalized(&format!("a@{}.com", label('b', 64))).is_err());
+    assert!(NormalizedEmail::from_normalized(&format!("a@{}.com", label('b', 63))).is_ok());
+    assert!(NormalizedEmail::from_normalized("").is_err());
 }
 
 #[test]
-fn email_identity_is_exact_match() {
-    let lower = NormalizedEmail::parse("user@example.com").expect("lower");
-    for variant in [
-        "User@example.com",
-        "user@Example.com",
-        "u.ser@example.com",
-        "user+x@example.com",
-    ] {
-        let other = NormalizedEmail::parse(variant).expect("variant");
-        assert_ne!(lower, other, "{variant} must not alias");
+fn email_identity_folds_case_and_nothing_else() {
+    let lower = NormalizedEmail::from_normalized("user@example.com").expect("lower");
+    for same in ["User@example.com", "user@Example.com", " USER@EXAMPLE.COM "] {
+        let other = NormalizedEmail::normalize(same).expect("same");
+        assert_eq!(lower, other, "{same} is the same identity");
+    }
+    for distinct in ["u.ser@example.com", "user+x@example.com"] {
+        let other = NormalizedEmail::normalize(distinct).expect("distinct");
+        assert_ne!(lower, other, "{distinct} must not alias");
     }
 }

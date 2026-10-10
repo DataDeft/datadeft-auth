@@ -362,7 +362,7 @@ pub(super) fn candidate() -> MagicLinkAuthenticationCandidate {
     let token = token(VERIFIER);
     MagicLinkAuthenticationCandidate {
         verifier_hash: verifier_hash(&key, token.verifier()).expect("verifier hash"),
-        email: NormalizedEmail::parse("account@example.test").expect("email"),
+        email: NormalizedEmail::from_normalized("account@example.test").expect("email"),
         expires_at_unix: NOW + 100,
         consumed_at_unix: None,
         terms_version: "terms-v1".to_owned(),
@@ -374,7 +374,7 @@ pub(super) fn candidate() -> MagicLinkAuthenticationCandidate {
 pub(super) fn existing_user(id: &str, disabled: bool) -> UserRecord {
     UserRecord {
         user_id: UserId::parse(id).expect("user id"),
-        email: NormalizedEmail::parse("account@example.test").expect("email"),
+        email: NormalizedEmail::from_normalized("account@example.test").expect("email"),
         disabled,
         terms_version: Some("old-terms".to_owned()),
         privacy_version: Some("old-privacy".to_owned()),
@@ -475,7 +475,7 @@ pub(super) async fn request(
     };
     service
         .request_magic_link(RequestMagicLinkCommand::new(
-            NormalizedEmail::parse("account@example.test").expect("email"),
+            NormalizedEmail::from_normalized("account@example.test").expect("email"),
             true,
             true,
         ))

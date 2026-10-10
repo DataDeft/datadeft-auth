@@ -29,7 +29,7 @@ async fn request_side_repository_remains_put_only_and_stores_no_user_id() {
     };
     service
         .request_magic_link(RequestMagicLinkCommand::new(
-            NormalizedEmail::parse("account@example.test").expect("email"),
+            NormalizedEmail::from_normalized("account@example.test").expect("email"),
             true,
             true,
         ))

@@ -60,7 +60,7 @@ async fn admin_queries_return_users_and_sessions() {
     assert_eq!(rest.items.len(), 1);
     assert!(rest.next.is_none());
 
-    let email = NormalizedEmail::parse("user@example.com").expect("email");
+    let email = NormalizedEmail::from_normalized("user@example.com").expect("email");
     let found = admin
         .find_user_by_email(&email)
         .await

@@ -16,7 +16,7 @@ fn binding_bytes(encoded: &str) -> [u8; MAGIC_LINK_CONFIRM_BINDING_BYTES] {
 
 #[test]
 fn hmac_outputs_are_prefixed_and_pinned() {
-    let email = NormalizedEmail::parse("user@example.com").expect("email");
+    let email = NormalizedEmail::from_normalized("user@example.com").expect("email");
     let selector = MagicLinkSelector::parse("000102030405060708090a0b0c0d0e0f").expect("selector");
     let verifier = MagicLinkVerifier::parse(
         "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
@@ -109,7 +109,7 @@ fn verifier_hash_matches_in_constant_time_api() {
 #[test]
 fn debug_output_redacts_hmac_material() {
     let key = key();
-    let email = NormalizedEmail::parse("user@example.com").expect("email");
+    let email = NormalizedEmail::from_normalized("user@example.com").expect("email");
     let hmac = email_lookup_hmac(&key, &email).expect("email hmac");
 
     assert_eq!(format!("{key:?}"), "LookupHmacKey(..)");

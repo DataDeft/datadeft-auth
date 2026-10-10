@@ -55,7 +55,7 @@ examples/*             -> adapter and service crates as needed
 - Security-sensitive values must use redacted `Debug`.
 - Use constant-time comparison for verifier hashes, token MAC/tag values, and stored secret-derived values.
 - Use HMAC, not bare SHA-256, for lookup keys derived from secrets or PII.
-- Email identity is exact match on an app-provided normalized value; do not add Gmail dot folding, plus-tag stripping, or hidden provider-specific alias rules.
+- Email identity is exact match on the value from `NormalizedEmail::normalize` (trim, then ASCII-lowercase the whole address, local part included, as a documented policy); do not add Gmail dot folding, plus-tag stripping, or hidden provider-specific alias rules.
 - Validate `NormalizedEmail` structure before use: one address, no display-name form, no CR/LF/NUL/control characters, no empty values, and documented length caps.
 - Magic-link consumption must be one-time and atomic relative to session creation.
 - Scanner-safe flow state must bind the selector, verifier proof, exact account, expiry, and an independent confirmation nonce; `GET` landing routes never consume or create sessions.

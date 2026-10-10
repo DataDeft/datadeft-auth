@@ -65,7 +65,7 @@ pub(crate) fn item_to_user_summary(
     Ok(UserSummary {
         user_id: UserId::parse(required_s(item, "user_id")?)
             .map_err(|_| AwsAdapterError::Internal)?,
-        email: NormalizedEmail::parse(required_s(item, "email_normalized")?)
+        email: NormalizedEmail::from_normalized(required_s(item, "email_normalized")?)
             .map_err(|_| AwsAdapterError::Internal)?,
         disabled: required_bool(item, "disabled")?,
         disabled_at_unix: optional_u64(item, "disabled_at_unix")?,
@@ -89,7 +89,7 @@ pub(crate) fn item_to_session_summary(
         handle: SessionHandle::parse(session_hmac).map_err(|_| AwsAdapterError::Internal)?,
         user_id: UserId::parse(required_s(item, "user_id")?)
             .map_err(|_| AwsAdapterError::Internal)?,
-        email: NormalizedEmail::parse(required_s(item, "email_normalized")?)
+        email: NormalizedEmail::from_normalized(required_s(item, "email_normalized")?)
             .map_err(|_| AwsAdapterError::Internal)?,
         created_at_unix: required_u64(item, "created_at_unix")?,
         expires_at_unix: required_u64(item, "expires_at_unix")?,

@@ -676,18 +676,26 @@ The default session model must support server-side invalidation.
 
 ## Email identity
 
-Email identity uses exact match on an app-provided normalized email value.
+Email identity is an exact match on the normalized address. The library owns
+the one normalization rule (`NormalizedEmail::normalize`), so every app gets
+the same identities:
 
-- Let the consuming app normalize email before library use.
+- Trim surrounding whitespace, then lowercase the whole address in ASCII.
+- Lowercasing the local part is a documented policy choice. RFC 5321 lets a
+  mail host treat `Alice@` and `alice@` as different mailboxes, so on such a
+  host the two would share one account. Practically no host does this, and
+  users expect case not to matter.
 - Do not add Gmail dot folding.
 - Do not strip plus tags.
 - Do not add provider alias rules.
-- Do not add hidden case folding.
+- `NormalizedEmail::from_normalized` only validates: use it for values read
+  back from storage. It refuses uppercase letters and surrounding whitespace
+  instead of converting them.
 - Reject empty values.
 - Reject multiple addresses.
 - Reject display-name forms.
 - Reject CR, LF, NUL, and control characters.
-- Reject leading and trailing whitespace.
+- Reject whitespace inside the address.
 - Enforce documented length caps.
 - Treat normalized email as sensitive.
 - Redact normalized email in `Debug`.

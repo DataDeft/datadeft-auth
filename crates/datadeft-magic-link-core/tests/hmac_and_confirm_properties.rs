@@ -144,7 +144,7 @@ fn product_framing_constants_are_nul_free_and_distinct() {
     assert_ne!(SELECTOR_LOOKUP_PREFIX, VERIFIER_HASH_PREFIX);
     assert_ne!(EMAIL_LOOKUP_PREFIX, VERIFIER_HASH_PREFIX);
     // Email values are validated NUL-free before they reach the framing.
-    assert!(NormalizedEmail::parse("a\0b@example.com").is_err());
+    assert!(NormalizedEmail::from_normalized("a\0b@example.com").is_err());
 }
 
 /// The framing is NUL-separated, so it is injective only while `domain` and
@@ -312,7 +312,7 @@ fn selector_binding_round_trips_to_the_lookup_key() {
     let binding = confirm_selector_binding(&lookup).expect("binding");
     assert_eq!(selector_lookup_hmac_from_confirm_binding(&binding), lookup);
     // An email lookup cannot be smuggled in as a selector binding.
-    let email = NormalizedEmail::parse("user@example.com").expect("email");
+    let email = NormalizedEmail::from_normalized("user@example.com").expect("email");
     let email_lookup = email_lookup_hmac(&key, &email).expect("email lookup");
     assert!(confirm_selector_binding(&email_lookup).is_err());
 }

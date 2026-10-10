@@ -137,7 +137,7 @@ pub(super) fn record(created_at_unix: u64) -> SessionRecord {
     SessionRecord {
         session_id: session_id(),
         user_id: UserId::parse("usr-000102030405060708090a0b0c0d0e0f").expect("user id"),
-        email: NormalizedEmail::parse("session-user@example.com").expect("email"),
+        email: NormalizedEmail::from_normalized("session-user@example.com").expect("email"),
         created_at_unix,
         revoked_at_unix: None,
     }

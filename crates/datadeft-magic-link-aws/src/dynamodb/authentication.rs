@@ -28,7 +28,7 @@ impl DynamoDbAuthStore {
         Ok(MagicLinkAuthenticationCandidate {
             verifier_hash: VerifierHash::parse_storage_value(required_s(item, "verifier_hash")?)
                 .map_err(|_| AwsAdapterError::Internal)?,
-            email: NormalizedEmail::parse(required_s(item, "email_normalized")?)
+            email: NormalizedEmail::from_normalized(required_s(item, "email_normalized")?)
                 .map_err(|_| AwsAdapterError::Internal)?,
             expires_at_unix: required_u64(item, "expires_at_unix")?,
             consumed_at_unix: optional_u64(item, "consumed_at_unix")?,
@@ -48,7 +48,7 @@ impl DynamoDbAuthStore {
         }
         let user_id =
             UserId::parse(required_s(item, "user_id")?).map_err(|_| AwsAdapterError::Internal)?;
-        let email = NormalizedEmail::parse(required_s(item, "email_normalized")?)
+        let email = NormalizedEmail::from_normalized(required_s(item, "email_normalized")?)
             .map_err(|_| AwsAdapterError::Internal)?;
         if user_id != *expected_user_id || email != *expected_email {
             return Err(AwsAdapterError::Internal);
@@ -276,7 +276,7 @@ impl MagicLinkAuthenticationRepository for DynamoDbAuthStore {
                 return Ok(None);
             };
             if required_s(item, "entity_type")? != "user_email_lookup"
-                || NormalizedEmail::parse(required_s(item, "email_normalized")?)
+                || NormalizedEmail::from_normalized(required_s(item, "email_normalized")?)
                     .map_err(|_| AwsAdapterError::Internal)?
                     != *email
             {

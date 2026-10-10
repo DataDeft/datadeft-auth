@@ -62,6 +62,11 @@ no data migration is provided, and every existing session ends.
   `secure()` getter is now `is_secure()`.
 - **Secret field rename:** `aws_storage_hmac_b64` is now `storage_hmac_b64`.
   A document with the old name no longer loads.
+- **Email normalization:** the library normalizes now.
+  `NormalizedEmail::normalize` trims and ASCII-lowercases the whole address
+  (local part included, a documented policy); `MagicLinkRequestJson` uses it.
+  `NormalizedEmail::parse` is renamed `from_normalized` and only validates: it
+  refuses uppercase and surrounding whitespace. Drop app-side normalization.
 - **Strict cookie reading:** `select_cookie` (in
   `datadeft_auth_token_core::cookie_header`, re-exported by both Axum crates)
   selects one cookie from the `Cookie` fields: exactly one occurrence, a

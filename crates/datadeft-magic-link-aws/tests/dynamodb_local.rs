@@ -130,7 +130,7 @@ async fn login(
         config: keys.config.clone(),
     }
     .request_magic_link(RequestMagicLinkCommand::new(
-        NormalizedEmail::parse(email).expect("email"),
+        NormalizedEmail::from_normalized(email).expect("email"),
         true,
         true,
     ))
@@ -269,7 +269,7 @@ async fn seeded_commit(
     let at = now();
     let record = MagicLinkRecord {
         selector_lookup_hmac: selector.clone(),
-        email: NormalizedEmail::parse(email).expect("email"),
+        email: NormalizedEmail::from_normalized(email).expect("email"),
         verifier_hash: verifier_hash(&lookup, token.verifier()).expect("verifier"),
         expires_at_unix: at + 600,
         consumed_at_unix: None,

@@ -167,7 +167,7 @@ where
 
 pub(super) fn command() -> RequestMagicLinkCommand {
     RequestMagicLinkCommand::new(
-        NormalizedEmail::parse("user@example.com").expect("email"),
+        NormalizedEmail::from_normalized("user@example.com").expect("email"),
         true,
         true,
     )
@@ -197,7 +197,7 @@ pub(super) fn authentication_fixture(
         selector_lookup_hmac(&lookup_key, token.selector()).expect("selector hmac");
     let record = MagicLinkRecord {
         selector_lookup_hmac: selector_lookup_hmac.clone(),
-        email: NormalizedEmail::parse("atomic@example.test").expect("email"),
+        email: NormalizedEmail::from_normalized("atomic@example.test").expect("email"),
         verifier_hash: verifier_hash(&lookup_key, token.verifier()).expect("verifier hash"),
         expires_at_unix: 2_000,
         consumed_at_unix: None,
@@ -233,7 +233,7 @@ pub(super) async fn seed_challenge(store: &FakeDynamoDbAuthStore, record: MagicL
 pub(super) fn user_record(disabled: bool) -> UserRecord {
     UserRecord {
         user_id: UserId::parse(USER_ID).expect("user id"),
-        email: NormalizedEmail::parse("atomic@example.test").expect("email"),
+        email: NormalizedEmail::from_normalized("atomic@example.test").expect("email"),
         disabled,
         terms_version: Some("old-terms".to_owned()),
         privacy_version: Some("old-privacy".to_owned()),

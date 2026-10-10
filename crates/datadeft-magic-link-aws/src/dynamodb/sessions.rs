@@ -42,7 +42,7 @@ impl DynamoDbAuthStore {
             session_id: session_id.clone(),
             user_id: UserId::parse(required_s(item, "user_id")?)
                 .map_err(|_| AwsAdapterError::Internal)?,
-            email: NormalizedEmail::parse(required_s(item, "email_normalized")?)
+            email: NormalizedEmail::from_normalized(required_s(item, "email_normalized")?)
                 .map_err(|_| AwsAdapterError::Internal)?,
             created_at_unix: required_u64(item, "created_at_unix")?,
             revoked_at_unix: optional_u64(item, "revoked_at_unix")?,

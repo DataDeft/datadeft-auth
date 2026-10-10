@@ -7,7 +7,7 @@ use super::*;
 
 fn email() -> MagicLinkEmail {
     MagicLinkEmail {
-        email: NormalizedEmail::parse("user@example.com").expect("email"),
+        email: NormalizedEmail::from_normalized("user@example.com").expect("email"),
         token: MagicLinkToken::parse(
             "mlv1.000102030405060708090a0b0c0d0e0f.101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
         )

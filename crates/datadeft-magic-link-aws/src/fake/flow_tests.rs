@@ -282,7 +282,7 @@ async fn disable_between_landing_read_and_confirmation_commit_does_not_burn_link
     store
         .seed_user(UserRecord {
             user_id: user_id.clone(),
-            email: NormalizedEmail::parse("user@example.com").expect("email"),
+            email: NormalizedEmail::from_normalized("user@example.com").expect("email"),
             disabled: false,
             terms_version: Some("old-terms".to_owned()),
             privacy_version: Some("old-privacy".to_owned()),

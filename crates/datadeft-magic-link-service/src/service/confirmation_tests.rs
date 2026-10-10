@@ -122,7 +122,7 @@ async fn confirmation_rejects_cookie_nonce_verifier_account_and_stale_mismatches
                     .borrow_mut()
                     .as_mut()
                     .expect("candidate")
-                    .email = NormalizedEmail::parse("other@example.test").expect("email");
+                    .email = NormalizedEmail::from_normalized("other@example.test").expect("email");
             }
             5 => {
                 repository
@@ -470,7 +470,7 @@ async fn natural_create_user_session_collision_is_fully_atomic() {
     let existing_session = SessionRecord {
         session_id: colliding_id.clone(),
         user_id: UserId::parse("usr-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").expect("user id"),
-        email: NormalizedEmail::parse("existing@example.test").expect("email"),
+        email: NormalizedEmail::from_normalized("existing@example.test").expect("email"),
         created_at_unix: NOW - 10,
         revoked_at_unix: None,
     };
@@ -528,7 +528,7 @@ async fn fake_authentication_reads_require_exact_selector_and_email_arguments() 
             .expect("lookup")
             .is_none()
     );
-    let wrong_email = NormalizedEmail::parse("wrong@example.test").expect("email");
+    let wrong_email = NormalizedEmail::from_normalized("wrong@example.test").expect("email");
     assert!(
         repository
             .find_user_for_authentication(&wrong_email)

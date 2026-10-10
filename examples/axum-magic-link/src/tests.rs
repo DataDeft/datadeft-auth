@@ -26,7 +26,7 @@ async fn logged_in(state: &AppState) -> (String, datadeft_magic_link_service::Se
         config: state.config.clone(),
     }
     .request_magic_link(RequestMagicLinkCommand::new(
-        NormalizedEmail::parse("logout-test@example.test").expect("email"),
+        NormalizedEmail::from_normalized("logout-test@example.test").expect("email"),
         true,
         true,
     ))

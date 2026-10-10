@@ -50,7 +50,7 @@ pub(super) fn model_config() -> MagicLinkServiceConfig {
 }
 
 pub(super) fn email(index: usize) -> NormalizedEmail {
-    NormalizedEmail::parse(EMAILS[index % EMAILS.len()]).expect("model email")
+    NormalizedEmail::from_normalized(EMAILS[index % EMAILS.len()]).expect("model email")
 }
 
 pub(super) fn actor() -> AdminActor {

@@ -77,7 +77,7 @@ async fn storage_key_rotation_keeps_users_and_sessions() {
 
     // Login migrated the lookup, so the store works without the old key.
     let without_previous = after.sharing_data_with_keys(StorageHmacKey::new([0x25; 32]), None);
-    let email = NormalizedEmail::parse("user@example.com").expect("email");
+    let email = NormalizedEmail::from_normalized("user@example.com").expect("email");
     assert!(
         without_previous
             .find_user_for_authentication(&email)

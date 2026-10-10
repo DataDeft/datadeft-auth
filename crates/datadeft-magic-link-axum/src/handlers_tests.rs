@@ -290,7 +290,7 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
         };
         request
             .request_magic_link(RequestMagicLinkCommand::new(
-                datadeft_magic_link_service::NormalizedEmail::parse("user@example.com")
+                datadeft_magic_link_service::NormalizedEmail::from_normalized("user@example.com")
                     .expect("email"),
                 true,
                 true,

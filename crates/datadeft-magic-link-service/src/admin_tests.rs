@@ -107,7 +107,7 @@ fn session_status_prefers_revocation_over_expiry() {
     let session = SessionSummary {
         handle: SessionHandle::parse(HANDLE).expect("handle"),
         user_id: UserId::parse("usr-000102030405060708090a0b0c0d0e0f").expect("user id"),
-        email: NormalizedEmail::parse("user@example.test").expect("email"),
+        email: NormalizedEmail::from_normalized("user@example.test").expect("email"),
         created_at_unix: 100,
         expires_at_unix: 200,
         revoked_at_unix: None,
@@ -142,7 +142,7 @@ fn bulk_revocation_reaches_sessions_until_the_skew_tolerance_past_expiry() {
     let session = SessionSummary {
         handle: SessionHandle::parse(HANDLE).expect("handle"),
         user_id: UserId::parse("usr-000102030405060708090a0b0c0d0e0f").expect("user id"),
-        email: NormalizedEmail::parse("user@example.test").expect("email"),
+        email: NormalizedEmail::from_normalized("user@example.test").expect("email"),
         created_at_unix: 100,
         expires_at_unix: 200,
         revoked_at_unix: None,
