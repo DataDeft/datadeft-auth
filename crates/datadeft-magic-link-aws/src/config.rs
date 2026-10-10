@@ -247,6 +247,86 @@ impl fmt::Debug for AwsAuthConfig {
     }
 }
 
+/// 32 bytes of key material from the secret document, for a consumer that
+/// builds its own key type, such as the PoW challenge secret:
+/// `PowSecret::new(*secrets.pow_challenge_secret.as_bytes())`. `Debug` is
+/// redacted; the bytes zeroize on drop.
+pub struct SecretKeyBytes(Zeroizing<[u8; KEY_BYTES]>);
+
+impl SecretKeyBytes {
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8; KEY_BYTES] {
+        &self.0
+    }
+}
+
+impl fmt::Debug for SecretKeyBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SecretKeyBytes(..)")
+    }
+}
+
+/// One document's root for a cookie keyring, with its `kid` and windows.
+struct RootMaterial {
+    kid: KeyId,
+    root: Zeroizing<[u8; KEY_BYTES]>,
+    mint_until_unix: u64,
+    verify_until_unix: u64,
+}
+
+/// Active and previous roots for a cookie keyring. The keyring is built for
+/// a purpose chosen later, so this crate needs no knowledge of that purpose.
+struct KeyringRoots {
+    active: RootMaterial,
+    previous: Option<RootMaterial>,
+}
+
+impl KeyringRoots {
+    fn from_documents(
+        active: &AuthSecretDocument,
+        previous: Option<&AuthSecretDocument>,
+        root_b64: fn(&AuthSecretDocument) -> &str,
+    ) -> Result<Self, AwsAdapterError> {
+        let material = |document: &AuthSecretDocument| -> Result<RootMaterial, AwsAdapterError> {
+            Ok(RootMaterial {
+                kid: KeyId::parse(&document.kid).map_err(|_| AwsAdapterError::Internal)?,
+                root: Zeroizing::new(decode_key(root_b64(document))?),
+                mint_until_unix: document.mint_until_unix,
+                verify_until_unix: document.verify_until_unix,
+            })
+        };
+        Ok(Self {
+            active: material(active)?,
+            previous: previous.map(material).transpose()?,
+        })
+    }
+
+    /// The active root mints; the previous one only verifies. Fails when a
+    /// `kid` is too long for the purpose's largest body
+    /// (`KeyPurpose::MIN_BODY_BYTES`).
+    fn keyring<P: KeyPurpose>(&self) -> Result<KeyRing<P>, AwsAdapterError> {
+        let derive = |material: &RootMaterial| {
+            RootSecret::new(*material.root)
+                .derive_key::<P>(&material.kid)
+                .map_err(|_| AwsAdapterError::Internal)
+        };
+        let mut slots = vec![KeySlot::active_with_windows(
+            self.active.kid.clone(),
+            derive(&self.active)?,
+            self.active.mint_until_unix,
+            self.active.verify_until_unix,
+        )];
+        if let Some(previous) = &self.previous {
+            slots.push(KeySlot::verify_only(
+                previous.kid.clone(),
+                derive(previous)?,
+                previous.verify_until_unix,
+            ));
+        }
+        KeyRing::new(slots).map_err(|_| AwsAdapterError::Internal)
+    }
+}
+
 /// Loaded auth secret material ready to inject into service/adapters.
 pub struct LoadedAuthSecrets {
     pub lookup_hmac_key: LookupHmacKey,
@@ -259,6 +339,12 @@ pub struct LoadedAuthSecrets {
     pub previous_storage_hmac_key: Option<StorageHmacKey>,
     pub confirm_keyring: KeyRing<MagicLinkConfirmCookie>,
     pub session_keyring: KeyRing<SessionCookie>,
+    /// PoW challenge HMAC secret (`pow_challenge_secret_b64`).
+    pub pow_challenge_secret: SecretKeyBytes,
+    /// The previous document's PoW challenge secret when it differs from the
+    /// active one, to verify challenges minted just before a rotation.
+    pub previous_pow_challenge_secret: Option<SecretKeyBytes>,
+    pow_proof_roots: KeyringRoots,
 }
 
 impl LoadedAuthSecrets {
@@ -270,6 +356,15 @@ impl LoadedAuthSecrets {
         let active = AuthSecretDocument::parse(active)?;
         let previous = previous.map(AuthSecretDocument::parse).transpose()?;
         Self::from_documents(&active, previous.as_ref())
+    }
+
+    /// The PoW proof-cookie keyring (`pow_proof_cookie_root_b64`), with the
+    /// previous document's root as a verify-only slot. The caller names the
+    /// purpose, `secrets.pow_proof_keyring::<PowProofCookie>()`, so this crate
+    /// does not depend on the PoW crates. Build it at startup: it fails there
+    /// when the document's `kid` is too long for the proof cookie.
+    pub fn pow_proof_keyring<P: KeyPurpose>(&self) -> Result<KeyRing<P>, AwsAdapterError> {
+        self.pow_proof_roots.keyring()
     }
 
     fn from_documents(
@@ -284,12 +379,20 @@ impl LoadedAuthSecrets {
         let previous_storage = previous_if_rotated(&storage_bytes, previous, |document| {
             &document.aws_storage_hmac_b64
         })?;
-        let confirm_keyring =
-            build_keyring::<MagicLinkConfirmCookie>(active, previous, |document| {
-                &document.magic_link_confirm_cookie_root_b64
-            })?;
-        let session_keyring = build_keyring::<SessionCookie>(active, previous, |document| {
+        let confirm_keyring = KeyringRoots::from_documents(active, previous, |document| {
+            &document.magic_link_confirm_cookie_root_b64
+        })?
+        .keyring::<MagicLinkConfirmCookie>()?;
+        let session_keyring = KeyringRoots::from_documents(active, previous, |document| {
             &document.session_cookie_root_b64
+        })?
+        .keyring::<SessionCookie>()?;
+        let pow_challenge = Zeroizing::new(decode_key(&active.pow_challenge_secret_b64)?);
+        let previous_pow_challenge = previous_if_rotated(&pow_challenge, previous, |document| {
+            &document.pow_challenge_secret_b64
+        })?;
+        let pow_proof_roots = KeyringRoots::from_documents(active, previous, |document| {
+            &document.pow_proof_cookie_root_b64
         })?;
         Ok(Self {
             lookup_hmac_key: LookupHmacKey::new(*lookup_bytes),
@@ -298,6 +401,9 @@ impl LoadedAuthSecrets {
             previous_storage_hmac_key: previous_storage.map(|bytes| StorageHmacKey::new(*bytes)),
             confirm_keyring,
             session_keyring,
+            pow_challenge_secret: SecretKeyBytes(pow_challenge),
+            previous_pow_challenge_secret: previous_pow_challenge.map(SecretKeyBytes),
+            pow_proof_roots,
         })
     }
 }
@@ -357,6 +463,8 @@ struct AuthSecretDocument {
     aws_storage_hmac_b64: String,
     session_cookie_root_b64: String,
     magic_link_confirm_cookie_root_b64: String,
+    pow_challenge_secret_b64: String,
+    pow_proof_cookie_root_b64: String,
 }
 
 impl AuthSecretDocument {
@@ -366,6 +474,8 @@ impl AuthSecretDocument {
             || parsed.aws_storage_hmac_b64.len() > KEY_B64_BYTES
             || parsed.session_cookie_root_b64.len() > KEY_B64_BYTES
             || parsed.magic_link_confirm_cookie_root_b64.len() > KEY_B64_BYTES
+            || parsed.pow_challenge_secret_b64.len() > KEY_B64_BYTES
+            || parsed.pow_proof_cookie_root_b64.len() > KEY_B64_BYTES
         {
             return Err(AwsAdapterError::Internal);
         }
@@ -386,40 +496,9 @@ impl Drop for AuthSecretDocument {
         self.aws_storage_hmac_b64.zeroize();
         self.session_cookie_root_b64.zeroize();
         self.magic_link_confirm_cookie_root_b64.zeroize();
+        self.pow_challenge_secret_b64.zeroize();
+        self.pow_proof_cookie_root_b64.zeroize();
     }
-}
-
-fn build_keyring<P: KeyPurpose>(
-    active: &AuthSecretDocument,
-    previous: Option<&AuthSecretDocument>,
-    root_b64: fn(&AuthSecretDocument) -> &str,
-) -> Result<KeyRing<P>, AwsAdapterError> {
-    let active_kid = KeyId::parse(&active.kid).map_err(|_| AwsAdapterError::Internal)?;
-    let active_root = RootSecret::new(decode_key(root_b64(active))?);
-    let active_key = active_root
-        .derive_key::<P>(&active_kid)
-        .map_err(|_| AwsAdapterError::Internal)?;
-    let mut slots = vec![KeySlot::active_with_windows(
-        active_kid.clone(),
-        active_key,
-        active.mint_until_unix,
-        active.verify_until_unix,
-    )];
-
-    if let Some(previous) = previous {
-        let previous_kid = KeyId::parse(&previous.kid).map_err(|_| AwsAdapterError::Internal)?;
-        let previous_root = RootSecret::new(decode_key(root_b64(previous))?);
-        let previous_key = previous_root
-            .derive_key::<P>(&previous_kid)
-            .map_err(|_| AwsAdapterError::Internal)?;
-        slots.push(KeySlot::verify_only(
-            previous_kid,
-            previous_key,
-            previous.verify_until_unix,
-        ));
-    }
-
-    KeyRing::new(slots).map_err(|_| AwsAdapterError::Internal)
 }
 
 /// The previous document's HMAC key, but only when it differs from the

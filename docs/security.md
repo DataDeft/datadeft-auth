@@ -504,14 +504,22 @@ Each `SecretRef` must resolve to one JSON document.
   "magic_link_lookup_hmac_b64": "<32 bytes, standard base64>",
   "aws_storage_hmac_b64": "<32 bytes, standard base64>",
   "session_cookie_root_b64": "<32 bytes, standard base64>",
-  "magic_link_confirm_cookie_root_b64": "<32 bytes, standard base64>"
+  "magic_link_confirm_cookie_root_b64": "<32 bytes, standard base64>",
+  "pow_challenge_secret_b64": "<32 bytes, standard base64>",
+  "pow_proof_cookie_root_b64": "<32 bytes, standard base64>"
 }
 ```
 
 Document rules:
 
 - `kid` is the key ID for each derived keyring slot.
-- `kid` must pass `KeyId::parse`.
+- `kid` must pass `KeyId::parse` and be at most 12 bytes: every keyring
+  refuses a `kid` that leaves no room for its purpose's largest cookie body,
+  and the PoW proof cookie allows 12 (the session cookie 38).
+- Every field is required. Fields the library does not know are ignored, so an
+  application may keep its own fields in the same document; give them names
+  that cannot collide with future library fields (for example an `app_`
+  prefix).
 - `mint_until_unix` sets the active mint window.
 - `verify_until_unix` sets the verify window.
 - `verify_until_unix` must cover the longest purpose lifetime.
@@ -525,12 +533,21 @@ Example generation command:
 openssl rand -base64 32
 ```
 
-The four secret fields separate these purposes:
+The six secret fields separate these purposes:
 
 - magic-link lookup HMAC
 - AWS storage HMAC
 - session-cookie root
 - confirm-cookie root
+- PoW challenge HMAC secret
+- PoW proof-cookie root
+
+`LoadedAuthSecrets` hands the PoW keys over without depending on the PoW
+crates: `pow_challenge_secret` (and `previous_pow_challenge_secret` during a
+rotation) as redacted key bytes for `PowSecret::new`, and
+`pow_proof_keyring::<PowProofCookie>()` for the proof-cookie keyring, with the
+previous document's root as a verify-only slot. Build that keyring at startup
+so a bad `kid` fails there.
 
 ## Rotation cadence
 

@@ -5,16 +5,18 @@ use std::error::Error;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use datadeft_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, StorageHmacKey};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
+use datadeft_magic_link_aws::{FakeDynamoDbAuthStore, FakeMagicLinkOutbox, LoadedAuthSecrets};
 use datadeft_magic_link_axum::{
     ConfirmCookieConfig, MagicLinkScannerFlowConfig, SameOriginPostConfig, SameOriginRedirect,
     SessionCookieConfig,
 };
 use datadeft_magic_link_service::{
-    Clock, DependencyError, KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey,
-    MagicLinkConfirmCookie, MagicLinkServiceConfig, RootSecret, SessionCookie,
+    Clock, DependencyError, KeyRing, LookupHmacKey, MagicLinkConfirmCookie, MagicLinkServiceConfig,
+    SessionCookie,
 };
-use datadeft_pow_core::PowSecret;
+use datadeft_pow_core::{PowProofCookie, PowSecret};
 use rand_core::{OsRng, RngCore};
 
 use super::util::current_unix;
@@ -63,16 +65,24 @@ pub(super) fn build_state() -> AppResult<AppState> {
     let config = MagicLinkServiceConfig::new("example-terms-v1", "example-privacy-v1");
     config.validate()?;
 
-    let lookup_hmac_key = Arc::new(LookupHmacKey::new(random_32()?));
-    let confirm_keyring = Arc::new(development_keyring::<MagicLinkConfirmCookie>(
-        "ml_flow_active",
-        now_unix,
-    )?);
-    let session_keyring = Arc::new(development_keyring::<SessionCookie>(
-        "session_active",
-        now_unix,
-    )?);
-    let pow_secret = Arc::new(PowSecret::new(random_32()?));
+    // Production loads this document from AWS Secrets Manager
+    // (`resolve_auth_secrets`); the example generates one with fresh keys so
+    // every key takes the same path.
+    let secrets = LoadedAuthSecrets::from_json(&development_secret_document(now_unix)?, None)
+        .map_err(|_| SetupError("invalid development secret document"))?;
+    // Built at startup so a `kid` too long for the proof cookie fails here.
+    // The proof cookie itself arrives with the per-solve PoW budget.
+    secrets
+        .pow_proof_keyring::<PowProofCookie>()
+        .map_err(|_| SetupError("invalid PoW proof-cookie keyring"))?;
+    let pow_secret = Arc::new(PowSecret::new(*secrets.pow_challenge_secret.as_bytes()));
+    let LoadedAuthSecrets {
+        lookup_hmac_key,
+        storage_hmac_key,
+        confirm_keyring,
+        session_keyring,
+        ..
+    } = secrets;
 
     let session_cookie = SessionCookieConfig::local_development(&config)?;
     let http_config = MagicLinkScannerFlowConfig::new(
@@ -84,35 +94,41 @@ pub(super) fn build_state() -> AppResult<AppState> {
     )?;
 
     Ok(AppState {
-        auth: FakeDynamoDbAuthStore::new(StorageHmacKey::new(random_32()?)),
+        auth: FakeDynamoDbAuthStore::new(storage_hmac_key),
         outbox: FakeMagicLinkOutbox::default(),
         pow_replay: Arc::default(),
         config,
         http_config: Arc::new(http_config),
-        lookup_hmac_key,
-        confirm_keyring,
-        session_keyring,
+        lookup_hmac_key: Arc::new(lookup_hmac_key),
+        confirm_keyring: Arc::new(confirm_keyring),
+        session_keyring: Arc::new(session_keyring),
         pow_secret,
     })
 }
 
-fn development_keyring<P: KeyPurpose>(kid: &str, now_unix: u64) -> AppResult<KeyRing<P>> {
-    let key_id = KeyId::parse(kid)?;
-    let root = RootSecret::new(random_32()?);
-    let key = root.derive_key::<P>(&key_id)?;
+/// A secret document shaped like the production one (docs/security.md, "Auth
+/// secret document"), with an independent random key per field.
+fn development_secret_document(now_unix: u64) -> AppResult<String> {
     let mint_until = now_unix
         .checked_add(90 * 24 * 60 * 60)
         .ok_or(SetupError("development key mint window overflow"))?;
+    // Covers the longest purpose lifetime (the 30-day session) plus a day.
     let verify_until = mint_until
-        .checked_add(P::MAX_ABSOLUTE_AGE_SECS)
+        .checked_add(31 * 24 * 60 * 60)
         .ok_or(SetupError("development key verify window overflow"))?;
-    KeyRing::new(vec![KeySlot::active_with_windows(
-        key_id,
-        key,
-        mint_until,
-        verify_until,
-    )])
-    .map_err(|error| Box::new(error) as Box<dyn Error + Send + Sync>)
+    let key = || random_32().map(|bytes| STANDARD.encode(bytes));
+    Ok(serde_json::json!({
+        "kid": "dev-active",
+        "mint_until_unix": mint_until,
+        "verify_until_unix": verify_until,
+        "magic_link_lookup_hmac_b64": key()?,
+        "aws_storage_hmac_b64": key()?,
+        "session_cookie_root_b64": key()?,
+        "magic_link_confirm_cookie_root_b64": key()?,
+        "pow_challenge_secret_b64": key()?,
+        "pow_proof_cookie_root_b64": key()?,
+    })
+    .to_string())
 }
 
 fn random_32() -> AppResult<[u8; 32]> {

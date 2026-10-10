@@ -18,6 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 axum = "0.8"
+base64 = "0.22"
 # The minimal consumer dependency set: the service crate re-exports the keyring
 # and lookup-key types, the axum crate owns HTTP, and the aws crate's default
 # (SDK-free) build provides the in-memory fakes. datadeft-pow-core is optional

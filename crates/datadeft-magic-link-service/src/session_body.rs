@@ -27,7 +27,12 @@ impl KeyPurpose for SessionCookie {
     const TOKEN_TYPE: &'static str = TOKEN_TYPE_SESSION_COOKIE_V1;
     const MAX_BODY_BYTES: usize = 128;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
+    const MIN_BODY_BYTES: usize = SESSION_BODY_MAX_BYTES;
 }
+
+/// Largest session body: version, id length, the 68-byte session id, country
+/// length, and a two-letter country.
+pub(crate) const SESSION_BODY_MAX_BYTES: usize = 1 + 1 + 68 + 1 + 2;
 
 /// Default session idle lifetime: 24 hours.
 pub const DEFAULT_SESSION_IDLE_SECS: u64 = 24 * 60 * 60;

@@ -405,3 +405,19 @@ fn proof_cookie_under_retired_or_unknown_kid_is_rejected() {
         TokenError::InvalidToken
     );
 }
+
+/// The proof cookie's largest body (v2) leaves room for a 12-byte `kid`; a
+/// longer one is refused when the keyring is built, not on the first mint.
+#[test]
+fn proof_keyring_refuses_a_kid_longer_than_twelve_bytes() {
+    use datadeft_auth_token_core::keyring::{KeyId, KeyRing, KeySlot, RootSecret};
+    let ring = |kid: &str| {
+        let kid = KeyId::parse(kid).expect("kid");
+        let key = RootSecret::new([3; 32])
+            .derive_key::<PowProofCookie>(&kid)
+            .expect("key");
+        KeyRing::new(vec![KeySlot::active(kid, key)])
+    };
+    assert!(ring("abcdefghijkl").is_ok());
+    assert!(ring("abcdefghijklm").is_err());
+}

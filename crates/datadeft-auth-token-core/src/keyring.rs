@@ -80,6 +80,11 @@ pub trait KeyPurpose {
     /// Longest absolute validity a token of this purpose may have. Active keys
     /// must verify for at least this long after their final minting instant.
     const MAX_ABSOLUTE_AGE_SECS: u64;
+    /// Largest body this purpose ever mints. [`KeyRing::new`] refuses a `kid`
+    /// that leaves less room than this in the bound payload, so an over-long
+    /// `kid` fails when the keyring is built instead of on the first mint.
+    /// Zero (the default) skips the check.
+    const MIN_BODY_BYTES: usize = 0;
 }
 
 /// Loaded root secret material.
@@ -332,9 +337,16 @@ impl<P: KeyPurpose> KeyRing<P> {
     /// coherent rotation windows. Active slots must verify through the full
     /// maximum absolute lifetime after their final minting instant. The active
     /// slot is identified by its status: there is no separate active-kid
-    /// parameter to keep in sync.
+    /// parameter to keep in sync. Every `kid` must leave room for the purpose's
+    /// largest body ([`KeyPurpose::MIN_BODY_BYTES`]).
     pub fn new(keys: Vec<KeySlot<P>>) -> Result<Self, TokenError> {
-        if keys.is_empty() || has_duplicate_key_ids(&keys) || has_incoherent_windows(&keys) {
+        if keys.is_empty()
+            || has_duplicate_key_ids(&keys)
+            || has_incoherent_windows(&keys)
+            || keys
+                .iter()
+                .any(|slot| crate::cookie::max_body_bytes::<P>(slot.kid()) < P::MIN_BODY_BYTES)
+        {
             return Err(TokenError::KeyringMisconfigured);
         }
 

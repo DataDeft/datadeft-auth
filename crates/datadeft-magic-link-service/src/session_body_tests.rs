@@ -317,3 +317,28 @@ fn session_cookie_golden_value_and_single_edits_are_rejected() {
         }
     }
 }
+
+#[test]
+fn largest_session_body_matches_the_declared_minimum() {
+    let id =
+        SessionId::parse("sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+            .expect("session id");
+    let body = encode_session_cookie_body(&id, Some("AT")).expect("body");
+    assert_eq!(body.len(), SESSION_BODY_MAX_BYTES);
+    assert_eq!(SessionCookie::MIN_BODY_BYTES, SESSION_BODY_MAX_BYTES);
+}
+
+#[test]
+fn a_session_keyring_refuses_a_kid_too_long_for_the_largest_body() {
+    let ring = |kid: &str| {
+        let kid = KeyId::parse(kid).expect("kid");
+        let key = RootSecret::new([9; KEY_BYTES])
+            .derive_key::<SessionCookie>(&kid)
+            .expect("key");
+        KeyRing::new(vec![datadeft_auth_token_core::keyring::KeySlot::active(
+            kid, key,
+        )])
+    };
+    assert!(ring(&"k".repeat(38)).is_ok());
+    assert!(ring(&"k".repeat(39)).is_err());
+}

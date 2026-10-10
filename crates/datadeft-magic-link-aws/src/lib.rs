@@ -20,8 +20,8 @@ mod dynamodb;
 #[cfg(feature = "aws")]
 pub use config::resolve_auth_secrets;
 pub use config::{
-    AuthSecretsConfig, AwsAuthConfig, DynamoDbAuthStoreConfig, LoadedAuthSecrets, SecretRef,
-    SecretVersionRef, SesAuthEmailConfig, SupportedSecretManager,
+    AuthSecretsConfig, AwsAuthConfig, DynamoDbAuthStoreConfig, LoadedAuthSecrets, SecretKeyBytes,
+    SecretRef, SecretVersionRef, SesAuthEmailConfig, SupportedSecretManager,
 };
 pub use error::AwsAdapterError;
 pub use fake::{FakeDynamoDbAuthStore, UserSessionIndexEntry};

@@ -43,6 +43,17 @@ The other core crates arrive transitively. The service and Axum crates
 re-export the types needed for magic-link integration. Commit the consumer
 lockfiles. No git credentials or vendored TypeScript are needed.
 
+### Upgrading from 0.4
+
+0.5.0 is a breaking release. The library is pre-1.0 and has no production
+deployments, so upgrades start from a fresh table and secret document: no data
+migration is provided.
+
+- **Auth secret document:** add `pow_challenge_secret_b64` and
+  `pow_proof_cookie_root_b64` (32 random bytes each, independent of the other
+  fields), and keep `kid` at 12 bytes or fewer. Remove app-owned PoW key
+  fields and load the keys from `LoadedAuthSecrets` instead.
+
 ### Upgrading from the git-tag crates
 
 Before the registry release, the crates were named `dd-*` and consumed as git
@@ -162,6 +173,19 @@ page. See [../packages/dd-protect-client/README.md](../packages/dd-protect-clien
 
 The challenge lifetime is 2 minutes. The proof-cookie lifetime is 3 hours by
 default, configurable, and stateless.
+
+Load both PoW keys from the auth secret document (`docs/security.md`, "Auth
+secret document"), not from app-specific fields:
+
+```rust
+let secrets = resolve_auth_secrets(&secrets_manager, &config.secrets).await?;
+let pow_secret = PowSecret::new(*secrets.pow_challenge_secret.as_bytes());
+let pow_proof_keyring = secrets.pow_proof_keyring::<PowProofCookie>()?; // at startup
+```
+
+During a rotation, also verify challenges with
+`secrets.previous_pow_challenge_secret` when it is set: challenges minted in
+the two minutes before the rotation carry the previous secret.
 
 ## Runtime note
 

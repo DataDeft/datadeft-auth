@@ -68,6 +68,9 @@ impl KeyPurpose for PowProofCookie {
     // from 12 bytes (the v1 contract, relied on by deployments) down to 11;
     // 65 restores it. v2 body (34) + framing (7) + typ (12) + kid (12) = 65.
     const MAX_BODY_BYTES: usize = 65;
+    // The v2 body is the largest one minted: a `kid` over 12 bytes is refused
+    // when the keyring is built.
+    const MIN_BODY_BYTES: usize = POW_PROOF_BODY_V2_BYTES;
     const MAX_ABSOLUTE_AGE_SECS: u64 = POW_PROOF_MAX_AGE_SECS;
 }
 
