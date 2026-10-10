@@ -67,6 +67,11 @@ no data migration is provided, and every existing session ends.
   (local part included, a documented policy); `MagicLinkRequestJson` uses it.
   `NormalizedEmail::parse` is renamed `from_normalized` and only validates: it
   refuses uppercase and surrounding whitespace. Drop app-side normalization.
+- **Email locale and Reply-To:** `MagicLinkEmail` gains `locale`, resolved
+  from the request's optional `locale` hint against
+  `MagicLinkServiceConfig::locales` (a `LocaleAllowlist`), and never stored.
+  `MagicLinkRequestJson` accepts the `locale` field. `SesMagicLinkOutbox::
+  with_reply_to` sets Reply-To for every email. Drop per-request outboxes.
 - **Country groups:** `MagicLinkServiceConfig::country_policy` (default
   `CountryPolicy::Exact`) can be `CountryPolicy::eu27()`: sessions then move
   between EU countries and stay exact elsewhere. Drop edge rewrites of the
@@ -141,9 +146,13 @@ The libraries hold no globals. You inject every dependency.
   verify-only for at least 31 days. `resolve_auth_secrets` in
   `datadeft-magic-link-aws` loads them.
 - A `MagicLinkEmailRenderer`. You own the subject, the text, and the HTML body,
-  and you own languages. The library gives you `MagicLinkEmail { email, token,
-  expires_at_unix }`. You return `RenderedMagicLinkEmail`. The library never
-  stores or templates the message body.
+  and the copy for each language. The library gives you `MagicLinkEmail { email,
+  token, expires_at_unix, locale }`. You return `RenderedMagicLinkEmail`. The
+  library never stores or templates the message body. Set
+  `MagicLinkServiceConfig::locales` to a `LocaleAllowlist` to get a resolved
+  `locale`; the request's optional `locale` hint picks one of its entries, and
+  anything else gets the default. Configure Reply-To with
+  `SesMagicLinkOutbox::with_reply_to`; requests cannot set it.
 - The storage and delivery adapters. Use `datadeft-magic-link-aws` for DynamoDB and
   SES, or implement the repository, session, limiter, and outbox traits
   yourself. Use `FakeDynamoDbAuthStore` and `FakeMagicLinkOutbox` for tests.

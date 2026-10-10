@@ -775,6 +775,18 @@ Scanner safety protects against GET-only scanners. Active scanners that submit f
 
 The confirmation page mitigates login CSRF by showing the account. Offer a stronger mode when the app needs one.
 
+### Email language and Reply-To
+
+- The email language comes from `MagicLinkServiceConfig::locales`, an
+  app-configured `LocaleAllowlist`. A request may carry a locale hint; the
+  service resolves it to an allowed locale or the default. The renderer only
+  ever sees the resolved `Locale`, never request text, and the locale is not
+  stored.
+- Reply-To is set only in the outbox configuration
+  (`SesMagicLinkOutbox::with_reply_to`), never per request. A request-chosen
+  Reply-To would let anyone send our genuine login emails with their own
+  reply address: phishing from our domain.
+
 ## Rate limiting and abuse controls
 
 Magic-link owns these limiter domains:

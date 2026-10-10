@@ -13,8 +13,8 @@ use datadeft_magic_link_axum::{
     SessionCookieConfig,
 };
 use datadeft_magic_link_service::{
-    Clock, DependencyError, KeyRing, LookupHmacKey, MagicLinkConfirmCookie, MagicLinkServiceConfig,
-    SessionCookie,
+    Clock, CountryPolicy, DependencyError, KeyRing, LocaleAllowlist, LookupHmacKey,
+    MagicLinkConfirmCookie, MagicLinkServiceConfig, SessionCookie,
 };
 use datadeft_pow_core::{PowProofCookie, PowSecret};
 use rand_core::{OsRng, RngCore};
@@ -62,7 +62,14 @@ impl Clock for LocalClock {
 
 pub(super) fn build_state() -> AppResult<AppState> {
     let now_unix = current_unix().map_err(|_| SetupError("system clock before unix epoch"))?;
-    let config = MagicLinkServiceConfig::new("example-terms-v1", "example-privacy-v1");
+    let mut config = MagicLinkServiceConfig::new("example-terms-v1", "example-privacy-v1");
+    // Emails go out in English or Hungarian; a request's `locale` hint picks
+    // one, anything else gets English (CeleraTax #5).
+    config.locales = Some(
+        LocaleAllowlist::new("en", ["hu"]).map_err(|_| SetupError("invalid locale allowlist"))?,
+    );
+    // Sessions move between EU countries and stay exact elsewhere (CeleraTax #6).
+    config.country_policy = CountryPolicy::eu27();
     config.validate()?;
 
     // Production loads this document from AWS Secrets Manager

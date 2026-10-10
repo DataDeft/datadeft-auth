@@ -27,16 +27,18 @@ pub const CLOUDFRONT_VIEWER_COUNTRY: &str = "cloudfront-viewer-country";
 /// Request JSON accepted by
 /// [`handle_magic_link_request_json`](crate::handle_magic_link_request_json).
 ///
-/// This crate is language-agnostic: the request JSON carries no locale. An
-/// application that localizes emails parses its own request shape and selects
-/// the language in its [`MagicLinkOutbox`](datadeft_magic_link_service::MagicLinkOutbox)
-/// (for example a request-scoped outbox), so the library never sees it.
+/// The optional `locale` is only a hint (for example the page language). The
+/// service resolves it against
+/// [`MagicLinkServiceConfig::locales`](datadeft_magic_link_service::MagicLinkServiceConfig)
+/// and the renderer receives the resolved locale, never this text.
 #[derive(Clone, Eq, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MagicLinkRequestJson {
     pub email: String,
     pub terms_accepted: bool,
     pub privacy_accepted: bool,
+    #[serde(default)]
+    pub locale: Option<String>,
 }
 
 impl fmt::Debug for MagicLinkRequestJson {
@@ -45,6 +47,7 @@ impl fmt::Debug for MagicLinkRequestJson {
             .field("email", &"<redacted>")
             .field("terms_accepted", &self.terms_accepted)
             .field("privacy_accepted", &self.privacy_accepted)
+            .field("locale", &self.locale)
             .finish()
     }
 }
@@ -53,11 +56,12 @@ impl MagicLinkRequestJson {
     pub fn into_command(self) -> Result<RequestMagicLinkCommand, MagicLinkHttpError> {
         let email =
             NormalizedEmail::normalize(&self.email).map_err(|_| MagicLinkHttpError::BadRequest)?;
-        Ok(RequestMagicLinkCommand::new(
-            email,
-            self.terms_accepted,
-            self.privacy_accepted,
-        ))
+        let command =
+            RequestMagicLinkCommand::new(email, self.terms_accepted, self.privacy_accepted);
+        Ok(match self.locale.as_deref() {
+            Some(hint) => command.with_locale_hint(hint),
+            None => command,
+        })
     }
 }
 

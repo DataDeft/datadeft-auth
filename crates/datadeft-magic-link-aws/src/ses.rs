@@ -3,9 +3,11 @@
 use core::fmt;
 use std::sync::{Arc, Mutex};
 
+#[cfg(any(feature = "aws", test))]
+use datadeft_magic_link_service::NormalizedEmail;
 use datadeft_magic_link_service::{DependencyError, MagicLinkEmail, MagicLinkOutbox};
 
-#[cfg(feature = "aws")]
+#[cfg(any(feature = "aws", test))]
 use crate::error::AwsAdapterError;
 
 /// App-rendered SES message content.
@@ -75,12 +77,16 @@ impl MagicLinkOutbox for FakeMagicLinkOutbox {
     }
 }
 
+/// Most Reply-To addresses on one outbox.
+pub const MAX_REPLY_TO_ADDRESSES: usize = 4;
+
 /// SES-backed outbox. The renderer owns URL/template details. This adapter only
 /// sends the rendered content.
 #[cfg(feature = "aws")]
 pub struct SesMagicLinkOutbox<R> {
     client: aws_sdk_sesv2::Client,
     from_email: String,
+    reply_to: Vec<String>,
     renderer: R,
 }
 
@@ -91,8 +97,22 @@ impl<R> SesMagicLinkOutbox<R> {
         Self {
             client,
             from_email,
+            reply_to: Vec::new(),
             renderer,
         }
+    }
+
+    /// Send every email with these Reply-To addresses (for example a support
+    /// mailbox). Configuration only: a request can never set Reply-To, or
+    /// anyone could send our login emails with their own reply address. Each
+    /// address must be a valid email; at most [`MAX_REPLY_TO_ADDRESSES`].
+    pub fn with_reply_to<I, S>(mut self, addresses: I) -> Result<Self, AwsAdapterError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.reply_to = validated_reply_to(addresses)?;
+        Ok(self)
     }
 }
 
@@ -139,6 +159,7 @@ where
         self.client
             .send_email()
             .from_email_address(self.from_email.clone())
+            .set_reply_to_addresses((!self.reply_to.is_empty()).then(|| self.reply_to.clone()))
             .destination(destination)
             .content(content)
             .send()
@@ -146,6 +167,26 @@ where
             .map_err(crate::error::map_ses_send_email_error)?;
         Ok(())
     }
+}
+
+/// Validate configured Reply-To addresses: each a single valid address,
+/// normalized, at most [`MAX_REPLY_TO_ADDRESSES`].
+#[cfg(any(feature = "aws", test))]
+pub(crate) fn validated_reply_to<I, S>(addresses: I) -> Result<Vec<String>, AwsAdapterError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut validated = Vec::new();
+    for address in addresses {
+        if validated.len() == MAX_REPLY_TO_ADDRESSES {
+            return Err(AwsAdapterError::Internal);
+        }
+        let address =
+            NormalizedEmail::normalize(address.as_ref()).map_err(|_| AwsAdapterError::Internal)?;
+        validated.push(address.as_str().to_owned());
+    }
+    Ok(validated)
 }
 
 #[cfg(test)]

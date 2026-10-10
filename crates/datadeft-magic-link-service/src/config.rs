@@ -7,6 +7,7 @@ use datadeft_auth_token_core::keyring::KeyPurpose;
 use datadeft_magic_link_core::confirm_cookie::MagicLinkConfirmCookie;
 
 use crate::country::CountryPolicy;
+use crate::locale::LocaleAllowlist;
 use crate::types::SessionCookie;
 
 use crate::types::{
@@ -125,6 +126,11 @@ pub struct MagicLinkServiceConfig {
     /// such as [`CountryPolicy::eu27`] so moving within the group keeps the
     /// session. Applied when the session is bound and on every validation.
     pub country_policy: CountryPolicy,
+    /// The locales magic-link emails are sent in. When set, a request's
+    /// locale hint resolves against it and the result reaches the renderer
+    /// as [`MagicLinkEmail::locale`](crate::MagicLinkEmail); when unset the
+    /// email carries no locale.
+    pub locales: Option<LocaleAllowlist>,
     pub rate_limits: RateLimitConfig,
 }
 
@@ -140,6 +146,7 @@ impl MagicLinkServiceConfig {
             session_absolute_secs: DEFAULT_SESSION_ABSOLUTE_SECS,
             enforce_country: false,
             country_policy: CountryPolicy::Exact,
+            locales: None,
             rate_limits: RateLimitConfig::default(),
         }
     }

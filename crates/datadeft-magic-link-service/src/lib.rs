@@ -28,6 +28,7 @@ pub mod admin;
 pub mod config;
 pub mod country;
 pub mod error;
+pub mod locale;
 pub mod service;
 pub mod session;
 pub mod session_body;
@@ -58,6 +59,7 @@ pub use error::{
     CommitMagicLinkAuthenticationError, DependencyError, MagicLinkFlowError, MagicLinkServiceError,
     TemporaryAuthStateAction,
 };
+pub use locale::{Locale, LocaleAllowlist, LocaleError, MAX_LOCALE_HINT_BYTES};
 pub use service::{MagicLinkFlowService, MagicLinkRequestService};
 pub use session::{
     RefreshedSessionCookie, SessionValidationError, ValidatedSession, refresh_session_cookie,

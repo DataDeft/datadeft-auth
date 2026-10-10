@@ -40,6 +40,7 @@ async fn request_magic_link_inner(
         email: body.email,
         terms_accepted: body.terms_accepted,
         privacy_accepted: body.privacy_accepted,
+        locale: body.locale,
     }
     .into_command()?;
 
@@ -190,5 +191,7 @@ struct RequestMagicLinkWithPow {
     email: String,
     terms_accepted: bool,
     privacy_accepted: bool,
+    #[serde(default)]
+    locale: Option<String>,
     pow: PowSolutionJson,
 }

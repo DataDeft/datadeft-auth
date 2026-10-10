@@ -7,6 +7,7 @@ use datadeft_magic_link_core::{MagicLinkToken, NormalizedEmail};
 use zeroize::Zeroize;
 
 use crate::error::{MagicLinkFlowError, MagicLinkServiceError};
+use crate::locale::Locale;
 
 use super::ids::{SessionId, UserId};
 use super::*;
@@ -21,6 +22,7 @@ pub struct RequestMagicLinkCommand {
     email: NormalizedEmail,
     terms_accepted: bool,
     privacy_accepted: bool,
+    locale_hint: Option<String>,
 }
 
 impl RequestMagicLinkCommand {
@@ -29,7 +31,26 @@ impl RequestMagicLinkCommand {
             email,
             terms_accepted,
             privacy_accepted,
+            locale_hint: None,
         }
+    }
+
+    /// Attach the request's locale hint, for example the page language. It
+    /// is only a hint: the service resolves it against
+    /// [`MagicLinkServiceConfig::locales`](crate::MagicLinkServiceConfig) and
+    /// never passes it on as text. A hint longer than
+    /// [`MAX_LOCALE_HINT_BYTES`](crate::locale::MAX_LOCALE_HINT_BYTES) or with
+    /// other than ASCII letters, digits, `-` and `_` is ignored.
+    #[must_use]
+    pub fn with_locale_hint(mut self, hint: &str) -> Self {
+        self.locale_hint = crate::locale::bounded_hint(hint);
+        self
+    }
+
+    /// The kept locale hint, if any.
+    #[must_use]
+    pub fn locale_hint(&self) -> Option<&str> {
+        self.locale_hint.as_deref()
     }
 
     #[must_use]
@@ -54,6 +75,7 @@ impl fmt::Debug for RequestMagicLinkCommand {
             .field("email", &"NormalizedEmail(..)")
             .field("terms_accepted", &self.terms_accepted)
             .field("privacy_accepted", &self.privacy_accepted)
+            .field("locale_hint", &self.locale_hint)
             .finish()
     }
 }
@@ -219,6 +241,10 @@ pub struct MagicLinkEmail {
     pub email: NormalizedEmail,
     pub token: MagicLinkToken,
     pub expires_at_unix: u64,
+    /// The resolved email locale, when
+    /// [`MagicLinkServiceConfig::locales`](crate::MagicLinkServiceConfig) is
+    /// set. Never stored.
+    pub locale: Option<Locale>,
 }
 
 impl fmt::Debug for MagicLinkEmail {
@@ -227,6 +253,7 @@ impl fmt::Debug for MagicLinkEmail {
             .field("email", &"NormalizedEmail(..)")
             .field("token", &"MagicLinkToken(..)")
             .field("expires_at_unix", &self.expires_at_unix)
+            .field("locale", &self.locale)
             .finish()
     }
 }

@@ -90,6 +90,12 @@ where
                 email: command.email().clone(),
                 token,
                 expires_at_unix,
+                // Resolved here, passed on, never stored.
+                locale: self
+                    .config
+                    .locales
+                    .as_ref()
+                    .map(|locales| locales.resolve(command.locale_hint())),
             })
             .await
             .map_err(map_dependency_error)?;

@@ -26,7 +26,9 @@ pub use config::{
 pub use error::AwsAdapterError;
 pub use fake::{FakeDynamoDbAuthStore, UserSessionIndexEntry};
 pub use hmac_key::{SESSION_LOOKUP_HMAC_PREFIX, STORAGE_HMAC_KEY_BYTES, StorageHmacKey};
-pub use ses::{FakeMagicLinkOutbox, MagicLinkEmailRenderer, RenderedMagicLinkEmail};
+pub use ses::{
+    FakeMagicLinkOutbox, MAX_REPLY_TO_ADDRESSES, MagicLinkEmailRenderer, RenderedMagicLinkEmail,
+};
 
 #[cfg(feature = "aws")]
 pub use dynamodb::DynamoDbAuthStore;

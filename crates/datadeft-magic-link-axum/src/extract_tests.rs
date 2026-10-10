@@ -18,14 +18,19 @@ fn request_json_normalizes_the_email_and_keeps_consent() {
 
 #[test]
 fn request_negative_regressions_reject_unknown_fields_and_forward_false_consent() {
-    // The library is language-agnostic: a locale (or any unknown field) is
-    // rejected, so applications parse their own request shape and select the
-    // email language in their own outbox.
-    let with_locale = br#"{"email":"user@example.com","locale":"de","terms_accepted":true,"privacy_accepted":true}"#;
+    // Unknown fields are rejected; `locale` is an accepted hint.
+    let unknown = br#"{"email":"user@example.com","lang":"de","terms_accepted":true,"privacy_accepted":true}"#;
     assert_eq!(
-        parse_magic_link_request_json(with_locale).unwrap_err(),
+        parse_magic_link_request_json(unknown).unwrap_err(),
         MagicLinkHttpError::BadRequest
     );
+    let with_locale = br#"{"email":"user@example.com","locale":"de-AT","terms_accepted":true,"privacy_accepted":true}"#;
+    let command = parse_magic_link_request_json(with_locale).expect("command");
+    assert_eq!(command.locale_hint(), Some("de-AT"));
+    // An unusable hint is dropped, not an error: the default locale applies.
+    let free_text = br#"{"email":"user@example.com","locale":"de\r\nBcc: x","terms_accepted":true,"privacy_accepted":true}"#;
+    let command = parse_magic_link_request_json(free_text).expect("command");
+    assert_eq!(command.locale_hint(), None);
 
     let false_consent =
         br#"{"email":"user@example.com","terms_accepted":false,"privacy_accepted":true}"#;

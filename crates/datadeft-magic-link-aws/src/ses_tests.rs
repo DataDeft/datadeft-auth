@@ -13,6 +13,7 @@ fn email() -> MagicLinkEmail {
         )
         .expect("token"),
         expires_at_unix: 1_600,
+        locale: None,
     }
 }
 
@@ -70,4 +71,91 @@ async fn fake_outbox_can_inject_dependency_errors() {
         DependencyError::Unavailable
     );
     assert!(outbox.recorded().expect("recorded").is_empty());
+}
+
+#[test]
+fn reply_to_is_validated_normalized_and_bounded() {
+    assert_eq!(
+        validated_reply_to([" Support@Example.com "]).expect("valid"),
+        ["support@example.com"]
+    );
+    assert!(
+        validated_reply_to(Vec::<String>::new())
+            .expect("empty")
+            .is_empty()
+    );
+    for bad in [
+        "not-an-address",
+        "a@example.com, b@example.com",
+        "Support <support@example.com>",
+        "support@example.com\r\nBcc: x@example.com",
+    ] {
+        assert_eq!(
+            validated_reply_to([bad]).unwrap_err(),
+            AwsAdapterError::Internal,
+            "{bad:?}"
+        );
+    }
+    let five = ["a@example.com"; MAX_REPLY_TO_ADDRESSES + 1];
+    assert_eq!(
+        validated_reply_to(five).unwrap_err(),
+        AwsAdapterError::Internal
+    );
+}
+
+#[cfg(feature = "aws")]
+mod ses_requests {
+    use aws_sdk_sesv2::config::{BehaviorVersion, Credentials, Region};
+    use aws_smithy_http_client::test_util::capture_request;
+
+    use super::*;
+
+    struct PlainRenderer;
+
+    impl MagicLinkEmailRenderer for PlainRenderer {
+        fn render(
+            &self,
+            email: &MagicLinkEmail,
+        ) -> Result<RenderedMagicLinkEmail, DependencyError> {
+            Ok(RenderedMagicLinkEmail {
+                to: email.email.as_str().to_owned(),
+                subject: "Sign in".to_owned(),
+                text: "Open the link".to_owned(),
+                html: None,
+            })
+        }
+    }
+
+    async fn sent_body(reply_to: Option<&[&str]>) -> String {
+        let (http_client, request) = capture_request(None);
+        let config = aws_sdk_sesv2::Config::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .region(Region::new("eu-west-1"))
+            .credentials_provider(Credentials::new("akid", "secret", None, None, "test"))
+            .http_client(http_client)
+            .build();
+        let mut outbox = SesMagicLinkOutbox::new(
+            aws_sdk_sesv2::Client::from_conf(config),
+            "login@example.com".to_owned(),
+            PlainRenderer,
+        );
+        if let Some(reply_to) = reply_to {
+            outbox = outbox.with_reply_to(reply_to).expect("reply-to");
+        }
+        // The canned empty response does not parse; only the request matters.
+        let _ = outbox.enqueue_magic_link(email()).await;
+        let request = request.expect_request();
+        String::from_utf8(request.body().bytes().expect("body").to_vec()).expect("utf-8")
+    }
+
+    #[tokio::test]
+    async fn ses_requests_carry_reply_to_only_when_configured() {
+        let body = sent_body(Some(&["support@example.com"])).await;
+        assert!(
+            body.contains(r#""ReplyToAddresses":["support@example.com"]"#),
+            "{body}"
+        );
+        let body = sent_body(None).await;
+        assert!(!body.contains("ReplyToAddresses"), "{body}");
+    }
 }
