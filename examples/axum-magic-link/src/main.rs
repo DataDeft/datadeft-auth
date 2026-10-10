@@ -35,8 +35,17 @@ const POW_CHALLENGE_TTL_SECS: u64 = 5 * 60;
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
-    let state = build_state()?;
-    let app = Router::new()
+    let app = app(build_state()?);
+    let addr: SocketAddr = LISTEN_ADDR.parse()?;
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    println!("local example listening on {LOCAL_ORIGIN}");
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+/// The example's routes.
+fn app(state: AppState) -> Router {
+    Router::new()
         .route("/", get(index))
         .route("/auth/pow/challenge", get(pow_challenge))
         .route("/auth/magic-link/request", post(request_magic_link))
@@ -46,16 +55,12 @@ async fn main() -> AppResult<()> {
         .route("/me", get(me))
         .route("/logout", post(logout))
         .route("/dev/latest-magic-link", get(dev_latest_magic_link))
-        .with_state(state);
-
-    let addr: SocketAddr = LISTEN_ADDR.parse()?;
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("local example listening on {LOCAL_ORIGIN}");
-    axum::serve(listener, app).await?;
-    Ok(())
+        .with_state(state)
 }
 
 type AppResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
+#[cfg(test)]
+mod flow_tests;
 #[cfg(test)]
 mod tests;

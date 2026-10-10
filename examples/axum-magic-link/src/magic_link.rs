@@ -62,9 +62,9 @@ async fn request_magic_link_inner(
 
 // The landing GET is side-effect-free (the library guarantees it never
 // consumes the link), so this application owns the interstitial page. It
-// renders the account and a form that POSTs the confirmation back same-origin
-// This step consumes the link. Errors are returned with the SAME
-// 200 status as success so link validity is not enumerable.
+// renders the account and a form that POSTs the confirmation back
+// same-origin; only that POST consumes the link. A rejected link gets the same
+// 200 status as a valid one, so link validity is not enumerable.
 pub(super) async fn landing_route(State(state): State<AppState>, request: Request) -> Response {
     let config = state.http_config.clone();
     let result = magic_link_landing(request, config.as_ref(), move |command| async move {
