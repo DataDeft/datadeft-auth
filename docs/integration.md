@@ -84,6 +84,8 @@ fresh table and secret document: no data migration is provided.
 
 Behaviour changes:
 
+- The re-enable cutoff is inclusive: a session created in the same second as
+  `enable_user` is accepted, so an immediate re-login works.
 - `enable_user` revokes every live session first. Each one writes a
   `RevokeSession` audit event.
 - `revoke_all_sessions` also revokes sessions that expired within the last

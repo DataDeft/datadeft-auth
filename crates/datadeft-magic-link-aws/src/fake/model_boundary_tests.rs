@@ -1,10 +1,10 @@
 //! Deterministic boundary tests for the exact comparisons the model tests
-//! depend on: the strict enable watermark, the idle/2 refresh threshold, the
+//! depend on: the inclusive enable watermark, the idle/2 refresh threshold, the
 //! stale-validation window, idle / absolute / skew edges, the admin "active"
 //! edge, and the magic-link and flow-cookie expiry edges.
 
 use datadeft_magic_link_service::{
-    MagicLinkServiceError, SessionValidationError, ValidatedSession,
+    MagicLinkServiceError, SessionRepository, SessionValidationError, ValidatedSession,
 };
 
 use datadeft_auth_token_core::cookie::CLOCK_SKEW_TOLERANCE_SECS;
@@ -29,7 +29,7 @@ async fn refresh_at(h: &mut Harness, at: u64, cookie: &str) -> Option<String> {
 }
 
 #[tokio::test]
-async fn enable_watermark_is_strict_and_a_same_second_login_is_dead_on_arrival() {
+async fn enable_watermark_accepts_a_login_in_the_enable_second() {
     let mut h = Harness::new(1);
     let old = h.login_at(T0, 0).await;
     let id = h.only_user();
@@ -49,16 +49,25 @@ async fn enable_watermark_is_strict_and_a_same_second_login_is_dead_on_arrival()
         validate_at(&mut h, T0 + 10, &old).await.err(),
         Some(SessionValidationError::InvalidSession)
     );
-    // A login in the enable's own second consumes its link and returns a
-    // cookie, but the session is not strictly after the watermark.
+    // A login in the enable's own second works (CeleraTax #12): the cutoff
+    // is inclusive.
     let same_second = h.login_at(T0 + 10, 0).await;
-    assert_eq!(
-        validate_at(&mut h, T0 + 10, &same_second).await.err(),
-        Some(SessionValidationError::InvalidSession)
+    assert!(validate_at(&mut h, T0 + 10, &same_second).await.is_ok());
+    // A session stamped one second before the watermark (an auth host whose
+    // clock runs behind) is still refused.
+    let store = h.store.clone();
+    assert!(
+        !store
+            .is_session_owner_active(&id, T0 + 9)
+            .await
+            .expect("status")
     );
-    // One second later is after the watermark.
-    let next_second = h.login_at(T0 + 11, 0).await;
-    assert!(validate_at(&mut h, T0 + 11, &next_second).await.is_ok());
+    assert!(
+        store
+            .is_session_owner_active(&id, T0 + 10)
+            .await
+            .expect("status")
+    );
 }
 
 #[tokio::test]

@@ -350,7 +350,7 @@ async fn check_new_session(
     outcome: &ConfirmMagicLinkFlowOutcome,
 ) {
     let user = &m.users[m.links[flow.link].email];
-    let live = user.watermark.is_none_or(|mark| m.now > mark);
+    let live = user.watermark.is_none_or(|mark| m.now >= mark);
     let result = h
         .validate(outcome.authentication().session_cookie_value(), None)
         .await;

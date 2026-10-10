@@ -43,9 +43,9 @@ CONSTANTS
                     \* 0 is the current code. Tol is the candidate fix.
     WithAdmin,      \* explore disable / revoke_all / enable
     WithRefresh,    \* explore refresh_session_cookie
-    WatermarkStrict,   \* TRUE: accept created > wm (the shipped code); FALSE:
-                       \* created >= wm (planned, so a login in the same second
-                       \* as the enable works; safe only with EnableRevokesFirst)
+    WatermarkStrict,   \* FALSE: accept created >= wm (0.5, so a login in the
+                       \* enable's own second works; safe only with
+                       \* EnableRevokesFirst). TRUE: created > wm (0.4).
     EnableRevokesFirst \* enable_user revokes every live session before it
                        \* re-enables, and revoke_all keeps sessions within Tol
                        \* of expiry. FALSE is the 0.4.1 code, TRUE the fix.
@@ -338,11 +338,11 @@ Inv_NoAcceptPastIdle == ~accPastIdle
 Inv_NoAcceptDisabledOwner == ~accDisabled
 
 \* SES-INV-005: a session created before the enable watermark never validates
-\* (stored values). The shipped cutoff is strict (WatermarkStrict = TRUE). The
-\* planned WatermarkStrict = FALSE also accepts a session created in the
-\* watermark's own second, so an immediate re-login works; the revocation that
-\* enable runs first keeps pre-disable sessions out (SES-INV-009).
-Inv_NoAcceptAtOrBeforeWatermark == ~accWatermark
+\* (stored values). The shipped cutoff is inclusive (WatermarkStrict = FALSE):
+\* it also accepts a session created in the watermark's own second, so an
+\* immediate re-login works; the revocation that enable runs first keeps
+\* pre-disable sessions out (SES-INV-009).
+Inv_NoAcceptBeforeWatermark == ~accWatermark
 
 \* SES-INV-006: refresh never changes iat. Every cookie of a session carries
 \* the session row's created_at as iat.

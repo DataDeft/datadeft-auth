@@ -89,17 +89,16 @@ invariant fails when a guard is wrong.
 past-absolute sessions never validate; refresh keeps `iat`, never mints past
 the absolute lifetime, and only follows a same-request validation.
 
-Both configurations check the shipped re-enable cutoff
-(`WatermarkStrict = TRUE`): a session must be created strictly after the
-enable watermark. The `>=` cutoff (`WatermarkStrict = FALSE`, a session
-created in the enable's own second is accepted) is a planned change
-(CeleraTax #12). `mise run spec` checks it as an extra run of
-`SessionAdmin.cfg` with `-c WatermarkStrict=FALSE`. It is safe only because
-enable revokes first.
+Both configurations check the shipped re-enable cutoff, which is inclusive
+(`WatermarkStrict = FALSE`, since 0.5.0): a session created in the enable's
+own second is accepted, so an immediate re-login works. It is safe only
+because enable revokes first; the "inclusive cutoff without revoking first"
+mutant shows the failure otherwise.
 
 `SessionAdmin.cfg` checks the admin paths with injected revoke failures:
-disabled owners never validate, sessions at or before the enable watermark
-never validate (`Inv_NoAcceptAtOrBeforeWatermark`, under the strict cutoff), and no session that existed at a re-enable validates
+disabled owners never validate, sessions created before the enable watermark
+never validate (`Inv_NoAcceptBeforeWatermark`), and no session that existed at
+a re-enable validates
 afterwards (`Inv_NoPreEnableSurvivor`). That last one failed for the 0.4.1
 code (`EnableRevokesFirst = FALSE`); see finding SES-F1 in
 [docs/formal-methods.md](../docs/formal-methods.md).

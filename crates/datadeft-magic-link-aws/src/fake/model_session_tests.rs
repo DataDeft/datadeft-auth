@@ -114,7 +114,7 @@ impl Model {
             && now.saturating_sub(session.created) <= ABSOLUTE
             && user.id.is_some()
             && !user.disabled
-            && user.watermark.is_none_or(|mark| session.created > mark)
+            && user.watermark.is_none_or(|mark| session.created >= mark)
     }
 
     /// What `revoke_all_sessions` revokes: `SessionSummary::status` is
@@ -473,7 +473,7 @@ async fn validate(
     assert_eq!(validated.country(), session.country);
     // Ghost check: nothing from before an enable (or a disable) is accepted.
     let user = &m.users[session.user];
-    assert!(!user.disabled && user.watermark.is_none_or(|mark| session.created > mark));
+    assert!(!user.disabled && user.watermark.is_none_or(|mark| session.created >= mark));
     Some(validated)
 }
 

@@ -9,7 +9,6 @@ tla MagicLink.tla --allow-deadlock
 tla MagicLinkRace.tla --allow-deadlock
 tla Session.tla --allow-deadlock
 tla Session.tla --config SessionAdmin.cfg --allow-deadlock
-tla Session.tla --config SessionAdmin.cfg --allow-deadlock -c WatermarkStrict=FALSE
 tla KeyRotation.tla --allow-deadlock
 tla PowBudget.tla --allow-deadlock
 tla Erasure.tla --allow-deadlock
@@ -53,7 +52,7 @@ tla KeyRotation.tla --allow-deadlock -c DualWrite=FALSE
 | Session | `Tol`, `Skew` | 1, 1 | Code skew tolerance; real clock spread between hosts. |
 | Session | `MaxTime` | 10 (admin: 5) | Bound on true time. |
 | Session | `EnableRevokesFirst` | TRUE | The fix for SES-F1; FALSE is 0.4.1. |
-| Session | `WatermarkStrict` | TRUE | The shipped re-enable cutoff: accept only `created > wm`. FALSE is the planned `>=` cutoff, checked as an extra `SessionAdmin.cfg` run. |
+| Session | `WatermarkStrict` | FALSE | The shipped inclusive re-enable cutoff: accept `created >= wm` (0.5.0). TRUE is the 0.4 `created > wm`, used by the SES-F1 mutant. |
 | Session | `WatermarkSlack` | 0 | Enable stores `wm = reading + WatermarkSlack`. 0 is the current code. |
 | Session | `RevokeMayFail` | TRUE | Revoke-all may stop part way (dependency error). |
 | KeyRotation | `Procs` | `{p1, p2}` | Signups for one email. |

@@ -419,9 +419,8 @@ async fn disable_and_enable_against_dynamodb() {
         "old session stays dead"
     );
 
-    // The strict whole-second cutoff (0.4) rejects a login in the enable's own
-    // second; wait for the next one. (0.5.0 makes the cutoff inclusive.)
-    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+    // The cutoff is inclusive: a login right after the enable, usually in the
+    // same second, works.
     let login_two = login(&store, &keys, &mut rng, "admin@example.test").await;
     assert_eq!(login_two.authentication().user_id(), &user);
     assert!(

@@ -210,8 +210,8 @@ every admin endpoint before calling the service.
   revocation failed or is still running) and re-enables only once that
   succeeded; on an error the user stays disabled, so it is safe to retry. It
   also stamps a `sessions_valid_after` watermark on the profile, and
-  validation accepts only sessions created strictly after it. The user logs
-  in again. The revocation step does not depend on clocks; the watermark
+  validation accepts only sessions created at or after it (whole seconds),
+  so a login right after the enable works. The user logs in again. The revocation step does not depend on clocks; the watermark
   alone would not be enough, because a session's `created_at` comes from the
   auth host's clock and may be up to the skew tolerance ahead of the admin
   host's (`spec/tla/Session.tla`, `Inv_NoPreEnableSurvivor`).

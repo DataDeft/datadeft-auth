@@ -48,13 +48,11 @@ requires the checker to report that exact violation. Both run in
 real services and the fake store through random operation sequences and check
 the same invariants, which links the models to the code.
 
-The Session configs check the shipped re-enable cutoff
-(`WatermarkStrict = TRUE`): a session must be created strictly after the
-enable watermark, and `Inv_NoAcceptAtOrBeforeWatermark` checks that sessions
-created at or before it never validate. The `>=` cutoff
-(`WatermarkStrict = FALSE`) is a planned change (CeleraTax #12). `mise run
-spec` checks it as an extra run of `SessionAdmin.cfg` with
-`-c WatermarkStrict=FALSE`. It is safe only because enable revokes first.
+The Session configs check the shipped re-enable cutoff, which is inclusive
+since 0.5.0 (`WatermarkStrict = FALSE`, CeleraTax #12): a session created in
+the enable's own second is accepted, and `Inv_NoAcceptBeforeWatermark` checks
+that sessions created before it never validate. The inclusive cutoff is safe
+only because enable revokes first.
 
 Findings the models produced:
 

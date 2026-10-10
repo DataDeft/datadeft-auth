@@ -397,17 +397,17 @@ async fn enabling_never_restores_sessions_from_before_the_disable() {
             .await
             .expect("status")
     );
-    // Sessions from after the re-enable work. The watermark is strict: a
-    // session from the enable's own second does not count as "after".
+    // The watermark is inclusive: a session from the enable's own second
+    // works, one from the second before does not.
     assert!(
         !store
-            .is_session_owner_active(&user_id, 2_000)
+            .is_session_owner_active(&user_id, 1_999)
             .await
             .expect("status")
     );
     assert!(
         store
-            .is_session_owner_active(&user_id, 2_001)
+            .is_session_owner_active(&user_id, 2_000)
             .await
             .expect("status")
     );

@@ -54,8 +54,6 @@ tla spec/tla/MagicLink.tla --allow-deadlock
 tla spec/tla/MagicLinkRace.tla --allow-deadlock
 tla spec/tla/Session.tla --allow-deadlock
 tla spec/tla/Session.tla --config spec/tla/SessionAdmin.cfg --allow-deadlock
-# Planned >= re-enable cutoff (CeleraTax #12): must hold once enable revokes first.
-tla spec/tla/Session.tla --config spec/tla/SessionAdmin.cfg --allow-deadlock -c WatermarkStrict=FALSE
 tla spec/tla/KeyRotation.tla --allow-deadlock
 tla spec/tla/PowBudget.tla --allow-deadlock
 tla spec/tla/Erasure.tla --allow-deadlock

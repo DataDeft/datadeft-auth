@@ -157,7 +157,7 @@ const MUTANTS: Mutant[] = [
     spec: "Session",
     config: "SessionAdmin",
     edits: [["         /\\ AfterWatermark(s)\n", ""]],
-    expect: "Inv_NoAcceptAtOrBeforeWatermark",
+    expect: "Inv_NoAcceptBeforeWatermark",
   },
   {
     name: "0.4.1 enable: re-enable without revoking first (finding SES-F1)",
@@ -184,7 +184,7 @@ const MUTANTS: Mutant[] = [
     expect: "Inv_OneAccountPerEmail",
   },
   {
-    name: "planned cutoff (>=) without revoking first",
+    name: "inclusive cutoff (>=) without revoking first",
     spec: "Session",
     config: "SessionAdmin",
     constants: { WatermarkStrict: "FALSE", EnableRevokesFirst: "FALSE" },
