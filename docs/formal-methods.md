@@ -35,6 +35,7 @@ versions when each MVP starts.
 | ROT-INV-001/002 | One email never has two accounts during a rolling storage-key rotation. | `KeyRotation.tla` | `rolling_rotation_*`, `model_rotation_tests` |
 | POW-INV-004 | One PoW solve buys at most its budget of admissions across all nodes and its lifetime. | `PowBudget.tla` | `admission_tests`, `lifetime_limit_never_refills_against_dynamodb` |
 | ADM-INV-001 | No admin write applies on top of a change it did not see. | `AdminRace.tla` | `a_stale_admin_write_conflicts_instead_of_undoing_a_later_one`, `a_stale_admin_write_is_refused_against_dynamodb` |
+| ADM-INV-002 | An enable never undoes a disable reported as successful after the enable read the user. | `AdminRace.tla` | `a_disable_of_a_disabled_user_still_fences_a_slow_enable` |
 | ERASE-INV-001..005 | Erasure leaves no lookup to the user, no address in the profile, no valid session, no account from an older link; re-signup is a new user (planned, low priority). | `Erasure.tla` | Not implemented yet |
 | POW-INV-001 | Accepted proof met the production floor. | `Pow.tla` | PoW vectors, tamper tests; `pow_security` |
 | POW-INV-002 | A policy change after mint never lowers a challenge's difficulty. | `Pow.tla` | `pow_security` |
@@ -77,9 +78,11 @@ Findings the models produced:
   admin's enable, a login, and a later disable undid that disable and revived
   a session whose revocation failed. Not reachable by users. Admin writes are
   now conditional on the profile's `admin_version`; the stale write fails with
-  `AdminError::Conflict`. `AdminRace.tla` checks it (the 0.4 behaviour is a
-  killed mutant), and `a_stale_admin_write_conflicts_instead_of_undoing_a_later_one`
-  pins it in code.
+  `AdminError::Conflict`. A disable of an already-disabled user still writes
+  and bumps the version, so it fences a slow enable too (found in the 0.5.0
+  review). `AdminRace.tla` checks both (each is a killed mutant), and
+  `a_stale_admin_write_conflicts_instead_of_undoing_a_later_one` and
+  `a_disable_of_a_disabled_user_still_fences_a_slow_enable` pin them in code.
 
 The v0.2.0 solve-timing signal (`Verified::mint_to_verify_ms`, the proof-cookie
 solve-class byte) is deliberately outside the models. It is observational: it

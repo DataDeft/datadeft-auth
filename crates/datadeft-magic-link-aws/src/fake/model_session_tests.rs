@@ -245,9 +245,9 @@ impl Model {
         }
     }
 
-    /// `disable_user`: read the user, write only if enabled (conditional on
-    /// the version read; one admin at a time here, so it never conflicts),
-    /// then revoke every live session.
+    /// `disable_user`: read the user, then always write (a re-disable too:
+    /// it bumps the version; one admin at a time here, so it never
+    /// conflicts), then revoke every live session.
     fn disable(&mut self, user: usize, budget: &mut Budget) -> Result<u64, AdminError> {
         if budget.call() != Fate::Normal {
             return Err(AdminError::Unavailable);
@@ -255,10 +255,12 @@ impl Model {
         if self.users[user].id.is_none() {
             return Err(AdminError::NotFound);
         }
-        if !self.users[user].disabled {
-            match self.set_disabled(user, true, budget) {
-                Ok(()) | Err(AdminError::AlreadyInState) => {}
-                Err(error) => return Err(error),
+        match budget.call() {
+            Fate::Normal => self.set_disabled_audited(user, true),
+            Fate::Fail => return Err(AdminError::Unavailable),
+            Fate::AckLost => {
+                self.set_disabled_audited(user, true);
+                return Err(AdminError::Unavailable);
             }
         }
         self.revoke_all(user, budget)

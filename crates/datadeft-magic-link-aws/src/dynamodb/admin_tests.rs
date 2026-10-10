@@ -94,7 +94,7 @@ fn revoke_transaction_is_owner_checked_final_and_audited() {
 }
 
 #[test]
-fn disable_and_enable_transactions_require_the_opposite_state() {
+fn enable_requires_a_disabled_user_and_disable_always_fences() {
     let store = store();
     let disable = store
         .set_user_disabled_transaction(&event(AdminAction::DisableUser, None), 0)
@@ -104,16 +104,22 @@ fn disable_and_enable_transactions_require_the_opposite_state() {
         update.key().get("pk"),
         Some(&av_s(format!("USERID#{USER_ID}")))
     );
+    // A disable applies whatever the flag (a re-disable bumps the version
+    // and fences a concurrent enable) and keeps the first disable's details.
     assert!(
-        update
+        !update
             .condition_expression()
             .expect("condition")
             .contains("disabled = :current")
     );
     let values = update.expression_attribute_values();
-    assert_eq!(attribute(values, ":current"), Some(&av_bool(false)));
+    assert_eq!(attribute(values, ":current"), None);
     assert_eq!(attribute(values, ":target"), Some(&av_bool(true)));
-    assert!(update.update_expression().contains("disabled_by = :actor"));
+    assert!(
+        update
+            .update_expression()
+            .contains("disabled_by = if_not_exists(disabled_by, :actor)")
+    );
     // Version 0: no admin has written yet, so the attribute must be absent.
     assert!(
         update
@@ -136,6 +142,12 @@ fn disable_and_enable_transactions_require_the_opposite_state() {
         .set_user_disabled_transaction(&event(AdminAction::EnableUser, None), 4)
         .expect("enable");
     let update = enable[0].update().expect("update");
+    assert!(
+        update
+            .condition_expression()
+            .expect("condition")
+            .contains("disabled = :current")
+    );
     let values = update.expression_attribute_values();
     assert_eq!(attribute(values, ":current"), Some(&av_bool(true)));
     assert_eq!(attribute(values, ":target"), Some(&av_bool(false)));

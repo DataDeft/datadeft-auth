@@ -214,20 +214,28 @@ impl AuthAdminRepository for FakeDynamoDbAuthStore {
             .user_profiles_by_id
             .get_mut(event.user_id.as_str())
             .ok_or(DependencyError::ConditionalWriteFailed)?;
-        if profile.disabled == disable || version != expected_version {
+        // Only an enable requires the opposite state; a disable always
+        // applies (and bumps the version).
+        let was_disabled = profile.disabled;
+        if (!disable && !was_disabled) || version != expected_version {
             return Err(DependencyError::ConditionalWriteFailed);
         }
         profile.disabled = disable;
         inner
             .admin_versions
             .insert(event.user_id.as_str().to_owned(), next_version);
-        let meta = if disable {
-            DisabledMeta {
+        // Re-disabling keeps the first disable's time and admin.
+        let meta = match (disable, was_disabled) {
+            (true, true) => inner
+                .disabled_meta
+                .get(event.user_id.as_str())
+                .cloned()
+                .unwrap_or_default(),
+            (true, false) => DisabledMeta {
                 at_unix: Some(event.at_unix),
                 by: Some(event.actor.id().to_owned()),
-            }
-        } else {
-            DisabledMeta::default()
+            },
+            (false, _) => DisabledMeta::default(),
         };
         if !disable {
             inner

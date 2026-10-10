@@ -120,9 +120,16 @@ impl DynamoDbAuthStore {
             .table_name(&self.table_name)
             .key("pk", av_s(Self::pk_user_id(&event.user_id)))
             .key("sk", av_s("PROFILE"))
-            .condition_expression(format!(
-                "entity_type = :profile AND user_id = :user AND disabled = :current AND {version_condition}"
-            ))
+            .condition_expression(match event.action {
+                // A disable applies whatever the flag, so it always bumps the
+                // version and fences a concurrent enable.
+                AdminAction::DisableUser => format!(
+                    "entity_type = :profile AND user_id = :user AND {version_condition}"
+                ),
+                _ => format!(
+                    "entity_type = :profile AND user_id = :user AND disabled = :current AND {version_condition}"
+                ),
+            })
             .expression_attribute_values(":profile", av_s("user_profile"))
             .expression_attribute_values(":user", av_s(event.user_id.as_str()))
             .expression_attribute_values(":next_version", av_n(next_version));
@@ -132,11 +139,11 @@ impl DynamoDbAuthStore {
             builder.expression_attribute_values(":expected_version", av_n(expected_version))
         };
         let builder = match event.action {
+            // Re-disabling keeps the first disable's time and admin.
             AdminAction::DisableUser => builder
                 .update_expression(
-                    "SET disabled = :target, disabled_at_unix = :at, disabled_by = :actor, admin_version = :next_version",
+                    "SET disabled = :target, disabled_at_unix = if_not_exists(disabled_at_unix, :at), disabled_by = if_not_exists(disabled_by, :actor), admin_version = :next_version",
                 )
-                .expression_attribute_values(":current", av_bool(false))
                 .expression_attribute_values(":target", av_bool(true))
                 .expression_attribute_values(":at", av_n(event.at_unix))
                 .expression_attribute_values(":actor", av_s(event.actor.id())),

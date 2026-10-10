@@ -54,10 +54,11 @@ pub trait AuthAdminRepository {
         event: &AdminEvent,
     ) -> impl Future<Output = Result<(), DependencyError>> + Send;
 
-    /// Set the user's disabled flag (`DisableUser` / `EnableUser`) if it is
-    /// not already in that state **and** the user's `admin_version` is still
+    /// Apply `event` if the user's `admin_version` is still
     /// `expected_version`, bumping the version and recording `event`
-    /// atomically with it. Any failed condition is
+    /// atomically with it. `DisableUser` applies whatever the current flag
+    /// (re-disabling keeps the first disable's time and admin); `EnableUser`
+    /// also requires the user to be disabled. Any failed condition is
     /// `DependencyError::ConditionalWriteFailed`.
     fn set_user_disabled_audited(
         &self,

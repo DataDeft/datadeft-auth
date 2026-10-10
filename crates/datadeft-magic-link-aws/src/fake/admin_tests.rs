@@ -272,7 +272,7 @@ async fn disabling_a_user_blocks_login_and_every_session_until_enabled() {
             .list_admin_events(&user_id, None, 10)
             .await
             .expect("events");
-        // All four happened within the same second (FixedClock), where the
+        // All five happened within the same second (FixedClock), where the
         // order follows the random event id, as in DynamoDB. Check the set.
         let mut actions: Vec<&str> = events
             .items
@@ -282,7 +282,9 @@ async fn disabling_a_user_blocks_login_and_every_session_until_enabled() {
         actions.sort_unstable();
         assert_eq!(
             actions,
+            // The repeat disable is recorded too: it bumped the version.
             [
+                "disable_user",
                 "disable_user",
                 "enable_user",
                 "revoke_session",

@@ -169,3 +169,162 @@ async fn a_stale_admin_write_conflicts_instead_of_undoing_a_later_one() {
         ]
     );
 }
+
+/// The race the security review found: X's enable reads the disabled user and
+/// is still revoking when Y disables the (already disabled) user and is told
+/// it succeeded. Y's disable writes a version bump even though the flag does
+/// not change, so X's delayed enable conflicts and the user stays disabled.
+#[tokio::test]
+async fn a_disable_of_a_disabled_user_still_fences_a_slow_enable() {
+    let mut h = Harness::new(43);
+    h.login_at(T0, 0).await;
+    let id = h.only_user();
+    let store = h.store.clone();
+    h.clock.set(T0 + 1);
+    h.admin_with(&store)
+        .disable_user(&id, &actor())
+        .await
+        .expect("first disable");
+
+    let gated = GatedEnable {
+        store: store.clone(),
+        reached: Arc::new(Notify::new()),
+        release: Arc::new(Notify::new()),
+    };
+    let x_clock = ManualClock::new(T0 + 10);
+    let mut x_rng = SplitMixRng::new(9);
+    let mut x_admin = AuthAdminService {
+        admin: &gated,
+        clock: &x_clock,
+        rng: &mut x_rng,
+    };
+    let x_actor = actor();
+    let (x_result, ()) = tokio::join!(x_admin.enable_user(&id, &x_actor), async {
+        gated.reached.notified().await;
+        h.clock.set(T0 + 20);
+        assert_eq!(
+            h.admin_with(&store).disable_user(&id, &actor()).await,
+            Ok(0),
+            "Y's disable reports success"
+        );
+        gated.release.notify_one();
+    });
+
+    assert_eq!(x_result, Err(AdminError::Conflict));
+    let user = store.get_user(&id).await.expect("get").expect("user");
+    assert!(user.disabled, "Y's disable holds");
+    assert_eq!(
+        user.disabled_at_unix,
+        Some(T0 + 1),
+        "the first disable's time is kept"
+    );
+}
+
+/// Delegates to the store; on the first disable write, another admin's
+/// disable lands first, so this one's version is stale.
+struct RacingDisable {
+    store: FakeDynamoDbAuthStore,
+    raced: std::sync::atomic::AtomicBool,
+}
+
+impl AuthAdminRepository for RacingDisable {
+    async fn list_users(
+        &self,
+        cursor: Option<&PageCursor>,
+        limit: u32,
+    ) -> Result<Page<UserSummary>, DependencyError> {
+        self.store.list_users(cursor, limit).await
+    }
+
+    async fn get_user(&self, user_id: &UserId) -> Result<Option<UserSummary>, DependencyError> {
+        self.store.get_user(user_id).await
+    }
+
+    async fn find_user_by_email(
+        &self,
+        email: &NormalizedEmail,
+    ) -> Result<Option<UserSummary>, DependencyError> {
+        self.store.find_user_by_email(email).await
+    }
+
+    async fn list_sessions_for_user(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Vec<SessionSummary>, DependencyError> {
+        self.store.list_sessions_for_user(user_id).await
+    }
+
+    async fn list_active_sessions(
+        &self,
+        now_unix: u64,
+        cursor: Option<&PageCursor>,
+        limit: u32,
+    ) -> Result<Page<SessionSummary>, DependencyError> {
+        self.store
+            .list_active_sessions(now_unix, cursor, limit)
+            .await
+    }
+
+    async fn revoke_session_audited(&self, event: &AdminEvent) -> Result<(), DependencyError> {
+        self.store.revoke_session_audited(event).await
+    }
+
+    async fn set_user_disabled_audited(
+        &self,
+        event: &AdminEvent,
+        expected_version: u64,
+    ) -> Result<(), DependencyError> {
+        if event.action == AdminAction::DisableUser
+            && !self.raced.swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            let mut other = event.clone();
+            other.event_id = datadeft_magic_link_service::AdminEventId::parse(
+                "evt-0f0e0d0c0b0a09080706050403020100",
+            )
+            .expect("id");
+            self.store
+                .set_user_disabled_audited(&other, expected_version)
+                .await?;
+        }
+        self.store
+            .set_user_disabled_audited(event, expected_version)
+            .await
+    }
+
+    async fn list_admin_events(
+        &self,
+        user_id: &UserId,
+        cursor: Option<&PageCursor>,
+        limit: u32,
+    ) -> Result<Page<AdminEvent>, DependencyError> {
+        self.store.list_admin_events(user_id, cursor, limit).await
+    }
+}
+
+/// The hole `AdminRace.tla` found: a disable whose write lost the version race
+/// while the user stayed disabled must write again with the fresh version,
+/// not report success unfenced (which would let an enable that read in
+/// between undo it).
+#[tokio::test]
+async fn a_disable_that_loses_a_version_race_writes_again() {
+    let mut h = Harness::new(47);
+    h.login_at(T0, 0).await;
+    let id = h.only_user();
+    let store = h.store.clone();
+    let before = store.get_user(&id).await.expect("get").expect("user");
+    let racing = RacingDisable {
+        store: store.clone(),
+        raced: std::sync::atomic::AtomicBool::new(false),
+    };
+    h.clock.set(T0 + 1);
+    assert!(
+        h.admin_with(&racing)
+            .disable_user(&id, &actor())
+            .await
+            .is_ok()
+    );
+    let after = store.get_user(&id).await.expect("get").expect("user");
+    assert!(after.disabled);
+    // The other admin's write and this call's own retried write.
+    assert_eq!(after.admin_version, before.admin_version + 2);
+}

@@ -11,6 +11,10 @@ use super::repository::AuthAdminRepository;
 use super::types::*;
 use super::*;
 
+/// Extra write attempts a disable makes when other admins keep changing the
+/// user's version while it stays disabled.
+const MAX_DISABLE_ATTEMPTS: u32 = 2;
+
 /// Admin queries and audited mutations over an [`AuthAdminRepository`].
 ///
 /// Construct with a struct literal. The clock timestamps audit events and
@@ -191,20 +195,33 @@ where
     /// Calling it for an already-disabled user just completes revocation and
     /// is not an error.
     ///
-    /// Returns [`AdminError::Conflict`] if another admin enabled or changed
+    /// Every call writes a version-bumping `DisableUser` event, even for an
+    /// already-disabled user (the original disable time and admin are kept),
+    /// so an enable that read the user earlier conflicts instead of undoing
+    /// this disable. Returns [`AdminError::Conflict`] if another admin enabled
     /// the user between this call's read and its write; nothing is written.
     pub async fn disable_user(
         &mut self,
         user_id: &UserId,
         actor: &AdminActor,
     ) -> Result<u64, AdminError> {
-        let user = self.read_user(user_id).await?;
-        if !user.disabled {
+        // Write even when the user is already disabled: only this call's own
+        // version bump fences an enable that read the user earlier. If another
+        // admin changed the version meanwhile and the user is still disabled,
+        // write again with the new version; if it was enabled, that is a
+        // Conflict. Never report success without having written.
+        let mut attempts = 0;
+        loop {
+            let user = self.read_user(user_id).await?;
             match self
                 .set_disabled(AdminAction::DisableUser, user_id, user.admin_version, actor)
                 .await
             {
-                Ok(()) | Err(AdminError::AlreadyInState) => {}
+                Ok(()) => break,
+                Err(AdminError::AlreadyInState) if attempts < MAX_DISABLE_ATTEMPTS => {
+                    attempts += 1;
+                }
+                Err(AdminError::AlreadyInState) => return Err(AdminError::Conflict),
                 Err(error) => return Err(error),
             }
         }

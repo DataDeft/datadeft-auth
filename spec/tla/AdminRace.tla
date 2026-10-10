@@ -2,63 +2,117 @@
 (*
  Concurrent admin actions on one user (ADM-F1, fixed in 0.5.0).
 
- Each admin reads the user, then later writes the opposite state (disable or
- enable). Between the read and the write, other admins may act. The write is
- a DynamoDB conditional update: it requires the state the admin read (the
- existing `disabled = :current` condition) and, with Versioned, the profile
- version it read; it then bumps the version.
+ Each admin reads the user, then later writes a disable or an enable. Between
+ the read and the write, other admins may act. The write is a DynamoDB
+ conditional update that bumps the profile version. An enable requires the
+ user to be disabled; with Versioned it also requires the version read.
 
- Design switch (TRUE is the shipped design; FALSE is the 0.4 mutant):
-   Versioned - the write is also conditional on the version read
+ Design switches (TRUE is the shipped design; each FALSE is a mutant):
+   Versioned           - writes are conditional on the version read
+   DisableAlwaysWrites - a disable of an already-disabled user still writes
+                         (bumping the version), instead of succeeding as a
+                         no-op that fences nothing
+   RetryOnRace         - a disable whose version went stale while the user
+                         stayed disabled re-reads and writes again, instead
+                         of reporting success without having written
 *)
 EXTENDS Naturals
 
 CONSTANTS
     Admins,     \* e.g. {a1, a2}
     MaxActs,    \* actions per admin
-    Versioned
+    Versioned,
+    DisableAlwaysWrites,
+    RetryOnRace,
+    MaxRetries
 
 VARIABLES
     disabled,   \* the stored flag
     version,    \* the stored admin version
+    tick,       \* logical time
     pc,         \* [Admins -> {"idle", "read"}]
+    wantsOff,   \* [Admins -> BOOLEAN]: TRUE = this action disables
     seenVer,    \* [Admins -> Nat]: version at the admin's read
-    seenDis,    \* [Admins -> BOOLEAN]: flag at the admin's read
+    readAt,     \* [Admins -> Nat]: tick of the admin's read
     acts,       \* [Admins -> Nat]: completed actions
-    stale       \* ghost: a write applied although the user changed after its read
+    retries,    \* [Admins -> Nat]: re-reads within the current action
+    lastAck,    \* tick of the last disable reported as successful
+    stale,      \* ghost: a write applied over a version it did not read
+    lost        \* ghost: an enable undid a disable acknowledged after its read
 
-vars == << disabled, version, pc, seenVer, seenDis, acts, stale >>
+vars == << disabled, version, tick, pc, wantsOff, seenVer, readAt, acts,
+           retries, lastAck, stale, lost >>
 
 Init ==
     /\ disabled = FALSE
     /\ version = 0
+    /\ tick = 1
     /\ pc = [a \in Admins |-> "idle"]
+    /\ wantsOff = [a \in Admins |-> FALSE]
     /\ seenVer = [a \in Admins |-> 0]
-    /\ seenDis = [a \in Admins |-> FALSE]
+    /\ readAt = [a \in Admins |-> 0]
     /\ acts = [a \in Admins |-> 0]
+    /\ retries = [a \in Admins |-> 0]
+    /\ lastAck = 0
     /\ stale = FALSE
+    /\ lost = FALSE
 
 Read(a) ==
     /\ pc[a] = "idle"
     /\ acts[a] < MaxActs
+    /\ \E off \in BOOLEAN : wantsOff' = [wantsOff EXCEPT ![a] = off]
     /\ pc' = [pc EXCEPT ![a] = "read"]
     /\ seenVer' = [seenVer EXCEPT ![a] = version]
-    /\ seenDis' = [seenDis EXCEPT ![a] = disabled]
-    /\ UNCHANGED << disabled, version, acts, stale >>
+    /\ readAt' = [readAt EXCEPT ![a] = tick]
+    /\ retries' = [retries EXCEPT ![a] = 0]
+    /\ tick' = tick + 1
+    /\ UNCHANGED << disabled, version, acts, lastAck, stale, lost >>
 
-\* The conditional write of the opposite state; it either applies or fails
-\* (Conflict / AlreadyInState), and the admin is done with this action.
-Write(a) ==
-    /\ pc[a] = "read"
-    /\ LET ok == disabled = seenDis[a] /\ (Versioned => version = seenVer[a])
-       IN IF ok
-            THEN /\ disabled' = ~seenDis[a]
-                 /\ version' = version + 1
-                 /\ stale' = (stale \/ version # seenVer[a])
-            ELSE UNCHANGED << disabled, version, stale >>
+VersionOk(a) == Versioned => version = seenVer[a]
+
+\* Finish the admin's action.
+Done(a) ==
     /\ pc' = [pc EXCEPT ![a] = "idle"]
     /\ acts' = [acts EXCEPT ![a] = acts[a] + 1]
-    /\ UNCHANGED << seenVer, seenDis >>
+    /\ UNCHANGED << wantsOff, seenVer, readAt, retries >>
+
+\* A disable applies if the version holds (and, in the mutant, only if the
+\* user is enabled). It is reported as successful only when it applied, or,
+\* without DisableAlwaysWrites, when the user was already disabled (a no-op);
+\* without RetryOnRace, also when it lost the version race but the user is
+\* still disabled. With RetryOnRace it re-reads and tries again instead.
+Disable(a) ==
+    LET applies == VersionOk(a) /\ (DisableAlwaysWrites \/ ~disabled)
+        noop    == ~DisableAlwaysWrites /\ disabled /\ VersionOk(a)
+        raced   == ~applies /\ ~noop /\ disabled
+    IN IF raced /\ RetryOnRace /\ retries[a] < MaxRetries
+         THEN \* Re-read and write again (a fresh read of the version).
+              /\ seenVer' = [seenVer EXCEPT ![a] = version]
+              /\ retries' = [retries EXCEPT ![a] = retries[a] + 1]
+              /\ UNCHANGED << disabled, version, stale, lastAck, lost, pc, acts,
+                              wantsOff, readAt >>
+         ELSE /\ disabled' = (disabled \/ applies)
+              /\ version' = IF applies THEN version + 1 ELSE version
+              /\ stale' = (stale \/ (applies /\ version # seenVer[a]))
+              /\ lastAck' = IF applies \/ noop \/ (raced /\ ~RetryOnRace)
+                               THEN tick ELSE lastAck
+              /\ UNCHANGED lost
+              /\ Done(a)
+
+\* An enable: applies only to a disabled user whose version holds.
+Enable(a) ==
+    LET applies == disabled /\ VersionOk(a)
+    IN /\ disabled' = (disabled /\ ~applies)
+       /\ version' = IF applies THEN version + 1 ELSE version
+       /\ stale' = (stale \/ (applies /\ version # seenVer[a]))
+       /\ lost' = (lost \/ (applies /\ lastAck > readAt[a]))
+       /\ UNCHANGED lastAck
+       /\ Done(a)
+
+Write(a) ==
+    /\ pc[a] = "read"
+    /\ IF wantsOff[a] THEN Disable(a) ELSE Enable(a)
+    /\ tick' = tick + 1
 
 Next == \E a \in Admins : Read(a) \/ Write(a)
 
@@ -67,4 +121,8 @@ Spec == Init /\ [][Next]_vars
 ----------------------------------------------------------------------------
 \* ADM-INV-001: no admin write applies on top of a change it did not see.
 Inv_NoStaleWrite == ~stale
+
+\* ADM-INV-002: an enable never undoes a disable that was reported as
+\* successful after the enable read the user.
+Inv_NoLostDisable == ~lost
 ==========================================================================

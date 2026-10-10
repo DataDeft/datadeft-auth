@@ -197,6 +197,18 @@ const MUTANTS: Mutant[] = [
     constants: { Versioned: "FALSE" },
     expect: "Inv_NoStaleWrite",
   },
+  {
+    name: "a disable of a disabled user writes nothing (fences no enable)",
+    spec: "AdminRace",
+    constants: { DisableAlwaysWrites: "FALSE" },
+    expect: "Inv_NoLostDisable",
+  },
+  {
+    name: "a disable that lost the version race reports success unfenced",
+    spec: "AdminRace",
+    constants: { RetryOnRace: "FALSE" },
+    expect: "Inv_NoLostDisable",
+  },
   // --- PowBudget.tla -------------------------------------------------------
   {
     name: "per-node budget counters",

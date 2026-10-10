@@ -63,6 +63,9 @@ tla KeyRotation.tla --allow-deadlock -c DualWrite=FALSE
 | AdminRace | `Admins` | `{a1, a2}` | Admins acting on one user concurrently. |
 | AdminRace | `MaxActs` | 2 | Read-then-write actions per admin. |
 | AdminRace | `Versioned` | TRUE | Writes are conditional on the version read; FALSE is 0.4's last-write-wins. |
+| AdminRace | `DisableAlwaysWrites` | TRUE | A disable of a disabled user still writes and bumps the version; FALSE is a no-op that fences no enable. |
+| AdminRace | `RetryOnRace` | TRUE | A disable that lost the version race while the user stayed disabled re-reads and writes again; FALSE reports success unfenced. |
+| AdminRace | `MaxRetries` | 2 | Re-reads a disable makes before answering `Conflict`. |
 | PowBudget | `Nodes` | `{n1, n2}` | Nodes the one proof is presented to. |
 | PowBudget | `Budget` | 2 | Admissions per proof. |
 | PowBudget | `Lifetime` | 3 | Ticks the proof is valid. |
