@@ -233,6 +233,28 @@ async fn rolling_rotation_keeps_one_account() {
 }
 
 /// A commit command for a fresh magic-link record, stored first.
+/// A previous storage key equal to the current one is dropped. Kept, a
+/// sign-up would put the same email row twice in one transaction, which
+/// DynamoDB refuses for every new user.
+#[tokio::test]
+#[ignore = "needs DynamoDB Local: mise run dynamodb-local-test"]
+async fn a_previous_key_equal_to_the_current_one_still_signs_up() {
+    let client = client().await;
+    let table = table(&client, "samekey").await;
+    let store = DynamoDbAuthStore::new(client, table, StorageHmacKey::new([0x31; 32]))
+        .with_previous_storage_hmac_key(StorageHmacKey::new([0x31; 32]));
+    let keys = keys();
+    let mut rng = OsRng;
+
+    let signup = login(&store, &keys, &mut rng, "same-key@example.test").await;
+    let again = login(&store, &keys, &mut rng, "same-key@example.test").await;
+    assert!(signup.authentication().user_created());
+    assert_eq!(
+        again.authentication().user_id(),
+        signup.authentication().user_id()
+    );
+}
+
 async fn seeded_commit(
     store: &DynamoDbAuthStore,
     rng: &mut OsRng,

@@ -37,3 +37,30 @@ fn storage_hmac_key_debug_is_redacted() {
     assert_eq!(debug, "StorageHmacKey(..)");
     assert!(!debug.contains("2a"));
 }
+
+#[test]
+fn a_previous_key_equal_to_the_current_one_is_dropped() {
+    let same = StorageHmacKeys::new(
+        StorageHmacKey::new([0x11; STORAGE_HMAC_KEY_BYTES]),
+        Some(StorageHmacKey::new([0x11; STORAGE_HMAC_KEY_BYTES])),
+    );
+    assert!(same.previous().is_none());
+    assert_eq!(same.all().count(), 1);
+
+    let rotated = StorageHmacKeys::new(
+        StorageHmacKey::new([0x11; STORAGE_HMAC_KEY_BYTES]),
+        Some(StorageHmacKey::new([0x22; STORAGE_HMAC_KEY_BYTES])),
+    );
+    assert!(rotated.previous().is_some());
+    assert_eq!(rotated.all().count(), 2);
+}
+
+#[cfg(feature = "aws")]
+#[test]
+fn setting_a_previous_key_equal_to_the_current_one_is_a_no_op() {
+    let mut keys = StorageHmacKeys::new(StorageHmacKey::new([0x11; STORAGE_HMAC_KEY_BYTES]), None);
+    keys.set_previous(StorageHmacKey::new([0x11; STORAGE_HMAC_KEY_BYTES]));
+    assert!(keys.previous().is_none());
+    keys.set_previous(StorageHmacKey::new([0x22; STORAGE_HMAC_KEY_BYTES]));
+    assert!(keys.previous().is_some());
+}

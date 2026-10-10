@@ -122,10 +122,17 @@ fn authentication_cancellation_mapping_uses_stable_action_positions_and_preceden
 
 #[test]
 fn authentication_cancellation_mapping_rejects_impossible_and_ambiguous_layouts() {
-    assert_eq!(
-        classify_authentication_cancellation_codes(&[Some("None"); 3]),
-        CommitMagicLinkAuthenticationError::Internal
-    );
+    for count in [0, 3, 4, 7] {
+        let mut codes = vec![Some("None"); count];
+        if let Some(last) = codes.last_mut() {
+            *last = Some("ConditionalCheckFailed");
+        }
+        assert_eq!(
+            classify_authentication_cancellation_codes(&codes),
+            CommitMagicLinkAuthenticationError::Internal,
+            "{count} reasons cannot come from the authentication layout"
+        );
+    }
     assert_eq!(
         classify_authentication_cancellation_codes(&[Some("None"); 5]),
         CommitMagicLinkAuthenticationError::Internal

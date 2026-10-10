@@ -151,12 +151,14 @@ pub(crate) fn map_authentication_transact_write_items_error<R>(
 /// Classify cancellation reasons by position. The transaction layout is
 /// `[challenge, session, session index, user actions..]`
 /// (`build_authentication_transaction`): DynamoDB returns one reason per
-/// action, in order. Fewer than four reasons cannot come from that layout.
+/// action, in order. The user actions are two or three (existing user: email
+/// and profile checks; new user: profile plus one email row per storage key),
+/// so any count outside five to six cannot come from that layout.
 #[cfg(feature = "aws")]
 fn classify_authentication_cancellation_codes(
     codes: &[Option<&str>],
 ) -> CommitMagicLinkAuthenticationError {
-    if codes.len() < 4 {
+    if !(5..=6).contains(&codes.len()) {
         return CommitMagicLinkAuthenticationError::Internal;
     }
     let mut challenge_conflict = false;

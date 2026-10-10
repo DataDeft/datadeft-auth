@@ -2,6 +2,8 @@
 
 use core::fmt;
 
+use subtle::ConstantTimeEq;
+
 use datadeft_magic_link_service::{LookupHmacKey, domain_separated_lookup_hmac};
 
 use crate::error::AwsAdapterError;
@@ -19,6 +21,9 @@ pub const EMAIL_LOOKUP_HMAC_PREFIX: &str = "emh";
 pub const RATE_LOOKUP_HMAC_PREFIX: &str = "rlh";
 
 const STORAGE_HMAC_DOMAIN: &[u8] = b"magic-link-aws-storage-v1";
+// Never a storage prefix, so the probe value is never written anywhere.
+const KEY_PROBE_PREFIX: &str = "key-probe";
+const KEY_PROBE_VALUE: &str = "storage-key-identity";
 
 /// Loaded storage lookup HMAC key/pepper, bound to the adapter storage domain.
 ///
@@ -44,6 +49,18 @@ impl StorageHmacKey {
         domain_separated_lookup_hmac(&self.0, STORAGE_HMAC_DOMAIN, prefix, value)
             .map_err(|_| AwsAdapterError::Internal)
     }
+
+    /// Whether both keys hold the same bytes, compared in constant time
+    /// through one fixed probe HMAC so the raw key never leaves its type.
+    fn same_key_as(&self, other: &Self) -> bool {
+        match (
+            self.hmac(KEY_PROBE_PREFIX, KEY_PROBE_VALUE),
+            other.hmac(KEY_PROBE_PREFIX, KEY_PROBE_VALUE),
+        ) {
+            (Ok(left), Ok(right)) => left.as_bytes().ct_eq(right.as_bytes()).into(),
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Debug for StorageHmacKey {
@@ -57,6 +74,10 @@ impl fmt::Debug for StorageHmacKey {
 /// Writes always use [`Self::current`]. Reads that miss under the current key
 /// retry under [`Self::previous`], so records written before a rotation stay
 /// reachable. Both stores share this type so their fallback cannot drift.
+///
+/// A previous key equal to the current one is dropped: it adds nothing, and
+/// a create would otherwise put the same email row twice in one transaction,
+/// which DynamoDB rejects.
 pub(crate) struct StorageHmacKeys {
     current: StorageHmacKey,
     previous: Option<StorageHmacKey>,
@@ -64,6 +85,7 @@ pub(crate) struct StorageHmacKeys {
 
 impl StorageHmacKeys {
     pub(crate) fn new(current: StorageHmacKey, previous: Option<StorageHmacKey>) -> Self {
+        let previous = previous.filter(|previous| !previous.same_key_as(&current));
         Self { current, previous }
     }
 
@@ -84,7 +106,7 @@ impl StorageHmacKeys {
 
     #[cfg(feature = "aws")]
     pub(crate) fn set_previous(&mut self, previous: StorageHmacKey) {
-        self.previous = Some(previous);
+        self.previous = Some(previous).filter(|previous| !previous.same_key_as(&self.current));
     }
 }
 
