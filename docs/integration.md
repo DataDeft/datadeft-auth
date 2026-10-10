@@ -77,6 +77,14 @@ no data migration is provided, and every existing session ends.
   between EU countries and stay exact elsewhere. Drop edge rewrites of the
   country header. `ValidatedSession::country()` returns the pinned value,
   which is `EU` for a session in the group.
+- **PoW statuses and the per-solve budget:** a rejected solution and a
+  missing or invalid proof answer `401` with `WWW-Authenticate: DD-PoW`
+  (`PowFlowError` and `ProofRejection` implement `IntoResponse`); faults and
+  an exhausted budget answer one constant `503`. The library no longer sends
+  `403` or `500` here. Replace hand-written PoW budgets and cookie parsing
+  with `admit_proof` and a `ProofBudget` over
+  `RateLimiter::check_lifetime_limit`, which every `RateLimiter` must now
+  implement.
 - **Strict cookie reading:** `select_cookie` (in
   `datadeft_auth_token_core::cookie_header`, re-exported by both Axum crates)
   selects one cookie from the `Cookie` fields: exactly one occurrence, a
@@ -242,6 +250,44 @@ page. See [../packages/dd-protect-client/README.md](../packages/dd-protect-clien
 
 The challenge lifetime is 2 minutes. The proof-cookie lifetime is 3 hours by
 default, configurable, and stateless.
+
+### Per-solve budget
+
+A proof cookie is stateless, so on its own one solve admits unlimited
+requests for 3 hours. Bound it: gate every protected route with
+`admit_proof`, which verifies the `dd_pow` cookie and spends one unit of its
+solve's budget (`ProofBudgetPolicy::new(5)` buys 5 admissions per solve).
+The budget is:
+
+- **shared:** one counter per solve (`tid`) for the whole deployment, never
+  per node;
+- **over the proof's lifetime:** the first spend fixes the counter's expiry,
+  past every cookie that solve can produce, and it never refills before then;
+- **fail closed:** a store failure refuses the request.
+
+`spec/tla/PowBudget.tla` checks these three rules. Implement `ProofBudget` over
+the shared limiter's lifetime counter; the example does it in a few lines:
+
+```rust
+impl ProofBudget for MyBudget {
+    async fn spend(&self, tid: &str, per_solve: u32, expires_at_unix: u64, now_unix: u64)
+        -> Result<ProofBudgetDecision, ProofBudgetUnavailable>
+    {
+        let key = RateLimitKey::parse(&format!("pow:budget:{tid}"))
+            .map_err(|_| ProofBudgetUnavailable)?;
+        match self.store.check_lifetime_limit(&key, per_solve, expires_at_unix, now_unix).await {
+            Ok(RateLimitDecision::Allowed) => Ok(ProofBudgetDecision::Spent),
+            Ok(RateLimitDecision::Denied) => Ok(ProofBudgetDecision::Exhausted),
+            Err(_) => Err(ProofBudgetUnavailable),
+        }
+    }
+}
+```
+
+On `Err`, return the `ProofRejection` itself: a missing, invalid or expired
+proof answers `401` with `WWW-Authenticate: DD-PoW` (the protect client then
+solves and retries once); an exhausted budget or a store failure answers the
+constant `503`. Log `ProofRejection::reason()` internally; never send it.
 
 Load both PoW keys from the auth secret document (`docs/security.md`, "Auth
 secret document"), not from app-specific fields:

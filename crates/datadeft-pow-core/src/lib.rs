@@ -15,6 +15,11 @@
 //! that upper layers set as `dd_pow`. The purpose separation and lifetime
 //! policy live on [`PowProofCookie`].
 //!
+//! # Per-solve budget
+//!
+//! [`ProofBudget`] is the shared counter that limits how many admissions one
+//! solve buys over its lifetime; `datadeft-pow-axum` spends it per request.
+//!
 //! # Clock skew
 //!
 //! Verification tolerates future timestamps by 60 seconds by default. Use
@@ -74,6 +79,7 @@
 //! verifying clock is behind the minting clock; across instances it is only
 //! as accurate as their clock synchronization.
 
+mod budget;
 mod challenge;
 mod clock;
 mod error;
@@ -81,6 +87,7 @@ mod ops;
 mod proof_cookie;
 mod secret;
 
+pub use budget::{ProofBudget, ProofBudgetDecision, ProofBudgetUnavailable};
 pub use challenge::{Challenge, Solution, Verified};
 pub use clock::UnixMillis;
 pub use error::PowError;

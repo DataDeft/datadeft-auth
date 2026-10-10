@@ -141,14 +141,25 @@ pub struct PowSolutionRequest {
     pub tag: String,
 }
 
-/// Failure of the admission flow, mapped to HTTP by the caller.
+/// Failure of the admission flow. [`IntoResponse`](axum::response::IntoResponse)
+/// renders the public contract: `Rejected` is `401` +
+/// `WWW-Authenticate: DD-PoW` (solve a new challenge), `Internal` the
+/// constant `503`.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum PowFlowError {
-    /// The solution failed any verification check. Answer with one generic
-    /// status (for example `403 Forbidden`).
+    /// The solution failed any verification check.
     Rejected,
-    /// Minting or encoding the proof cookie faulted server-side. Answer `500`.
+    /// Minting or encoding faulted server-side.
     Internal,
+}
+
+impl axum::response::IntoResponse for PowFlowError {
+    fn into_response(self) -> axum::response::Response {
+        match self {
+            Self::Rejected => crate::response::pow_required_response(),
+            Self::Internal => crate::response::unavailable_response(),
+        }
+    }
 }
 
 impl fmt::Display for PowFlowError {
