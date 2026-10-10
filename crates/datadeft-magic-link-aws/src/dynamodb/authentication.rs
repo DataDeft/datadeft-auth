@@ -173,8 +173,7 @@ impl DynamoDbAuthStore {
                 // row. A node still on the old key reads only that position,
                 // so without it a later login there would create a second
                 // account for the same email (spec/tla/KeyRotation.tla).
-                let keys = &self.storage_hmac_keys;
-                for key in core::iter::once(keys.current()).chain(keys.previous()) {
+                for key in self.storage_hmac_keys.all() {
                     let email_put = Put::builder()
                         .table_name(&self.table_name)
                         .set_item(Some(Self::email_lookup_item(
@@ -220,27 +219,27 @@ impl DynamoDbAuthStore {
             .condition_expression("attribute_not_exists(pk)")
             .build()
             .map_err(|_| AwsAdapterError::Internal)?;
+        // Layout: [challenge, session, session index, user actions..]. The
+        // user branch has a variable number of actions (two condition checks,
+        // or the profile and one email row per storage key), so it goes last:
+        // every other action then has a fixed index, which is how cancellation
+        // reasons are attributed (`classify_authentication_cancellation_codes`).
+        let user_actions = actions.split_off(1);
         actions.push(TransactWriteItem::builder().put(session_put).build());
         actions.push(TransactWriteItem::builder().put(index_put).build());
+        actions.extend(user_actions);
         Ok(actions)
     }
 
-    /// The transaction request and its action count. Cancellation reasons come
-    /// back one per action, and the count tells the error classifier where the
-    /// user actions end: it varies with the branch and, for a create, with
-    /// whether a previous storage key is configured.
     pub(super) fn authentication_transaction_request(
         &self,
         command: &CommitMagicLinkAuthentication,
-    ) -> Result<(TransactWriteItemsFluentBuilder, usize), AwsAdapterError> {
-        let actions = self.build_authentication_transaction(command)?;
-        let action_count = actions.len();
-        let request = self
+    ) -> Result<TransactWriteItemsFluentBuilder, AwsAdapterError> {
+        Ok(self
             .client
             .transact_write_items()
-            .set_transact_items(Some(actions))
-            .client_request_token(command.attempt_id.as_str());
-        Ok((request, action_count))
+            .set_transact_items(Some(self.build_authentication_transaction(command)?))
+            .client_request_token(command.attempt_id.as_str()))
     }
 }
 
@@ -307,13 +306,11 @@ impl MagicLinkAuthenticationRepository for DynamoDbAuthStore {
         &self,
         command: &CommitMagicLinkAuthentication,
     ) -> Result<(), CommitMagicLinkAuthenticationError> {
-        let (request, action_count) = self
-            .authentication_transaction_request(command)
-            .map_err(|_| CommitMagicLinkAuthenticationError::Internal)?;
-        request
+        self.authentication_transaction_request(command)
+            .map_err(|_| CommitMagicLinkAuthenticationError::Internal)?
             .send()
             .await
-            .map_err(|error| map_authentication_transact_write_items_error(error, action_count))?;
+            .map_err(map_authentication_transact_write_items_error)?;
         Ok(())
     }
 }

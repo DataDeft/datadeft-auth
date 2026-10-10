@@ -168,7 +168,7 @@ fn session_read_builder_is_strongly_consistent() {
 fn authentication_request_uses_attempt_id_as_client_request_token() {
     let store = store();
     let command = command(MagicLinkAuthenticationUser::Create { user_id: user_id() });
-    let (request, _) = store
+    let request = store
         .authentication_transaction_request(&command)
         .expect("request");
     assert_eq!(
@@ -194,10 +194,10 @@ fn existing_authentication_transaction_has_exact_order_and_bound_conditions() {
         .expect("transaction");
     assert_eq!(actions.len(), 5);
     assert!(actions[0].update().is_some());
-    assert!(actions[1].condition_check().is_some());
-    assert!(actions[2].condition_check().is_some());
-    assert!(actions[3].put().is_some());
-    assert!(actions[4].put().is_some());
+    assert!(actions[1].put().is_some());
+    assert!(actions[2].put().is_some());
+    assert!(actions[3].condition_check().is_some());
+    assert!(actions[4].condition_check().is_some());
 
     let challenge = actions[0].update().expect("challenge update");
     let condition = challenge.condition_expression().expect("condition");
@@ -225,13 +225,13 @@ fn existing_authentication_transaction_has_exact_order_and_bound_conditions() {
             .is_ok_and(|value| value == VERIFIER_HASH || value.starts_with("mlv1."))
     }));
 
-    let email_condition = actions[1]
+    let email_condition = actions[3]
         .condition_check()
         .expect("email check")
         .condition_expression();
     assert!(email_condition.contains("entity_type = :email_lookup"));
     assert!(email_condition.contains("user_id = :expected_user"));
-    let profile_condition = actions[2]
+    let profile_condition = actions[4]
         .condition_check()
         .expect("profile check")
         .condition_expression();
@@ -255,12 +255,12 @@ fn create_authentication_transaction_derives_all_items_and_validity_expiry() {
     assert!(actions[3].put().is_some());
     assert!(actions[4].put().is_some());
 
-    let profile = actions[1].put().expect("profile put").item();
+    let profile = actions[3].put().expect("profile put").item();
     assert_eq!(profile.get("disabled"), Some(&av_bool(false)));
     assert_eq!(profile.get("terms_version"), Some(&av_s("terms-v1")));
     assert_eq!(profile.get("privacy_version"), Some(&av_s("privacy-v1")));
     assert_eq!(profile.get("consented_at_unix"), Some(&av_n(900)));
-    let session = actions[3].put().expect("session put").item();
+    let session = actions[1].put().expect("session put").item();
     assert_eq!(
         session.get("created_at_unix"),
         Some(&av_n(command.now_unix))
@@ -271,7 +271,7 @@ fn create_authentication_transaction_derives_all_items_and_validity_expiry() {
     );
     // Kept for the audit trail: no TTL deletion.
     assert_eq!(session.get("ttl"), None);
-    let index = actions[4].put().expect("index put").item();
+    let index = actions[2].put().expect("index put").item();
     assert_eq!(
         index.get("expires_at_unix"),
         Some(&av_n(command.session_expires_at_unix))
@@ -307,31 +307,29 @@ fn cleanup_grace_defaults_and_is_configurable() {
     assert_eq!(tuned.cleanup_grace_secs, 0);
 }
 
-/// The action count the error classifier receives matches the transaction:
-/// five actions, or six for a create while a previous storage key is set.
+/// The layout the error classifier relies on: challenge, session, session
+/// index, then the user actions, whose number varies with the branch and with
+/// a previous storage key (one email row per key on create).
 #[test]
-fn authentication_request_reports_its_action_count() {
+fn authentication_transaction_puts_the_variable_user_actions_last() {
     let create = command(MagicLinkAuthenticationUser::Create { user_id: user_id() });
     let existing = command(MagicLinkAuthenticationUser::Existing { user_id: user_id() });
     let plain = store();
     let rotating = store().with_previous_storage_hmac_key(StorageHmacKey::new([0x32; 32]));
-    for (store, command, expected) in [
-        (&plain, &create, 5),
-        (&plain, &existing, 5),
-        (&rotating, &create, 6),
-        (&rotating, &existing, 5),
+    for (store, command, user_actions) in [
+        (&plain, &create, 2),
+        (&plain, &existing, 2),
+        (&rotating, &create, 3),
+        (&rotating, &existing, 2),
     ] {
-        let (request, count) = store
-            .authentication_transaction_request(command)
-            .expect("request");
-        assert_eq!(count, expected);
-        assert_eq!(
-            request
-                .as_input()
-                .get_transact_items()
-                .as_ref()
-                .map(Vec::len),
-            Some(expected)
-        );
+        let actions = store
+            .build_authentication_transaction(command)
+            .expect("transaction");
+        assert_eq!(actions.len(), 3 + user_actions);
+        assert!(actions[0].update().is_some(), "challenge first");
+        let session = actions[1].put().expect("session put").item();
+        assert_eq!(session.get("entity_type"), Some(&av_s("session")));
+        let index = actions[2].put().expect("index put").item();
+        assert_eq!(index.get("entity_type"), Some(&av_s("user_session_index")));
     }
 }

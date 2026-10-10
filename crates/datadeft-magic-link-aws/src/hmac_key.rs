@@ -75,6 +75,13 @@ impl StorageHmacKeys {
         self.previous.as_ref()
     }
 
+    /// Every key a record may live under: current first, then previous. A
+    /// create claims its email row under all of them, so a node still on the
+    /// previous key finds the account during a rotation.
+    pub(crate) fn all(&self) -> impl Iterator<Item = &StorageHmacKey> {
+        core::iter::once(&self.current).chain(self.previous.as_ref())
+    }
+
     #[cfg(feature = "aws")]
     pub(crate) fn set_previous(&mut self, previous: StorageHmacKey) {
         self.previous = Some(previous);
