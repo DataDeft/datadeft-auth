@@ -206,9 +206,9 @@ docs.
 
 ```toml
 [dependencies]
-datadeft-pow-core = "0.4"
+datadeft-pow-core = "0.5"
 # Optional HTTP integration:
-datadeft-pow-axum = "0.4"
+datadeft-pow-axum = "0.5"
 ```
 
 ```sh
@@ -231,8 +231,20 @@ mise run check
 mise run test
 mise run clippy
 mise run audit
-mise run verify   # fmt + clippy + test + docs + audit
+mise run verify
 ```
+
+`verify` runs fmt-check, clippy, test, docs, audit, token-core-guard,
+ts-verify, spec, spec-mutants, release-check, and workflow-check.
+
+Further tasks:
+
+- `spec` and `spec-mutants`: check the TLA+ models and prove each invariant
+  can fail. Both run in `verify`.
+- `fuzz`: fuzz every untrusted-input parser for 60 s each. Needs nightly Rust
+  and `cargo install cargo-fuzz`. Not in `verify`.
+- `dynamodb-local-test`: integration tests against DynamoDB Local. Needs
+  Docker. Not in `verify`.
 
 See [`docs/operating.md`](docs/operating.md) for the full operating model.
 

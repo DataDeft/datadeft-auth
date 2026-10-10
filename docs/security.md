@@ -498,7 +498,7 @@ Each `SecretRef` must resolve to one JSON document.
 
 ```json
 {
-  "kid": "example-2026-07",
+  "kid": "ex-2026-07",
   "mint_until_unix": 1790000000,
   "verify_until_unix": 1792600000,
   "magic_link_lookup_hmac_b64": "<32 bytes, standard base64>",
@@ -516,6 +516,8 @@ Document rules:
 - `kid` must pass `KeyId::parse` and be at most 12 bytes: every keyring
   refuses a `kid` that leaves no room for its purpose's largest cookie body,
   and the PoW proof cookie allows 12 (the session cookie 38).
+- The 12-byte limit applies to the previous document too. It is enforced when
+  `pow_proof_keyring` is built.
 - Every field is required. Fields the library does not know are ignored, so an
   application may keep its own fields in the same document; give them names
   that cannot collide with future library fields (for example an `app_`
@@ -561,7 +563,7 @@ Recommended cadence:
 | Branca session token keys | 90 days | 31 days |
 | Magic-link lookup HMAC key | 90 days | Link TTL plus 24 hours |
 | AWS storage HMAC key | 90 days | 31 days, and until `rekey_email_lookups` has run |
-| PoW signing keys | 90 days | Challenge TTL plus 24 hours |
+| PoW signing keys | 90 days | Needs challenge TTL plus 24 hours; in practice as long as the previous document is loaded (see below) |
 | Rate-limit HMAC keys | 90 days | Longest window plus 24 hours |
 
 Rules:
@@ -575,6 +577,13 @@ Rules:
 - Keep previous session keys for at least 31 days.
 - Reissue cookies with active keys after normal authorization checks.
 - Retire magic-link and PoW keys sooner than session keys.
+- All keys share one document. The previous PoW keys (challenge secret and
+  proof-cookie root) stay verifiable as long as the previous document is
+  loaded, that is until its `verify_until_unix` (at least 31 days for session
+  keys). That is longer than the PoW keys need. If a PoW key leaks, write a new
+  version and drop `previous` sooner; this also ends the previous session keys,
+  so users of those cookies log in again. Run `rekey_email_lookups` first if
+  the storage key changed.
 - Fail closed on unknown, missing, retired, disabled, or malformed key IDs.
 
 ### Rotating the HMAC keys

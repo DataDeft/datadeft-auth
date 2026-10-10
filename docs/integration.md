@@ -23,16 +23,15 @@ Do not invent an approach. Follow the example and the trait contracts.
 
 ## Install registry versions
 
-The first registry release is being prepared; use these dependencies after it
-has been approved and published. Rust 1.88 or newer is required.
+Use these dependencies. Rust 1.88 or newer is required.
 
 ```toml
 [dependencies]
-datadeft-pow-core           = "0.2"
-datadeft-magic-link-service = "0.2"
-datadeft-magic-link-axum    = "0.2"
-datadeft-magic-link-aws     = { version = "0.2", features = ["aws"] }
-# Add datadeft-pow-axum = "0.2" for the PoW HTTP helpers.
+datadeft-pow-core           = "0.5"
+datadeft-magic-link-service = "0.5"
+datadeft-magic-link-axum    = "0.5"
+datadeft-magic-link-aws     = { version = "0.5", features = ["aws"] }
+# Add datadeft-pow-axum = "0.5" for the PoW HTTP helpers.
 ```
 
 ```sh
@@ -45,14 +44,39 @@ lockfiles. No git credentials or vendored TypeScript are needed.
 
 ### Upgrading from 0.4
 
-0.5.0 is a breaking release. The library is pre-1.0 and has no production
-deployments, so upgrades start from a fresh table and secret document: no data
-migration is provided.
+0.5.0 is a breaking release. No stored data shape changed. The library is
+pre-1.0 and has no production deployments, so the policy is to start from a
+fresh table and secret document: no data migration is provided.
 
 - **Auth secret document:** add `pow_challenge_secret_b64` and
   `pow_proof_cookie_root_b64` (32 random bytes each, independent of the other
   fields), and keep `kid` at 12 bytes or fewer. Remove app-owned PoW key
   fields and load the keys from `LoadedAuthSecrets` instead.
+- **Previous secret document (`AWSPREVIOUS`):** it must be 0.5-shaped too.
+  Every field is required and its `kid` is checked. Deploy the first 0.5
+  document with `AuthSecretsConfig::previous = None`, or rewrite the previous
+  version with both PoW fields and a `kid` of 12 bytes or fewer.
+- **One value per field:** the auth secret document rejects the same value
+  reused in two secret fields.
+- **`kid` length:** `resolve_auth_secrets` fails for a `kid` over 38 bytes,
+  and `pow_proof_keyring` fails for one over 12 bytes.
+- **`LoadedAuthSecrets`:** it can no longer be built with a struct literal.
+  Use `LoadedAuthSecrets::from_json`.
+- **`KeyPurpose`:** every impl must declare `LARGEST_BODY_BYTES`, the largest
+  body the purpose mints. Use 0 only for test purposes.
+
+Behaviour changes:
+
+- `enable_user` revokes every live session first. Each one writes a
+  `RevokeSession` audit event.
+- `revoke_all_sessions` also revokes sessions that expired within the last
+  60 s (the clock-skew tolerance).
+- `domain_separated_lookup_hmac` rejects NUL in `domain` or `prefix`.
+- Sign-up during a storage-key rotation writes the email lookup row under both
+  the current and the previous key.
+- A previous storage key equal to the current one is ignored.
+- `pow_proof_keyring` refuses the session and confirm cookie purposes, so the
+  PoW root never keys those cookies.
 
 ### Upgrading from the git-tag crates
 
@@ -184,8 +208,10 @@ let pow_proof_keyring = secrets.pow_proof_keyring::<PowProofCookie>()?; // at st
 ```
 
 During a rotation, also verify challenges with
-`secrets.previous_pow_challenge_secret` when it is set: challenges minted in
-the two minutes before the rotation carry the previous secret.
+`secrets.previous_pow_challenge_secret` when it is set: challenges minted
+within the challenge max age (120 s by default,
+`DEFAULT_POW_CHALLENGE_MAX_AGE_SECS`) before the rotation carry the previous
+secret.
 
 ## Runtime note
 

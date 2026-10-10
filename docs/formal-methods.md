@@ -33,13 +33,13 @@ versions when each MVP starts.
 | SES-INV-006..008 | Refresh keeps `iat`, never passes the absolute lifetime, and only follows a same-request validation. | `Session.tla` | `model_boundary_tests`, `refresh_tests` |
 | SES-INV-009 | No session that existed at a re-enable validates afterwards, whatever the clocks say. | `Session.tla` (`SessionAdmin.cfg`) | `pre_disable_session_from_a_clock_ahead_node_stays_dead_after_enable` |
 | ROT-INV-001/002 | One email never has two accounts during a rolling storage-key rotation. | `KeyRotation.tla` | `rolling_rotation_*`, `model_rotation_tests` |
-| POW-INV-004 | One PoW solve buys at most its budget of admissions across all nodes and its lifetime (planned, 0.5.0). | `PowBudget.tla` | Not implemented yet |
+| POW-INV-004 | One PoW solve buys at most its budget of admissions across all nodes and its lifetime (planned). | `PowBudget.tla` | Not implemented yet |
 | ERASE-INV-001..005 | Erasure leaves no lookup to the user, no address in the profile, no valid session, no account from an older link; re-signup is a new user (planned, low priority). | `Erasure.tla` | Not implemented yet |
 | POW-INV-001 | Accepted proof met the production floor. | `Pow.tla` | PoW vectors, tamper tests; `pow_security` |
 | POW-INV-002 | A policy change after mint never lowers a challenge's difficulty. | `Pow.tla` | `pow_security` |
 | POW-INV-003 | An opt-in single-use proof cannot be replayed. | Not modeled: replay within the proof TTL is allowed by design; callers cap it with `Verified::tid`. | `pow_security` (tid stability) |
 | LIVE-001 | The happy path always reaches a session, including through an ambiguous commit and its retry. | `Liveness.tla` | `model_flow_tests` |
-| BOUND-INV-001 | Parsers reject over-cap values safely. | Out of scope for TLA+ | Totality property tests; fuzzing and Kani planned |
+| BOUND-INV-001 | Parsers reject over-cap values safely. | Out of scope for TLA+ | Totality property tests; cargo-fuzz targets in `fuzz/` (`mise run fuzz`); Kani planned |
 
 `mise run spec` checks every model. `mise run spec-mutants` proves each
 invariant can fail: it breaks the model the way a plausible code bug would and
@@ -48,15 +48,23 @@ requires the checker to report that exact violation. Both run in
 real services and the fake store through random operation sequences and check
 the same invariants, which links the models to the code.
 
+The Session configs check the shipped re-enable cutoff
+(`WatermarkStrict = TRUE`): a session must be created strictly after the
+enable watermark, and `Inv_NoAcceptAtOrBeforeWatermark` checks that sessions
+created at or before it never validate. The `>=` cutoff
+(`WatermarkStrict = FALSE`) is a planned change (CeleraTax #12). `mise run
+spec` checks it as an extra run of `SessionAdmin.cfg` with
+`-c WatermarkStrict=FALSE`. It is safe only because enable revokes first.
+
 Findings the models produced:
 
-- **SES-F1 (fixed in this release).** A login host whose clock runs ahead
+- **SES-F1 (fixed in 0.5.0).** A login host whose clock runs ahead
   stamps `created_at` after a quick re-enable's watermark, and `enable_user`
   did not wait for the disable's revocation, so a pre-disable session could
   validate again. `enable_user` now revokes every live session before it
-  re-enables. Counterexample: run `Session.tla` with
-  `EnableRevokesFirst = FALSE`.
-- **ROT-F1 (fixed in this release).** During a rolling storage-key rotation,
+  re-enables. Counterexample:
+  `tla spec/tla/Session.tla --config spec/tla/SessionAdmin.cfg --allow-deadlock -c EnableRevokesFirst=FALSE`.
+- **ROT-F1 (fixed in 0.5.0).** During a rolling storage-key rotation,
   a user created on a host with the new key had a lookup row only under that
   key; a later login on a host still on the old key created a second
   account. Creation now also writes the previous-key row. Counterexample:
@@ -160,6 +168,9 @@ It should generate these cases:
 The harness compares implementation state with a small reference state machine. Live DynamoDB tests remain necessary.
 
 ## Fuzzing and bounded checks
+
+The cargo-fuzz targets in `fuzz/` cover the untrusted-input parsers. Run them
+with `mise run fuzz`. The Kani and Creusot items are planned.
 
 Start with these targets:
 

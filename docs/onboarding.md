@@ -69,7 +69,7 @@ PoW is optional app admission. Complete the PoW backlog before you require PoW.
 | MVP-013 | PoW | Not ready | Define trusted country source and difficulty policy. |
 | MVP-014 | P1 | Done | Keep session country as an opportunistic lock. |
 | MVP-020 | Assurance | Done | TLA+ safety models gated in CI (`formal-spec` job, `mise run spec`). Fairness-based liveness needs a checker with `WF` support. |
-| MVP-021 | Assurance | Future | Add simulation, fuzzing, and bounded checks. |
+| MVP-021 | Assurance | Future | Add simulation and bounded checks. Fuzz targets exist (`mise run fuzz`). |
 
 ## PoW decisions
 

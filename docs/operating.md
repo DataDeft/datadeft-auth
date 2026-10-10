@@ -27,7 +27,17 @@ mise run audit
 mise run verify
 ```
 
-`verify` runs format, Clippy, tests, docs, and dependency audit.
+`verify` runs fmt-check, clippy, test, docs, audit, token-core-guard,
+ts-verify, spec, spec-mutants, release-check, and workflow-check.
+
+Further tasks:
+
+- `spec` and `spec-mutants`: check the TLA+ models and prove each invariant
+  can fail. Both run in `verify`.
+- `fuzz`: fuzz every untrusted-input parser for 60 s each. Needs nightly Rust
+  and `cargo install cargo-fuzz`. Not in `verify`.
+- `dynamodb-local-test`: integration tests against DynamoDB Local. Needs
+  Docker. Not in `verify`.
 
 Recommended commands behind tasks:
 

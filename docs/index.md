@@ -6,7 +6,7 @@
 - [Architecture](architecture.md): current parts, flows, and limits.
 - [Onboarding](onboarding.md): production checklist and backlog.
 - [Security rules](security.md): required security behavior.
-- [Formal assurance](formal-methods.md): planned model checks and fuzzing.
+- [Formal assurance](formal-methods.md): TLA+ model checks, fuzz targets, and planned bounded checks.
 
 ## Libraries
 

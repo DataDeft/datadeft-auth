@@ -5,7 +5,7 @@ Axum HTTP integration for
 
 ```toml
 [dependencies]
-datadeft-magic-link-axum = "0.4"
+datadeft-magic-link-axum = "0.5"
 ```
 
 Bounded request decoding, scanner-safe landing and confirmation handlers,
