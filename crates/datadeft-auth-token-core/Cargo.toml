@@ -28,6 +28,7 @@ zeroize = { version = "1", default-features = false }
 
 [dev-dependencies]
 hex = "0.4"
+# Property tests for the codecs and cookie framing; OsRng for test keys.
 proptest = "1"
 rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }

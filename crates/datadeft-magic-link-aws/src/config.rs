@@ -13,6 +13,7 @@ use datadeft_magic_link_service::{
     SessionCookie,
 };
 use serde::Deserialize;
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::AwsAdapterError;
@@ -254,6 +255,7 @@ impl fmt::Debug for AwsAuthConfig {
 pub struct SecretKeyBytes(Zeroizing<[u8; KEY_BYTES]>);
 
 impl SecretKeyBytes {
+    /// The raw key bytes, to hand to the consumer's own key type.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8; KEY_BYTES] {
         &self.0
@@ -362,8 +364,15 @@ impl LoadedAuthSecrets {
     /// previous document's root as a verify-only slot. The caller names the
     /// purpose, `secrets.pow_proof_keyring::<PowProofCookie>()`, so this crate
     /// does not depend on the PoW crates. Build it at startup: it fails there
-    /// when the document's `kid` is too long for the proof cookie.
+    /// when the document's `kid` is too long for the proof cookie. Naming a
+    /// purpose this crate already keys from its own root (session or confirm
+    /// cookie) fails, so the PoW root never mints those cookies.
     pub fn pow_proof_keyring<P: KeyPurpose>(&self) -> Result<KeyRing<P>, AwsAdapterError> {
+        if P::HKDF_INFO == SessionCookie::HKDF_INFO
+            || P::HKDF_INFO == MagicLinkConfirmCookie::HKDF_INFO
+        {
+            return Err(AwsAdapterError::Internal);
+        }
         self.pow_proof_roots.keyring()
     }
 
@@ -486,7 +495,34 @@ impl AuthSecretDocument {
         {
             return Err(AwsAdapterError::Internal);
         }
+        parsed.ensure_distinct_keys()?;
         Ok(parsed)
+    }
+
+    /// Every key field holds its own value: one value pasted into two fields
+    /// would reuse a secret across contexts, and three of them are used as
+    /// raw HMAC keys with no derivation step to separate them.
+    fn ensure_distinct_keys(&self) -> Result<(), AwsAdapterError> {
+        let fields = [
+            &self.magic_link_lookup_hmac_b64,
+            &self.aws_storage_hmac_b64,
+            &self.session_cookie_root_b64,
+            &self.magic_link_confirm_cookie_root_b64,
+            &self.pow_challenge_secret_b64,
+            &self.pow_proof_cookie_root_b64,
+        ];
+        let mut keys = Vec::with_capacity(fields.len());
+        for field in fields {
+            keys.push(Zeroizing::new(decode_key(field)?));
+        }
+        for (index, key) in keys.iter().enumerate() {
+            for other in keys.iter().skip(index + 1) {
+                if bool::from(key.as_slice().ct_eq(other.as_slice())) {
+                    return Err(AwsAdapterError::Internal);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -513,7 +549,8 @@ fn previous_if_rotated(
         return Ok(None);
     };
     let decoded = Zeroizing::new(decode_key(key_b64(previous))?);
-    Ok((*decoded != *active).then_some(decoded))
+    let same = bool::from(decoded.ct_eq(active));
+    Ok((!same).then_some(decoded))
 }
 
 fn decode_key(value: &str) -> Result<[u8; KEY_BYTES], AwsAdapterError> {

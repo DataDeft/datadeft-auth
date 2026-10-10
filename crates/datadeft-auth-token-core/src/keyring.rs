@@ -31,7 +31,7 @@
 //!     const HKDF_INFO: &'static [u8] = b"doc/a-v1";
 //!     const TOKEN_TYPE: &'static str = "a-v1";
 //!     const MAX_BODY_BYTES: usize = 128;
-//!     const LARGEST_BODY_BYTES: usize = 0;
+//!     const LARGEST_BODY_BYTES: usize = 64;
 //!     const MAX_ABSOLUTE_AGE_SECS: u64 = 60;
 //! }
 //!
@@ -40,7 +40,7 @@
 //!     const HKDF_INFO: &'static [u8] = b"doc/b-v1";
 //!     const TOKEN_TYPE: &'static str = "b-v1";
 //!     const MAX_BODY_BYTES: usize = 128;
-//!     const LARGEST_BODY_BYTES: usize = 0;
+//!     const LARGEST_BODY_BYTES: usize = 64;
 //!     const MAX_ABSOLUTE_AGE_SECS: u64 = 60;
 //! }
 //!

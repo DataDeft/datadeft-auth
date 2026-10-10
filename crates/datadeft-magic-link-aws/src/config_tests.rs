@@ -276,3 +276,52 @@ fn secret_key_bytes_debug_is_redacted() {
     let debug = format!("{:?}", loaded.pow_challenge_secret);
     assert_eq!(debug, "SecretKeyBytes(..)");
 }
+
+#[test]
+fn one_value_in_two_key_fields_is_refused() {
+    let fields = [
+        "magic_link_lookup_hmac_b64",
+        "aws_storage_hmac_b64",
+        "session_cookie_root_b64",
+        "magic_link_confirm_cookie_root_b64",
+        "pow_challenge_secret_b64",
+        "pow_proof_cookie_root_b64",
+    ];
+    for (index, field) in fields.iter().enumerate() {
+        for other in fields.iter().skip(index + 1) {
+            let mut document: serde_json::Value =
+                serde_json::from_str(&secret_json("active", 0x10, 1_000, 4_000_000)).expect("json");
+            document[*other] = document[*field].clone();
+            let json = document.to_string();
+            assert_eq!(
+                LoadedAuthSecrets::from_json(&json, None).unwrap_err(),
+                AwsAdapterError::Internal,
+                "{field} = {other} must be refused"
+            );
+            let active = secret_json("active", 0x30, 1_000, 4_000_000);
+            assert_eq!(
+                LoadedAuthSecrets::from_json(&active, Some(&json)).unwrap_err(),
+                AwsAdapterError::Internal,
+                "{field} = {other} in the previous document must be refused"
+            );
+        }
+    }
+}
+
+#[test]
+fn pow_proof_keyring_refuses_the_cookie_purposes_this_crate_keys() {
+    let loaded = LoadedAuthSecrets::from_json(&secret_json("active", 0x10, 1_000, 4_000_000), None)
+        .expect("loaded");
+    assert_eq!(
+        loaded
+            .pow_proof_keyring::<datadeft_magic_link_service::SessionCookie>()
+            .unwrap_err(),
+        AwsAdapterError::Internal
+    );
+    assert_eq!(
+        loaded
+            .pow_proof_keyring::<datadeft_magic_link_service::MagicLinkConfirmCookie>()
+            .unwrap_err(),
+        AwsAdapterError::Internal
+    );
+}

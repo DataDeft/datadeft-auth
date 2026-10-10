@@ -138,3 +138,32 @@ fn random_32() -> AppResult<[u8; 32]> {
         .map_err(|_| SetupError("operating-system randomness unavailable"))?;
     Ok(bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn secrets_with_kid(kid: &str) -> LoadedAuthSecrets {
+        let mut document: serde_json::Value =
+            serde_json::from_str(&development_secret_document(1_000).expect("document"))
+                .expect("json");
+        document["kid"] = serde_json::Value::from(kid);
+        LoadedAuthSecrets::from_json(&document.to_string(), None).expect("loaded")
+    }
+
+    /// Pins the aws crate's documented 12-byte `kid` limit against the real
+    /// proof-cookie purpose; the aws crate itself only tests a mirror of it.
+    #[test]
+    fn the_real_pow_proof_cookie_takes_a_kid_of_at_most_twelve_bytes() {
+        assert!(
+            secrets_with_kid("abcdefghijkl")
+                .pow_proof_keyring::<PowProofCookie>()
+                .is_ok()
+        );
+        assert!(
+            secrets_with_kid("abcdefghijklm")
+                .pow_proof_keyring::<PowProofCookie>()
+                .is_err()
+        );
+    }
+}
