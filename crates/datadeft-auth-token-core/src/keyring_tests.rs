@@ -10,6 +10,7 @@ impl KeyPurpose for TestCookieA {
     const HKDF_INFO: &'static [u8] = b"auth/test-a-v1";
     const TOKEN_TYPE: &'static str = "test-a-v1";
     const MAX_BODY_BYTES: usize = 128;
+    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
     const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
 }
 
@@ -20,6 +21,7 @@ impl KeyPurpose for TestCookieB {
     const HKDF_INFO: &'static [u8] = b"auth/test-b-v1";
     const TOKEN_TYPE: &'static str = "test-b-v1";
     const MAX_BODY_BYTES: usize = 128;
+    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
     const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
 }
 
@@ -252,7 +254,7 @@ impl KeyPurpose for TightPurpose {
     const TOKEN_TYPE: &'static str = "tght";
     const MAX_BODY_BYTES: usize = 40;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 60;
-    const MIN_BODY_BYTES: usize = 17;
+    const LARGEST_BODY_BYTES: usize = 17;
 }
 
 fn tight_ring(kid: &str) -> Result<KeyRing<TightPurpose>, TokenError> {

@@ -94,15 +94,11 @@ use datadeft_magic_link_core::MagicLinkConfirmCookie;
 const SID: &str = "sid_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 
 fn sid_from_seed(seed: u8) -> SessionId {
-    let hex: String = (0..32u8)
-        .map(|i| {
-            format!(
-                "{:02x}",
-                seed.wrapping_mul(31).wrapping_add(i.wrapping_mul(seed | 1))
-            )
-        })
-        .collect();
-    SessionId::parse(&format!("sid_{hex}")).expect("generated sid")
+    let bytes: [u8; 32] = core::array::from_fn(|i| {
+        seed.wrapping_mul(31)
+            .wrapping_add((i as u8).wrapping_mul(seed | 1))
+    });
+    SessionId::parse(&format!("sid_{}", hex::encode(bytes))).expect("generated sid")
 }
 
 fn reencodes(body: &SessionCookieBody) -> Vec<u8> {
@@ -233,6 +229,7 @@ impl KeyPurpose for MirrorPowProof {
     const HKDF_INFO: &'static [u8] = b"auth/pow-proof-v1";
     const TOKEN_TYPE: &'static str = "pow-proof-v1";
     const MAX_BODY_BYTES: usize = 65;
+    const LARGEST_BODY_BYTES: usize = 34;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 24 * 60 * 60;
 }
 
@@ -325,7 +322,7 @@ fn largest_session_body_matches_the_declared_minimum() {
             .expect("session id");
     let body = encode_session_cookie_body(&id, Some("AT")).expect("body");
     assert_eq!(body.len(), SESSION_BODY_MAX_BYTES);
-    assert_eq!(SessionCookie::MIN_BODY_BYTES, SESSION_BODY_MAX_BYTES);
+    assert_eq!(SessionCookie::LARGEST_BODY_BYTES, SESSION_BODY_MAX_BYTES);
 }
 
 #[test]

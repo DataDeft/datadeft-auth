@@ -31,6 +31,7 @@
 //!     const HKDF_INFO: &'static [u8] = b"doc/a-v1";
 //!     const TOKEN_TYPE: &'static str = "a-v1";
 //!     const MAX_BODY_BYTES: usize = 128;
+//!     const LARGEST_BODY_BYTES: usize = 0;
 //!     const MAX_ABSOLUTE_AGE_SECS: u64 = 60;
 //! }
 //!
@@ -39,6 +40,7 @@
 //!     const HKDF_INFO: &'static [u8] = b"doc/b-v1";
 //!     const TOKEN_TYPE: &'static str = "b-v1";
 //!     const MAX_BODY_BYTES: usize = 128;
+//!     const LARGEST_BODY_BYTES: usize = 0;
 //!     const MAX_ABSOLUTE_AGE_SECS: u64 = 60;
 //! }
 //!
@@ -83,8 +85,8 @@ pub trait KeyPurpose {
     /// Largest body this purpose ever mints. [`KeyRing::new`] refuses a `kid`
     /// that leaves less room than this in the bound payload, so an over-long
     /// `kid` fails when the keyring is built instead of on the first mint.
-    /// Zero (the default) skips the check.
-    const MIN_BODY_BYTES: usize = 0;
+    /// Every purpose declares it; zero disables the check (test purposes).
+    const LARGEST_BODY_BYTES: usize;
 }
 
 /// Loaded root secret material.
@@ -338,14 +340,14 @@ impl<P: KeyPurpose> KeyRing<P> {
     /// maximum absolute lifetime after their final minting instant. The active
     /// slot is identified by its status: there is no separate active-kid
     /// parameter to keep in sync. Every `kid` must leave room for the purpose's
-    /// largest body ([`KeyPurpose::MIN_BODY_BYTES`]).
+    /// largest body ([`KeyPurpose::LARGEST_BODY_BYTES`]).
     pub fn new(keys: Vec<KeySlot<P>>) -> Result<Self, TokenError> {
         if keys.is_empty()
             || has_duplicate_key_ids(&keys)
             || has_incoherent_windows(&keys)
             || keys
                 .iter()
-                .any(|slot| crate::cookie::max_body_bytes::<P>(slot.kid()) < P::MIN_BODY_BYTES)
+                .any(|slot| crate::cookie::max_body_bytes::<P>(slot.kid()) < P::LARGEST_BODY_BYTES)
         {
             return Err(TokenError::KeyringMisconfigured);
         }

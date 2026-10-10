@@ -303,7 +303,7 @@ impl KeyringRoots {
 
     /// The active root mints; the previous one only verifies. Fails when a
     /// `kid` is too long for the purpose's largest body
-    /// (`KeyPurpose::MIN_BODY_BYTES`).
+    /// (`KeyPurpose::LARGEST_BODY_BYTES`).
     fn keyring<P: KeyPurpose>(&self) -> Result<KeyRing<P>, AwsAdapterError> {
         let derive = |material: &RootMaterial| {
             RootSecret::new(*material.root)

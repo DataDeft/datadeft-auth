@@ -16,6 +16,7 @@ impl KeyPurpose for OtherCookie {
     const HKDF_INFO: &'static [u8] = b"auth/test-other-v1";
     const TOKEN_TYPE: &'static str = "test-other-v1";
     const MAX_BODY_BYTES: usize = 128;
+    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
     const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
 }
 

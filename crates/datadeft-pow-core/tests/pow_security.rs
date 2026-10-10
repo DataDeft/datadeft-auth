@@ -237,6 +237,7 @@ impl KeyPurpose for MirrorSession {
     const HKDF_INFO: &'static [u8] = b"auth/session-v1";
     const TOKEN_TYPE: &'static str = "session-v1";
     const MAX_BODY_BYTES: usize = 128;
+    const LARGEST_BODY_BYTES: usize = 73;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
 }
 
@@ -246,6 +247,7 @@ impl KeyPurpose for MirrorConfirm {
     const HKDF_INFO: &'static [u8] = b"auth/magic-link-confirm-v1";
     const TOKEN_TYPE: &'static str = "ml-confirm-v1";
     const MAX_BODY_BYTES: usize = 256;
+    const LARGEST_BODY_BYTES: usize = 133;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 5 * 60;
 }
 

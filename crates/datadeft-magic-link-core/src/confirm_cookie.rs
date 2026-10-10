@@ -35,7 +35,7 @@ impl KeyPurpose for MagicLinkConfirmCookie {
     const HKDF_INFO: &'static [u8] = HKDF_INFO_MAGIC_LINK_CONFIRM_COOKIE_V1;
     const TOKEN_TYPE: &'static str = TOKEN_TYPE_MAGIC_LINK_CONFIRM_COOKIE_V1;
     const MAX_BODY_BYTES: usize = 256;
-    const MIN_BODY_BYTES: usize = CONFIRM_BODY_BYTES;
+    const LARGEST_BODY_BYTES: usize = CONFIRM_BODY_BYTES;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 5 * 60;
 }
 

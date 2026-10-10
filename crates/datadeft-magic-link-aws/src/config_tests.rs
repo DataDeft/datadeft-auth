@@ -188,7 +188,7 @@ impl KeyPurpose for ProofLikePurpose {
     const TOKEN_TYPE: &'static str = "pow-proof-v1";
     const MAX_BODY_BYTES: usize = 65;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 24 * 60 * 60;
-    const MIN_BODY_BYTES: usize = 34;
+    const LARGEST_BODY_BYTES: usize = 34;
 }
 
 #[test]

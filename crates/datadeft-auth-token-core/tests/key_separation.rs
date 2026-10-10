@@ -36,6 +36,7 @@ impl KeyPurpose for PurposeA {
     const HKDF_INFO: &'static [u8] = b"auth/test-a-v1";
     const TOKEN_TYPE: &'static str = "test-a-v1";
     const MAX_BODY_BYTES: usize = 128;
+    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
     const MAX_ABSOLUTE_AGE_SECS: u64 = 3_600;
 }
 
@@ -46,6 +47,7 @@ impl KeyPurpose for SameTypOtherInfo {
     const HKDF_INFO: &'static [u8] = b"auth/test-a-v2";
     const TOKEN_TYPE: &'static str = "test-a-v1";
     const MAX_BODY_BYTES: usize = 128;
+    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
     const MAX_ABSOLUTE_AGE_SECS: u64 = 3_600;
 }
 
@@ -57,6 +59,7 @@ impl KeyPurpose for SameInfoOtherTyp {
     const HKDF_INFO: &'static [u8] = b"auth/test-a-v1";
     const TOKEN_TYPE: &'static str = "test-b-v1";
     const MAX_BODY_BYTES: usize = 128;
+    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
     const MAX_ABSOLUTE_AGE_SECS: u64 = 3_600;
 }
 
@@ -69,6 +72,7 @@ impl KeyPurpose for MirrorSession {
     const HKDF_INFO: &'static [u8] = b"auth/session-v1";
     const TOKEN_TYPE: &'static str = "session-v1";
     const MAX_BODY_BYTES: usize = 128;
+    const LARGEST_BODY_BYTES: usize = 73;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
 }
 
@@ -78,6 +82,7 @@ impl KeyPurpose for MirrorConfirm {
     const HKDF_INFO: &'static [u8] = b"auth/magic-link-confirm-v1";
     const TOKEN_TYPE: &'static str = "ml-confirm-v1";
     const MAX_BODY_BYTES: usize = 256;
+    const LARGEST_BODY_BYTES: usize = 133;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 5 * 60;
 }
 
@@ -87,6 +92,7 @@ impl KeyPurpose for MirrorPowProof {
     const HKDF_INFO: &'static [u8] = b"auth/pow-proof-v1";
     const TOKEN_TYPE: &'static str = "pow-proof-v1";
     const MAX_BODY_BYTES: usize = 65;
+    const LARGEST_BODY_BYTES: usize = 34;
     const MAX_ABSOLUTE_AGE_SECS: u64 = 24 * 60 * 60;
 }
 

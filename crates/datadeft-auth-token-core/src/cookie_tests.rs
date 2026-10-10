@@ -13,6 +13,7 @@ impl KeyPurpose for TestCookie {
     const HKDF_INFO: &'static [u8] = b"auth/test-v1";
     const TOKEN_TYPE: &'static str = "test-v1";
     const MAX_BODY_BYTES: usize = 128;
+    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
     const MAX_ABSOLUTE_AGE_SECS: u64 = 30 * 24 * 60 * 60;
 }
 
