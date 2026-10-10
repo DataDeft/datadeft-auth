@@ -55,6 +55,8 @@ tla spec/tla/MagicLinkRace.tla --allow-deadlock
 tla spec/tla/Session.tla --allow-deadlock
 tla spec/tla/Session.tla --config spec/tla/SessionAdmin.cfg --allow-deadlock
 tla spec/tla/KeyRotation.tla --allow-deadlock
+tla spec/tla/PowBudget.tla --allow-deadlock
+tla spec/tla/Erasure.tla --allow-deadlock
 tla spec/tla/Pow.tla --allow-deadlock
 tla spec/tla/Liveness.tla --check-liveness
 """

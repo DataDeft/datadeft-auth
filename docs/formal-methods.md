@@ -33,6 +33,8 @@ versions when each MVP starts.
 | SES-INV-006..008 | Refresh keeps `iat`, never passes the absolute lifetime, and only follows a same-request validation. | `Session.tla` | `model_boundary_tests`, `refresh_tests` |
 | SES-INV-009 | No session that existed at a re-enable validates afterwards, whatever the clocks say. | `Session.tla` (`SessionAdmin.cfg`) | `pre_disable_session_from_a_clock_ahead_node_stays_dead_after_enable` |
 | ROT-INV-001/002 | One email never has two accounts during a rolling storage-key rotation. | `KeyRotation.tla` | `rolling_rotation_*`, `model_rotation_tests` |
+| POW-INV-004 | One PoW solve buys at most its budget of admissions across all nodes and its lifetime (planned, 0.5.0). | `PowBudget.tla` | Not implemented yet |
+| ERASE-INV-001..005 | Erasure leaves no lookup to the user, no address in the profile, no valid session, no account from an older link; re-signup is a new user (planned, low priority). | `Erasure.tla` | Not implemented yet |
 | POW-INV-001 | Accepted proof met the production floor. | `Pow.tla` | PoW vectors, tamper tests; `pow_security` |
 | POW-INV-002 | A policy change after mint never lowers a challenge's difficulty. | `Pow.tla` | `pow_security` |
 | POW-INV-003 | An opt-in single-use proof cannot be replayed. | Not modeled: replay within the proof TTL is allowed by design; callers cap it with `Verified::tid`. | `pow_security` (tid stability) |

@@ -80,6 +80,17 @@ Landing ==
                     userDisabled, sessionsCreated, rejectedWrongBinding,
                     disabledConfirmAttempted, time >>
 
+\* Redirect landing mode (0.5.0): the landing sets the confirm cookie and
+\* redirects to a static page, whose script reads the flow state (account and
+\* confirmation) with the cookie alone. The read is repeatable and changes no
+\* auth state.
+FlowStateRead ==
+    /\ challenge = "Issued"
+    /\ landed
+    /\ UNCHANGED << challenge, session, landed, consumedByPost, authenticated,
+                    userDisabled, sessionsCreated, rejectedWrongBinding,
+                    disabledConfirmAttempted, time >>
+
 \* Same-origin POST with a matching selector, verifier, and account binding.
 \* Atomic consume plus session creation.
 ConfirmCorrect ==
@@ -153,6 +164,7 @@ AdvanceTime ==
 Next ==
     \/ RequestLink
     \/ Landing
+    \/ FlowStateRead
     \/ ConfirmCorrect
     \/ ConfirmWrongBinding
     \/ ConfirmDisabledFails

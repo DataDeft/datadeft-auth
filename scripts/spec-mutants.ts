@@ -83,6 +83,15 @@ const MUTANTS: Mutant[] = [
     ]],
     expect: "Inv005_DisabledAttemptDoesNotBurn",
   },
+  {
+    name: "redirect-mode flow-state read consumes the challenge",
+    spec: "MagicLink",
+    edits: [[
+      "FlowStateRead ==\n    /\\ challenge = \"Issued\"\n    /\\ landed\n    /\\ UNCHANGED << challenge, session,",
+      "FlowStateRead ==\n    /\\ challenge = \"Issued\"\n    /\\ landed\n    /\\ challenge' = \"Consumed\"\n    /\\ UNCHANGED << session,",
+    ]],
+    expect: "Inv001_LandingNeverConsumes",
+  },
   // --- MagicLinkRace.tla ---------------------------------------------------
   {
     name: "commit is not conditional on an unconsumed challenge",
@@ -173,6 +182,51 @@ const MUTANTS: Mutant[] = [
     spec: "KeyRotation",
     edits: [["    /\\ idx[Current(n)] = None\n    /\\ (DualWrite", "    /\\ (DualWrite"]],
     expect: "Inv_OneAccountPerEmail",
+  },
+  {
+    name: "0.5 cutoff (>=) without revoking first",
+    spec: "Session",
+    config: "SessionAdmin",
+    constants: { WatermarkStrict: "FALSE", EnableRevokesFirst: "FALSE" },
+    expect: "Inv_NoPreEnableSurvivor",
+  },
+  // --- PowBudget.tla -------------------------------------------------------
+  {
+    name: "per-node budget counters",
+    spec: "PowBudget",
+    constants: { Shared: "FALSE" },
+    expect: "Inv_BudgetPerSolve",
+  },
+  {
+    name: "budget window refills while the proof is valid",
+    spec: "PowBudget",
+    constants: { OverLifetime: "FALSE" },
+    expect: "Inv_BudgetPerSolve",
+  },
+  {
+    name: "unavailable limiter fails open",
+    spec: "PowBudget",
+    constants: { FailClosed: "FALSE" },
+    expect: "Inv_BudgetPerSolve",
+  },
+  // --- Erasure.tla ---------------------------------------------------------
+  {
+    name: "erasure keeps pending magic links",
+    spec: "Erasure",
+    constants: { ErasePendingLinks: "FALSE" },
+    expect: "Inv_NoResurrection",
+  },
+  {
+    name: "validation ignores an erased owner until revocation finishes",
+    spec: "Erasure",
+    constants: { ErasedIsInactive: "FALSE" },
+    expect: "Inv_NoSessionForErased",
+  },
+  {
+    name: "erasure removes only the current-key lookup",
+    spec: "Erasure",
+    constants: { EraseAllKeys: "FALSE" },
+    expect: "Inv_NoLookupToErased",
   },
   // --- Pow.tla -------------------------------------------------------------
   {

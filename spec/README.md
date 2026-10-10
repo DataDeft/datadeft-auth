@@ -33,6 +33,8 @@ spec/
     Session.cfg        validation and refresh (one session, no admin)
     SessionAdmin.cfg   disable, revoke-all, enable (one session, no refresh)
     KeyRotation.tla    first signup during a rolling storage-key rotation
+    PowBudget.tla      per-solve PoW budget across nodes (planned, 0.5.0)
+    Erasure.tla        user erasure (planned, 0.5.0; low priority)
     Pow.tla            proof-of-work admission difficulty
     Liveness.tla       happy-path progress
     *.cfg              constants and invariants per model
@@ -84,6 +86,10 @@ invariant fails when a guard is wrong.
 past-absolute sessions never validate; refresh keeps `iat`, never mints past
 the absolute lifetime, and only follows a same-request validation.
 
+Both configurations use the 0.5 re-enable cutoff (`WatermarkStrict = FALSE`:
+a session created in the enable's own second is accepted), which is safe
+because enable revokes first.
+
 `SessionAdmin.cfg` checks the admin paths with injected revoke failures:
 disabled owners never validate, sessions at or before the enable watermark
 never validate, and no session that existed at a re-enable validates
@@ -97,6 +103,22 @@ Hosts on the old storage key and hosts on the new key (with the old one as
 previous) serve the same table during a rolling rotation. One email must never
 get two accounts. It failed for the 0.4.1 code (`DualWrite = FALSE`): finding
 ROT-F1.
+
+### PowBudget.tla
+
+One solved proof presented to several nodes over its lifetime. The planned
+per-solve budget holds (at most N admissions per solve) only with all three
+design rules: one shared counter (not per node), counted over the proof's
+lifetime (not a window that refills), and failing closed when the limiter is
+unavailable. Each rule has a mutant.
+
+### Erasure.tla
+
+Erasing a user during a storage-key rotation, with pending links and
+sessions whose revocation runs as a separate, retry-safe step. It holds only
+if erasure removes the lookup rows under every key, deletes pending links, and
+validation treats an erased owner as inactive at once. Low priority; parked
+until erasure is implemented.
 
 ### Pow.tla
 

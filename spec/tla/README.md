@@ -10,6 +10,8 @@ tla MagicLinkRace.tla --allow-deadlock
 tla Session.tla --allow-deadlock
 tla Session.tla --config SessionAdmin.cfg --allow-deadlock
 tla KeyRotation.tla --allow-deadlock
+tla PowBudget.tla --allow-deadlock
+tla Erasure.tla --allow-deadlock
 tla Pow.tla --allow-deadlock
 tla Liveness.tla --check-liveness
 ```

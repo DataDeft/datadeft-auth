@@ -43,6 +43,8 @@ CONSTANTS
                     \* 0 is the current code. Tol is the candidate fix.
     WithAdmin,      \* explore disable / revoke_all / enable
     WithRefresh,    \* explore refresh_session_cookie
+    WatermarkStrict,   \* TRUE: accept created > wm (0.4); FALSE: created >= wm
+                       \* (0.5, so a login in the same second as the enable works)
     EnableRevokesFirst \* enable_user revokes every live session before it
                        \* re-enables, and revoke_all keeps sessions within Tol
                        \* of expiry. FALSE is the 0.4.1 code, TRUE the fix.
@@ -239,7 +241,11 @@ ServerAbs(s, v) ==
 NotRevoked(s) == ~rec[s].revoked
 \* is_session_owner_active
 OwnerEnabled == ~disabled
-AfterWatermark(s) == ~hasWm \/ rec[s].created > wm
+AfterWatermark(s) ==
+    ~hasWm \/ (IF WatermarkStrict THEN rec[s].created > wm ELSE rec[s].created >= wm)
+\* The complement, for the audit ghost: what the cutoff must keep out.
+BeforeWatermark(s) ==
+    hasWm /\ (IF WatermarkStrict THEN rec[s].created <= wm ELSE rec[s].created < wm)
 
 Validate(s) ==
     /\ rec[s].exists
@@ -260,7 +266,7 @@ Validate(s) ==
          /\ accPastAbs' = (accPastAbs \/ (now - bornAt[s] > Abs + Skew))
          /\ accPastIdle' = (accPastIdle \/ (now - c.tm > Idle + Skew))
          /\ accDisabled' = (accDisabled \/ disabled)
-         /\ accWatermark' = (accWatermark \/ (hasWm /\ rec[s].created <= wm))
+         /\ accWatermark' = (accWatermark \/ BeforeWatermark(s))
          /\ accPreEnable' = (accPreEnable \/ preEnable[s])
     /\ UNCHANGED << now, rec, cookie, disabled, hasWm, wm, ra, raMode, todo, bornAt,
                     preEnable, refreshStale >>
@@ -330,8 +336,10 @@ Inv_NoAcceptPastIdle == ~accPastIdle
 \* SES-INV-004: a session of a disabled owner never validates.
 Inv_NoAcceptDisabledOwner == ~accDisabled
 
-\* SES-INV-005: a session created at or before the enable watermark never
-\* validates (stored values, strict >).
+\* SES-INV-005: a session created before the enable watermark never validates
+\* (stored values). WatermarkStrict = FALSE (0.5) also accepts a session created
+\* in the watermark's own second, so an immediate re-login works; the revocation
+\* that enable runs first keeps pre-disable sessions out (SES-INV-009).
 Inv_NoAcceptAtOrBeforeWatermark == ~accWatermark
 
 \* SES-INV-006: refresh never changes iat. Every cookie of a session carries
