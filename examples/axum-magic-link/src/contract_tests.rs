@@ -87,6 +87,7 @@ async fn every_library_refusal_follows_the_contract() {
         MagicLinkHttpError::BadRequest.into_response(),
         MagicLinkHttpError::UnsupportedMediaType.into_response(),
         MagicLinkHttpError::PayloadTooLarge.into_response(),
+        MagicLinkHttpError::MagicLinkUnavailable.into_response(),
     ])
     .await;
     for seen in &shape {

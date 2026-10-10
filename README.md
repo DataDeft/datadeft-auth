@@ -254,8 +254,8 @@ The core, service, Axum, and AWS library surfaces are complete, and the
 runnable integration example ships in
 [`examples/axum-magic-link`](examples/axum-magic-link/src/). The
 remaining work is production evidence: deployment logging attestation, live
-DynamoDB validation, and an immutable release reference. Browser PoW and
-country-aware PoW admission remain planned application integration. See the
+DynamoDB validation, and an immutable release reference. Country-aware PoW
+difficulty remains planned application integration. See the
 status and MVP IDs in `docs/onboarding.md`.
 
 ## Documentation

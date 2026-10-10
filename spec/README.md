@@ -68,8 +68,8 @@ wrong binding rejected before any consume, a disabled user's confirm does not
 burn the challenge). Disabling a user also ends their session; that is
 modeled in `Session.tla`.
 
-`FlowStateRead` models a planned redirect landing mode. It is not in the code
-yet.
+`FlowStateRead` models the redirect mode's flow-state route
+(`read_magic_link_flow_state`): repeatable, read-only, never consumes.
 
 ### MagicLinkRace.tla
 

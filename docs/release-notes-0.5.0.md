@@ -28,7 +28,12 @@ Consumer actions:
 - `AuthAdminRepository::set_user_disabled_audited` takes the expected
   `admin_version`; handle `AdminError::Conflict`.
 - `RequestMagicLinkOutcome` is `Sent` / `Throttled(..)`; count it.
-- `MagicLinkEmail` and `MagicLinkRequestJson` gain `locale`.
+- `MagicLinkEmail` and `MagicLinkRequestJson` gain `locale`;
+  `MagicLinkServiceConfig` gains `country_policy` and `locales`, and
+  `MagicLinkConfigError` gains `InvalidCountryPolicy`.
+- `MagicLinkHttpError::Forbidden` is removed; `MagicLinkUnavailable` answers
+  the generic `400` body. `reason()` labels are namespaced (`magic_link_*`,
+  `session_*`, `pow_*`).
 - Adopt the HTTP status contract (`docs/security.md`): `401` with
   `WWW-Authenticate: DD-PoW` or `DD-Session`, `400` for shape errors, one
   constant `503`, no library `403`/`500`. Alert on reason counts, not raw
@@ -39,7 +44,7 @@ Consumer actions:
 
 ## Security fixes
 
-These affect 0.4.0. Upgrade before rotating storage keys or using
+These affect 0.4.0 and 0.4.1. Upgrade before rotating storage keys or using
 disable/enable in production.
 
 - **Duplicate accounts during storage-key rotation.** A sign-up on a node with

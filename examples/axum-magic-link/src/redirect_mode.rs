@@ -9,10 +9,9 @@ use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, REFERRER_POLICY, X_FRAME_O
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{Html, IntoResponse, Response};
 use datadeft_magic_link_axum::{magic_link_flow_state, magic_link_landing_redirect};
-use datadeft_magic_link_service::MagicLinkFlowService;
 use rand_core::OsRng;
 
-use super::state::{AppState, LocalClock};
+use super::state::AppState;
 
 /// `GET /auth/magic-link/open?token=…`: `303` to the static page for every
 /// link state; never consumes the link.
@@ -23,20 +22,10 @@ pub(super) async fn redirect_landing_route(
     let config = state.http_config.clone();
     magic_link_landing_redirect(request, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
-        MagicLinkFlowService {
-            authentication: &state.auth,
-            sessions: &state.auth,
-            limiter: &state.auth,
-            clock: &LocalClock,
-            rng: &mut rng,
-            lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-            previous_lookup_hmac_key: None,
-            confirm_keyring: state.confirm_keyring.as_ref(),
-            session_keyring: state.session_keyring.as_ref(),
-            config: state.config.clone(),
-        }
-        .begin_magic_link_landing(command)
-        .await
+        state
+            .flow_service(&mut rng)
+            .begin_magic_link_landing(command)
+            .await
     })
     .await
 }
@@ -50,20 +39,10 @@ pub(super) async fn flow_state_route(
     let config = state.http_config.clone();
     magic_link_flow_state(&headers, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
-        MagicLinkFlowService {
-            authentication: &state.auth,
-            sessions: &state.auth,
-            limiter: &state.auth,
-            clock: &LocalClock,
-            rng: &mut rng,
-            lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-            previous_lookup_hmac_key: None,
-            confirm_keyring: state.confirm_keyring.as_ref(),
-            session_keyring: state.session_keyring.as_ref(),
-            config: state.config.clone(),
-        }
-        .read_magic_link_flow_state(command)
-        .await
+        state
+            .flow_service(&mut rng)
+            .read_magic_link_flow_state(command)
+            .await
     })
     .await
 }

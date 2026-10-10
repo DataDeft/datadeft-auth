@@ -63,8 +63,9 @@ where
     };
     let set_cookie = match magic_link_landing(request, config, begin).await {
         Ok(landing) => landing.confirm_cookie,
-        // Same status and Location as success: the redirect itself does not
-        // tell link states apart.
+        // Same status and Location as success. Only the Set-Cookie differs
+        // (a cookie versus a clearing header), which only the link holder's
+        // browser sees.
         Err(MagicLinkFlowResponseError::Rejected) => {
             clear_confirm_cookie_header(config.confirm_cookie())
         }
@@ -99,8 +100,9 @@ struct FlowStateBody<'a> {
 /// no CORS headers are sent. Answers `no-store` with the
 /// landing's security headers and `Cross-Origin-Resource-Policy: same-origin`.
 /// A dependency failure is the constant `503` (retry later); every other
-/// failure is the one `{ "usable": false }` answer, which also clears the
-/// cookie.
+/// failure is the one `{ "usable": false }` answer. A same-origin request whose
+/// cookie turned out unusable also gets a header that clears it; a cross-site
+/// or header-less request never does, so another site cannot end the flow.
 pub async fn magic_link_flow_state<F, Fut>(
     headers: &HeaderMap,
     config: &MagicLinkScannerFlowConfig,
@@ -110,10 +112,13 @@ where
     F: FnOnce(ReadMagicLinkFlowStateCommand) -> Fut,
     Fut: Future<Output = Result<MagicLinkFlowState, MagicLinkFlowError>>,
 {
-    let cookie = if is_cross_site(headers) {
-        None
-    } else {
+    // A request that is not a same-origin fetch never touches the cookie: a
+    // cross-site page navigating here must not be able to end the flow.
+    let same_origin = is_same_origin_fetch(headers);
+    let cookie = if same_origin {
         extract_target_cookie(headers, config.confirm_cookie().name()).ok()
+    } else {
+        None
     };
     let state = match cookie {
         Some(cookie) => read(ReadMagicLinkFlowStateCommand::new(cookie))
@@ -135,10 +140,12 @@ where
                 confirmation: None,
             })
             .into_response();
-            response.headers_mut().append(
-                SET_COOKIE,
-                clear_confirm_cookie_header(config.confirm_cookie()),
-            );
+            if same_origin {
+                response.headers_mut().append(
+                    SET_COOKIE,
+                    clear_confirm_cookie_header(config.confirm_cookie()),
+                );
+            }
             response
         }
         Err(MagicLinkFlowResponseError::Unavailable) => {
@@ -155,14 +162,14 @@ where
     response
 }
 
-/// Anything but exactly one `Sec-Fetch-Site: same-origin`, including a
-/// missing header: every current browser sends it.
-fn is_cross_site(headers: &HeaderMap) -> bool {
+/// Exactly one `Sec-Fetch-Site: same-origin`. A missing header is refused:
+/// every current browser sends it.
+fn is_same_origin_fetch(headers: &HeaderMap) -> bool {
     let mut values = headers.get_all(SEC_FETCH_SITE).iter();
-    match values.next() {
-        None => true,
-        Some(value) => value.as_bytes() != b"same-origin" || values.next().is_some(),
-    }
+    values
+        .next()
+        .is_some_and(|value| value.as_bytes() == b"same-origin")
+        && values.next().is_none()
 }
 
 #[cfg(test)]

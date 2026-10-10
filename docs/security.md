@@ -148,6 +148,9 @@ Rules:
 - Preserve required entropy after encoding.
 - Fail closed on generation failure.
 - Draw magic-link selectors and verifiers independently.
+- Do not derive selector from verifier.
+- Do not derive verifier from selector.
+- Do not slice one random block for both values.
 
 ### Identifier formats
 
@@ -165,9 +168,6 @@ nothing else (the 0.4 underscore form is refused):
 Ids are validated on input and redacted in `Debug`. Keyed lookup values
 (`emh_`, `mlh_`, `mlv_`, `sih_`, `rlh_`) are storage material, not ids, and
 keep their underscore form.
-- Do not derive selector from verifier.
-- Do not derive verifier from selector.
-- Do not slice one random block for both values.
 
 ## Token and cookie inventory
 
@@ -211,6 +211,7 @@ carry no audit value:
 | Admin audit events | Kept; append-only |
 | Magic-link challenge | TTL: expiry plus `magic_link_cleanup_grace` |
 | Rate-limit counter | TTL: window end plus cleanup grace |
+| Lifetime counter (per-solve PoW budget) | TTL: the expiry fixed at first use plus cleanup grace |
 
 Validity never depends on deletion: every read checks `expires_at_unix` and
 `revoked_at_unix`.
@@ -305,8 +306,9 @@ Invalid token states include expired, consumed, missing, malformed, and invalid 
 - Keep PoW admission outside magic-link APIs.
 - Treat proof cookies as short-lived flow values.
 - Bound the proof-cookie lifetime with a configurable TTL under a hard ceiling.
-- Reuse the proof cookie within its lifetime. The shipped cookie is stateless.
-- Add single-use replay capping only where a deployment needs it.
+- The proof cookie is stateless and reusable within its lifetime; bound that
+  reuse with the per-solve budget: gate routes with `admit_proof` and a shared
+  `ProofBudget` (integration.md, "Per-solve budget").
 - Clear proof cookies on auth success.
 - Clear proof cookies on terminal auth failure.
 
@@ -567,7 +569,7 @@ openssl rand -base64 32
 The six secret fields separate these purposes:
 
 - magic-link lookup HMAC
-- AWS storage HMAC
+- Storage HMAC
 - session-cookie root
 - confirm-cookie root
 - PoW challenge HMAC secret
@@ -591,7 +593,7 @@ Recommended cadence:
 | Session cookie keys | 90 days | 31 days |
 | Branca session token keys | 90 days | 31 days |
 | Magic-link lookup HMAC key | 90 days | Link TTL plus 24 hours |
-| AWS storage HMAC key | 90 days | 31 days, and until `rekey_email_lookups` has run |
+| Storage HMAC key | 90 days | 31 days, and until `rekey_email_lookups` has run |
 | PoW signing keys | 90 days | Needs challenge TTL plus 24 hours; in practice as long as the previous document is loaded (see below) |
 | Rate-limit HMAC keys | 90 days | Longest window plus 24 hours |
 

@@ -79,6 +79,7 @@ pub struct ConfirmCookieConfig {
 }
 
 impl ConfirmCookieConfig {
+    /// A `Secure` confirm-cookie policy with a validated name and path.
     pub fn secure(
         name: impl Into<String>,
         path: impl Into<String>,
@@ -86,6 +87,7 @@ impl ConfirmCookieConfig {
         Self::build(name.into(), path.into(), true)
     }
 
+    /// The same policy without `Secure`, for development over plain HTTP only.
     pub fn insecure_local(
         name: impl Into<String>,
         path: impl Into<String>,
@@ -138,6 +140,7 @@ impl ConfirmCookieConfig {
         &self.path
     }
 
+    /// Whether the cookie carries the `Secure` attribute.
     #[must_use]
     pub fn is_secure(&self) -> bool {
         self.secure
@@ -228,6 +231,7 @@ impl SessionCookieConfig {
         self.max_age_secs
     }
 
+    /// Whether the cookie carries the `Secure` attribute.
     #[must_use]
     pub fn is_secure(&self) -> bool {
         self.secure

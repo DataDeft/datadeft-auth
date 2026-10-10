@@ -72,8 +72,12 @@ no data migration is provided, and every existing session ends.
   `MagicLinkServiceConfig::locales` (a `LocaleAllowlist`), and never stored.
   `MagicLinkRequestJson` accepts the `locale` field. `SesMagicLinkOutbox::
   with_reply_to` sets Reply-To for every email. Drop per-request outboxes.
-- **Country groups:** `MagicLinkServiceConfig::country_policy` (default
-  `CountryPolicy::Exact`) can be `CountryPolicy::eu27()`: sessions then move
+- **New config fields:** `MagicLinkServiceConfig` gains `country_policy`
+  (default `CountryPolicy::Exact`) and `locales` (default `None`), and
+  `MagicLinkConfigError` gains `InvalidCountryPolicy`; struct literals and
+  exhaustive matches must add them.
+- **Country groups:** `MagicLinkServiceConfig::country_policy` can be
+  `CountryPolicy::eu27()`: sessions then move
   between EU countries and stay exact elsewhere. Drop edge rewrites of the
   country header. `ValidatedSession::country()` returns the pinned value,
   which is `EU` for a session in the group.
@@ -91,7 +95,10 @@ no data migration is provided, and every existing session ends.
   errors are one generic `400` (`UnsupportedMediaType` and `PayloadTooLarge`
   included), every fault is the constant `503` (`Internal` no longer answers
   `500`), `MagicLinkHttpError::Forbidden` is removed (the library sends no
-  `403`), and an invalid session is `401` + `WWW-Authenticate: DD-Session`.
+  `403`), an unusable link (`MagicLinkUnavailable`) answers the same generic
+  `400` body as a malformed request, and an invalid session is `401` +
+  `WWW-Authenticate: DD-Session`. `reason()` labels are namespaced
+  (`magic_link_*`, `session_*`, `pow_*`).
   Alert on the internal `reason()` counts, not raw `5xx` rates.
 - **Browser client:** `@datadeft/protect-client` adds `protectedFetch`: it
   solves on `401` + `DD-PoW` and retries once, and backs off with equal jitter
@@ -191,8 +198,8 @@ The libraries hold no globals. You inject every dependency.
 The Axum handlers are headless. They run the input checks and return structured
 results plus prepared cookie headers. Your application renders the responses.
 
-1. Request. `POST` to `request_magic_link`. It validates consent and the
-   normalized email, mints a selector and a verifier, stores the record under
+1. Request. `POST` to `request_magic_link`. It validates consent, normalizes
+   and validates the email, mints a selector and a verifier, stores the record under
    keyed lookup material (never the raw token), and hands the URL to your outbox.
 2. Landing. `GET`, side-effect-free and repeatable; it sets the
    `dd_auth_confirm` cookie and never consumes the token. Pick one mode:

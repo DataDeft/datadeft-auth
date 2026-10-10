@@ -9,7 +9,7 @@ use datadeft_magic_link_axum::{
     MagicLinkHttpError, apply_magic_link_security_headers, authenticate_session,
     clear_session_cookie_header, session_set_cookie_header, viewer_country_from,
 };
-use datadeft_magic_link_service::{MagicLinkFlowService, refresh_session_cookie, validate_session};
+use datadeft_magic_link_service::{refresh_session_cookie, validate_session};
 use rand_core::OsRng;
 
 use super::state::{AppState, LocalClock};
@@ -113,18 +113,7 @@ pub(super) async fn logout(State(state): State<AppState>, headers: HeaderMap) ->
     };
 
     let mut rng = OsRng;
-    let service = MagicLinkFlowService {
-        authentication: &state.auth,
-        sessions: &state.auth,
-        limiter: &state.auth,
-        clock: &LocalClock,
-        rng: &mut rng,
-        lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-        previous_lookup_hmac_key: None,
-        confirm_keyring: state.confirm_keyring.as_ref(),
-        session_keyring: state.session_keyring.as_ref(),
-        config: state.config.clone(),
-    };
+    let service = state.flow_service(&mut rng);
     if service
         .revoke_session(&session.session().session_id)
         .await

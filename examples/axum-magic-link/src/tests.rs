@@ -5,8 +5,8 @@ use axum::extract::State;
 use axum::http::header::{COOKIE, ORIGIN, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use datadeft_magic_link_service::{
-    BeginMagicLinkLandingCommand, ConfirmMagicLinkFlowCommand, MagicLinkFlowService,
-    MagicLinkRequestService, NormalizedEmail, RequestMagicLinkCommand, SessionRepository,
+    BeginMagicLinkLandingCommand, ConfirmMagicLinkFlowCommand, MagicLinkRequestService,
+    NormalizedEmail, RequestMagicLinkCommand, SessionRepository,
 };
 use rand_core::OsRng;
 
@@ -33,18 +33,7 @@ async fn logged_in(state: &AppState) -> (String, datadeft_magic_link_service::Se
     .await
     .expect("request");
     let email = state.outbox.recorded().expect("outbox").remove(0);
-    let mut service = MagicLinkFlowService {
-        authentication: &state.auth,
-        sessions: &state.auth,
-        limiter: &state.auth,
-        clock: &LocalClock,
-        rng: &mut rng,
-        lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-        previous_lookup_hmac_key: None,
-        confirm_keyring: state.confirm_keyring.as_ref(),
-        session_keyring: state.session_keyring.as_ref(),
-        config: state.config.clone(),
-    };
+    let mut service = state.flow_service(&mut rng);
     let landing = service
         .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(
             email.token.as_secret_value().to_string(),

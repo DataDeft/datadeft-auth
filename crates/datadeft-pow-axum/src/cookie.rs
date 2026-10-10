@@ -167,6 +167,7 @@ impl PowProofCookieConfig {
         &self.path
     }
 
+    /// Whether the cookie carries the `Secure` attribute.
     #[must_use]
     pub fn is_secure(&self) -> bool {
         self.secure

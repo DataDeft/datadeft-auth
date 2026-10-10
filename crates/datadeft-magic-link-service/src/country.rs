@@ -39,8 +39,11 @@ impl CountryGroup {
         }
     }
 
-    /// A custom group. The tag and every member must be two uppercase ASCII
-    /// letters, members must be distinct, and there must be at least one.
+    /// A custom group. Every member must be two uppercase ASCII letters,
+    /// members must be distinct, and there must be at least one. The tag must
+    /// never name a real country, or a session pinned to it would also match
+    /// that country's own traffic: use `EU` or an ISO 3166 user-assigned code
+    /// (`AA`, `QM`–`QZ`, `XA`–`XZ`, `ZZ`).
     pub fn new<I, S>(tag: &str, members: I) -> Result<Self, CountryPolicyError>
     where
         I: IntoIterator<Item = S>,
@@ -67,7 +70,7 @@ impl CountryGroup {
     }
 
     fn validate(&self) -> Result<(), CountryPolicyError> {
-        if !is_country_shape(&self.tag) {
+        if !is_group_tag(&self.tag) {
             return Err(CountryPolicyError::InvalidTag);
         }
         if self.members.is_empty() || !self.members.iter().all(|code| is_country_shape(code)) {
@@ -146,7 +149,7 @@ impl CountryPolicy {
 /// Invalid country policy. Carries no country codes.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum CountryPolicyError {
-    /// A group tag is not two uppercase ASCII letters.
+    /// A group tag is not `EU` or an ISO 3166 user-assigned code.
     InvalidTag,
     /// A group is empty or a member is not two uppercase ASCII letters.
     InvalidMember,
@@ -159,7 +162,7 @@ pub enum CountryPolicyError {
 impl fmt::Display for CountryPolicyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::InvalidTag => "country group tag must be two uppercase letters",
+            Self::InvalidTag => "country group tag must be EU or a user-assigned code",
             Self::InvalidMember => "country group members must be two uppercase letters",
             Self::DuplicateMember => "country group lists a country twice",
             Self::OverlappingGroups => "a country belongs to more than one group",
@@ -168,6 +171,19 @@ impl fmt::Display for CountryPolicyError {
 }
 
 impl std::error::Error for CountryPolicyError {}
+
+/// `EU`, or an ISO 3166-1 user-assigned alpha-2 code: never a real country.
+fn is_group_tag(value: &str) -> bool {
+    if value == EU27_GROUP_TAG {
+        return true;
+    }
+    match value.as_bytes() {
+        [b'A', b'A'] | [b'Z', b'Z'] => true,
+        [b'Q', second] => (b'M'..=b'Z').contains(second),
+        [b'X', second] => second.is_ascii_uppercase(),
+        _ => false,
+    }
+}
 
 fn is_country_shape(value: &str) -> bool {
     value.len() == 2 && value.bytes().all(|byte| byte.is_ascii_uppercase())

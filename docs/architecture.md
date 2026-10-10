@@ -37,7 +37,7 @@ PoW admission          -> datadeft-pow-core
 
 ![Magic-link sequence](diagrams/magic-link-sequence.svg)
 
-1. The request service validates consent and the normalized email.
+1. The request service validates consent, then normalizes (`NormalizedEmail::normalize`) and validates the email.
 2. The request service applies keyed-email limits.
 3. The request service creates an independent selector and verifier.
 4. The repository addresses records by keyed lookup material and never stores the raw token.
@@ -84,8 +84,9 @@ The repository does not yet include these PoW parts:
 
 - country-to-difficulty policy
 - upstream PoW middleware
-- replay lifecycle
-- end-to-end PoW integration
+
+Reuse of a proof is bounded by the per-solve budget (`admit_proof`), and the
+example wires PoW end to end, with `protectedFetch` in the browser.
 
 PoW stays independent from magic-link. Magic-link does not carry a PoW result, IP address, or client key.
 

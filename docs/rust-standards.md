@@ -21,6 +21,8 @@ datadeft-magic-link-core     -> datadeft-auth-token-core
 datadeft-magic-link-service  -> datadeft-magic-link-core, datadeft-auth-token-core
 datadeft-magic-link-axum     -> datadeft-magic-link-service
 datadeft-magic-link-aws      -> datadeft-magic-link-service
+datadeft-pow-core            -> datadeft-auth-token-core
+datadeft-pow-axum            -> datadeft-pow-core, datadeft-auth-token-core
 examples               -> selected adapters and services
 ```
 

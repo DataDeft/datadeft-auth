@@ -12,7 +12,8 @@ use serde::Serialize;
 /// Variants never carry email, token, session id, or key material.
 ///
 /// The response contract: shape errors (bad JSON or email syntax, wrong
-/// content type, oversize body) are one generic `400`, which leaks nothing;
+/// content type, oversize body) and an unusable link are one generic `400`,
+/// which leaks nothing;
 /// every dependency or server fault is the constant `503`, identical to the
 /// one `datadeft-pow-axum` sends. The library never sends `403` or `500`.
 ///
@@ -48,8 +49,12 @@ impl MagicLinkHttpError {
     #[must_use]
     pub fn code(self) -> &'static str {
         match self {
-            Self::BadRequest | Self::UnsupportedMediaType | Self::PayloadTooLarge => "bad_request",
-            Self::MagicLinkUnavailable => "magic_link_unavailable",
+            // One public body for every 400: an unusable link is not told
+            // apart from a malformed request.
+            Self::BadRequest
+            | Self::UnsupportedMediaType
+            | Self::PayloadTooLarge
+            | Self::MagicLinkUnavailable => "bad_request",
             Self::Unavailable | Self::Internal => UNAVAILABLE_ERROR_CODE,
         }
     }
@@ -57,10 +62,10 @@ impl MagicLinkHttpError {
     #[must_use]
     pub fn message(self) -> &'static str {
         match self {
-            Self::BadRequest | Self::UnsupportedMediaType | Self::PayloadTooLarge => {
-                "Invalid request."
-            }
-            Self::MagicLinkUnavailable => "You cannot use this magic link. Request a new one.",
+            Self::BadRequest
+            | Self::UnsupportedMediaType
+            | Self::PayloadTooLarge
+            | Self::MagicLinkUnavailable => "Invalid request.",
             Self::Unavailable | Self::Internal => UNAVAILABLE_MESSAGE,
         }
     }
@@ -69,12 +74,12 @@ impl MagicLinkHttpError {
     #[must_use]
     pub fn reason(self) -> &'static str {
         match self {
-            Self::BadRequest => "bad_request",
-            Self::UnsupportedMediaType => "unsupported_media_type",
-            Self::PayloadTooLarge => "payload_too_large",
-            Self::MagicLinkUnavailable => "magic_link_unavailable",
-            Self::Unavailable => "dependency_unavailable",
-            Self::Internal => "internal",
+            Self::BadRequest => "magic_link_bad_request",
+            Self::UnsupportedMediaType => "magic_link_unsupported_media_type",
+            Self::PayloadTooLarge => "magic_link_payload_too_large",
+            Self::MagicLinkUnavailable => "magic_link_unusable",
+            Self::Unavailable => "magic_link_dependency_unavailable",
+            Self::Internal => "magic_link_internal",
         }
     }
 }

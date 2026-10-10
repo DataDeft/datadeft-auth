@@ -13,7 +13,7 @@ use datadeft_magic_link_axum::{
 };
 use datadeft_magic_link_service::{
     Clock, CountryPolicy, DependencyError, KeyRing, LocaleAllowlist, LookupHmacKey,
-    MagicLinkConfirmCookie, MagicLinkServiceConfig, SessionCookie,
+    MagicLinkConfirmCookie, MagicLinkFlowService, MagicLinkServiceConfig, SessionCookie,
 };
 use datadeft_pow_axum::{
     DEFAULT_POW_CHALLENGE_MAX_AGE_SECS, PowPolicy, PowProofCookieConfig, ProofBudgetPolicy,
@@ -51,6 +51,34 @@ pub(super) struct AppState {
     pub(super) pow_proof_keyring: Arc<KeyRing<PowProofCookie>>,
     pub(super) pow_cookie: PowProofCookieConfig,
     pub(super) proof_budget: ProofBudgetPolicy,
+}
+
+impl AppState {
+    /// The flow service over this app's store, keys, and config.
+    pub(super) fn flow_service<'a>(
+        &'a self,
+        rng: &'a mut OsRng,
+    ) -> MagicLinkFlowService<
+        'a,
+        FakeDynamoDbAuthStore,
+        FakeDynamoDbAuthStore,
+        FakeDynamoDbAuthStore,
+        LocalClock,
+        OsRng,
+    > {
+        MagicLinkFlowService {
+            authentication: &self.auth,
+            sessions: &self.auth,
+            limiter: &self.auth,
+            clock: &LocalClock,
+            rng,
+            lookup_hmac_key: self.lookup_hmac_key.as_ref(),
+            previous_lookup_hmac_key: None,
+            confirm_keyring: self.confirm_keyring.as_ref(),
+            session_keyring: self.session_keyring.as_ref(),
+            config: self.config.clone(),
+        }
+    }
 }
 
 /// Wall clock for the example. The library never reads the clock itself. The

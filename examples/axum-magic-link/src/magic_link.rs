@@ -10,7 +10,7 @@ use datadeft_magic_link_axum::{
     apply_magic_link_security_headers, clear_confirm_cookie_header, generic_accepted_response,
     guarded_body, magic_link_confirmation, magic_link_landing, parse_magic_link_request_json,
 };
-use datadeft_magic_link_service::{MagicLinkFlowService, MagicLinkRequestService};
+use datadeft_magic_link_service::MagicLinkRequestService;
 use datadeft_pow_axum::admit_proof;
 use rand_core::OsRng;
 
@@ -86,18 +86,7 @@ pub(super) async fn landing_route(State(state): State<AppState>, request: Reques
     let config = state.http_config.clone();
     let result = magic_link_landing(request, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
-        let mut service = MagicLinkFlowService {
-            authentication: &state.auth,
-            sessions: &state.auth,
-            limiter: &state.auth,
-            clock: &LocalClock,
-            rng: &mut rng,
-            lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-            previous_lookup_hmac_key: None,
-            confirm_keyring: state.confirm_keyring.as_ref(),
-            session_keyring: state.session_keyring.as_ref(),
-            config: state.config.clone(),
-        };
+        let mut service = state.flow_service(&mut rng);
         service.begin_magic_link_landing(command).await
     })
     .await;
@@ -123,15 +112,13 @@ pub(super) async fn landing_route(State(state): State<AppState>, request: Reques
             StatusCode::OK,
             "<!doctype html><h1>Unable to continue sign in</h1><p>Request a new link.</p>",
         ),
-        Err(MagicLinkFlowResponseError::Unavailable) => scanner_page(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Service temporarily unavailable.",
-        ),
         // The library never sends 500: faults are the same 503 as outages.
-        Err(MagicLinkFlowResponseError::Internal) => scanner_page(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Service temporarily unavailable.",
-        ),
+        Err(MagicLinkFlowResponseError::Unavailable | MagicLinkFlowResponseError::Internal) => {
+            scanner_page(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Service temporarily unavailable.",
+            )
+        }
     }
 }
 
@@ -142,18 +129,7 @@ pub(super) async fn confirm_route(State(state): State<AppState>, request: Reques
     let config = state.http_config.clone();
     let result = magic_link_confirmation(request, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
-        let mut service = MagicLinkFlowService {
-            authentication: &state.auth,
-            sessions: &state.auth,
-            limiter: &state.auth,
-            clock: &LocalClock,
-            rng: &mut rng,
-            lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-            previous_lookup_hmac_key: None,
-            confirm_keyring: state.confirm_keyring.as_ref(),
-            session_keyring: state.session_keyring.as_ref(),
-            config: state.config.clone(),
-        };
+        let mut service = state.flow_service(&mut rng);
         service.confirm_magic_link_flow(command).await
     })
     .await;
@@ -182,15 +158,13 @@ pub(super) async fn confirm_route(State(state): State<AppState>, request: Reques
             );
             response
         }
-        Err(MagicLinkFlowResponseError::Unavailable) => scanner_page(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Service temporarily unavailable.",
-        ),
         // The library never sends 500: faults are the same 503 as outages.
-        Err(MagicLinkFlowResponseError::Internal) => scanner_page(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Service temporarily unavailable.",
-        ),
+        Err(MagicLinkFlowResponseError::Unavailable | MagicLinkFlowResponseError::Internal) => {
+            scanner_page(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Service temporarily unavailable.",
+            )
+        }
     }
 }
 

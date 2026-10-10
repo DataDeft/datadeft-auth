@@ -407,26 +407,34 @@ export async function protectedFetch(
         options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     const random = options.random ?? Math.random;
     const repeatable = options.repeatable ?? isRepeatableByDefault(input, init);
+    const requested = options.unavailableRetries ?? DEFAULT_UNAVAILABLE_RETRIES;
+    // A non-finite value (NaN, Infinity) falls back to the default, so the
+    // retry loop is always bounded.
     const retries = repeatable
         ? Math.min(
               MAX_UNAVAILABLE_RETRIES,
-              Math.max(0, Math.floor(options.unavailableRetries ?? DEFAULT_UNAVAILABLE_RETRIES)),
+              Math.max(
+                  0,
+                  Math.floor(Number.isFinite(requested) ? requested : DEFAULT_UNAVAILABLE_RETRIES),
+              ),
           )
         : 0;
 
     let solved = false;
+    let unavailableRetry = 0;
     let response = await send();
-    for (let retry = 1; ; retry++) {
+    for (;;) {
         if (!solved && isProofOfWorkChallenge(response)) {
             solved = true;
             await protect(config);
             response = await send();
             continue;
         }
-        if (response.status !== 503 || retry > retries) {
+        if (response.status !== 503 || unavailableRetry >= retries) {
             return response;
         }
-        await sleep(backoffDelayMs(retry, random));
+        unavailableRetry += 1;
+        await sleep(backoffDelayMs(unavailableRetry, random));
         response = await send();
     }
 }

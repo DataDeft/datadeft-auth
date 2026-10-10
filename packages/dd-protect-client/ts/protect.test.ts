@@ -632,6 +632,57 @@ describe("protectedFetch", () => {
     });
 });
 
+describe("protectedFetch retry accounting", () => {
+    const API = "/api/v1/magic-link/request";
+    const config: ProtectConfig = {
+        workerUrl: "./worker.js",
+        createUrl: CREATE_URL,
+        validateUrl: VALIDATE_URL,
+        workerCount: 1,
+    };
+
+    test("a non-finite retry count falls back to the default instead of looping", async () => {
+        let calls = 0;
+        mockFetch(() => {
+            calls += 1;
+            return new Response("{}", { status: 503 });
+        });
+        const response = await protectedFetch(API, undefined, config, {
+            unavailableRetries: Number.NaN,
+            sleep: () => Promise.resolve(),
+        });
+        expect(response.status).toBe(503);
+        expect(calls).toBe(4);
+    });
+
+    test("a solve does not use up a 503 retry, and backoff starts at the first step", async () => {
+        installWorker(SolvingMockWorker);
+        const waits: number[] = [];
+        let apiCalls = 0;
+        mockFetch((url) => {
+            if (url === CREATE_URL) return jsonResponse(CHALLENGE);
+            if (url === VALIDATE_URL) return new Response(null, { status: 204 });
+            apiCalls += 1;
+            if (apiCalls === 1) {
+                return new Response("{}", {
+                    status: 401,
+                    headers: { "WWW-Authenticate": "DD-PoW" },
+                });
+            }
+            return new Response("{}", { status: 503 });
+        });
+        await protectedFetch(API, undefined, config, {
+            sleep: (ms) => {
+                waits.push(ms);
+                return Promise.resolve();
+            },
+            random: () => 0,
+        });
+        expect(waits).toEqual([500, 1_000, 2_000]);
+        expect(apiCalls).toBe(5);
+    });
+});
+
 describe("backoffDelayMs", () => {
     test("equal jitter: at least half of the doubling step, capped at 30 s", () => {
         expect([1, 2, 3, 4].map((retry) => backoffDelayMs(retry, () => 0))).toEqual([

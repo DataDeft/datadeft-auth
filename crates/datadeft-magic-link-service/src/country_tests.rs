@@ -33,6 +33,17 @@ fn malformed_policies_are_refused() {
         CountryGroup::new("eu", ["AT"]).unwrap_err(),
         CountryPolicyError::InvalidTag
     );
+    // A tag must never be a real country: it would match that country too.
+    for real in ["HU", "DE", "US", "AX"] {
+        assert_eq!(
+            CountryGroup::new(real, ["AT", "DE"]).unwrap_err(),
+            CountryPolicyError::InvalidTag,
+            "{real}"
+        );
+    }
+    for reserved in ["EU", "AA", "QM", "QZ", "XA", "XZ", "ZZ"] {
+        assert!(CountryGroup::new(reserved, ["AT"]).is_ok(), "{reserved}");
+    }
     assert_eq!(
         CountryGroup::new("XX", Vec::<String>::new()).unwrap_err(),
         CountryPolicyError::InvalidMember
@@ -45,12 +56,12 @@ fn malformed_policies_are_refused() {
         CountryGroup::new("XX", ["AT", "AT"]).unwrap_err(),
         CountryPolicyError::DuplicateMember
     );
-    let nordic = CountryGroup::new("NX", ["SE", "NO"]).expect("group");
+    let nordic = CountryGroup::new("XN", ["SE", "NO"]).expect("group");
     assert_eq!(
         CountryPolicy::Groups(vec![CountryGroup::eu27(), nordic]).validate(),
         Err(CountryPolicyError::OverlappingGroups)
     );
-    let alpine = CountryGroup::new("AX", ["CH", "LI"]).expect("group");
+    let alpine = CountryGroup::new("XA", ["CH", "LI"]).expect("group");
     assert!(
         CountryPolicy::Groups(vec![CountryGroup::eu27(), alpine])
             .validate()

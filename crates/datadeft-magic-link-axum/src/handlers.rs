@@ -60,7 +60,8 @@ where
 ///
 /// Carries the validated flow state to present (account identity + confirmation
 /// value) and the `Set-Cookie` header for the short-lived confirm cookie. The
-/// caller renders the page/JSON and attaches [`confirm_cookie`](Self::confirm_cookie).
+/// caller renders the server-side confirm page and attaches
+/// [`confirm_cookie`](Self::confirm_cookie).
 pub struct MagicLinkLanding {
     /// The validated landing outcome (account identity, confirmation value).
     pub outcome: BeginMagicLinkLandingOutcome,
@@ -94,9 +95,12 @@ pub enum MagicLinkFlowResponseError {
 /// and prepare the confirm cookie. **The landing is side-effect-free**: it does
 /// not consume the magic link or create a session, so email security scanners
 /// may fetch the landing URL repeatedly without burning the link. The caller
-/// owns the response: a typical API returns JSON `{ account, confirmation }`
-/// with [`confirm_cookie`](MagicLinkLanding::confirm_cookie) attached and lets the
-/// browser POST the confirmation back same-origin.
+/// renders the confirm page server-side (the account and a same-origin `POST`
+/// form carrying the confirmation value) with
+/// [`confirm_cookie`](MagicLinkLanding::confirm_cookie) attached. Never return
+/// this as JSON for a static page's JavaScript to fetch with `?token=`: that
+/// puts the token in JavaScript. Static UIs use
+/// [`magic_link_landing_redirect`](crate::magic_link_landing_redirect).
 ///
 /// On [`MagicLinkFlowResponseError::Rejected`], respond with the **same HTTP
 /// status you use for success** so a caller cannot probe link validity. The

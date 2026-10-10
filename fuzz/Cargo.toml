@@ -98,3 +98,4 @@ name = "cookie_header"
 path = "fuzz_targets/cookie_header.rs"
 test = false
 doc = false
+bench = false

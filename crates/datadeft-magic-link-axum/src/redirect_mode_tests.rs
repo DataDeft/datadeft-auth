@@ -146,13 +146,13 @@ async fn flow_state_without_a_usable_cookie_is_one_generic_answer() {
         let (status, headers, body) = response_parts(response).await;
         assert_eq!(status, StatusCode::OK, "{name}");
         assert_eq!(body, unusable, "{name}");
-        assert!(
-            headers
-                .get(SET_COOKIE)
-                .and_then(|v| v.to_str().ok())
-                .is_some_and(|v| v.contains("Max-Age=0")),
-            "{name}: clears the cookie"
-        );
+        // Only a same-origin request may clear the cookie: a cross-site or
+        // header-less one must not end someone's flow.
+        let clears = headers
+            .get(SET_COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.contains("Max-Age=0"));
+        assert_eq!(clears, name == "no cookie", "{name}");
         assert_eq!(
             headers
                 .get(CROSS_ORIGIN_RESOURCE_POLICY)

@@ -45,6 +45,8 @@ async fn shape_errors_and_faults_are_indistinguishable_from_outside() {
         MagicLinkHttpError::BadRequest,
         MagicLinkHttpError::UnsupportedMediaType,
         MagicLinkHttpError::PayloadTooLarge,
+        // An unusable link answers exactly like a malformed request.
+        MagicLinkHttpError::MagicLinkUnavailable,
     ];
     let first = parts(shape[0]).await;
     assert_eq!(first.0, StatusCode::BAD_REQUEST);

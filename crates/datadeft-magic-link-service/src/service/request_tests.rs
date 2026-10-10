@@ -36,7 +36,7 @@ async fn request_side_repository_remains_put_only_and_stores_no_user_id() {
         .await
         .expect("request");
     assert_eq!(outcome, RequestMagicLinkOutcome::Sent);
-    assert_eq!(outcome.reason(), "sent");
+    assert_eq!(outcome.reason(), "magic_link_request_sent");
     assert_eq!(repository.request_records.borrow().len(), 1);
     assert_eq!(outbox.messages.borrow().len(), 1);
 }

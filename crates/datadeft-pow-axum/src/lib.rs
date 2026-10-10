@@ -22,14 +22,14 @@
 //! - Every gated route → [`admit_proof`] with the shared [`ProofBudget`]: it
 //!   verifies the `dd_pow` cookie and spends one unit of its solve's budget.
 //!   Return the [`ProofRejection`] itself on `Err`.
+//! - Record [`PowAdmission::mint_to_verify_ms`], the server-derived
+//!   solve-timing signal, in your metrics and risk tagging.
 //!
 //! # Response contract
 //!
 //! `401` + `WWW-Authenticate: DD-PoW` means "solve, then retry once"; the
 //! constant `503` means "back off with jitter and retry". The library never
 //! sends `403`, which stays the app's.
-//!   [`PowAdmission::mint_to_verify_ms`] is the server-derived solve-timing
-//!   signal for the app's metrics and risk tagging.
 
 mod admission;
 mod cookie;

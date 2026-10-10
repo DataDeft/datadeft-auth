@@ -51,6 +51,18 @@ pub enum SessionRejectionKind {
     Internal,
 }
 
+impl SessionRejectionKind {
+    /// Stable label for logs and metrics, never sent to the client.
+    #[must_use]
+    pub fn reason(self) -> &'static str {
+        match self {
+            Self::Invalid => "session_invalid",
+            Self::Unavailable => "session_unavailable",
+            Self::Internal => "session_internal",
+        }
+    }
+}
+
 /// Redacted rejection returned by [`authenticate_session`].
 ///
 /// [`IntoResponse`] renders the library's own response. Apps with their own

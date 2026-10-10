@@ -21,7 +21,9 @@ pub const DD_POW_AUTH_SCHEME: &str = "DD-PoW";
 /// The body of every `503`, identical across the datadeft Axum crates.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
 pub struct UnavailableBody {
+    /// Machine-readable code: always `unavailable`.
     pub error: &'static str,
+    /// Human-readable text, the same for every reason.
     pub message: &'static str,
 }
 

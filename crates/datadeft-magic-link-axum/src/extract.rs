@@ -34,9 +34,13 @@ pub const CLOUDFRONT_VIEWER_COUNTRY: &str = "cloudfront-viewer-country";
 #[derive(Clone, Eq, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MagicLinkRequestJson {
+    /// The address as typed; normalized by [`Self::into_command`].
     pub email: String,
+    /// Whether the user accepted the terms.
     pub terms_accepted: bool,
+    /// Whether the user accepted the privacy policy.
     pub privacy_accepted: bool,
+    /// Optional locale hint, resolved against the service's allowlist.
     #[serde(default)]
     pub locale: Option<String>,
 }

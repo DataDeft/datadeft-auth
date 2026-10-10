@@ -1,5 +1,6 @@
 //! Framework-neutral service types.
 
+mod flow_state;
 mod ids;
 mod messages;
 mod records;
@@ -12,6 +13,7 @@ pub use crate::session_body::{
     SessionCookie, TOKEN_TYPE_SESSION_COOKIE_V1,
 };
 
+pub use self::flow_state::*;
 pub use self::ids::*;
 pub use self::messages::*;
 pub use self::records::*;

@@ -45,6 +45,8 @@ datadeft-magic-link-core     -> datadeft-auth-token-core
 datadeft-magic-link-service  -> datadeft-magic-link-core, datadeft-auth-token-core
 datadeft-magic-link-axum     -> datadeft-magic-link-service
 datadeft-magic-link-aws      -> datadeft-magic-link-service
+datadeft-pow-core            -> datadeft-auth-token-core
+datadeft-pow-axum            -> datadeft-pow-core, datadeft-auth-token-core
 examples/*             -> adapter and service crates as needed
 ```
 
@@ -72,7 +74,8 @@ examples/*             -> adapter and service crates as needed
 - For 30-day session validity, rotate session/cookie keys about every 90 days and keep the previous key verify-only for at least 31 days; map `AWSCURRENT` to active and `AWSPREVIOUS` to verify-only when enabled.
 - Default session model must support server-side invalidation on logout and compromise before clearing cookies; stateless-only sessions are an explicit non-default tradeoff.
 - Scrub magic-link token material from URLs, logs, redirects, headers, telemetry, errors, fixtures, and snapshots.
-- PoW difficulty must be configurable with a documented production floor; proof cookies must bind to their challenge and auth flow, with single-use or a small replay cap. PoW admission is an independent consuming-application concern.
+- PoW difficulty must be configurable with a documented production floor; proof cookies must bind to their challenge, and each solve admits at most its per-solve budget (`ProofBudgetPolicy`), shared across nodes, counted over the proof's lifetime, failing closed (`admit_proof`). PoW admission is an independent consuming-application concern.
+- Library refusals follow `docs/security.md` "HTTP response contract": `400` for shape errors, `401` with `WWW-Authenticate: DD-PoW` or `DD-Session`, one constant no-store `503` for everything security-sensitive or failed; never `403`, `500`, or `429`. Reasons stay internal (`reason()` labels).
 - Magic-link owns limiter hooks for keyed normalized-email request/outbox limits and keyed-selector landing/consume limits, with generic public responses and the documented targeted-lockout tradeoff. IP, global, malformed-request, and PoW controls belong to the consuming application or edge.
 - Prefer one current supported token/storage shape. Do not add legacy compatibility paths unless explicitly versioned and approved.
 

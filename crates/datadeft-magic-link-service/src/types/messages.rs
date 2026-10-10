@@ -2,9 +2,7 @@
 
 use core::fmt;
 
-use datadeft_magic_link_core::confirm_cookie::{
-    MagicLinkConfirmationValue, MintedMagicLinkConfirm,
-};
+use datadeft_magic_link_core::confirm_cookie::MintedMagicLinkConfirm;
 use datadeft_magic_link_core::{MagicLinkToken, NormalizedEmail};
 use zeroize::Zeroize;
 
@@ -182,60 +180,6 @@ impl fmt::Debug for BeginMagicLinkLandingOutcome {
     }
 }
 
-/// Read-only flow-state request of the redirect landing mode: only the
-/// confirm cookie.
-pub struct ReadMagicLinkFlowStateCommand {
-    confirm_cookie: String,
-}
-
-impl ReadMagicLinkFlowStateCommand {
-    #[must_use]
-    pub fn new(confirm_cookie: String) -> Self {
-        Self { confirm_cookie }
-    }
-
-    pub(crate) fn confirm_cookie(&self) -> &str {
-        &self.confirm_cookie
-    }
-}
-
-impl fmt::Debug for ReadMagicLinkFlowStateCommand {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ReadMagicLinkFlowStateCommand(..)")
-    }
-}
-
-impl Drop for ReadMagicLinkFlowStateCommand {
-    fn drop(&mut self) {
-        self.confirm_cookie.zeroize();
-    }
-}
-
-/// What a same-origin confirm page needs: the account it signs in to, and the
-/// confirmation value to submit with the POST.
-pub struct MagicLinkFlowState {
-    pub(crate) account_identity: MagicLinkAccountIdentity,
-    pub(crate) confirmation: MagicLinkConfirmationValue,
-}
-
-impl MagicLinkFlowState {
-    #[must_use]
-    pub fn account_identity(&self) -> &MagicLinkAccountIdentity {
-        &self.account_identity
-    }
-
-    #[must_use]
-    pub fn confirmation_value(&self) -> &str {
-        self.confirmation.as_value()
-    }
-}
-
-impl fmt::Debug for MagicLinkFlowState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("MagicLinkFlowState(..)")
-    }
-}
-
 /// Scanner-safe confirmation command. It contains no raw magic-link token.
 pub struct ConfirmMagicLinkFlowCommand {
     confirm_cookie: String,
@@ -290,8 +234,9 @@ impl Drop for ConfirmMagicLinkFlowCommand {
 }
 
 /// Email outbox request. The contained token is bearer material. Debug redacts
-/// it. The outbox owns URL construction, template, and language: this carries
-/// only the recipient, the token, and the token's expiry.
+/// it. The outbox owns URL construction and templates; this carries the
+/// recipient, the token, its expiry, and the resolved locale the template is
+/// chosen by.
 #[derive(Clone)]
 pub struct MagicLinkEmail {
     pub email: NormalizedEmail,
@@ -343,11 +288,19 @@ impl RequestMagicLinkOutcome {
     #[must_use]
     pub fn reason(self) -> &'static str {
         match self {
-            Self::Sent => "sent",
-            Self::Throttled(RequestThrottle::EmailShortWindow) => "throttled_email_short_window",
-            Self::Throttled(RequestThrottle::EmailDaily) => "throttled_email_daily",
-            Self::Throttled(RequestThrottle::OutboxHourly) => "throttled_outbox_hourly",
-            Self::Throttled(RequestThrottle::OutboxDaily) => "throttled_outbox_daily",
+            Self::Sent => "magic_link_request_sent",
+            Self::Throttled(RequestThrottle::EmailShortWindow) => {
+                "magic_link_request_throttled_email_short_window"
+            }
+            Self::Throttled(RequestThrottle::EmailDaily) => {
+                "magic_link_request_throttled_email_daily"
+            }
+            Self::Throttled(RequestThrottle::OutboxHourly) => {
+                "magic_link_request_throttled_outbox_hourly"
+            }
+            Self::Throttled(RequestThrottle::OutboxDaily) => {
+                "magic_link_request_throttled_outbox_daily"
+            }
         }
     }
 }
