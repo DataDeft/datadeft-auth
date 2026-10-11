@@ -6,7 +6,7 @@ use datadeft_magic_link_core::{
 use rand_core::{CryptoRng, RngCore};
 
 use crate::config::MagicLinkServiceConfig;
-use crate::error::MagicLinkServiceError;
+use crate::error::{DependencyError, MagicLinkServiceError};
 use crate::traits::{Clock, MagicLinkOutbox, MagicLinkRepository, RateLimiter};
 use crate::types::{
     MagicLinkEmail, MagicLinkRecord, RequestMagicLinkCommand, RequestMagicLinkOutcome,
@@ -99,8 +99,17 @@ where
                     .map(|locales| locales.resolve(command.locale_hint())),
             })
             .await
-            .map_err(map_dependency_error)?;
+            .map_err(map_outbox_error)?;
 
         Ok(RequestMagicLinkOutcome::Sent)
+    }
+}
+
+/// An outbox failure keeps its own value, so logs tell the email provider
+/// apart from the store. Internal faults stay internal.
+fn map_outbox_error(error: DependencyError) -> MagicLinkServiceError {
+    match map_dependency_error(error) {
+        MagicLinkServiceError::Unavailable => MagicLinkServiceError::OutboxUnavailable,
+        other => other,
     }
 }

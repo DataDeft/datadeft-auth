@@ -26,6 +26,9 @@ pub enum MagicLinkHttpError {
     PayloadTooLarge,
     MagicLinkUnavailable,
     Unavailable,
+    /// The email outbox failed. Same constant `503` as `Unavailable`; only
+    /// [`reason`](Self::reason) differs.
+    OutboxUnavailable,
     Internal,
 }
 
@@ -42,7 +45,9 @@ impl MagicLinkHttpError {
             | Self::UnsupportedMediaType
             | Self::PayloadTooLarge
             | Self::MagicLinkUnavailable => StatusCode::BAD_REQUEST,
-            Self::Unavailable | Self::Internal => StatusCode::SERVICE_UNAVAILABLE,
+            Self::Unavailable | Self::OutboxUnavailable | Self::Internal => {
+                StatusCode::SERVICE_UNAVAILABLE
+            }
         }
     }
 
@@ -55,7 +60,7 @@ impl MagicLinkHttpError {
             | Self::UnsupportedMediaType
             | Self::PayloadTooLarge
             | Self::MagicLinkUnavailable => "bad_request",
-            Self::Unavailable | Self::Internal => UNAVAILABLE_ERROR_CODE,
+            Self::Unavailable | Self::OutboxUnavailable | Self::Internal => UNAVAILABLE_ERROR_CODE,
         }
     }
 
@@ -66,7 +71,7 @@ impl MagicLinkHttpError {
             | Self::UnsupportedMediaType
             | Self::PayloadTooLarge
             | Self::MagicLinkUnavailable => "Invalid request.",
-            Self::Unavailable | Self::Internal => UNAVAILABLE_MESSAGE,
+            Self::Unavailable | Self::OutboxUnavailable | Self::Internal => UNAVAILABLE_MESSAGE,
         }
     }
 
@@ -79,6 +84,7 @@ impl MagicLinkHttpError {
             Self::PayloadTooLarge => "magic_link_payload_too_large",
             Self::MagicLinkUnavailable => "magic_link_unusable",
             Self::Unavailable => "magic_link_dependency_unavailable",
+            Self::OutboxUnavailable => "magic_link_outbox_unavailable",
             Self::Internal => "magic_link_internal",
         }
     }
@@ -90,6 +96,7 @@ impl From<MagicLinkServiceError> for MagicLinkHttpError {
             MagicLinkServiceError::BadRequest => Self::BadRequest,
             MagicLinkServiceError::MagicLinkUnavailable => Self::MagicLinkUnavailable,
             MagicLinkServiceError::Unavailable => Self::Unavailable,
+            MagicLinkServiceError::OutboxUnavailable => Self::OutboxUnavailable,
             MagicLinkServiceError::Internal => Self::Internal,
         }
     }

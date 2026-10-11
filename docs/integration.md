@@ -30,6 +30,10 @@ datadeft-magic-link-service = "0.5"
 datadeft-magic-link-axum    = "0.5"
 datadeft-magic-link-aws     = { version = "0.5", features = ["aws"] }
 # Add datadeft-pow-axum = "0.5" for the PoW HTTP helpers.
+# Add these when you use their items directly (for example, you implement
+# KeyPurpose or read token and email types that are not re-exported):
+datadeft-auth-token-core    = "0.5"
+datadeft-magic-link-core    = "0.5"
 ```
 
 The latest published version is 0.4.1. Until 0.5.0 is on the registries,
@@ -56,6 +60,12 @@ The libraries hold no globals. You inject every dependency.
   fake entropy in production.
 - **Keyrings** that you build from a `RootSecret` from AWS Secrets Manager.
   `resolve_auth_secrets` in `datadeft-magic-link-aws` loads them.
+  - A previous reference to `AWSPREVIOUS` of the same secret is optional.
+    Before the first rotation that stage does not exist, and the loader skips
+    it.
+  - If your app keeps its own fields in the same document, call
+    `fetch_auth_secret_documents` once. Read your fields from it, then call
+    `load()`. Do not fetch the secret twice.
   - Use one keyring per purpose: `SessionCookie`, `MagicLinkConfirmCookie`,
     and `PowProofCookie` (the proof cookie).
   - Configure an active slot and verify-only slots.
@@ -158,6 +168,10 @@ these steps:
 2. Prove that access logs, middleware, tracing, metrics, and error reporting
    use route templates. They must never keep raw request targets, tokens,
    confirmations, or cookies.
+3. Run a log probe that sends a real token through the stack and searches
+   every captured log line for it. Put the probe in its own test binary (its
+   own file under `tests/`). `tracing` caches callsite interest for the whole
+   process, so other tests in the same process make the probe flaky.
 
 The handlers prove non-reflection only after handler entry. They cannot make
 an unreviewed outer stack safe. See "Mandatory deployment gate" in
@@ -388,10 +402,11 @@ library provides no data migration, and every existing session ends.
   `pow_proof_cookie_root_b64` (32 random bytes each, independent of the other
   fields). Keep `kid` at 12 bytes or fewer. Remove app-owned PoW key fields.
   Load the keys from `LoadedAuthSecrets` instead.
-- **Previous secret document (`AWSPREVIOUS`):** it must also have the 0.5
-  shape. Every field is mandatory, and the library checks its `kid`. Do one of
-  these:
-  - Deploy the first 0.5 document with `AuthSecretsConfig::previous = None`.
+- **Previous secret document (`AWSPREVIOUS`):** when it exists, it must also
+  have the 0.5 shape. Every field is mandatory, and the library checks its
+  `kid`. Do one of these:
+  - Store the first 0.5 document as a new secret. It has no `AWSPREVIOUS` yet,
+    and the loader skips the missing stage.
   - Rewrite the previous version with both PoW fields and a `kid` of 12 bytes
     or fewer.
 - **One value per field:** the auth secret document rejects the same value in

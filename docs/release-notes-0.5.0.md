@@ -28,6 +28,13 @@ Consumer actions:
 - Email: remove app-side normalization. The library normalizes with
   `NormalizedEmail::normalize`. Use `from_normalized` where you used `parse`.
 - `RateLimiter` implementations: add `check_lifetime_limit`.
+- `MagicLinkServiceError` and `MagicLinkHttpError`: add the new
+  `OutboxUnavailable` value to exhaustive matches. It answers the same
+  constant `503`, with the reason `magic_link_outbox_unavailable`.
+- New: `fetch_auth_secret_documents` and `AuthSecretDocuments` fetch the
+  secret once for apps that keep their own fields in it. `AWSPREVIOUS` of the
+  active secret is optional before the first rotation. `PowFlowError` has
+  `reason()`.
 - `AuthAdminRepository::set_user_disabled_audited` takes
   `expected_version: Option<u64>`:
   - Pass `None` for a disable. A disable is unconditional and bumps

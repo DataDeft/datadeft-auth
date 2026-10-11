@@ -56,6 +56,10 @@ async fn shape_errors_and_faults_are_indistinguishable_from_outside() {
 
     let unavailable = parts(MagicLinkHttpError::Unavailable).await;
     assert_eq!(unavailable, parts(MagicLinkHttpError::Internal).await);
+    assert_eq!(
+        unavailable,
+        parts(MagicLinkHttpError::OutboxUnavailable).await
+    );
     assert_eq!(unavailable.0, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(unavailable.1, HeaderValue::from_static("no-store"));
     // Byte-identical to datadeft-pow-axum's 503 (pinned there too).
@@ -70,6 +74,7 @@ async fn shape_errors_and_faults_are_indistinguishable_from_outside() {
         MagicLinkHttpError::PayloadTooLarge,
         MagicLinkHttpError::MagicLinkUnavailable,
         MagicLinkHttpError::Unavailable,
+        MagicLinkHttpError::OutboxUnavailable,
         MagicLinkHttpError::Internal,
     ]
     .iter()
@@ -77,5 +82,5 @@ async fn shape_errors_and_faults_are_indistinguishable_from_outside() {
     .collect();
     reasons.sort_unstable();
     reasons.dedup();
-    assert_eq!(reasons.len(), 6, "every reason is distinct internally");
+    assert_eq!(reasons.len(), 7, "every reason is distinct internally");
 }

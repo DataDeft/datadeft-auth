@@ -211,9 +211,10 @@ pub(crate) fn map_flow_error(error: MagicLinkFlowError) -> MagicLinkFlowResponse
             MagicLinkServiceError::BadRequest | MagicLinkServiceError::MagicLinkUnavailable,
             TemporaryAuthStateAction::Clear,
         ) => MagicLinkFlowResponseError::Rejected,
-        (MagicLinkServiceError::Unavailable, TemporaryAuthStateAction::Preserve) => {
-            MagicLinkFlowResponseError::Unavailable
-        }
+        (
+            MagicLinkServiceError::Unavailable | MagicLinkServiceError::OutboxUnavailable,
+            TemporaryAuthStateAction::Preserve,
+        ) => MagicLinkFlowResponseError::Unavailable,
         _ => MagicLinkFlowResponseError::Internal,
     }
 }

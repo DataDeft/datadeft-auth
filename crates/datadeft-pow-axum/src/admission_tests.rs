@@ -230,6 +230,21 @@ fn budget_policy_is_bounded() {
     assert_eq!(ProofBudgetPolicy::new(5).expect("valid").per_solve(), 5);
 }
 
+#[test]
+fn every_pow_failure_has_a_distinct_namespaced_reason() {
+    let reasons = [
+        ProofRejection::ProofRequired.reason(),
+        ProofRejection::BudgetExhausted.reason(),
+        ProofRejection::Unavailable.reason(),
+        PowFlowError::Rejected.reason(),
+        PowFlowError::Internal.reason(),
+    ];
+    for (index, reason) in reasons.iter().enumerate() {
+        assert!(reason.starts_with("pow_"), "{reason}");
+        assert!(!reasons[..index].contains(reason), "{reason}");
+    }
+}
+
 #[tokio::test]
 async fn solution_rejections_render_the_same_contract() {
     let rejected = PowFlowError::Rejected.into_response();

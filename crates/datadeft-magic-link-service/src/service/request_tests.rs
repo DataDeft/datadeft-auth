@@ -110,7 +110,10 @@ async fn limiter_and_outbox_dependency_errors_remain_generic() {
         config(),
     )
     .await;
-    assert_eq!(result.unwrap_err(), MagicLinkServiceError::Unavailable);
+    assert_eq!(
+        result.unwrap_err(),
+        MagicLinkServiceError::OutboxUnavailable
+    );
     assert_eq!(repository.request_records.borrow().len(), 1);
     assert!(outbox.messages.borrow().is_empty());
 }

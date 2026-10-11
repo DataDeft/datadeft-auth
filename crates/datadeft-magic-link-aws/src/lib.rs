@@ -17,12 +17,13 @@ mod window;
 #[cfg(feature = "aws")]
 mod dynamodb;
 
-#[cfg(feature = "aws")]
-pub use config::resolve_auth_secrets;
 pub use config::{
-    AuthSecretsConfig, AwsAuthConfig, DynamoDbAuthStoreConfig, LoadedAuthSecrets, SecretKeyBytes,
-    SecretRef, SecretVersionRef, SesAuthEmailConfig, SupportedSecretManager,
+    AuthSecretDocuments, AuthSecretsConfig, AwsAuthConfig, DynamoDbAuthStoreConfig,
+    LoadedAuthSecrets, SecretKeyBytes, SecretRef, SecretVersionRef, SesAuthEmailConfig,
+    SupportedSecretManager,
 };
+#[cfg(feature = "aws")]
+pub use config::{fetch_auth_secret_documents, resolve_auth_secrets};
 pub use error::AwsAdapterError;
 pub use fake::{FakeDynamoDbAuthStore, UserSessionIndexEntry};
 pub use hmac_key::{SESSION_LOOKUP_HMAC_PREFIX, STORAGE_HMAC_KEY_BYTES, StorageHmacKey};

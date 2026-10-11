@@ -24,8 +24,10 @@
 //! # Payload sizing
 //!
 //! [`branca::MAX_PAYLOAD_BYTES`] is a hard primitive ceiling, but each purpose
-//! has a smaller [`KeyPurpose::MAX_BODY_BYTES`] application budget. Use
-//! [`max_body_bytes`] to compute the effective body budget for a purpose.
+//! has a smaller [`KeyPurpose::MAX_BODY_BYTES`] budget. That budget includes
+//! the internal framing (`typ`, `kid`, `iat`), so the caller body budget is
+//! smaller still: use [`max_body_bytes`] to compute it for a purpose and
+//! `kid`.
 
 mod freshness;
 mod payload;

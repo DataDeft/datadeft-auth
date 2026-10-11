@@ -26,6 +26,10 @@ pub enum MagicLinkServiceError {
     MagicLinkUnavailable,
     /// Dependency is unavailable. Callers may retry later.
     Unavailable,
+    /// The outbox (for example SES) failed to accept the email. Same public
+    /// answer as [`Unavailable`](Self::Unavailable); a separate value so
+    /// operators can tell an email-provider outage from a store outage.
+    OutboxUnavailable,
     /// Internal configuration or invariant failure.
     Internal,
 }
@@ -36,6 +40,7 @@ impl fmt::Display for MagicLinkServiceError {
             MagicLinkServiceError::BadRequest => f.write_str("bad request"),
             MagicLinkServiceError::MagicLinkUnavailable => f.write_str("magic link unavailable"),
             MagicLinkServiceError::Unavailable => f.write_str("service unavailable"),
+            MagicLinkServiceError::OutboxUnavailable => f.write_str("outbox unavailable"),
             MagicLinkServiceError::Internal => f.write_str("internal service error"),
         }
     }
@@ -69,7 +74,9 @@ impl MagicLinkFlowError {
     #[must_use]
     pub const fn temporary_state_action(&self) -> TemporaryAuthStateAction {
         match self.public_error {
-            MagicLinkServiceError::Unavailable => TemporaryAuthStateAction::Preserve,
+            MagicLinkServiceError::Unavailable | MagicLinkServiceError::OutboxUnavailable => {
+                TemporaryAuthStateAction::Preserve
+            }
             MagicLinkServiceError::BadRequest
             | MagicLinkServiceError::MagicLinkUnavailable
             | MagicLinkServiceError::Internal => TemporaryAuthStateAction::Clear,

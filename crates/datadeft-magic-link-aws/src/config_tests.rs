@@ -4,8 +4,8 @@ use datadeft_auth_token_core::keyring::KeyStatus;
 use datadeft_magic_link_service::{KeyId, KeyPurpose};
 
 use crate::{
-    AuthSecretsConfig, AwsAdapterError, AwsAuthConfig, DynamoDbAuthStoreConfig, LoadedAuthSecrets,
-    SecretRef, SecretVersionRef, SesAuthEmailConfig,
+    AuthSecretDocuments, AuthSecretsConfig, AwsAdapterError, AwsAuthConfig,
+    DynamoDbAuthStoreConfig, LoadedAuthSecrets, SecretRef, SecretVersionRef, SesAuthEmailConfig,
 };
 
 fn key(byte: u8) -> String {
@@ -324,4 +324,37 @@ fn pow_proof_keyring_refuses_the_cookie_purposes_this_crate_keys() {
             .unwrap_err(),
         AwsAdapterError::Internal
     );
+}
+
+#[test]
+fn secret_documents_load_once_ignore_app_fields_and_redact() {
+    let active = secret_json("active", 0x10, 1_000, 4_000_000).replacen(
+        '{',
+        r#"{ "app_field": "app value","#,
+        1,
+    );
+    let documents = AuthSecretDocuments::new(active.clone(), None);
+    assert_eq!(documents.active(), active);
+    assert!(documents.previous().is_none());
+    let loaded = documents.load().expect("loaded");
+    assert!(loaded.session_keyring.minting_key_at(1_000).is_ok());
+    let debug = format!("{documents:?}");
+    assert!(
+        !debug.contains("app value") && !debug.contains("active"),
+        "{debug}"
+    );
+}
+
+#[cfg(feature = "aws")]
+#[test]
+fn only_awsprevious_of_the_active_secret_may_be_absent() {
+    use crate::config::previous_stage_may_be_absent;
+    let active = SecretRef::aws_secrets_manager("auth", SecretVersionRef::stage("AWSCURRENT"));
+    let previous = SecretRef::aws_secrets_manager("auth", SecretVersionRef::stage("AWSPREVIOUS"));
+    assert!(previous_stage_may_be_absent(&active, &previous));
+    // A different secret name, or a pinned version, must exist.
+    let other = SecretRef::aws_secrets_manager("authx", SecretVersionRef::stage("AWSPREVIOUS"));
+    assert!(!previous_stage_may_be_absent(&active, &other));
+    let pinned = SecretRef::aws_secrets_manager("auth", SecretVersionRef::version_id("v1"));
+    assert!(!previous_stage_may_be_absent(&active, &pinned));
 }

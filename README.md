@@ -61,6 +61,9 @@ datadeft-magic-link-axum    = "0.5"
 datadeft-magic-link-aws     = { version = "0.5", features = ["aws"] }
 datadeft-pow-axum           = "0.5"
 datadeft-pow-core           = "0.5"
+# Only when you use their items directly:
+datadeft-auth-token-core    = "0.5"
+datadeft-magic-link-core    = "0.5"
 ```
 
 Until 0.5.0 is on the registries (latest published: 0.4.1), replace each

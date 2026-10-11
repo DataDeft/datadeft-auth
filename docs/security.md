@@ -862,6 +862,12 @@ Start with these thresholds:
 - Fail closed when limiter storage fails.
 - Document the targeted-lockout trade-off.
 
+The request and outbox limits count each attempt before the send. A send that
+fails at the outbox (reason `magic_link_outbox_unavailable`) still uses quota.
+During an email-provider outage, a user reaches the limit sooner. This is
+deliberate: a refund needs a second write and makes the count racy. Alert on
+the outbox reason.
+
 ## One supported way
 
 Do not add legacy support unless the project approves a versioned path. Do

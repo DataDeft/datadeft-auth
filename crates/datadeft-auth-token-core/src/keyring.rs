@@ -75,9 +75,13 @@ pub trait KeyPurpose {
     const HKDF_INFO: &'static [u8];
     /// Encrypted cookie payload `typ` string for this purpose.
     const TOKEN_TYPE: &'static str;
-    /// Maximum caller body bytes accepted for this purpose before internal
-    /// framing. Keep this tight: it is also the pre-auth token-length cap at
-    /// the cookie edge.
+    /// Maximum bound payload bytes for this purpose, **including** the
+    /// internal framing (version, `iat`, `typ` and `kid`: 7 bytes plus
+    /// `TOKEN_TYPE.len()` plus the `kid` length). The caller body budget is
+    /// this value minus that framing (see [`crate::cookie::max_body_bytes`]),
+    /// so set it to at least `LARGEST_BODY_BYTES` plus the framing for the
+    /// longest `kid` (12 bytes). Keep it tight: it is also the pre-auth
+    /// token-length cap at the cookie edge.
     const MAX_BODY_BYTES: usize;
     /// Longest absolute validity a token of this purpose may have. Active keys
     /// must verify for at least this long after their final minting instant.

@@ -423,28 +423,106 @@ impl fmt::Debug for LoadedAuthSecrets {
     }
 }
 
+/// The active and optional previous auth secret documents as stored (raw
+/// JSON). Fetch them once with [`fetch_auth_secret_documents`] when the app
+/// keeps its own fields in the same document: read those fields, then call
+/// [`load`](Self::load). The strings zeroize on drop; `Debug` is redacted.
+pub struct AuthSecretDocuments {
+    active: Zeroizing<String>,
+    previous: Option<Zeroizing<String>>,
+}
+
+impl AuthSecretDocuments {
+    /// Wrap already fetched documents.
+    #[must_use]
+    pub fn new(active: String, previous: Option<String>) -> Self {
+        Self {
+            active: Zeroizing::new(active),
+            previous: previous.map(Zeroizing::new),
+        }
+    }
+
+    /// The active document's JSON.
+    #[must_use]
+    pub fn active(&self) -> &str {
+        &self.active
+    }
+
+    /// The previous document's JSON, if one was configured and exists.
+    #[must_use]
+    pub fn previous(&self) -> Option<&str> {
+        self.previous.as_ref().map(|previous| previous.as_str())
+    }
+
+    /// Parse the library's fields; unknown (app-owned) fields are ignored.
+    pub fn load(&self) -> Result<LoadedAuthSecrets, AwsAdapterError> {
+        LoadedAuthSecrets::from_json(self.active(), self.previous())
+    }
+}
+
+impl fmt::Debug for AuthSecretDocuments {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AuthSecretDocuments(..)")
+    }
+}
+
 /// Resolve configured AWS Secrets Manager references into loaded auth secret
 /// material. Callers provide the AWS client. This function does not read global
-/// config or environment variables.
+/// config or environment variables. See [`fetch_auth_secret_documents`] for
+/// how a missing `AWSPREVIOUS` is handled.
 #[cfg(feature = "aws")]
 pub async fn resolve_auth_secrets(
     client: &aws_sdk_secretsmanager::Client,
     config: &AuthSecretsConfig,
 ) -> Result<LoadedAuthSecrets, AwsAdapterError> {
+    fetch_auth_secret_documents(client, config).await?.load()
+}
+
+/// Fetch the active and previous auth secret documents once.
+///
+/// A previous reference to the `AWSPREVIOUS` stage of the same secret as the
+/// active one is optional: before the first rotation that stage does not
+/// exist, and the documents have no previous entry. Any other failure,
+/// including a missing previous secret under a different name, is an error.
+#[cfg(feature = "aws")]
+pub async fn fetch_auth_secret_documents(
+    client: &aws_sdk_secretsmanager::Client,
+    config: &AuthSecretsConfig,
+) -> Result<AuthSecretDocuments, AwsAdapterError> {
     config.validate()?;
-    let active = load_secret_string(client, &config.active).await?;
+    let active = load_secret_string(client, &config.active, false)
+        .await?
+        .ok_or(AwsAdapterError::Internal)?;
     let previous = match &config.previous {
-        Some(previous) => Some(load_secret_string(client, previous).await?),
+        Some(previous) => {
+            let may_be_absent = previous_stage_may_be_absent(&config.active, previous);
+            load_secret_string(client, previous, may_be_absent).await?
+        }
         None => None,
     };
-    LoadedAuthSecrets::from_json(&active, previous.as_ref().map(|p| p.as_str()))
+    Ok(AuthSecretDocuments { active, previous })
 }
+
+/// True for `AWSPREVIOUS` of the active secret: absent until the first
+/// rotation. A different secret name must exist (a typo must not pass).
+#[cfg(feature = "aws")]
+pub(crate) fn previous_stage_may_be_absent(active: &SecretRef, previous: &SecretRef) -> bool {
+    previous.name_or_arn == active.name_or_arn
+        && previous.version == SecretVersionRef::Stage(AWS_PREVIOUS_STAGE.to_owned())
+}
+
+/// Secrets Manager's staging label for the previous version.
+#[cfg(feature = "aws")]
+const AWS_PREVIOUS_STAGE: &str = "AWSPREVIOUS";
 
 #[cfg(feature = "aws")]
 async fn load_secret_string(
     client: &aws_sdk_secretsmanager::Client,
     reference: &SecretRef,
-) -> Result<Zeroizing<String>, AwsAdapterError> {
+    may_be_absent: bool,
+) -> Result<Option<Zeroizing<String>>, AwsAdapterError> {
+    use aws_sdk_secretsmanager::error::ProvideErrorMetadata;
+
     match reference.manager {
         SupportedSecretManager::AwsSecretsManager => {}
     }
@@ -453,13 +531,20 @@ async fn load_secret_string(
         SecretVersionRef::Stage(stage) => request.version_stage(stage),
         SecretVersionRef::VersionId(version_id) => request.version_id(version_id),
     };
-    let output = request
-        .send()
-        .await
-        .map_err(crate::error::map_secretsmanager_get_secret_value_error)?;
+    let output = match request.send().await {
+        Ok(output) => output,
+        Err(error) if may_be_absent && error.code() == Some("ResourceNotFoundException") => {
+            return Ok(None);
+        }
+        Err(error) => {
+            return Err(crate::error::map_secretsmanager_get_secret_value_error(
+                error,
+            ));
+        }
+    };
     output
         .secret_string()
-        .map(|secret| Zeroizing::new(secret.to_owned()))
+        .map(|secret| Some(Zeroizing::new(secret.to_owned())))
         .ok_or(AwsAdapterError::Internal)
 }
 

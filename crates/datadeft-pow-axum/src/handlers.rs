@@ -153,6 +153,18 @@ pub enum PowFlowError {
     Internal,
 }
 
+impl PowFlowError {
+    /// Stable internal reason code for logs and metrics, never sent to the
+    /// client.
+    #[must_use]
+    pub fn reason(self) -> &'static str {
+        match self {
+            Self::Rejected => "pow_solution_rejected",
+            Self::Internal => "pow_internal",
+        }
+    }
+}
+
 impl axum::response::IntoResponse for PowFlowError {
     fn into_response(self) -> axum::response::Response {
         match self {
