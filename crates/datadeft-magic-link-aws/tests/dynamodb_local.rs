@@ -475,9 +475,9 @@ async fn disable_and_enable_against_dynamodb() {
     );
 }
 
-/// ADM-F1 against the real condition expression: an admin write based on a
-/// version another admin has since bumped is refused, and the service maps
-/// the lost race to `AdminError::Conflict`.
+/// ADM-F1 against the real condition expressions: an enable prepared from a
+/// read that another admin has since overtaken is refused, and a disable is
+/// unconditional (it bumps the version even on a disabled user).
 #[tokio::test]
 #[ignore = "needs DynamoDB Local: mise run dynamodb-local-test"]
 async fn a_stale_admin_write_is_refused_against_dynamodb() {
@@ -496,9 +496,6 @@ async fn a_stale_admin_write_is_refused_against_dynamodb() {
         .authentication()
         .user_id()
         .clone();
-    let stale = store.get_user(&user).await.expect("get").expect("user");
-    assert_eq!(stale.admin_version, 0);
-
     let actor = AdminActor::new("ops", None).expect("actor");
     let mut admin = AuthAdminService {
         admin: &store,
@@ -506,28 +503,30 @@ async fn a_stale_admin_write_is_refused_against_dynamodb() {
         rng: &mut rng,
     };
     admin.disable_user(&user, &actor).await.expect("disable");
-    admin.enable_user(&user, &actor).await.expect("enable");
+    // A slow enable reads the disabled user here (version 1)...
+    let stale = store.get_user(&user).await.expect("get").expect("user");
+    assert_eq!((stale.disabled, stale.admin_version), (true, 1));
+    // ...while another admin disables again: no flag change, a new version.
+    admin.disable_user(&user, &actor).await.expect("re-disable");
     let fresh = store.get_user(&user).await.expect("get").expect("user");
-    assert_eq!(fresh.admin_version, 2);
-    assert!(!fresh.disabled);
+    assert_eq!((fresh.disabled, fresh.admin_version), (true, 2));
 
-    // A disable prepared from the stale read (version 0) must not apply.
-    let stale_disable = AdminEvent {
+    let stale_enable = AdminEvent {
         event_id: AdminEventId::parse(&format!("evt-{}", random_hex(16))).expect("id"),
         at_unix: now(),
-        action: AdminAction::DisableUser,
+        action: AdminAction::EnableUser,
         user_id: user.clone(),
         session: None,
         actor: actor.clone(),
     };
     assert_eq!(
         store
-            .set_user_disabled_audited(&stale_disable, stale.admin_version)
+            .set_user_disabled_audited(&stale_enable, Some(stale.admin_version))
             .await,
         Err(DependencyError::ConditionalWriteFailed)
     );
     let after = store.get_user(&user).await.expect("get").expect("user");
-    assert!(!after.disabled, "nothing was written");
+    assert!(after.disabled, "the later disable holds");
     assert_eq!(after.admin_version, 2);
 }
 

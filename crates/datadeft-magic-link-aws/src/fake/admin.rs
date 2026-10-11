@@ -194,57 +194,45 @@ impl AuthAdminRepository for FakeDynamoDbAuthStore {
     async fn set_user_disabled_audited(
         &self,
         event: &AdminEvent,
-        expected_version: u64,
+        expected_version: Option<u64>,
     ) -> Result<(), DependencyError> {
-        let disable = match event.action {
-            AdminAction::DisableUser => true,
-            AdminAction::EnableUser => false,
-            AdminAction::RevokeSession => return Err(DependencyError::Internal),
-        };
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
+        let id = event.user_id.as_str().to_owned();
         // Every condition first, like DynamoDB: a failure writes nothing.
-        let version = inner
-            .admin_versions
-            .get(event.user_id.as_str())
-            .copied()
-            .unwrap_or(0);
+        let version = inner.admin_versions.get(&id).copied().unwrap_or(0);
         let next_version = version.checked_add(1).ok_or(DependencyError::Internal)?;
         let profile = inner
             .user_profiles_by_id
-            .get_mut(event.user_id.as_str())
+            .get_mut(&id)
             .ok_or(DependencyError::ConditionalWriteFailed)?;
-        // Only an enable requires the opposite state; a disable always
-        // applies (and bumps the version).
         let was_disabled = profile.disabled;
-        if (!disable && !was_disabled) || version != expected_version {
-            return Err(DependencyError::ConditionalWriteFailed);
+        match (event.action, expected_version) {
+            // Unconditional apart from the user existing.
+            (AdminAction::DisableUser, None) => profile.disabled = true,
+            // Only a disabled user still at the version the admin read.
+            (AdminAction::EnableUser, Some(expected)) => {
+                if !was_disabled || version != expected {
+                    return Err(DependencyError::ConditionalWriteFailed);
+                }
+                profile.disabled = false;
+            }
+            _ => return Err(DependencyError::Internal),
         }
-        profile.disabled = disable;
-        inner
-            .admin_versions
-            .insert(event.user_id.as_str().to_owned(), next_version);
-        // Re-disabling keeps the first disable's time and admin.
-        let meta = match (disable, was_disabled) {
-            (true, true) => inner
-                .disabled_meta
-                .get(event.user_id.as_str())
-                .cloned()
-                .unwrap_or_default(),
-            (true, false) => DisabledMeta {
-                at_unix: Some(event.at_unix),
-                by: Some(event.actor.id().to_owned()),
-            },
-            (false, _) => DisabledMeta::default(),
-        };
-        if !disable {
-            inner
-                .sessions_valid_after
-                .insert(event.user_id.as_str().to_owned(), event.at_unix);
+        inner.admin_versions.insert(id.clone(), next_version);
+        if event.action == AdminAction::EnableUser {
+            inner.disabled_meta.remove(&id);
+            inner.sessions_valid_after.insert(id, event.at_unix);
+        } else if !was_disabled {
+            // Re-disabling keeps the first disable's time and admin.
+            inner.disabled_meta.insert(
+                id,
+                DisabledMeta {
+                    at_unix: Some(event.at_unix),
+                    by: Some(event.actor.id().to_owned()),
+                },
+            );
         }
-        inner
-            .disabled_meta
-            .insert(event.user_id.as_str().to_owned(), meta);
         inner.admin_events.push(event.clone());
         Ok(())
     }

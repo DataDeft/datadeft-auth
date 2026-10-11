@@ -67,7 +67,7 @@ impl AuthAdminRepository for GatedEnable {
     async fn set_user_disabled_audited(
         &self,
         event: &AdminEvent,
-        expected_version: u64,
+        expected_version: Option<u64>,
     ) -> Result<(), DependencyError> {
         if event.action == AdminAction::EnableUser {
             self.reached.notify_one();
@@ -129,10 +129,10 @@ async fn a_stale_admin_write_conflicts_instead_of_undoing_a_later_one() {
             .await
             .expect("Y enable");
         let s1 = h.login_at(T0 + 30, 0).await;
-        // Z disables; the revocation of S1 fails (calls: read, write, list,
-        // then the revoke).
+        // Z disables; the revocation of S1 fails (calls: write, list, then
+        // the revoke).
         h.clock.set(T0 + 40);
-        let failing = FailingAdmin::new(&store, Fault::FailAt(3));
+        let failing = FailingAdmin::new(&store, Fault::FailAt(2));
         assert_eq!(
             h.admin_with(&failing).disable_user(&id, &actor()).await,
             Err(AdminError::Unavailable)
@@ -272,7 +272,7 @@ impl AuthAdminRepository for RacingDisable {
     async fn set_user_disabled_audited(
         &self,
         event: &AdminEvent,
-        expected_version: u64,
+        expected_version: Option<u64>,
     ) -> Result<(), DependencyError> {
         if event.action == AdminAction::DisableUser
             && !self.raced.swap(true, std::sync::atomic::Ordering::SeqCst)
@@ -301,10 +301,9 @@ impl AuthAdminRepository for RacingDisable {
     }
 }
 
-/// The hole `AdminRace.tla` found: a disable whose write lost the version race
-/// while the user stayed disabled must write again with the fresh version,
-/// not report success unfenced (which would let an enable that read in
-/// between undo it).
+/// A disable never loses a version race: another admin's disable landing
+/// between this one's call and its write does not stop it, and both bump the
+/// version (so an enable that read before either is fenced).
 #[tokio::test]
 async fn a_disable_that_loses_a_version_race_writes_again() {
     let mut h = Harness::new(47);

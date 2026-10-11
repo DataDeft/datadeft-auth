@@ -114,14 +114,13 @@ ROT-F1.
 ### AdminRace.tla
 
 Two admins read a user and later disable or enable it, interleaving freely.
-No write applies on top of a change it did not see (`Inv_NoStaleWrite`) only
-because writes are conditional on the profile version read; it failed for the
-0.4 code (`Versioned = FALSE`): finding ADM-F1. An enable never undoes a
+A disable is unconditional (disabling is the safe direction) and bumps the
+profile version; an enable is conditional on the version it read. No enable
+applies on top of a change it did not see (`Inv_NoStaleWrite`); it failed for
+the 0.4 code (`Versioned = FALSE`): finding ADM-F1. An enable never undoes a
 disable reported as successful after the enable's read (`Inv_NoLostDisable`)
 only because a disable of an already-disabled user still writes and bumps the
-version (`DisableAlwaysWrites`), and a disable that lost a version race
-writes again instead of reporting success unfenced (`RetryOnRace`, found by
-this model during the 0.5.0 review).
+version (`DisableAlwaysWrites`).
 
 ### PowBudget.tla
 

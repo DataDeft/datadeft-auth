@@ -203,12 +203,6 @@ const MUTANTS: Mutant[] = [
     constants: { DisableAlwaysWrites: "FALSE" },
     expect: "Inv_NoLostDisable",
   },
-  {
-    name: "a disable that lost the version race reports success unfenced",
-    spec: "AdminRace",
-    constants: { RetryOnRace: "FALSE" },
-    expect: "Inv_NoLostDisable",
-  },
   // --- PowBudget.tla -------------------------------------------------------
   {
     name: "per-node budget counters",

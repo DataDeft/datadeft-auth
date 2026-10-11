@@ -143,7 +143,7 @@ impl AuthAdminRepository for FailingAdmin {
     async fn set_user_disabled_audited(
         &self,
         event: &AdminEvent,
-        expected_version: u64,
+        expected_version: Option<u64>,
     ) -> Result<(), DependencyError> {
         self.guarded(
             self.store

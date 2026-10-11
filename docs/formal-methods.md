@@ -76,13 +76,12 @@ Findings the models produced:
 - **ADM-F1 (fixed in 0.5.0).** Concurrent admin actions on one user were
   last-write-wins: an enable whose final write was delayed past another
   admin's enable, a login, and a later disable undid that disable and revived
-  a session whose revocation failed. Not reachable by users. Admin writes are
-  now conditional on the profile's `admin_version`; the stale write fails with
-  `AdminError::Conflict`. A disable of an already-disabled user still writes
-  and bumps the version, so it fences a slow enable too (found in the 0.5.0
-  review). `AdminRace.tla` checks both (each is a killed mutant), and
-  `a_stale_admin_write_conflicts_instead_of_undoing_a_later_one` and
-  `a_disable_of_a_disabled_user_still_fences_a_slow_enable` pin them in code.
+  a session whose revocation failed. Not reachable by users. An enable is now
+  conditional on the profile's `admin_version` (a stale one fails with
+  `AdminError::Conflict`), and a disable is unconditional and always bumps the
+  version, so it fences a slow enable even on an already-disabled user and
+  never loses a race itself. `AdminRace.tla` checks both (each is a killed
+  mutant), and the race tests pin them in code.
 
 The v0.2.0 solve-timing signal (`Verified::mint_to_verify_ms`, the proof-cookie
 solve-class byte) is deliberately outside the models. It is observational: it

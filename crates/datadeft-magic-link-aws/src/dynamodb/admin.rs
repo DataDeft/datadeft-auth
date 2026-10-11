@@ -105,58 +105,52 @@ impl DynamoDbAuthStore {
     pub(crate) fn set_user_disabled_transaction(
         &self,
         event: &AdminEvent,
-        expected_version: u64,
+        expected_version: Option<u64>,
     ) -> Result<Vec<TransactWriteItem>, AwsAdapterError> {
-        let next_version = expected_version
-            .checked_add(1)
-            .ok_or(AwsAdapterError::Internal)?;
-        // A profile no admin has touched has no version yet: that is 0.
-        let version_condition = if expected_version == 0 {
-            "attribute_not_exists(admin_version)"
-        } else {
-            "admin_version = :expected_version"
-        };
         let builder = Update::builder()
             .table_name(&self.table_name)
             .key("pk", av_s(Self::pk_user_id(&event.user_id)))
             .key("sk", av_s("PROFILE"))
-            .condition_expression(match event.action {
-                // A disable applies whatever the flag, so it always bumps the
-                // version and fences a concurrent enable.
-                AdminAction::DisableUser => format!(
-                    "entity_type = :profile AND user_id = :user AND {version_condition}"
-                ),
-                _ => format!(
-                    "entity_type = :profile AND user_id = :user AND disabled = :current AND {version_condition}"
-                ),
-            })
             .expression_attribute_values(":profile", av_s("user_profile"))
             .expression_attribute_values(":user", av_s(event.user_id.as_str()))
-            .expression_attribute_values(":next_version", av_n(next_version));
-        let builder = if expected_version == 0 {
-            builder
-        } else {
-            builder.expression_attribute_values(":expected_version", av_n(expected_version))
-        };
-        let builder = match event.action {
-            // Re-disabling keeps the first disable's time and admin.
-            AdminAction::DisableUser => builder
+            .expression_attribute_values(":at", av_n(event.at_unix));
+        let builder = match (event.action, expected_version) {
+            // Unconditional apart from the user existing; the version bump
+            // fences any enable that read the user earlier. Re-disabling keeps
+            // the first disable's time and admin.
+            (AdminAction::DisableUser, None) => builder
+                .condition_expression("entity_type = :profile AND user_id = :user")
                 .update_expression(
-                    "SET disabled = :target, disabled_at_unix = if_not_exists(disabled_at_unix, :at), disabled_by = if_not_exists(disabled_by, :actor), admin_version = :next_version",
+                    "SET disabled = :true, disabled_at_unix = if_not_exists(disabled_at_unix, :at), disabled_by = if_not_exists(disabled_by, :actor) ADD admin_version :one",
                 )
-                .expression_attribute_values(":target", av_bool(true))
-                .expression_attribute_values(":at", av_n(event.at_unix))
-                .expression_attribute_values(":actor", av_s(event.actor.id())),
-            // The watermark keeps every session from before the re-enable
-            // invalid, even one whose revocation failed.
-            AdminAction::EnableUser => builder
-                .update_expression(
-                    "SET disabled = :target, sessions_valid_after_unix = :at, admin_version = :next_version REMOVE disabled_at_unix, disabled_by",
-                )
-                .expression_attribute_values(":current", av_bool(true))
-                .expression_attribute_values(":target", av_bool(false))
-                .expression_attribute_values(":at", av_n(event.at_unix)),
-            AdminAction::RevokeSession => return Err(AwsAdapterError::Internal),
+                .expression_attribute_values(":true", av_bool(true))
+                .expression_attribute_values(":actor", av_s(event.actor.id()))
+                .expression_attribute_values(":one", av_n(1)),
+            // Requires a disabled user still at the version the admin read. A
+            // profile no admin has touched has no version yet: that is 0. The
+            // watermark keeps every session from before the re-enable invalid.
+            (AdminAction::EnableUser, Some(expected)) => {
+                let next = expected.checked_add(1).ok_or(AwsAdapterError::Internal)?;
+                let builder = builder
+                    .update_expression(
+                        "SET disabled = :false, sessions_valid_after_unix = :at, admin_version = :next REMOVE disabled_at_unix, disabled_by",
+                    )
+                    .expression_attribute_values(":true", av_bool(true))
+                    .expression_attribute_values(":false", av_bool(false))
+                    .expression_attribute_values(":next", av_n(next));
+                if expected == 0 {
+                    builder.condition_expression(
+                        "entity_type = :profile AND user_id = :user AND disabled = :true AND attribute_not_exists(admin_version)",
+                    )
+                } else {
+                    builder
+                        .condition_expression(
+                            "entity_type = :profile AND user_id = :user AND disabled = :true AND admin_version = :expected",
+                        )
+                        .expression_attribute_values(":expected", av_n(expected))
+                }
+            }
+            _ => return Err(AwsAdapterError::Internal),
         };
         let update = builder.build().map_err(|_| AwsAdapterError::Internal)?;
         Ok(vec![
@@ -421,7 +415,7 @@ impl AuthAdminRepository for DynamoDbAuthStore {
     async fn set_user_disabled_audited(
         &self,
         event: &AdminEvent,
-        expected_version: u64,
+        expected_version: Option<u64>,
     ) -> Result<(), DependencyError> {
         async {
             self.transact(

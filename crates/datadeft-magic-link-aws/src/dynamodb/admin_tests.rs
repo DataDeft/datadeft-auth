@@ -94,63 +94,52 @@ fn revoke_transaction_is_owner_checked_final_and_audited() {
 }
 
 #[test]
-fn enable_requires_a_disabled_user_and_disable_always_fences() {
+fn disable_is_unconditional_and_enable_is_version_fenced() {
     let store = store();
     let disable = store
-        .set_user_disabled_transaction(&event(AdminAction::DisableUser, None), 0)
+        .set_user_disabled_transaction(&event(AdminAction::DisableUser, None), None)
         .expect("disable");
     let update = disable[0].update().expect("update");
     assert_eq!(
         update.key().get("pk"),
         Some(&av_s(format!("USERID#{USER_ID}")))
     );
-    // A disable applies whatever the flag (a re-disable bumps the version
-    // and fences a concurrent enable) and keeps the first disable's details.
-    assert!(
-        !update
-            .condition_expression()
-            .expect("condition")
-            .contains("disabled = :current")
+    // A disable only needs the profile to exist; it always bumps the
+    // version (fencing a concurrent enable) and keeps the first disable's
+    // details on a re-disable.
+    assert_eq!(
+        update.condition_expression(),
+        Some("entity_type = :profile AND user_id = :user")
     );
     let values = update.expression_attribute_values();
-    assert_eq!(attribute(values, ":current"), None);
-    assert_eq!(attribute(values, ":target"), Some(&av_bool(true)));
+    assert_eq!(attribute(values, ":true"), Some(&av_bool(true)));
+    assert_eq!(attribute(values, ":one"), Some(&av_n(1)));
+    assert!(
+        update
+            .update_expression()
+            .contains("ADD admin_version :one")
+    );
     assert!(
         update
             .update_expression()
             .contains("disabled_by = if_not_exists(disabled_by, :actor)")
     );
-    // Version 0: no admin has written yet, so the attribute must be absent.
-    assert!(
-        update
-            .condition_expression()
-            .expect("condition")
-            .contains("attribute_not_exists(admin_version)")
-    );
-    assert!(
-        update
-            .update_expression()
-            .contains("admin_version = :next_version")
-    );
-    assert_eq!(attribute(values, ":next_version"), Some(&av_n(1)));
     assert_eq!(
         disable[1].put().expect("audit").item().get("action"),
         Some(&av_s("disable_user"))
     );
 
     let enable = store
-        .set_user_disabled_transaction(&event(AdminAction::EnableUser, None), 4)
+        .set_user_disabled_transaction(&event(AdminAction::EnableUser, None), Some(4))
         .expect("enable");
     let update = enable[0].update().expect("update");
-    assert!(
-        update
-            .condition_expression()
-            .expect("condition")
-            .contains("disabled = :current")
-    );
+    let condition = update.condition_expression().expect("condition");
+    assert!(condition.contains("disabled = :true"));
+    assert!(condition.contains("admin_version = :expected"));
     let values = update.expression_attribute_values();
-    assert_eq!(attribute(values, ":current"), Some(&av_bool(true)));
-    assert_eq!(attribute(values, ":target"), Some(&av_bool(false)));
+    assert_eq!(attribute(values, ":false"), Some(&av_bool(false)));
+    assert_eq!(attribute(values, ":expected"), Some(&av_n(4)));
+    assert_eq!(attribute(values, ":next"), Some(&av_n(5)));
     assert!(
         update
             .update_expression()
@@ -163,15 +152,29 @@ fn enable_requires_a_disabled_user_and_disable_always_fences() {
             .contains("sessions_valid_after_unix = :at")
     );
     assert_eq!(attribute(values, ":at"), Some(&av_n(1_234)));
-    // Conditional on the version the admin read; the write bumps it.
+
+    // Version 0: no admin has written yet, so the attribute must be absent.
+    let first_enable = store
+        .set_user_disabled_transaction(&event(AdminAction::EnableUser, None), Some(0))
+        .expect("enable");
+    let update = first_enable[0].update().expect("update");
     assert!(
         update
             .condition_expression()
             .expect("condition")
-            .contains("admin_version = :expected_version")
+            .contains("attribute_not_exists(admin_version)")
     );
-    assert_eq!(attribute(values, ":expected_version"), Some(&av_n(4)));
-    assert_eq!(attribute(values, ":next_version"), Some(&av_n(5)));
+    assert_eq!(
+        attribute(update.expression_attribute_values(), ":expected"),
+        None
+    );
+
+    // An action and version that do not belong together are refused.
+    assert!(
+        store
+            .set_user_disabled_transaction(&event(AdminAction::EnableUser, None), None)
+            .is_err()
+    );
 }
 
 #[test]
@@ -189,7 +192,7 @@ fn mismatched_actions_are_rejected() {
     );
     assert!(
         store
-            .set_user_disabled_transaction(&event(AdminAction::RevokeSession, Some(HANDLE)), 0)
+            .set_user_disabled_transaction(&event(AdminAction::RevokeSession, Some(HANDLE)), None)
             .is_err()
     );
 }

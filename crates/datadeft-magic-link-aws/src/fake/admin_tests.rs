@@ -347,7 +347,7 @@ async fn disable_without_revoking(store: &FakeDynamoDbAuthStore, user_id: &UserI
                 session: None,
                 actor: admin_actor(),
             },
-            0,
+            None,
         )
         .await
         .expect("disable");

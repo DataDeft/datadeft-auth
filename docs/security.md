@@ -258,17 +258,15 @@ every admin endpoint before calling the service.
 - Audit events within the same second list in event-id order, not action
   order; use the timestamps.
 - Concurrent admin actions on the same user cannot overwrite each other
-  (ADM-F1, fixed in 0.5.0). Every disable and enable is conditional on the
-  profile's `admin_version` read at the start of the action and bumps it. A
-  disable of an already-disabled user writes too (recording the attempt and
-  keeping the first disable's time and admin), so it fences a slow enable; a
-  disable that loses a version race while the user stays disabled re-reads and
-  writes again, and never reports success without its own write. If
-  another admin changed the user in between, for example a disable made while
-  a slow enable was still revoking sessions, the later write fails with
-  `AdminError::Conflict` and writes nothing. Re-read the user with `get_user`
-  and decide again. The user record, the session list and the audit log show
-  only writes that applied.
+  (ADM-F1, fixed in 0.5.0). Every disable and enable bumps the profile's
+  `admin_version`. An enable is conditional on the version read at the start
+  of the action: if another admin changed the user in between, for example a
+  disable made while a slow enable was still revoking sessions, it fails with
+  `AdminError::Conflict` and writes nothing; re-read with `get_user` and
+  decide again. A disable is unconditional apart from the user existing:
+  disabling is the safe direction, so it never loses a race, and on an
+  already-disabled user it still records the attempt and bumps the version
+  (keeping the first disable's time and admin).
 - "Append-only" is enforced by the library, not by IAM: the admin role needs
   `TransactWriteItems`, which could also overwrite rows. Enable DynamoDB
   point-in-time recovery or stream exports for tamper evidence.

@@ -235,12 +235,15 @@ modes.
 ### 4.16 Admin concurrency: conditional writes — Done
 In 0.4, concurrent admin actions on one user were last-write-wins: a delayed
 enable could undo a later disable (ADM-F1).
-- Each user profile carries an `admin_version`. Disable and enable write only if the
-  version is still the one they read; a lost race returns
-  `AdminError::Conflict` and the admin re-reads and decides. A retried disable
-  still completes revocation.
-- Checked in `spec/tla/AdminRace.tla` (0.4's last-write-wins is a killed
-  mutant), the admin race test, the model tests, and against DynamoDB Local.
+- Each user profile carries an `admin_version`; every disable and enable
+  bumps it.
+- An enable writes only if the version is still the one it read; a lost race
+  returns `AdminError::Conflict` and the admin re-reads and decides.
+- A disable is unconditional apart from the user existing (disabling is the
+  safe direction): it never loses a race, and its version bump fences any
+  enable that read the user earlier, even on an already-disabled user.
+- Checked in `spec/tla/AdminRace.tla` (each rule is a killed mutant), the
+  admin race tests, the model tests, and against DynamoDB Local.
 
 ### 4.17 Protect client and the status contract — Done
 - `@datadeft/protect-client` exports `protectedFetch(input, init, config,

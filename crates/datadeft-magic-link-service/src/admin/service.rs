@@ -11,10 +11,6 @@ use super::repository::AuthAdminRepository;
 use super::types::*;
 use super::*;
 
-/// Extra write attempts a disable makes when other admins keep changing the
-/// user's version while it stays disabled.
-const MAX_DISABLE_ATTEMPTS: u32 = 2;
-
 /// Admin queries and audited mutations over an [`AuthAdminRepository`].
 ///
 /// Construct with a struct literal. The clock timestamps audit events and
@@ -196,34 +192,22 @@ where
     /// is not an error.
     ///
     /// Every call writes a version-bumping `DisableUser` event, even for an
-    /// already-disabled user (the original disable time and admin are kept),
-    /// so an enable that read the user earlier conflicts instead of undoing
-    /// this disable. Returns [`AdminError::Conflict`] if another admin enabled
-    /// the user between this call's read and its write; nothing is written.
+    /// already-disabled user (the first disable's time and admin are kept).
+    /// The write is unconditional apart from the user existing: disabling is
+    /// the safe direction, so a disable never loses a race, and its version
+    /// bump makes an enable that read the user earlier fail with
+    /// [`AdminError::Conflict`] instead of undoing it.
     pub async fn disable_user(
         &mut self,
         user_id: &UserId,
         actor: &AdminActor,
     ) -> Result<u64, AdminError> {
-        // Write even when the user is already disabled: only this call's own
-        // version bump fences an enable that read the user earlier. If another
-        // admin changed the version meanwhile and the user is still disabled,
-        // write again with the new version; if it was enabled, that is a
-        // Conflict. Never report success without having written.
-        let mut attempts = 0;
-        loop {
-            let user = self.read_user(user_id).await?;
-            match self
-                .set_disabled(AdminAction::DisableUser, user_id, user.admin_version, actor)
-                .await
-            {
-                Ok(()) => break,
-                Err(AdminError::AlreadyInState) if attempts < MAX_DISABLE_ATTEMPTS => {
-                    attempts += 1;
-                }
-                Err(AdminError::AlreadyInState) => return Err(AdminError::Conflict),
-                Err(error) => return Err(error),
-            }
+        let event = self.event(AdminAction::DisableUser, user_id, None, actor)?;
+        match self.admin.set_user_disabled_audited(&event, None).await {
+            Ok(()) => {}
+            // The only condition on a disable is that the user exists.
+            Err(DependencyError::ConditionalWriteFailed) => return Err(AdminError::NotFound),
+            Err(error) => return Err(map_admin_dependency_error(error)),
         }
         self.revoke_all_sessions(user_id, actor).await
     }
@@ -259,8 +243,7 @@ where
         }
         // The user is disabled, so no new session can start meanwhile.
         self.revoke_all_sessions(user_id, actor).await?;
-        self.set_disabled(AdminAction::EnableUser, user_id, user.admin_version, actor)
-            .await
+        self.enable(user_id, user.admin_version, actor).await
     }
 
     async fn read_user(&self, user_id: &UserId) -> Result<UserSummary, AdminError> {
@@ -271,25 +254,22 @@ where
             .ok_or(AdminError::NotFound)
     }
 
-    /// The conditional write; on a failed condition, a re-read tells a
-    /// missing user, a user already in the target state, and a lost race
-    /// apart.
-    async fn set_disabled(
+    /// The conditional enable; on a failed condition, a re-read tells a
+    /// missing user, a user already enabled, and a lost race apart.
+    async fn enable(
         &mut self,
-        action: AdminAction,
         user_id: &UserId,
         expected_version: u64,
         actor: &AdminActor,
     ) -> Result<(), AdminError> {
-        let event = self.event(action, user_id, None, actor)?;
+        let event = self.event(AdminAction::EnableUser, user_id, None, actor)?;
         match self
             .admin
-            .set_user_disabled_audited(&event, expected_version)
+            .set_user_disabled_audited(&event, Some(expected_version))
             .await
         {
             Ok(()) => Ok(()),
             Err(DependencyError::ConditionalWriteFailed) => {
-                let target_disabled = action == AdminAction::DisableUser;
                 match self
                     .admin
                     .get_user(user_id)
@@ -297,9 +277,7 @@ where
                     .map_err(map_admin_dependency_error)?
                 {
                     None => Err(AdminError::NotFound),
-                    Some(user) if user.disabled == target_disabled => {
-                        Err(AdminError::AlreadyInState)
-                    }
+                    Some(user) if !user.disabled => Err(AdminError::AlreadyInState),
                     Some(_) => Err(AdminError::Conflict),
                 }
             }
