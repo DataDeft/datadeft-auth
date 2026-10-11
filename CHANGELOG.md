@@ -6,17 +6,109 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## [0.5.0](https://github.com/DataDeft/datadeft-auth/compare/v0.4.1...v0.5.0) (2026-10-11)
 
+### Upgrade summary
+
+0.5.0 is a breaking release. To upgrade, you need a **fresh auth table and a
+fresh secret document**, and **every 0.4 session ends**. The ids changed form,
+and the session cookie body carries the session id. The project gives no
+migration tools (pre-1.0).
+
+Consumer actions:
+
+- Ids are `usr-`, `sid-`, `aid-`, `evt-`, `sess-` plus lowercase hex. Update
+  validators, fixtures, and API schemas.
+- Secret document:
+  - Add `pow_challenge_secret_b64` and `pow_proof_cookie_root_b64`.
+  - Rename `aws_storage_hmac_b64` to `storage_hmac_b64`.
+  - Use a distinct value in every key field.
+  - Keep `kid` at 12 bytes or fewer.
+  - Make `AWSPREVIOUS` 0.5-shaped, or unset it.
+- Cookie configs: use `secure(..)` or `insecure_local(..)`. The getter is
+  `is_secure()`.
+- Email: remove app-side normalization. The library normalizes with
+  `NormalizedEmail::normalize`. Use `from_normalized` where you used `parse`.
+- `RateLimiter` implementations: add `check_lifetime_limit`.
+- The confirm page and the flow-state route now show a masked account
+  (`i•••••@datadeft.eu`) by default. Set
+  `MagicLinkServiceConfig::account_display = AccountDisplay::Full` to keep the
+  full address.
+- `MagicLinkServiceError` and `MagicLinkHttpError`: add the new
+  `OutboxUnavailable` value to exhaustive matches. It answers the same
+  constant `503`, with the reason `magic_link_outbox_unavailable`.
+- New: `fetch_auth_secret_documents` and `AuthSecretDocuments` fetch the
+  secret once for apps that keep their own fields in it. `AWSPREVIOUS` of the
+  active secret is optional before the first rotation. `PowFlowError` has
+  `reason()`.
+- `AuthAdminRepository::set_user_disabled_audited` takes
+  `expected_version: Option<u64>`:
+  - Pass `None` for a disable. A disable is unconditional and bumps
+    `admin_version`.
+  - Pass `Some(version)` for an enable. The enable is fenced on that version.
+  - Handle `AdminError::Conflict` from `enable_user`.
+- `CountryPolicy::pin` returns `Option<&str>`:
+  - It returns `None` (fail closed) under any policy when the request country
+    is `EU` or an ISO user-assigned code.
+  - Such a code is an edge pseudo-code, never the country of a viewer.
+  - Make sure that each group tag is `EU` or a user-assigned code other than
+    `XX` and `XK`.
+  - Make sure that group tags are unique (`DuplicateTag`).
+- `RequestMagicLinkOutcome` is `Sent` or `Throttled(..)`. Count it.
+- `MagicLinkEmail` and `MagicLinkRequestJson` gain `locale`.
+  `MagicLinkServiceConfig` gains `country_policy` and `locales`.
+  `MagicLinkConfigError` gains `InvalidCountryPolicy`.
+- 0.5.0 removes `MagicLinkHttpError::Forbidden`. `MagicLinkUnavailable`
+  answers with the generic `400` body. The `reason()` labels have namespaces
+  (`magic_link_*`, `session_*`, `pow_*`).
+- Adopt the HTTP status contract (`docs/security.md`):
+  - `401` with `WWW-Authenticate: DD-PoW` for a missing proof or a used-up
+    per-solve budget.
+  - `401` with `WWW-Authenticate: DD-Session`.
+  - `400` for shape errors.
+  - One constant `503`.
+  - No library `403` or `500`.
+- Alert on reason counts, not on raw `5xx`.
+- Add a load-balancer health endpoint.
+- Optional: adopt these features when you need them:
+  - the redirect landing mode for static confirm pages
+  - country groups (`CountryPolicy::eu27()`)
+  - the locale allowlist
+  - Reply-To
+  - the per-solve budget for PoW (`admit_proof`)
+  - `protectedFetch` in the browser
+
+### Security fixes
+
+These bugs affect 0.4.0 and 0.4.1. Upgrade before you rotate storage keys or
+use disable/enable in production.
+
+- **Duplicate accounts during storage-key rotation.** First, a sign-up ran on a
+  node with the new key. Then a login ran on a node that still used the old
+  key. This created a second account for the same email. Sign-up now claims
+  the email row under both keys. (`spec/tla/KeyRotation.tla`, finding ROT-F1.)
+- **A re-enabled user could get an old session back** when host clocks
+  disagree. `enable_user` now revokes every live session before it re-enables.
+  (`spec/tla/Session.tla`, finding SES-F1.)
+- **Concurrent admin actions were last-write-wins.** A delayed enable could
+  undo a later disable and revive a session whose revocation failed. A disable
+  now always writes and bumps the profile version. An enable is conditional on
+  the version it read. An enable that loses a race returns
+  `AdminError::Conflict`. (`spec/tla/AdminRace.tla`, finding ADM-F1.)
+- **Keyed-lookup framing:** a NUL byte in a domain or prefix could make two
+  distinct inputs frame identically. The library now refuses a NUL byte there.
+- **A previous storage key equal to the current one** made every sign-up fail
+  against DynamoDB. The cause was two writes to one item in a transaction. The
+  library now ignores such a key. (0.5.0 development introduced and fixed this
+  bug. 0.4 does not have it.)
 
 ### ⚠ BREAKING CHANGES
 
 * **service:** landing outcomes and flow-state answers carry the masked account by default.
 * MagicLinkServiceError and MagicLinkHttpError gain an OutboxUnavailable variant.
-* **admin:** set_user_disabled_audited takes expected_version: Option<u64> (None for a disable, Some for an enable).
+* **admin:** AuthAdminRepository::set_user_disabled_audited takes expected_version: Option<u64> (None for a disable, Some for an enable), UserSummary has admin_version, and AdminError has a Conflict variant.
 * CountryPolicy::pin returns Option<&str>.
 * **pow:** ProofRejection::BudgetExhausted renders 401 + DD-PoW instead of 503.
 * **admin:** disable_user on an already-disabled user writes an audit event and bumps admin_version; DisableUser no longer requires the user to be enabled at the storage layer.
 * MagicLinkUnavailable now renders the generic 400 body, and reason() labels changed to namespaced values.
-* **admin:** AuthAdminRepository::set_user_disabled_audited takes the expected admin_version, UserSummary has admin_version, and AdminError has a Conflict variant.
 * **service:** RequestMagicLinkOutcome is an enum, not a unit struct.
 * **axum:** Internal and Unavailable are 503, 415/413 shape errors are 400, MagicLinkHttpError::Forbidden is gone, and session rejections carry WWW-Authenticate: DD-Session.
 * **pow:** PoW rejections are 401 + DD-PoW instead of the app's 403, and faults 503 instead of 500.
@@ -27,7 +119,7 @@ All notable changes to this workspace are recorded here. The format follows
 * cookie config constructors and the `secure()` getter are renamed, and the secret document field `aws_storage_hmac_b64` is now `storage_hmac_b64`; documents with the old name no longer load.
 * **aws:** a secret document with the same value in two key fields no longer loads.
 * **token-core:** every KeyPurpose implementation declares LARGEST_BODY_BYTES (0 disables the check).
-* **aws:** the auth secret document requires pow_challenge_secret_b64 and pow_proof_cookie_root_b64, and its kid must be at most 12 bytes. LoadedAuthSecrets has new fields. Existing secret documents must be rewritten; there is no migration (pre-1.0, no deployments).
+* **aws:** the auth secret document requires pow_challenge_secret_b64 and pow_proof_cookie_root_b64, and its kid must be at most 12 bytes. LoadedAuthSecrets has new fields. Existing secret documents must be rewritten; there is no migration (pre-1.0, no migration tooling).
 
 ### Features
 
@@ -57,12 +149,9 @@ All notable changes to this workspace are recorded here. The format follows
 
 ### Bug Fixes
 
-* **admin:** disables are unconditional; only enables are version-fenced ([9778517](https://github.com/DataDeft/datadeft-auth/commit/977851740a5958d142ec5267a22573b06a8f12bd))
+* **admin:** disables are unconditional and fence concurrent enables; only enables are version-fenced ([9778517](https://github.com/DataDeft/datadeft-auth/commit/977851740a5958d142ec5267a22573b06a8f12bd), [a5aca66](https://github.com/DataDeft/datadeft-auth/commit/a5aca66e837e1a07a6529dde1fb1b0e3497d086f))
 * **admin:** enable_user revokes live sessions before re-enabling ([df18d26](https://github.com/DataDeft/datadeft-auth/commit/df18d260262a069ea5b7d367dacc0e20b513586c))
-* **admin:** every disable fences a concurrent enable, even on a disabled user ([a5aca66](https://github.com/DataDeft/datadeft-auth/commit/a5aca66e837e1a07a6529dde1fb1b0e3497d086f))
 * **aws:** claim the previous-key email row when creating a user ([6e95cb3](https://github.com/DataDeft/datadeft-auth/commit/6e95cb3a960a7f7892d71dd7313ba52ad0ca5437))
-* **aws:** classify sign-up cancellations by the transaction's real layout ([e5825e0](https://github.com/DataDeft/datadeft-auth/commit/e5825e0b46d5eb800ae581066b72fe0555337c87))
-* **aws:** ignore a previous storage key equal to the current one ([7ac9a05](https://github.com/DataDeft/datadeft-auth/commit/7ac9a0563386315cf07f17db65a4e402e9ea5a9f))
 * **magic-link-core:** reject NUL in lookup HMAC domain and prefix ([afb4685](https://github.com/DataDeft/datadeft-auth/commit/afb46854dcecc3c9591dde781bd6e542792c9bcd))
 * **pow:** a used-up per-solve budget answers 401 + DD-PoW, not 503 ([543ce8d](https://github.com/DataDeft/datadeft-auth/commit/543ce8d97e619b6d77a3df019d7efacec17e8cbb))
 * pre-release review findings on budgets, country pinning and limits ([b09ce85](https://github.com/DataDeft/datadeft-auth/commit/b09ce8504a53e0e3973f93d3db289b91499a0320))
