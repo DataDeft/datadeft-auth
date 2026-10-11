@@ -1,7 +1,7 @@
 # Onboarding
 
-**Status:** `0.5.0` is a breaking pre-1.0 release. It is not yet published to
-the registries. Use a git ref until it is.
+**Status:** pre-1.0. `0.5.0` is a breaking release being validated; the latest
+published version is `0.4.1`.
 
 To wire the libraries into your application, follow
 [integration.md](integration.md).
@@ -19,7 +19,7 @@ To wire the libraries into your application, follow
 | Browser PoW client | Ready | Serve the built worker and call `protect()` from your login page. |
 | Country-aware PoW | Not ready | Build upstream policy. Never lower difficulty below the floor. |
 | Example app | Ready | Start with `examples/axum-magic-link`. |
-| Published crates | Pending | Pin the 0.5.0 git revision. Registry publish is pending ([releasing.md](releasing.md)). |
+| Published crates | Done | `0.4.1` on crates.io and npm; `0.5.0` follows validation ([releasing.md](releasing.md)). |
 
 Never use fake secrets, fake clocks, or fake entropy in production.
 
@@ -62,7 +62,7 @@ PoW admission is shipped and recommended. Only country-aware difficulty
 | MVP-001 | P0 | Done | Keep the fake-backed Axum example runnable. |
 | MVP-002 | P0 | Per deployment | Attest token-safe logging. |
 | MVP-003 | P0 | AWS users | Validate live DynamoDB behavior. |
-| MVP-004 | P0 | Done | Consume by the 0.5.0 git revision. Registry publish is pending ([releasing.md](releasing.md)). |
+| MVP-004 | P0 | Done | Published to crates.io and npm since `0.4.0` ([releasing.md](releasing.md)). |
 | MVP-005 | P1 | Done | Trait futures require `+ Send`, static dispatch only (no `dyn`). |
 | MVP-006 | P1 | Decided | Inline SES delivery is accepted. Implement `MagicLinkOutbox` against a durable queue only if a deployment needs it. |
 | MVP-007 | P1 | Decided | Store the normalized email at rest, protected by DynamoDB KMS and IAM. No app-side field encryption. |

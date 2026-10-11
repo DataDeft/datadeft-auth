@@ -1,13 +1,14 @@
 # Registry releases
 
-`0.5.0` is the first registry release; nothing is published yet. All seven
-Rust crates and the npm client share one version and one release PR. No
+All seven Rust crates and the npm client share one version and one release PR.
+The registries hold `0.4.0` and `0.4.1`; `0.5.0` is next. No
 release-candidate or other pre-release versions are published: consumers test
-an unpublished version via a git ref. Earlier git tags remain; never move them.
+an unpublished version via a git ref. Never move a release tag.
 
 ## Approval and one-time setup (maintainers)
 
-Before the first publication:
+Done for `0.4.0`; kept for reference and for new maintainers. Before the first
+publication:
 
 1. Confirm the seven `datadeft-*` names below and `@datadeft/protect-client`.
    The license is MIT (approved 2026-10-08).
@@ -35,6 +36,8 @@ Before the first publication:
    complete.
 
 ## First-publish bootstrap is a separate, manual approval
+
+Done for `0.4.0`. Applies again only to a new package name.
 
 An OIDC-only first publication is not currently possible. Both registries
 require the package to exist before you can configure a trusted publisher, and

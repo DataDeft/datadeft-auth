@@ -4,9 +4,8 @@ Reusable Rust authentication libraries: proof-of-work (PoW), encrypted session
 tokens, and scanner-safe magic-link login. Small, deterministic, IO-free cores
 plus optional framework and cloud adapters.
 
-**Status:** `0.5.0` is a breaking pre-1.0 release. It is not yet on crates.io
-or npm. Until it is published, use a git ref. See
-[releasing.md](docs/releasing.md).
+**Status:** pre-1.0. `0.5.0` is a breaking release being validated; the latest
+published version on crates.io and npm is `0.4.1`.
 
 ## What this is
 
@@ -55,20 +54,6 @@ Rust 1.88 or newer is required. The common case is Axum plus DynamoDB. The
 service crate re-exports the keyring and lookup-key types, so you do not
 depend on the core crates directly.
 
-Until 0.5.0 is published, pin a git revision:
-
-```toml
-[dependencies]
-datadeft-magic-link-service = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }
-datadeft-magic-link-axum    = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }
-datadeft-magic-link-aws     = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>", features = ["aws"] }
-# Optional PoW admission (admit_proof, PowAdmission) and the ProofBudget trait:
-datadeft-pow-axum           = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }
-datadeft-pow-core           = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }
-```
-
-After 0.5.0 is published:
-
 ```toml
 [dependencies]
 datadeft-magic-link-service = "0.5"
@@ -77,6 +62,10 @@ datadeft-magic-link-aws     = { version = "0.5", features = ["aws"] }
 datadeft-pow-axum           = "0.5"
 datadeft-pow-core           = "0.5"
 ```
+
+Until 0.5.0 is on the registries (latest published: 0.4.1), replace each
+version with `{ git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }`
+(keep `features`).
 
 ```sh
 bun add @datadeft/protect-client

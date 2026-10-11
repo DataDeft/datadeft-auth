@@ -21,18 +21,7 @@ Do not invent an approach. Follow the example and the trait contracts.
 
 ## Install
 
-Rust 1.88 or newer is required. Until 0.5.0 is published, pin a git revision:
-
-```toml
-[dependencies]
-datadeft-pow-core           = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }
-datadeft-magic-link-service = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }
-datadeft-magic-link-axum    = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }
-datadeft-magic-link-aws     = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>", features = ["aws"] }
-# Add datadeft-pow-axum from the same rev for the PoW HTTP helpers.
-```
-
-After 0.5.0 is published to the registries:
+Rust 1.88 or newer is required.
 
 ```toml
 [dependencies]
@@ -42,6 +31,10 @@ datadeft-magic-link-axum    = "0.5"
 datadeft-magic-link-aws     = { version = "0.5", features = ["aws"] }
 # Add datadeft-pow-axum = "0.5" for the PoW HTTP helpers.
 ```
+
+Until 0.5.0 is on the registries (latest published: 0.4.1), replace each
+version with `{ git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }`
+(keep `features`).
 
 ```sh
 bun add @datadeft/protect-client
