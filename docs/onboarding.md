@@ -73,6 +73,12 @@ country-aware difficulty (MVP-013) is open.
 | MVP-014 | P1 | Done | Keep session country as an opportunistic lock. |
 | MVP-020 | Assurance | Done | CI gates the TLA+ models (`verify` job: `mise run spec`, `mise run spec-mutants`). Liveness under fairness needs a checker with `WF` support. |
 | MVP-021 | Assurance | Future | Add simulation and bounded checks. Fuzz targets exist (`mise run fuzz`). |
+| V06-001 | 0.6 | Planned | GDPR erasure (`erase_user`). The model is ready: `spec/tla/Erasure.tla`. |
+| V06-002 | 0.6 | Planned | Optional `aud` claim in session and confirm cookies. |
+| V06-003 | 0.6 | Planned | Locale-keyed confirm pages in redirect landing mode. |
+| V06-004 | 0.6 | Planned | Finer internal reasons for landing and confirm failures (expired, consumed, throttled, wrong verifier). |
+| V06-005 | 0.6 | Planned | Docs: `Referrer-Policy` `strict-origin` compared with `no-referrer`. |
+| V06-006 | 0.6 | Planned | Reference log probe in the example (CeleraTax offered theirs). |
 
 ## PoW decisions
 
