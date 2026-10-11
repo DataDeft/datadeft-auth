@@ -28,6 +28,10 @@ Consumer actions:
 - Email: remove app-side normalization. The library normalizes with
   `NormalizedEmail::normalize`. Use `from_normalized` where you used `parse`.
 - `RateLimiter` implementations: add `check_lifetime_limit`.
+- The confirm page and the flow-state route now show a masked account
+  (`i•••••@datadeft.eu`) by default. Set
+  `MagicLinkServiceConfig::account_display = AccountDisplay::Full` to keep the
+  full address.
 - `MagicLinkServiceError` and `MagicLinkHttpError`: add the new
   `OutboxUnavailable` value to exhaustive matches. It answers the same
   constant `503`, with the reason `magic_link_outbox_unavailable`.

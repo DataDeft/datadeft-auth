@@ -39,13 +39,13 @@ pub(super) async fn request_magic_link(
     .await
     {
         // The reason stays internal: log and count it, never send it.
-        eprintln!("magic-link request refused: {}", rejection.reason());
+        tracing::warn!(reason = rejection.reason(), "magic-link request refused");
         return rejection.into_response();
     }
     match request_magic_link_inner(state, request).await {
         Ok(response) => response,
         Err(error) => {
-            eprintln!("magic-link request refused: {}", error.reason());
+            tracing::warn!(reason = error.reason(), "magic-link request refused");
             error.into_response()
         }
     }
@@ -73,7 +73,7 @@ async fn request_magic_link_inner(
         .await
         .map_err(MagicLinkHttpError::from)?;
     // Sent or throttled: the same public 200 either way; count the outcome.
-    eprintln!("magic-link request: {}", outcome.reason());
+    tracing::info!(reason = outcome.reason(), "magic-link request");
     Ok(generic_accepted_response())
 }
 

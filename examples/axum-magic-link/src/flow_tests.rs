@@ -114,6 +114,16 @@ async fn sign_in_end_to_end_through_the_router() {
     assert_eq!(validated.status(), StatusCode::NO_CONTENT);
     let pow_cookie = cookie(&validated, "dd_pow").expect("dd_pow cookie");
 
+    // An email-provider failure is the constant 503 (reason
+    // magic_link_outbox_unavailable, logged, never sent). Inject it with
+    // FakeMagicLinkOutbox::set_next_error.
+    outbox
+        .set_next_error(datadeft_magic_link_service::DependencyError::Unavailable)
+        .expect("inject");
+    let failed = send(&app, request_link(Some(&pow_cookie))).await;
+    assert_eq!(failed.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(outbox.recorded().expect("outbox").is_empty());
+
     let requested = send(&app, request_link(Some(&pow_cookie))).await;
     assert_eq!(requested.status(), StatusCode::OK);
     let email = outbox.recorded().expect("outbox").pop().expect("email");
@@ -150,9 +160,10 @@ async fn sign_in_end_to_end_through_the_router() {
     let confirm_cookie = cookie(&landing, "dd_auth_confirm").expect("confirm cookie");
     let page = text(landing).await;
     assert!(
-        page.contains("e2e@example.test"),
-        "the page names the account"
+        page.contains("e\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}@example.test"),
+        "the page names the account, masked"
     );
+    assert!(!page.contains("e2e@example.test"), "never the full address");
     assert!(!page.contains(&token), "the page never echoes the token");
     let confirmation = confirmation(&page);
 
@@ -202,8 +213,9 @@ async fn sign_in_end_to_end_through_the_router() {
     assert_ne!(replay.status(), StatusCode::SEE_OTHER);
 
     // One solve buys five requests over its lifetime; the sixth asks for a
-    // new solve (401 + DD-PoW), and a fresh solve buys a fresh budget.
-    for _ in 1..5 {
+    // new solve (401 + DD-PoW), and a fresh solve buys a fresh budget. The
+    // failed send above spent a unit too, so three more requests remain.
+    for _ in 2..5 {
         let again = send(&app, request_link(Some(&pow_cookie))).await;
         assert_eq!(again.status(), StatusCode::OK);
     }
@@ -323,7 +335,11 @@ async fn redirect_mode_end_to_end_through_the_router() {
         assert_eq!(read.status(), StatusCode::OK);
         let body: serde_json::Value = serde_json::from_str(&text(read).await).expect("json");
         assert_eq!(body["usable"], true);
-        assert_eq!(body["account"], "static@example.test");
+        // Masked on the server: the full address never crosses the network.
+        assert_eq!(
+            body["account"],
+            "s\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}@example.test"
+        );
         confirmation = body["confirmation"]
             .as_str()
             .expect("confirmation")

@@ -33,6 +33,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 time = { version = "0.3.47", default-features = false, features = ["formatting", "std"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+# Reasons are logged as tracing events, so a log probe can see every line.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 
 [dev-dependencies]
 # flow_tests: solve the PoW challenge and drive the router with `oneshot`.

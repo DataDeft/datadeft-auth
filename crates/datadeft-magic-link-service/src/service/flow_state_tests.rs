@@ -68,7 +68,10 @@ async fn the_cookie_alone_yields_account_and_confirmation_repeatably() {
         )
         .await
         .expect("flow state");
-        assert_eq!(state.account_identity().as_str(), "account@example.test");
+        assert_eq!(
+            state.account_identity().as_str(),
+            "a\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}@example.test"
+        );
         assert_eq!(state.confirmation_value(), confirmation);
         assert_eq!(format!("{state:?}"), "MagicLinkFlowState(..)");
     }

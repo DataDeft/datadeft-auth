@@ -34,10 +34,11 @@ const POW_DIFFICULTY: u8 = 3;
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
+    tracing_subscriber::fmt().init();
     let app = app(build_state()?);
     let addr: SocketAddr = LISTEN_ADDR.parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("local example listening on {LOCAL_ORIGIN}");
+    tracing::info!("local example listening on {LOCAL_ORIGIN}");
     axum::serve(listener, app).await?;
     Ok(())
 }

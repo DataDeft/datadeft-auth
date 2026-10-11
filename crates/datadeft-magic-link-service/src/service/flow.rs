@@ -132,7 +132,8 @@ where
         let cookie_max_age_secs = confirm_expiry
             .checked_sub(now_unix)
             .ok_or_else(|| flow_error(MagicLinkServiceError::Internal))?;
-        let account_identity = MagicLinkAccountIdentity::from_normalized_email(&candidate.email);
+        let account_identity =
+            MagicLinkAccountIdentity::new(&candidate.email, self.config.account_display);
         let flow = mint_magic_link_confirm(
             MagicLinkConfirmBindings::new(
                 selector_binding,
@@ -212,7 +213,10 @@ where
         }
 
         Ok(MagicLinkFlowState {
-            account_identity: MagicLinkAccountIdentity::from_normalized_email(&candidate.email),
+            account_identity: MagicLinkAccountIdentity::new(
+                &candidate.email,
+                self.config.account_display,
+            ),
             confirmation: read.into_confirmation(),
         })
     }

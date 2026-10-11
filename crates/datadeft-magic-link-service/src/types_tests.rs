@@ -127,11 +127,23 @@ fn scanner_commands_are_bounded_and_debug_redacts_all_sensitive_fields() {
 }
 
 #[test]
-fn account_identity_is_exact_and_redacted() {
+fn account_identity_is_masked_by_default_and_redacted() {
     let email = NormalizedEmail::from_normalized("exact.account+tag@example.test").expect("email");
-    let identity = MagicLinkAccountIdentity::from_normalized_email(&email);
-    assert_eq!(identity.as_str(), "exact.account+tag@example.test");
-    assert_eq!(format!("{identity:?}"), "MagicLinkAccountIdentity(..)");
+    assert_eq!(AccountDisplay::default(), AccountDisplay::Masked);
+    let masked = MagicLinkAccountIdentity::new(&email, AccountDisplay::Masked);
+    assert_eq!(
+        masked.as_str(),
+        "e\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}@example.test"
+    );
+    // The mask has a fixed length: a short and a long local part look alike.
+    let short = NormalizedEmail::from_normalized("e@example.test").expect("email");
+    assert_eq!(
+        MagicLinkAccountIdentity::new(&short, AccountDisplay::Masked).as_str(),
+        masked.as_str()
+    );
+    let full = MagicLinkAccountIdentity::new(&email, AccountDisplay::Full);
+    assert_eq!(full.as_str(), "exact.account+tag@example.test");
+    assert_eq!(format!("{masked:?}"), "MagicLinkAccountIdentity(..)");
 }
 
 #[test]

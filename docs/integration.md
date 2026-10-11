@@ -169,9 +169,14 @@ these steps:
    use route templates. They must never keep raw request targets, tokens,
    confirmations, or cookies.
 3. Run a log probe that sends a real token through the stack and searches
-   every captured log line for it. Put the probe in its own test binary (its
-   own file under `tests/`). `tracing` caches callsite interest for the whole
-   process, so other tests in the same process make the probe flaky.
+   every captured log line for it. Run the probe in its own process.
+   `tracing` caches callsite interest for the whole process, so other tests
+   in the same process make the probe flaky.
+   - In a library crate, put the probe in its own file under `tests/`.
+   - In a binary crate, `tests/` cannot reach the crate's internals. Keep the
+     probe in the crate and make it run itself again in a child process.
+   - Log through `tracing` events, not `eprintln!`. A probe sees only
+     `tracing` output.
 
 The handlers prove non-reflection only after handler entry. They cannot make
 an unreviewed outer stack safe. See "Mandatory deployment gate" in

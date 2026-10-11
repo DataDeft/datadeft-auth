@@ -73,11 +73,12 @@ pub use traits::{
     RateLimitDecision, RateLimiter, SessionRepository,
 };
 pub use types::{
-    AuthenticationAttemptId, BeginMagicLinkLandingCommand, BeginMagicLinkLandingOutcome,
-    CommitMagicLinkAuthentication, ConfirmMagicLinkFlowCommand, ConfirmMagicLinkFlowOutcome,
-    MAX_RAW_MAGIC_LINK_TOKEN_BYTES, MagicLinkAccountIdentity, MagicLinkAuthenticationCandidate,
-    MagicLinkAuthenticationExpectation, MagicLinkAuthenticationOutcome,
-    MagicLinkAuthenticationUser, MagicLinkEmail, MagicLinkFlowState, MagicLinkRecord, RateLimitKey,
-    ReadMagicLinkFlowStateCommand, RequestMagicLinkCommand, RequestMagicLinkOutcome,
-    RequestThrottle, SessionCookie, SessionId, SessionRecord, UserId, UserRecord,
+    AccountDisplay, AuthenticationAttemptId, BeginMagicLinkLandingCommand,
+    BeginMagicLinkLandingOutcome, CommitMagicLinkAuthentication, ConfirmMagicLinkFlowCommand,
+    ConfirmMagicLinkFlowOutcome, MAX_RAW_MAGIC_LINK_TOKEN_BYTES, MagicLinkAccountIdentity,
+    MagicLinkAuthenticationCandidate, MagicLinkAuthenticationExpectation,
+    MagicLinkAuthenticationOutcome, MagicLinkAuthenticationUser, MagicLinkEmail,
+    MagicLinkFlowState, MagicLinkRecord, RateLimitKey, ReadMagicLinkFlowStateCommand,
+    RequestMagicLinkCommand, RequestMagicLinkOutcome, RequestThrottle, SessionCookie, SessionId,
+    SessionRecord, UserId, UserRecord,
 };

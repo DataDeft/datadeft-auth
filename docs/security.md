@@ -689,7 +689,10 @@ link or complete a login:
 3. The flow state binds the selector, verifier proof, account, expiry and an
    independent confirmation nonce.
 4. The page identifies the account and asks the user to click a button. It
-   exposes no raw token material.
+   exposes no raw token material. By default the service masks the account
+   (`AccountDisplay::Masked`, for example `i•••••@datadeft.eu`). Anyone who
+   holds the link sees this value, so the full address never crosses the
+   network. `AccountDisplay::Full` is an explicit opt-in.
 5. A same-origin `POST` validates the bound flow state. It commits token
    consumption and session creation atomically. Then it clears temporary
    state and redirects to a clean URL.
@@ -718,7 +721,9 @@ Limits of the design:
   one-time consumption and generic failures stop active scanners that submit
   forms.
 - The confirmation page mitigates login CSRF because it shows the account.
-  If the app needs a stronger mode, offer one.
+  The masked form keeps the first character and the full domain, which is
+  enough for the user to recognize the account. If the app needs a stronger
+  mode, offer one.
 
 ### Scanner-safe response contract
 
@@ -762,7 +767,7 @@ token also never reaches JavaScript:
      the landing
    - has the same per-selector throttle as the landing, and never writes
    - answers `{ "usable": true, "account": …, "confirmation": … }` for a
-     usable link
+     usable link. `account` follows `AccountDisplay` (masked by default)
    - answers `{ "usable": false }` and clears the cookie for anything
      unusable
    - answers the constant `503` on an outage

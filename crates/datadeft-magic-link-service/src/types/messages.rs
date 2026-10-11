@@ -119,17 +119,50 @@ impl Drop for BeginMagicLinkLandingCommand {
     }
 }
 
-/// Exact validated account identity deliberately displayed on confirmation pages.
+/// How confirmation pages (and the flow-state route) show the account.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+pub enum AccountDisplay {
+    /// The first character of the local part, five bullets, and the full
+    /// domain: `i•••••@datadeft.eu` (default). The bullet count is fixed, so
+    /// the length of the address does not leak. Anyone who holds the link,
+    /// such as a scanner, a proxy cache or a forward recipient, sees only
+    /// this.
+    #[default]
+    Masked,
+    /// The full normalized address.
+    Full,
+}
+
+/// Fixed mask between the first character and the domain.
+const ACCOUNT_MASK: &str = "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}";
+
+/// Validated account identity displayed on confirmation pages, shaped by
+/// [`AccountDisplay`].
 pub struct MagicLinkAccountIdentity(String);
 
 impl MagicLinkAccountIdentity {
-    pub(crate) fn from_normalized_email(email: &NormalizedEmail) -> Self {
-        Self(email.as_str().to_owned())
+    pub(crate) fn new(email: &NormalizedEmail, display: AccountDisplay) -> Self {
+        match display {
+            AccountDisplay::Full => Self(email.as_str().to_owned()),
+            AccountDisplay::Masked => Self(masked_email(email.as_str())),
+        }
     }
 
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+/// `NormalizedEmail` guarantees one `@` and a non-empty local part; anything
+/// else masks completely rather than failing.
+fn masked_email(email: &str) -> String {
+    match email.rsplit_once('@') {
+        Some((local, domain)) => match local.chars().next() {
+            Some(first) => format!("{first}{ACCOUNT_MASK}@{domain}"),
+            None => format!("{ACCOUNT_MASK}@{domain}"),
+        },
+        None => ACCOUNT_MASK.to_owned(),
     }
 }
 

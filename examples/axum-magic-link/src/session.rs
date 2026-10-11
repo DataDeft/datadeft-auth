@@ -74,7 +74,7 @@ pub(super) async fn me(State(state): State<AppState>, headers: HeaderMap) -> Res
                 // must see it: a lapsed session-key mint window would otherwise
                 // silently log everyone out at the idle limit. The error kind
                 // carries no secret.
-                Err(error) => eprintln!("session refresh failed: {error}"),
+                Err(error) => tracing::warn!(%error, "session refresh failed"),
             }
             response
         }

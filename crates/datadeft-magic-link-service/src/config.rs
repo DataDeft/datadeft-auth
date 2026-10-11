@@ -8,7 +8,7 @@ use datadeft_magic_link_core::confirm_cookie::MagicLinkConfirmCookie;
 
 use crate::country::CountryPolicy;
 use crate::locale::LocaleAllowlist;
-use crate::types::SessionCookie;
+use crate::types::{AccountDisplay, SessionCookie};
 
 use crate::types::{
     DEFAULT_MAGIC_LINK_TTL_SECS, DEFAULT_SESSION_ABSOLUTE_SECS, DEFAULT_SESSION_IDLE_SECS,
@@ -131,6 +131,10 @@ pub struct MagicLinkServiceConfig {
     /// as [`MagicLinkEmail::locale`](crate::MagicLinkEmail); when unset the
     /// email carries no locale.
     pub locales: Option<LocaleAllowlist>,
+    /// How the confirmation page and the flow-state route show the account:
+    /// masked by default (`i•••••@datadeft.eu`). Anyone who holds the link
+    /// sees this value, so keep it masked unless the full address is needed.
+    pub account_display: AccountDisplay,
     pub rate_limits: RateLimitConfig,
 }
 
@@ -146,6 +150,7 @@ impl MagicLinkServiceConfig {
             session_absolute_secs: DEFAULT_SESSION_ABSOLUTE_SECS,
             enforce_country: false,
             country_policy: CountryPolicy::Exact,
+            account_display: AccountDisplay::Masked,
             locales: None,
             rate_limits: RateLimitConfig::default(),
         }

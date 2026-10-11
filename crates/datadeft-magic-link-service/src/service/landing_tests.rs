@@ -39,7 +39,11 @@ async fn valid_landing_is_bounded_non_mutating_and_caps_expiry_to_record() {
     assert!(limiter.checked.borrow()[0].starts_with("magic-link:landing:selector:"));
     assert_eq!(rng.calls(), 2);
     assert_eq!(outcome.cookie_max_age_secs(), 100);
-    assert_eq!(outcome.account_identity().as_str(), "account@example.test");
+    assert_eq!(
+        outcome.account_identity().as_str(),
+        "a\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}@example.test",
+        "masked by default"
+    );
     let debug = format!("{outcome:?}");
     assert!(!debug.contains(outcome.confirm_cookie_value()));
     assert!(!debug.contains(outcome.confirmation_value()));
@@ -362,4 +366,23 @@ async fn landing_dependency_and_entropy_failures_preserve_temporary_state() {
         );
         assert!(repository.commands.borrow().is_empty());
     }
+}
+
+#[tokio::test]
+async fn full_account_display_is_opt_in() {
+    let repository = FakeRepository::default();
+    *repository.candidate.borrow_mut() = Some(candidate());
+    let mut config = config();
+    config.account_display = crate::AccountDisplay::Full;
+    let outcome = begin_flow(
+        &repository,
+        &AllowLimiter::default(),
+        &FixedClock::at(NOW),
+        &mut CountingRng::starting_at(0),
+        token(VERIFIER).as_secret_value().to_string(),
+        config,
+    )
+    .await
+    .expect("valid landing");
+    assert_eq!(outcome.account_identity().as_str(), "account@example.test");
 }
