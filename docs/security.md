@@ -2,137 +2,113 @@
 
 ## Security model
 
-Source code secrecy is not a boundary. Secrets, keys, peppers, and runtime config provide security.
+Source code secrecy is not a boundary. Secrets, keys, peppers and runtime
+config provide security.
 
-The repo must never contain these values:
+Never put these in the repo, including docs, tests and examples:
 
-- production Branca keys
-- HMAC peppers
-- session secrets
-- AWS credentials
-- magic-link tokens
-- captured cookies
-- real customer emails
-- production database dumps
+- production Branca keys, HMAC peppers, session secrets, AWS credentials
+- magic-link tokens and captured cookies
+- real customer emails and production database dumps
+- production-looking domains, emails, tokens or ARNs
 
 ## Clock skew
 
-Existing PoW and bound-cookie helpers allow 60 seconds of future timestamp
-skew. Explicit `*_with_clock_skew` helpers take a caller-supplied seconds bound;
-PoW Axum uses `PowPolicy::with_clock_skew_secs`. Apps with a stricter
-requirement can select 30 seconds. Apply the same bound separately to challenge and proof-cookie
-verification. Zero forbids future timestamps. The tolerance is capped at
-`MAX_CLOCK_SKEW_SECS` (300 seconds); larger values are rejected as a
-configuration error. Skew never extends an expired
-TTL or the lifetime of a key. Magic-link service wrappers retain the default.
+- PoW and bound-cookie helpers allow 60 seconds of future timestamp skew by
+  default. Apps with a stricter requirement can select 30 seconds.
+- Explicit `*_with_clock_skew` helpers take a caller-supplied bound in
+  seconds. PoW Axum uses `PowPolicy::with_clock_skew_secs`.
+- Apply the bound separately to challenge and proof-cookie verification.
+- Zero forbids future timestamps.
+- The bound is capped at `MAX_CLOCK_SKEW_SECS` (300 seconds). Larger values
+  are a configuration error.
+- Skew never extends an expired TTL or a key's lifetime.
+- Magic-link service wrappers keep the default.
 
 ## Freshness bounds are capped
 
-Cookie verification rejects an idle or absolute max age longer than the cookie
-type's own `MAX_ABSOLUTE_AGE_SECS` (sessions 30 days, PoW proof 24 hours,
-confirm 5 minutes) with `TokenError::InvalidTimestamp`. PoW challenge
-verification and `PowPolicy::new` reject a challenge max age above
-`MAX_CHALLENGE_MAX_AGE_SECS` (10 minutes). A misconfigured bound fails loudly
-instead of making old cookies or stockpiled solutions valid.
+A misconfigured bound fails loudly instead of making old cookies or
+stockpiled solutions valid:
+
+- Cookie verification rejects an idle or absolute max age above the cookie
+  type's `MAX_ABSOLUTE_AGE_SECS` (session 30 days, proof cookie 24 hours,
+  confirm cookie 5 minutes) with `TokenError::InvalidTimestamp`.
+- PoW challenge verification and `PowPolicy::new` reject a challenge max age
+  above `MAX_CHALLENGE_MAX_AGE_SECS` (10 minutes).
 
 ## Token design
 
 - Treat magic-link tokens as one-time bearer secrets.
-- Store keyed lookup material only.
-- Never store raw token parts.
-- Never store raw selectors.
-- Never store raw verifiers.
+- Store keyed lookup material only. Never store raw tokens, selectors or
+  verifiers.
 - Encrypt and authenticate session cookies.
 - Separate token kinds by domain.
-- Fail closed on unknown key IDs.
-- Fail closed on expired values.
-- Fail closed on malformed input.
-- Fail closed on storage races.
-- Reject malformed, ambiguous, mixed-version, or trailing token input.
-- Accept exactly one canonical string for each token.
-- Reject non-canonical Base62 spellings.
-- Do not use Base62 for arbitrary bytes.
-- Use hex or base64 for byte strings.
-- Make freshness checks mandatory in validation calls.
-- Require the caller to pass a freshness bound.
-- Store both idle and absolute session time data.
-- Reject future-dated tokens beyond clock skew.
+- Fail closed on unknown key IDs, expired values, malformed input and
+  storage races.
+- Reject malformed, ambiguous, mixed-version or trailing token input.
+- Accept exactly one canonical string per token. Reject non-canonical Base62
+  spellings.
+- Do not use Base62 for arbitrary bytes. Use hex or base64 for byte strings.
+- Freshness checks are mandatory: the caller must pass a freshness bound to
+  every validation call.
+- Store both idle and absolute session times.
+- Reject future-dated tokens beyond the clock skew.
 - Use compact internal framing for encrypted payloads.
 
 ### Adapter storage keying
 
-Repository traits pass raw `SessionId`, `NormalizedEmail`, and `RateLimitKey` values. Each storage adapter must key those values before storage.
+Repository traits pass raw `SessionId`, `NormalizedEmail` and `RateLimitKey`
+values. Each storage adapter must key them before storage, using the shared
+`datadeft_magic_link_core::domain_separated_lookup_hmac` framing with an
+adapter-specific domain and secret.
 
-Use the shared `datadeft_magic_link_core::domain_separated_lookup_hmac` framing. Use an adapter-specific domain and secret.
-
-The type system does not enforce this rule. A new repository could store raw IDs and still compile.
-
-Only first-party adapters have approval. New adapters must copy the keying behavior. Use the `datadeft-magic-link-aws` vectors as the reference.
-
-Moving key derivation into the service changes stored partition keys. That change requires a data migration.
+- The type system does not enforce this. A new repository could store raw
+  IDs and still compile.
+- Only first-party adapters are approved. New adapters must copy the keying
+  behavior, using the `datadeft-magic-link-aws` vectors as the reference.
+- Moving key derivation into the service changes stored partition keys and
+  needs a data migration.
 
 ### Session country lock
 
-Session country is an opportunistic lock. It comes only from a configured trusted-edge header.
+Session country is an opportunistic lock.
 
-Never take country from request bodies.
-
-When confirmation supplies country, bind the session to that country. Each validation must see the same country.
-
-Absent country does not satisfy a locked session. Fail closed.
-
-A session without country stays unlocked. It skips the country check.
-
-The lock only works when the edge strips or overwrites the header. The origin must not be directly reachable.
+- Take country only from a configured trusted-edge header, never from a
+  request body.
+- When confirmation supplies a country, bind the session to it. Every
+  validation must see the same country.
+- A missing country does not satisfy a locked session: fail closed.
+- A session bound without a country stays unlocked and skips the check.
+- The lock only works when the edge strips or overwrites the header and the
+  origin is not directly reachable.
 
 #### Country groups
 
-`MagicLinkServiceConfig::country_policy` is `CountryPolicy::Exact` by default.
-`CountryPolicy::eu27()` (or custom `CountryGroup`s) pins a country inside a
-group to the group's tag (`EU`) instead, so a session moves freely between
-the group's countries; any other country stays pinned exactly. The same
-mapping runs when the session is bound and on every validation. A session
-bound under one policy fails closed under another.
+`MagicLinkServiceConfig::country_policy` defaults to `CountryPolicy::Exact`.
+`CountryPolicy::eu27()`, or custom `CountryGroup`s, pins a country inside a
+group to the group's tag (`EU`), so a session moves freely between the
+group's countries. Any other country stays pinned exactly. The same mapping
+runs at binding and on every validation. A session bound under one policy
+fails closed under another.
 
 Trade-off: a group weakens the lock on purpose. A stolen session cookie then
-works from any country in the group, not only the victim's. Choose the
-smallest group your users need. It is still much safer than rewriting the
-trusted header at the edge, which would also hide the real country from
-everything else. Never put a country in two groups; configuration validation
-refuses it. Validation also refuses duplicate tags and tags other than `EU` or
-ISO user-assigned codes (`XX` and `XK` excluded). A request country of `EU` or
-a user-assigned code pins to nothing under every policy: it is treated as
-missing and fails closed.
+works from any country in the group. Choose the smallest group your users
+need. This is still much safer than rewriting the trusted header at the edge,
+which would hide the real country from everything else.
 
-### Scanner-safe response contract
+Configuration validation refuses:
 
-The magic-link HTTP flow uses two steps. This prevents link scanners from burning or completing login.
+- a country in two groups
+- duplicate tags
+- tags other than `EU` or ISO user-assigned codes (`XX` and `XK` excluded)
 
-The consuming application must follow these rules:
-
-1. Consume magic links only on the same-origin confirmation `POST`.
-2. Never consume a magic link on `GET`.
-3. Keep the landing `GET` side-effect-free and repeatable.
-4. Return uniform landing and confirmation failures.
-5. Use the same status for rejected landing and successful landing.
-6. Clear the confirm cookie on rejected confirmation.
-7. Clearing the confirm cookie on internal confirmation failure is optional.
-8. Preserve the confirm cookie on dependency failure.
-9. Add `no-store`, CSP, and frame-denial headers.
-10. Never echo the raw token into a body.
-11. Never log the raw token.
-12. HTML-escape rendered account identity.
-
-Accepted trade-off: a cross-site form `POST` to the confirmation route is
-rejected and clears the confirm cookie (rule 6), so another site can end a
-flow in progress. The user clicks the link again; nothing is consumed or
-created. The landing `GET` never clears the cookie on a rejected link.
-
-`datadeft-magic-link-axum` runs the input gauntlet. The application owns rendered responses under this contract.
+A request country of `EU` or a user-assigned code pins to nothing under every
+policy. It is treated as missing and fails closed.
 
 ## Bearer secret entropy
 
-All bearer secrets and anti-guessing nonces must come from a CSPRNG. Test fixtures may use deterministic bytes only in tests.
+All bearer secrets and anti-guessing nonces come from a CSPRNG.
+Deterministic bytes are allowed only in tests.
 
 | Value | Minimum entropy | Notes |
 | --- | ---: | --- |
@@ -144,26 +120,17 @@ All bearer secrets and anti-guessing nonces must come from a CSPRNG. Test fixtur
 | PoW challenge nonce | 128 bits | MAC the challenge. |
 | CSRF confirmation nonce | 128 bits | May share the bound confirm nonce. |
 
-Rules:
-
-- Never derive bearer secrets from timestamps.
-- Never derive bearer secrets from counters.
-- Never derive bearer secrets from emails.
-- Never derive bearer secrets from IP addresses.
-- Never derive bearer secrets from user IDs.
-- Never derive bearer secrets from UUIDv1 or UUIDv7 alone.
-- Never derive bearer secrets from non-crypto RNGs.
-- Preserve required entropy after encoding.
-- Fail closed on generation failure.
-- Draw magic-link selectors and verifiers independently.
-- Do not derive selector from verifier.
-- Do not derive verifier from selector.
-- Do not slice one random block for both values.
+- Never derive bearer secrets from timestamps, counters, emails, IP
+  addresses, user IDs, UUIDv1 or UUIDv7 alone, or non-crypto RNGs.
+- Keep the required entropy after encoding.
+- Fail closed when generation fails.
+- Draw magic-link selectors and verifiers independently. Neither is derived
+  from the other, and they never share one sliced random block.
 
 ### Identifier formats
 
-Library-minted ids use one form, `<tag>-<lowercase hex>`, and parsers accept
-nothing else (the 0.4 underscore form is refused):
+Library-minted ids use one form, `<tag>-<lowercase hex>`. Parsers accept
+nothing else; the 0.4 underscore form is refused.
 
 | Id | Form | Random bits |
 | --- | --- | ---: |
@@ -177,24 +144,9 @@ Ids are validated on input and redacted in `Debug`. Keyed lookup values
 (`emh_`, `mlh_`, `mlv_`, `sih_`, `rlh_`) are storage material, not ids, and
 keep their underscore form.
 
-## Token and cookie inventory
-
-| Item | Secret | TTL |
-| --- | --- | ---: |
-| Magic-link token | Yes | 10 minutes |
-| Magic-link selector | Lookup only | 10 minutes |
-| Magic-link verifier | Yes | 10 minutes |
-| Magic-link confirm cookie | Sensitive | 5 minutes |
-| PoW challenge token | MACed | 2 minutes |
-| PoW solution | No long-term secret | One request |
-| PoW proof cookie | Sensitive | 3 hours (default) |
-| Session ID or token | Yes | Session TTL |
-| Session cookie | Yes | 24 hours idle, 30 days absolute |
-| Key ID | No | No independent TTL |
-| HMAC lookup value | Sensitive | Cleanup TTL only |
-| Rate-limit key | Sensitive | Window-specific |
-
 ## TTL baseline
+
+Use these values unless the consuming app configures stricter ones.
 
 | Config | Value |
 | --- | ---: |
@@ -206,11 +158,44 @@ keep their underscore form.
 | `session_absolute_ttl` | 30 days |
 | `magic_link_cleanup_grace` | 24 hours after expiry |
 
+### Token and cookie inventory
+
+| Item | Secret | TTL |
+| --- | --- | ---: |
+| Magic-link token | Yes | 10 minutes |
+| Magic-link selector | Lookup only | 10 minutes |
+| Magic-link verifier | Yes | 10 minutes |
+| Confirm cookie | Sensitive | 5 minutes |
+| PoW challenge token | MACed | 2 minutes |
+| PoW solution | No long-term secret | One request |
+| Proof cookie (`dd_pow`) | Sensitive | 3 hours (default) |
+| Session ID or token | Yes | Session TTL |
+| Session cookie | Yes | 24 hours idle, 30 days absolute |
+| Key ID | No | No independent TTL |
+| HMAC lookup value | Sensitive | Cleanup TTL only |
+| Rate-limit key | Sensitive | Window-specific |
+
+### Lifetime rules
+
+- Keep magic-link and PoW values short-lived. Session cookies may live
+  longer than pre-auth values.
+- Server-side expiry wins over browser cookie expiry. Cookies must not
+  outlive server-side validity.
+- Sliding refresh never exceeds absolute expiry.
+- Refresh only through `refresh_session_cookie` after `validate_session`. It
+  re-issues the cookie once half the idle lifetime has passed, keeps the
+  original `iat`, session ID and country, mints under the active key, and
+  never writes storage. Validation itself stays read-only.
+- Trade-off: with sliding refresh, a stolen cookie that keeps being used
+  stays valid until the absolute lifetime or revocation. Revoke server state
+  on logout and on suspected compromise.
+- Use the cleanup TTL only for storage deletion.
+
 ## Retention
 
-Nothing that identifies an account or its activity is deleted; the rows are
-the audit trail. DynamoDB TTL (the `ttl` attribute) is set only on rows that
-carry no audit value:
+Nothing that identifies an account or its activity is deleted; those rows
+are the audit trail. DynamoDB TTL (the `ttl` attribute) is set only on rows
+with no audit value:
 
 | Row | Retention |
 | --- | --- |
@@ -219,290 +204,262 @@ carry no audit value:
 | Admin audit events | Kept; append-only |
 | Magic-link challenge | TTL: expiry plus `magic_link_cleanup_grace` |
 | Rate-limit counter | TTL: window end plus cleanup grace |
-| Lifetime counter (per-solve PoW budget) | TTL: the expiry fixed at first use plus cleanup grace |
+| Lifetime counter (per-solve budget) | TTL: the expiry fixed at first use plus cleanup grace |
 
 Validity never depends on deletion: every read checks `expires_at_unix` and
 `revoked_at_unix`.
 
 ## Admin operations
 
-`AuthAdminService` gives consuming projects the data and audited mutations for
-their own admin UI. Who is an admin is the application's decision; authorize
+`AuthAdminService` gives consuming projects the data and audited mutations
+for their own admin UI. The application decides who is an admin. Authorize
 every admin endpoint before calling the service.
 
-- Queries: `list_users`, `get_user`, `find_user_by_email`,
-  `list_sessions_for_user`, `list_active_sessions`, `list_admin_events`. Pages
-  use an opaque `PageCursor` and a limit clamped to 100; a page may be shorter
-  than the limit while more remain, so continue while `next` is set.
-- Mutations: `revoke_session` (final), `revoke_all_sessions`, `disable_user`,
-  `enable_user`. Each writes the change and an append-only `AdminEvent`
-  (event id, time, action, user, session, admin id and reason) in one
-  transaction: both or neither.
-- Sessions are addressed by `SessionHandle`, the keyed hash they are stored
-  under, never by the raw session id, which is not stored. Show
-  `display_id()` (`sess-xxxxxxxx`) in UIs; pass the full handle back.
-- Disabling a user takes effect on the next request: `validate_session` checks
-  the user's status every time. `disable_user` then revokes every session so
-  the audit trail records each one ending. It returns how many sessions that
-  call revoked. It is safe to retry: on an error the user may already be
-  disabled, and calling again finishes revoking. A repeat call on a disabled
-  user is not an error; it returns `0` once nothing is left to revoke.
-- Enabling never restores a session from before the disable. `enable_user`
-  first revokes every session still live (finishing a disable whose
-  revocation failed or is still running) and re-enables only once that
-  succeeded; on an error the user stays disabled, so it is safe to retry. It
-  also stamps a `sessions_valid_after` watermark on the profile, and
-  validation accepts only sessions created at or after it (whole seconds),
-  so a login right after the enable works. The user logs in again. The revocation step does not depend on clocks; the watermark
-  alone would not be enough, because a session's `created_at` comes from the
-  auth host's clock and may be up to the skew tolerance ahead of the admin
-  host's (`spec/tla/Session.tla`, `Inv_NoPreEnableSurvivor`).
-- `revoke_all_sessions` ends only active sessions; expired ones are already
-  over and are left untouched, so the work and audit trail stay bounded. A
-  session counts as expired only once the clock-skew tolerance has passed
-  after its expiry, so an admin host whose clock runs ahead cannot skip a
-  session that a slower host still accepts.
-- Admin transactions use the audit event id as the DynamoDB idempotency token.
+**Queries:** `list_users`, `get_user`, `find_user_by_email`,
+`list_sessions_for_user`, `list_active_sessions`, `list_admin_events`.
+
+- Pages use an opaque `PageCursor` and a limit clamped to 100.
+- A page may be shorter than the limit while more remain. Continue while
+  `next` is set.
+
+**Mutations:** `revoke_session` (final), `revoke_all_sessions`,
+`disable_user`, `enable_user`.
+
+- Each writes the change and an append-only `AdminEvent` (event id, time,
+  action, user, session, admin id and reason) in one transaction: both or
+  neither.
+- Admin transactions use the audit event id as the DynamoDB idempotency
+  token.
+
+**Session handles:** sessions are addressed by `SessionHandle`, the keyed
+hash they are stored under. The raw session id is not stored. Show
+`display_id()` (`sess-xxxxxxxx`) in UIs and pass the full handle back.
+
+**Disable:**
+
+- Takes effect on the next request: `validate_session` checks the user's
+  status every time.
+- `disable_user` then revokes every session, so the audit trail records each
+  one ending, and returns how many sessions that call revoked.
+- Safe to retry: after an error the user may already be disabled, and
+  calling again finishes revoking. A repeat call on a disabled user is not an
+  error; it returns `0` once nothing is left to revoke.
+
+**Enable:**
+
+- Never restores a session from before the disable. `enable_user` first
+  revokes every session still live (finishing a disable whose revocation
+  failed or is still running). It re-enables only after that succeeds; on an
+  error the user stays disabled, so it is safe to retry.
+- It also stamps a `sessions_valid_after` watermark on the profile.
+  Validation accepts only sessions created at or after it (whole seconds), so
+  a login right after the enable works. The user logs in again.
+- The revocation step does not depend on clocks. The watermark alone would
+  not be enough: a session's `created_at` comes from the auth host's clock,
+  which may be up to the skew tolerance ahead of the admin host's
+  (`spec/tla/Session.tla`, `Inv_NoPreEnableSurvivor`).
+
+**Revoke all:** `revoke_all_sessions` ends only active sessions. Expired ones
+are left untouched, so the work and audit trail stay bounded. A session
+counts as expired only once the clock-skew tolerance has passed after its
+expiry, so an admin host whose clock runs ahead cannot skip a session that a
+slower host still accepts.
+
+**Concurrent actions** on the same user cannot overwrite each other (ADM-F1,
+fixed in 0.5.0):
+
+- Every disable and enable bumps the profile's `admin_version`.
+- An enable is conditional on the version read at its start. If another admin
+  changed the user in between (for example, a disable made while a slow
+  enable was still revoking sessions), it fails with `AdminError::Conflict`
+  and writes nothing. Re-read with `get_user` and decide again.
+- A disable is unconditional apart from the user existing. Disabling is the
+  safe direction, so it never loses a race. On an already-disabled user it
+  still records the attempt and bumps the version, keeping the first
+  disable's time and admin.
+
+**Other rules:**
+
 - Audit events within the same second list in event-id order, not action
-  order; use the timestamps.
-- Concurrent admin actions on the same user cannot overwrite each other
-  (ADM-F1, fixed in 0.5.0). Every disable and enable bumps the profile's
-  `admin_version`. An enable is conditional on the version read at the start
-  of the action: if another admin changed the user in between, for example a
-  disable made while a slow enable was still revoking sessions, it fails with
-  `AdminError::Conflict` and writes nothing; re-read with `get_user` and
-  decide again. A disable is unconditional apart from the user existing:
-  disabling is the safe direction, so it never loses a race, and on an
-  already-disabled user it still records the attempt and bumps the version
-  (keeping the first disable's time and admin).
-- "Append-only" is enforced by the library, not by IAM: the admin role needs
+  order. Use the timestamps.
+- The library, not IAM, enforces "append-only": the admin role needs
   `TransactWriteItems`, which could also overwrite rows. Enable DynamoDB
   point-in-time recovery or stream exports for tamper evidence.
-- Upgrading from a version that set `ttl` on session rows: run
+- When upgrading from a version that set `ttl` on session rows, run
   `DynamoDbAuthStore::remove_legacy_session_ttl` once, so TTL cannot delete
-  retained sessions. Admin listings skip index rows whose session row is gone.
+  retained sessions. Admin listings skip index rows whose session row is
+  gone.
 - Admin ids and reasons are length-capped and may not contain control
-  characters. `Debug` output redacts the reason.
-
-Rules:
-
-- Keep magic-link and PoW values short-lived.
-- Let session cookies live longer than pre-auth values.
-- Let server-side expiry win over browser cookie expiry.
-- Do not let cookies outlive server-side validity.
-- Never let sliding refresh exceed absolute expiry.
-- Refresh only through `refresh_session_cookie` after `validate_session`. It
-  re-issues the cookie once half the idle lifetime has passed, keeps the
-  original `iat`, session ID, and country, mints under the active key, and
-  never writes storage. Validation itself stays read-only.
-- Sliding refresh means a stolen cookie that keeps being used stays valid until
-  the absolute lifetime or revocation. Revoke server state on logout and on
-  suspected compromise.
-- Use cleanup TTL only for storage deletion.
-- Return the same public failure for invalid token states.
-
-Invalid token states include expired, consumed, missing, malformed, and invalid verifier.
+  characters. `Debug` redacts the reason.
 
 ## Proof-of-work requirements
 
-- Make PoW difficulty configurable.
-- Document a production floor.
-- Use explicit production config.
-- Use development-only low values only in examples.
-- Version challenge formats.
-- Domain-separate challenge formats.
-- MAC challenge random data and metadata.
+- Make PoW difficulty configurable, document a production floor, and use
+  explicit production config. Low development-only values belong in examples
+  only.
+- Version and domain-separate challenge formats.
+- MAC the challenge random data and metadata.
 - Bind proof cookies to the solved challenge (`tid`).
 - Keep PoW admission outside magic-link APIs.
-- Treat proof cookies as short-lived values whose reuse is bounded by the
-  per-solve budget.
-- Bound the proof-cookie lifetime with a configurable TTL under a hard ceiling.
-- The proof cookie is stateless and reusable within its lifetime; bound that
-  reuse with the per-solve budget: gate routes with `admit_proof` and a shared
-  `ProofBudget` (integration.md, "Per-solve budget").
-- An exhausted proof cookie replayed in a loop is answered `401` without a new
+- Bound the proof-cookie lifetime with a configurable TTL under a hard
+  ceiling.
+- The proof cookie is stateless and reusable within its lifetime. Bound that
+  reuse with the per-solve budget: gate routes with `admit_proof` and a
+  shared `ProofBudget` ([integration.md](integration.md), "Per-solve
+  budget").
+- An exhausted proof cookie replayed in a loop gets `401` without a new
   admission, but each attempt still costs one budget write. Per-IP and global
   request limits at the edge bound that cost; the library does not.
 - Budget counters (`RateLimiter::check_lifetime_limit`) are stored under an
   unkeyed, domain-separated SHA-256 of the key, so storage-key rotation never
   splits or resets a budget. Lifetime keys must therefore carry no personal
   data (the PoW budget keys by the random solve id).
-- The PoW layer owns the proof-cookie lifecycle. Magic-link does not clear the
-  proof cookie.
+- The PoW layer owns the proof-cookie lifecycle. Magic-link does not clear
+  the proof cookie.
 
 ### Solve-timing signal
 
-`datadeft-pow-core::Verified::mint_to_verify_ms`, surfaced by `datadeft-pow-axum` as
-`PowAdmission::mint_to_verify_ms`, is the server-derived mint→verify delta of
-a successful solve, in milliseconds.
+`datadeft-pow-core::Verified::mint_to_verify_ms`, exposed by
+`datadeft-pow-axum` as `PowAdmission::mint_to_verify_ms`, is the
+server-derived mint-to-verify delta of a successful solve, in milliseconds.
 
-Trust argument:
+Why it can be trusted:
 
-- Both instants come from server clocks. The challenge `tim` is HMAC-bound
-  in the tag, so a client cannot backdate it, and the client never reports
-  its own timing. No client clock is involved.
-- The delta is inflatable but not deflatable by the client. A client can sit
-  on a solved challenge to look slower, but can never look faster than its
-  true solve.
-- "Implausibly fast" is therefore unfakeable by the client: a delta below the
-  browser-physical floor for the difficulty is strong evidence of a
-  native-speed solver, under the clock assumption below.
+- Both instants come from server clocks. The challenge `tim` is HMAC-bound in
+  the tag, so a client cannot backdate it, and the client never reports its
+  own timing.
+- A client can inflate the delta (by sitting on a solved challenge) but never
+  deflate it below its true solve time.
+- So "implausibly fast" cannot be faked: a delta below the browser-physical
+  floor for the difficulty is strong evidence of a native-speed solver,
+  given the clock assumption below.
 - Clock assumption: when one instance mints and another verifies, the delta
-  is shifted by the clock offset between them. A verifier whose clock runs
-  behind the minter's shrinks every delta by that offset. The value is `None`
-  when the verifying clock is behind `tim` (accepted within
+  shifts by the clock offset between them. A verifier whose clock runs behind
+  the minter's shrinks every delta by that offset. The value is `None` when
+  the verifying clock is behind `tim` (accepted within
   `MAX_FUTURE_SKEW_SECS`), because the delta is then unknown. A fast floor is
-  only sound when instance clocks are synchronized well below the floor (on
+  sound only when instance clocks are synchronized well below the floor (on
   AWS, the Amazon Time Sync Service).
-- The delta includes network round trips and client-side queueing, not pure
+- The delta includes network round trips and client-side queueing, not only
   solve time.
 
-Consumption rules:
+How to use it:
 
-- Use the delta for risk tagging, triage, per-difficulty histograms, and
+- Use the delta for risk tagging, triage, per-difficulty histograms and
   difficulty tuning.
-- The fast direction is the only one sound enough to gate on. Slow or
-  "human-looking" deltas must stay soft: a bot that sleeps before submitting
-  is timing-indistinguishable from a human per request.
-- Calibrate any fast floor from field data per difficulty, never from theory.
-- Never treat `None` as a fast solve. Count it separately in metrics; a
-  rising `None` rate indicates clock drift between instances.
-  Genuine cohorts mix device speeds, so their solve-time distribution is a
-  mixture of exponentials; tests against a single theoretical exponential
-  reject honest traffic.
-- The browser-side floor exists only because the shipped `@datadeft/protect-client`
-  worker pays an async `crypto.subtle` round trip per attempt. A WASM or
-  native-speed client, including a future optimization of the official
-  client, erases it. Revisit every threshold before changing the client's
-  solve loop.
-- Aggregation (per-IP, per-cohort, distribution-shape tests) is an app or
-  edge concern. The library exposes the per-solve delta only.
-- To carry a classification statelessly to later gate checks, stamp an
-  app-defined byte into the proof cookie's encrypted v2 body
-  (`solve_class`). The library assigns the byte no meaning: the minting app
-  defines the quantization, the reading app the policy, and both stay
-  outside the library.
+- Gate only on the fast direction. Slow or "human-looking" deltas must stay
+  soft: a bot that sleeps before submitting looks like a human per request.
+- Calibrate any fast floor from field data per difficulty, never from
+  theory.
+- Never treat `None` as a fast solve. Count it separately; a rising `None`
+  rate means clock drift between instances.
+- Genuine cohorts mix device speeds, so their solve times are a mixture of
+  exponentials. Tests against a single theoretical exponential reject honest
+  traffic.
+- The browser-side floor exists only because the shipped
+  `@datadeft/protect-client` worker pays an async `crypto.subtle` round trip
+  per attempt. A WASM or native-speed client, including a future
+  optimization of the official client, erases it. Revisit every threshold
+  before changing the client's solve loop.
+- Aggregation (per-IP, per-cohort, distribution-shape tests) belongs to the
+  app or edge. The library exposes only the per-solve delta.
+- To carry a classification to later gate checks statelessly, stamp an
+  app-defined byte (`solve_class`) into the proof cookie's encrypted v2 body.
+  The library gives the byte no meaning: the minting app defines the
+  quantization and the reading app the policy.
 
 ## One-time magic-link consumption
 
-Magic-link consume flows must enforce one-time use.
-
-Required behavior:
+Magic-link consume flows must enforce one-time use:
 
 1. Look up by keyed selector material only.
-2. Check expiration before session creation.
+2. Check expiry before creating the session.
 3. Compare verifier-derived material in constant time.
-4. Consume the token atomically with session creation.
-5. Use conditional delete, update, or compare-and-swap storage.
-6. Key replay stores on authenticated token identity.
-7. Never key replay stores on the raw token string.
-8. Collapse consumed, missing, expired, malformed, and invalid-verifier cases.
-9. Apply failed-attempt limits where storage can do so safely.
-10. Add replay tests.
-11. Add concurrent consume tests.
-
-For Branca tokens, key dedup stores on `datadeft-auth-token-core::branca::Jti`.
+4. Consume the token atomically with session creation, using conditional
+   delete, update or compare-and-swap storage.
+5. Key replay stores on authenticated token identity, never on the raw token
+   string. For Branca tokens, key dedup stores on
+   `datadeft-auth-token-core::branca::Jti`.
+6. Return the same public failure for every invalid token state: expired,
+   consumed, missing, malformed and invalid verifier.
+7. Apply failed-attempt limits where storage can do so safely.
+8. Add replay tests and concurrent consume tests.
 
 ## HMAC lookup material
 
-Use secret-keyed HMAC for these lookup keys:
+Use secret-keyed HMAC, never bare SHA-256, for lookup keys derived from
+secrets or PII:
 
 - email addresses
-- magic-link selectors
-- magic-link verifiers
+- magic-link selectors and verifiers
 - session IDs
 - rate-limit keys with sensitive material
 
-Do not use bare SHA-256 for secret-derived or PII-derived lookup material.
-
 ## Data at rest
 
-HMACs keep raw selectors, verifiers, session IDs, and emails out of record
-keys. Raw tokens are never stored. The normalized email is stored as a record
-attribute, because the application needs it to send mail and identify the
-account. The keyed lookup keys therefore protect against guessing record
-addresses, not against reading a full table dump. Protect auth tables with
-encryption at rest, least-privilege access, and backup controls.
+- Raw tokens, selectors and verifiers are never stored; only keyed HMACs and
+  verifier hashes are. HMACs keep raw selectors, verifiers, session IDs and
+  emails out of record keys.
+- The normalized email is stored readable as a record attribute. The app
+  needs it to send mail and identify the account, and the atomic
+  authentication transaction needs it for its equality checks. Lookups key on
+  `HMAC(email)`, so no index holds a raw address.
+- Do not add application-layer email field encryption.
+- Keyed lookup keys stop guessing of record addresses, not reading of a full
+  table dump. Protect auth tables with provider encryption at rest (DynamoDB
+  KMS), least-privilege IAM and backup controls.
 
 ## Logging
 
-Never log these values:
+Never log:
 
-- raw magic-link tokens
-- raw selectors
-- raw verifiers
-- raw cookies
-- Branca tokens
-- session IDs
-- key material
-- HMAC peppers
-- email addresses without app approval
+- raw magic-link tokens, selectors, verifiers or cookies
+- Branca tokens or session IDs
+- key material or HMAC peppers
+- email addresses, unless the app approves
 
-Use redacted `Debug`. Use app-level derived identifiers.
+Use redacted `Debug` and app-level derived identifiers.
 
 ## Timing and comparison
 
-Use constant-time comparison for these values:
+Use constant-time comparison for verifier hashes, token MAC and tag values,
+and stored secret-derived values. Never add early-return comparison logic for
+secrets.
 
-- verifier hashes
-- token MAC values
-- token tag values
-- stored secret-derived values
-
-Do not add early-return comparison logic for secrets.
-
-Enumeration-resistant flows need bounded dummy work.
+Enumeration-resistant flows need bounded dummy work:
 
 - Do dummy verifier work on a missing selector.
-- Avoid clear timing gaps for unknown-user request paths.
-- Avoid clear timing gaps for throttled request paths.
-- Do not promise strict matched latency.
-- Prefer bounded dummy work and generic responses.
-- Apply a keyed-selector limit on landing.
-- Avoid unthrottled read oracles.
+- Avoid clear timing gaps on unknown-user and throttled request paths.
+- Prefer bounded dummy work and generic responses. Do not promise strictly
+  matched latency.
+- Apply a keyed-selector limit on landing, so there is no unthrottled read
+  oracle.
 
 ## Configuration
 
-- Production secrets must come from the consuming application.
-- Do not put production secrets in this repo.
-- Make cookie names configurable.
-- Make issuer and audience configurable where used.
-- Make TTLs configurable.
-- Make peppers and keys configurable.
+- Production secrets come from the consuming application.
+- Make cookie names, TTLs, peppers and keys configurable, and issuer and
+  audience where used.
 - Use fake development values only in examples.
-- Do not add production-looking domains to tests or docs.
-- Do not add production-looking emails to tests or docs.
-- Do not add production-looking tokens to tests or docs.
-- Do not add production-looking ARNs to tests or docs.
-- Do not assume production defaults silently.
+- Never assume production defaults silently.
 
 ## Key management and rotation
 
-- Use purpose-separated keys and peppers.
-- Separate Branca token keys.
-- Separate session cookie keys.
-- Separate HMAC lookup keys.
-- Separate PoW signing keys.
-- Separate adapter encryption keys.
-- Do not reuse one secret across purposes.
+- Use purpose-separated keys and peppers. Branca token keys, session cookie
+  keys, HMAC lookup keys, PoW signing keys and adapter encryption keys are
+  all separate. Never reuse one secret across purposes.
 - Use at least 256 bits for symmetric keys and peppers.
-- Validate key IDs.
-- Domain-separate key IDs.
-- Fail closed on unknown key IDs.
-- Bind key derivation to purpose and key ID.
-- Support active keys for minting.
-- Support verify-only keys for migration.
-- Reject retired or disabled keys.
-- Test active-key minting.
-- Test verify-only validation.
-- Test retired-key rejection.
-- Test unknown-key rejection.
+- Validate and domain-separate key IDs. Bind key derivation to purpose and
+  key ID.
+- Mint with active keys. Use verify-only keys for migration. Reject retired,
+  disabled and unknown keys.
+- Test active-key minting, verify-only validation, and retired-key and
+  unknown-key rejection.
 
 ## Secret manager config
 
-Production deployments use AWS Secrets Manager for secret storage. Core crates must not fetch secrets.
-
-Use a thin config shape only. Do not add a policy engine. Do not add implicit environment reads.
+Production uses AWS Secrets Manager. Core crates never fetch secrets. Use a
+thin config shape: no policy engine and no implicit environment reads.
 
 The AWS adapter supports this shape:
 
@@ -523,27 +480,20 @@ pub struct SecretRef {
 }
 ```
 
-Rules:
-
-- Support `AwsSecretsManager` in v1.
-- Add new managers only with code and tests.
-- Let adapters resolve `SecretRef` values.
-- Pass loaded key material into core and service APIs.
-- Map `AWSCURRENT` to active material by explicit config.
-- Map `AWSPREVIOUS` to verify-only material only when enabled.
-- Do not load retired keys.
-- Redact secret names in `Debug`.
-- Redact ARNs in `Debug`.
-- Redact version IDs in `Debug`.
-- Redact version stages in `Debug`.
-- Redact secret payloads in `Debug`.
+- v1 supports `AwsSecretsManager` only. Add a manager only with code and
+  tests.
+- Adapters resolve `SecretRef` values. Core and service APIs receive loaded
+  key material.
+- Map `AWSCURRENT` to active material by explicit config. Map `AWSPREVIOUS`
+  to verify-only material only when enabled. Never load retired keys.
+- Redact secret names, ARNs, version IDs, version stages and secret payloads
+  in `Debug`.
 - Zeroize secret payloads where practical.
 
 ### Auth secret document
 
-Each `SecretRef` must resolve to one JSON document.
-
-`AuthSecretsConfig` takes one active document. It can take one previous document during rotation.
+Each `SecretRef` resolves to one JSON document. `AuthSecretsConfig` takes one
+active document, plus one previous document during rotation.
 
 ```json
 {
@@ -559,52 +509,41 @@ Each `SecretRef` must resolve to one JSON document.
 }
 ```
 
-Document rules:
+The six secret fields are, in order: magic-link lookup HMAC, storage HMAC,
+session-cookie root, confirm-cookie root, PoW challenge HMAC secret and PoW
+proof-cookie root.
 
-- `kid` is the key ID for each derived keyring slot.
-- `kid` must pass `KeyId::parse` and be at most 12 bytes: every keyring
-  refuses a `kid` that leaves no room for its purpose's largest cookie body,
-  and the PoW proof cookie allows 12 (the session cookie 38).
-- The 12-byte limit applies to the previous document too. It is enforced when
-  `pow_proof_keyring` is built.
-- Every field is required. Fields the library does not know are ignored, so an
-  application may keep its own fields in the same document; give them names
-  that cannot collide with future library fields (for example an `app_`
-  prefix).
-- `mint_until_unix` sets the active mint window.
-- `verify_until_unix` sets the verify window.
-- `verify_until_unix` must cover the longest purpose lifetime.
-- Each `*_b64` value must decode to 32 bytes.
-- Generate each `*_b64` value independently.
-- Do not reuse one value across fields.
-
-Example generation command:
+- `kid` is the key ID for each derived keyring slot. It must pass
+  `KeyId::parse` and be at most 12 bytes. Every keyring refuses a `kid` that
+  leaves no room for its purpose's largest cookie body; the proof cookie
+  allows 12 bytes, the session cookie 38.
+- The 12-byte limit applies to the previous document too. It is enforced
+  when `pow_proof_keyring` is built.
+- Every field is required. Unknown fields are ignored, so an app may keep its
+  own fields in the document. Name them so they cannot collide with future
+  library fields (for example, an `app_` prefix).
+- `mint_until_unix` sets the active mint window. `verify_until_unix` sets the
+  verify window and must cover the longest purpose lifetime.
+- Each `*_b64` value must decode to 32 bytes. Generate each one
+  independently and never reuse a value across fields:
 
 ```sh
 openssl rand -base64 32
 ```
 
-The six secret fields separate these purposes:
+`LoadedAuthSecrets` hands over the PoW keys without depending on the PoW
+crates:
 
-- magic-link lookup HMAC
-- Storage HMAC
-- session-cookie root
-- confirm-cookie root
-- PoW challenge HMAC secret
-- PoW proof-cookie root
-
-`LoadedAuthSecrets` hands the PoW keys over without depending on the PoW
-crates: `pow_challenge_secret` (and `previous_pow_challenge_secret` during a
-rotation) as redacted key bytes for `PowSecret::new`, and
-`pow_proof_keyring::<PowProofCookie>()` for the proof-cookie keyring, with the
-previous document's root as a verify-only slot. Build that keyring at startup
-so a bad `kid` fails there.
+- `pow_challenge_secret` (and `previous_pow_challenge_secret` during
+  rotation) as redacted key bytes for `PowSecret::new`.
+- `pow_proof_keyring::<PowProofCookie>()` for the proof-cookie keyring, with
+  the previous document's root as a verify-only slot. Build it at startup so
+  a bad `kid` fails there.
 
 ## Rotation cadence
 
-For 30-day session validity, keep old session keys for the full session lifetime. Keep them after they stop minting new cookies.
-
-Recommended cadence:
+For 30-day session validity, keep old session keys for the full session
+lifetime after they stop minting.
 
 | Secret class | Active rotation | Verify-only retention |
 | --- | ---: | ---: |
@@ -615,25 +554,23 @@ Recommended cadence:
 | PoW signing keys | 90 days | Needs challenge TTL plus 24 hours; in practice as long as the previous document is loaded (see below) |
 | Rate-limit HMAC keys | 90 days | Longest window plus 24 hours |
 
-Rules:
-
-- Use `AWSCURRENT` for active material.
-- Use `AWSPREVIOUS` for verify-only material when enabled.
-- Never mint with verify-only keys.
-- Never mint HMAC lookup values with old keys. Previous HMAC keys are only
-  for read fallback during rotation.
-- Do not rotate session keys faster than verify retention.
-- Keep previous session keys for at least 31 days.
+- `AWSCURRENT` is active material. `AWSPREVIOUS` is verify-only material when
+  enabled.
+- Never mint with verify-only keys. Never mint HMAC lookup values with old
+  keys; previous HMAC keys are only a read fallback during rotation.
+- Do not rotate session keys faster than their verify retention. Keep
+  previous session keys for at least 31 days.
 - Reissue cookies with active keys after normal authorization checks.
 - Retire magic-link and PoW keys sooner than session keys.
-- All keys share one document. The previous PoW keys (challenge secret and
-  proof-cookie root) stay verifiable as long as the previous document is
-  loaded, that is until its `verify_until_unix` (at least 31 days for session
-  keys). That is longer than the PoW keys need. If a PoW key leaks, write a new
-  version and drop `previous` sooner; this also ends the previous session keys,
-  so users of those cookies log in again. Run `rekey_email_lookups` first if
-  the storage key changed.
-- Fail closed on unknown, missing, retired, disabled, or malformed key IDs.
+- Fail closed on unknown, missing, retired, disabled or malformed key IDs.
+
+All keys share one document. The previous PoW keys (challenge secret and
+proof-cookie root) stay verifiable while the previous document is loaded,
+that is until its `verify_until_unix` (at least 31 days for session keys).
+That is longer than the PoW keys need. If a PoW key leaks, write a new
+version and drop `previous` sooner. This also ends the previous session keys,
+so users of those cookies log in again. Run `rekey_email_lookups` first if
+the storage key changed.
 
 ### Rotating the HMAC keys
 
@@ -641,197 +578,199 @@ The storage and lookup HMAC keys address records, so rotating them needs a
 read fallback, not just a verify-only slot. `LoadedAuthSecrets` exposes the
 previous document's HMAC keys only when they differ from the active ones.
 
-1. Write a new secret version with fresh values. Secrets Manager moves the old
-   version to `AWSPREVIOUS`; load it as the previous document.
+1. Write a new secret version with fresh values. Secrets Manager moves the
+   old version to `AWSPREVIOUS`; load it as the previous document.
 2. Pass `previous_storage_hmac_key` to
    `DynamoDbAuthStore::with_previous_storage_hmac_key` and
-   `previous_lookup_hmac_key` to `MagicLinkFlowService::previous_lookup_hmac_key`.
-   Sessions and email lookups that miss under the new key retry under the
-   previous one. A user found that way gets a lookup row under the new key.
-   A user created during the window gets lookup rows under both keys, so a
-   host still running the old key during a rolling deploy finds the account
-   instead of creating a second one (`spec/tla/KeyRotation.tla`). Links
-   issued just before the rotation stay usable.
+   `previous_lookup_hmac_key` to
+   `MagicLinkFlowService::previous_lookup_hmac_key`.
+   - Sessions and email lookups that miss under the new key retry under the
+     previous one. A user found that way gets a lookup row under the new key.
+   - A user created during the window gets lookup rows under both keys, so a
+     host still on the old key during a rolling deploy finds the account
+     instead of creating a second one (`spec/tla/KeyRotation.tla`).
+   - Links issued just before the rotation stay usable.
 3. Before dropping the previous document, run
-   `DynamoDbAuthStore::rekey_email_lookups` (needs `dynamodb:Scan`). It writes
-   new-key lookup rows for users who did not log in during the window. It is
-   idempotent.
+   `DynamoDbAuthStore::rekey_email_lookups` (needs `dynamodb:Scan`). It
+   writes new-key lookup rows for users who did not log in during the window.
+   It is idempotent.
 4. Keep the previous document for at least 31 days so pre-rotation sessions
    expire naturally, then remove it.
 
-Keyed window rate-limit counters restart once at rotation; limits are
-best-effort. Per-solve lifetime counters do not restart.
 Removing the previous storage key before step 3 strands users who have not
 logged in since the rotation: their next login creates a second account.
 
+Keyed window rate-limit counters restart once at rotation; limits are
+best-effort. Per-solve lifetime counters do not restart.
+
 ## Cookie security
 
-Cookie helpers must use safe defaults.
+Cookie helpers default to safe settings:
 
-Rules:
+- Lower `snake_case` names. `__Host-` and `__Secure-` are not required in
+  v1; review `__Host-` defaults again before public release.
+- `HttpOnly` for auth cookies.
+- `Secure` outside local development.
+- Conservative `SameSite`.
+- Host-only scope. Set `Domain` only through explicit app config.
+- Always set `Path` explicitly: `Path=/` for primary session cookies, narrow
+  paths for temporary auth cookies.
+- Explicit `Max-Age` or expiry.
 
-- Use lower `snake_case` cookie names.
-- Do not require `__Host-` or `__Secure-` in v1.
-- Use `HttpOnly` for auth cookies.
-- Use `Secure` outside local development.
-- Use conservative `SameSite`.
-- Use host-only scope by default.
-- Set `Domain` only through explicit app config.
-- Set `Path=/` for primary session cookies.
-- Use narrow paths for temporary auth cookies.
-- Always set `Path` explicitly.
-- Set explicit `Max-Age` or expiry.
-- Clear cookies on logout.
-- Clear cookies on invalid session.
-- Clear cookies on expired session responses.
-- Clear confirm cookies after auth success.
-- Clear confirm cookies on terminal auth failure.
-- Document CSRF expectations for cookie routes.
-- Protect unsafe methods from CSRF.
+Clear cookies:
 
-Before public release, review `__Host-` defaults again.
+- the session cookie on logout, invalid session and expired session
+  responses
+- the confirm cookie after authentication success and on terminal
+  authentication failure
+
+Document the CSRF expectations of each cookie route, and protect unsafe
+methods from CSRF.
 
 ## Session revocation
 
-The default session model must support server-side invalidation.
+The default session model supports server-side invalidation.
 
-- Revoke server-side session state before cookie clearing on logout.
-- Use `POST` for logout.
-- Protect logout from CSRF.
+- On logout, revoke server-side session state before clearing the cookie.
+- Logout is a CSRF-protected `POST`.
 - Support compromise revocation before absolute expiry.
-- Do not make stateless sessions the default.
-- Document the tradeoff if an app chooses stateless sessions.
-- Use shorter TTLs for stateless sessions.
-- Map invalid sessions to generic auth failures.
-- Clear the session cookie where possible.
+- Stateless sessions are not the default. An app that chooses them must
+  document the trade-off and use shorter TTLs.
+- Map invalid sessions to the generic `401` + `DD-Session` failure and clear
+  the session cookie where possible.
 
 ## Email identity
 
 Email identity is an exact match on the normalized address. The library owns
-the one normalization rule (`NormalizedEmail::normalize`), so every app gets
-the same identities:
+the one normalization rule, `NormalizedEmail::normalize`, so every app gets
+the same identities.
 
 - Trim surrounding whitespace, then lowercase the whole address in ASCII.
 - Lowercasing the local part is a documented policy choice. RFC 5321 lets a
-  mail host treat `Alice@` and `alice@` as different mailboxes, so on such a
+  mail host treat `Alice@` and `alice@` as different mailboxes; on such a
   host the two would share one account. Practically no host does this, and
   users expect case not to matter.
-- Do not add Gmail dot folding.
-- Do not strip plus tags.
-- Do not add provider alias rules.
-- `NormalizedEmail::from_normalized` only validates: use it for values read
+- No Gmail dot folding, plus-tag stripping or other provider alias rules.
+- `NormalizedEmail::from_normalized` only validates; use it for values read
   back from storage. It refuses uppercase letters and surrounding whitespace
   instead of converting them.
-- Reject empty values.
-- Reject multiple addresses.
-- Reject display-name forms.
-- Reject CR, LF, NUL, and control characters.
-- Reject whitespace inside the address.
-- Enforce documented length caps.
-- Treat normalized email as sensitive.
-- Redact normalized email in `Debug`.
-- Redact normalized email in errors, logs, fixtures, and snapshots.
+- Reject empty values, multiple addresses, display-name forms, CR, LF, NUL
+  and other control characters, and whitespace inside the address.
+- Enforce the documented length caps.
+- Treat the normalized email as sensitive. Redact it in `Debug`, errors,
+  logs, fixtures and snapshots.
 
-### Normalized email at rest
-
-The store keeps the normalized email in readable form. The atomic authentication
-transaction needs that value for its equality checks, and lookups key on
-`HMAC(email)` so no index holds a raw address.
-
-- Store the normalized email at rest in readable form.
-- Protect it with provider encryption at rest (DynamoDB KMS) and least-privilege IAM.
-- Do not add application-layer email field encryption.
-- Keep raw tokens, selectors, and verifiers out of storage. Store keyed HMAC and verifier hashes only.
+For storage, see [Data at rest](#data-at-rest).
 
 ## Magic-link URL handling
 
-Magic-link tokens often appear in URLs. Treat them as log-sensitive secrets.
+Magic-link tokens appear in URLs, so treat URLs as log-sensitive secrets.
 
-Scanner-safe flow:
+The scanner-safe flow has two steps, so link scanners cannot burn or
+complete a login:
 
-1. Email opens a `GET` landing route with the token.
-2. `GET` never consumes the token.
-3. `GET` never creates a session.
-4. `GET` creates short-lived flow state.
-5. Flow state binds selector, verifier proof, account, expiry, and nonce.
-6. The page asks the user to click a button.
-7. The page identifies the account.
-8. The page does not expose raw token material.
-9. Same-origin `POST` consumes the flow.
-10. `POST` validates bound flow state.
-11. `POST` commits token consumption and session creation atomically.
-12. `POST` clears temporary state.
-13. `POST` redirects to a clean URL.
+1. The email opens a `GET` landing route with the token.
+2. The `GET` never consumes the token or creates a session. It is
+   side-effect-free and repeatable apart from creating short-lived flow state.
+3. The flow state binds the selector, verifier proof, account, expiry and an
+   independent confirmation nonce.
+4. The page identifies the account, asks the user to click a button, and
+   exposes no raw token material.
+5. A same-origin `POST` validates the bound flow state, commits token
+   consumption and session creation atomically, clears temporary state, and
+   redirects to a clean URL.
 
-Implementation rules:
+Rules:
 
-- Do not log full landing URLs.
-- Do not log token-bearing query strings.
-- Scrub token route fields before metrics.
-- Scrub token route fields before traces.
+- Do not log full landing URLs or token-bearing query strings.
+- Scrub token route fields before metrics and traces.
 - Prefer an `HttpOnly` confirm cookie.
-- Never render raw token material in forms.
-- Never place tokens in `Location` headers.
-- Never place tokens in JavaScript.
-- Never place tokens in analytics events.
-- Use fixed or allowlisted post-consume redirects.
-- Do not accept arbitrary `next` URLs.
-- Add `Cache-Control: no-store` to landing pages.
-- Do not load third-party assets on landing pages.
-- Prevent framing with CSP.
-- Add `X-Frame-Options: DENY` for old clients.
+- Never put tokens in rendered forms or bodies, `Location` headers,
+  JavaScript or analytics events.
+- Use fixed or allowlisted post-consume redirects. Never accept arbitrary
+  `next` URLs.
+- Landing pages send `Cache-Control: no-store` and load no third-party
+  assets.
+- Prevent framing with CSP, plus `X-Frame-Options: DENY` for old clients.
 - Set `Referrer-Policy: strict-origin`. It keeps the token-bearing path and
   query out of `Referer`. Do not use `no-referrer`: browsers then send
-  `Origin: null` on the confirmation form POST, and the same-origin check
+  `Origin: null` on the confirmation form `POST`, and the same-origin check
   rejects it.
-- Clear confirm cookies on terminal consume failure.
 
-Scanner safety protects against GET-only scanners. Active scanners that submit forms rely on TTL, binding, one-time consume, and generic failures.
+Limits of the design:
 
-The confirmation page mitigates login CSRF by showing the account. Offer a stronger mode when the app needs one.
+- Scanner safety protects against `GET`-only scanners. Active scanners that
+  submit forms are stopped by TTL, binding, one-time consumption and generic
+  failures.
+- The confirmation page mitigates login CSRF by showing the account. Offer a
+  stronger mode when the app needs one.
+
+### Scanner-safe response contract
+
+`datadeft-magic-link-axum` runs the input gauntlet. The application owns the
+rendered responses and must:
+
+1. Return uniform landing and confirmation failures, with the same status
+   for a rejected landing as for a successful one.
+2. Clear the confirm cookie on a rejected confirmation. Clearing it on an
+   internal confirmation failure is optional. Preserve it on a dependency
+   failure.
+3. Send `no-store`, CSP and frame-denial headers.
+4. HTML-escape the rendered account identity.
+
+Accepted trade-off: a cross-site form `POST` to the confirmation route is
+rejected and clears the confirm cookie (rule 2), so another site can end a
+flow in progress. The user clicks the link again; nothing is consumed or
+created. The landing `GET` never clears the cookie on a rejected link.
 
 ### Redirect landing mode
 
-For UIs served as static files (`MagicLinkScannerFlowConfig::
-with_redirect_landing`). The token still never reaches JavaScript:
+For UIs served as static files
+(`MagicLinkScannerFlowConfig::with_redirect_landing`). The token still never
+reaches JavaScript:
 
-1. The emailed link hits the landing `GET`, which validates without
-   consuming, sets the `HttpOnly` confirm cookie, and answers `303` to one
-   configured same-origin page for every link state. An unusable link gets no
-   `Set-Cookie` at all: a clearing header would let any site end a sign-in in
-   progress with a junk link (landings are cross-site by nature). A cookie left
-   from an earlier link still reads as that link's own state. `Location` never
-   carries the token, selector, verifier or confirmation value.
-2. The page `GET`s the flow-state route. It reads only the confirm cookie,
-   requires exactly `Sec-Fetch-Site: same-origin`, sends no CORS headers,
-   sends `Cross-Origin-Resource-Policy: same-origin` and the landing's security
-   headers, is throttled per selector like the landing, and never writes. It
-   answers `{ "usable": true, "account": …, "confirmation": … }`, or
-   `{ "usable": false }` (clearing the cookie) for anything unusable; an outage
-   is the constant `503`.
+1. The emailed link hits the landing `GET`. It validates without consuming,
+   sets the `HttpOnly` confirm cookie, and answers `303` to one configured
+   same-origin page for every link state.
+   - An unusable link gets no `Set-Cookie` at all. A clearing header would let
+     any site end a sign-in in progress with a junk link (landings are
+     cross-site by nature).
+   - A cookie left from an earlier link still reads as that link's own state.
+   - `Location` never carries the token, selector, verifier or confirmation
+     value.
+2. The page `GET`s the flow-state route. This route:
+   - reads only the confirm cookie
+   - requires exactly `Sec-Fetch-Site: same-origin`
+   - sends no CORS headers, and sends
+     `Cross-Origin-Resource-Policy: same-origin` plus the landing's security
+     headers
+   - is throttled per selector like the landing, and never writes
+   - answers `{ "usable": true, "account": …, "confirmation": … }`, or
+     `{ "usable": false }` (clearing the cookie) for anything unusable; an
+     outage is the constant `503`
 3. The page posts `{ confirmation }` same-origin to the confirmation route,
-   exactly as the server-rendered form does.
+   exactly as the server-rendered mode's form does.
 
 The confirm cookie's `Path` must cover the flow-state route and the
 confirmation route; configuration refuses it otherwise.
 
-The static page holds the account and the confirmation value, so it gets the
-landing page's rules:
+The static page holds the account and the confirmation value, so it follows
+the landing page's rules:
 
-- A strict CSP: scripts only from the same origin, no third-party scripts,
-  styles, fonts or analytics, no error beacons that send page content,
+- A strict CSP: scripts only from the same origin; no third-party scripts,
+  styles, fonts or analytics; no error beacons that send page content;
   `frame-ancestors 'none'`.
 - `Referrer-Policy: strict-origin` and `Cache-Control: no-store`.
-- No shared navigation or session scripts: it shows the account and posts the
-  confirmation, nothing else. On `{ "usable": false }` it offers "request a new
-  link"; on `503` it asks to retry later.
+- No shared navigation or session scripts. It shows the account and posts
+  the confirmation, nothing else. On `{ "usable": false }` it offers "request
+  a new link"; on `503` it asks the user to retry later.
 
 ### Email language and Reply-To
 
 - The email language comes from `MagicLinkServiceConfig::locales`, an
   app-configured `LocaleAllowlist`. A request may carry a locale hint; the
   service resolves it to an allowed locale or the default. The renderer only
-  ever sees the resolved `Locale`, never request text, and the locale is not
+  sees the resolved `Locale`, never request text, and the locale is not
   stored.
 - Reply-To is set only in the outbox configuration
   (`SesMagicLinkOutbox::with_reply_to`), never per request. A request-chosen
@@ -851,21 +790,25 @@ about a refusal is public.
 | `503`, one constant body, `no-store` | Everything security-sensitive or failed: rate limits, quotas, dependency or server faults. | Back off with equal jitter and retry. Never retry without jitter. |
 | `403` | Never sent by the library. It is the app's, for business authorization. | App-defined. |
 
-Exceptions, so they reveal nothing either: the magic-link request answers the
-same generic `200` whether it sent, throttled or dropped the email; the
-landing answers the same page for every link state; the confirmation answers
-one human page on failure.
+The library never sends `403`, `500` or `429`.
+
+Exceptions, which reveal nothing either:
+
+- The magic-link request answers the same generic `200` whether it sent,
+  throttled or dropped the email.
+- The landing answers the same page for every link state.
+- The confirmation answers one human page on failure.
 
 Rules:
 
 - The `503` body, status and `Cache-Control: no-store` are byte-identical for
-  every reason, across `datadeft-magic-link-axum` and `datadeft-pow-axum`.
-  A route may add its own fixed security headers (the flow-state route sends
-  the landing's headers on every answer); within one route every `503` is
+  every reason, across `datadeft-magic-link-axum` and `datadeft-pow-axum`. A
+  route may add its own fixed security headers (the flow-state route sends
+  the landing's headers on every answer). Within one route every `503` is
   byte-identical, so no reason is distinguishable.
-- Log the internal reason and count it; never send it. The typed reasons are
+- Log and count the internal reason; never send it. The typed reasons are
   `MagicLinkHttpError`, `ProofRejection`, `SessionRejectionKind`, and, for
-  the request endpoint whose public answer is always the same `200`,
+  the request endpoint whose public answer is always `200`,
   `RequestMagicLinkOutcome` (`Sent` or `Throttled(RequestThrottle)`). Each has
   a stable `reason()` label for metrics, with no identifiers, emails or token
   material.
@@ -877,20 +820,10 @@ Rules:
 
 ## Rate limiting and abuse controls
 
-Magic-link owns these limiter domains:
-
-- normalized-email request limits
-- normalized-email outbox limits
-- selector landing limits
-- selector consume limits
-
-The consuming app owns these controls:
-
-- IP limits
-- network-source limits
-- global fanout limits
-- malformed-request admission
-- PoW admission
+| Owner | Controls |
+| --- | --- |
+| Magic-link | Normalized-email request and outbox limits; selector landing and consume limits |
+| Consuming app or edge | IP, network-source and global fanout limits; malformed-request admission; PoW admission |
 
 Starting thresholds:
 
@@ -903,30 +836,19 @@ Starting thresholds:
 | Landing | Selector key | 30 per 10 minutes | Generic landing |
 | Consume | Selector key | 5 per token TTL | Generic invalid |
 
-Rules:
-
 - Make thresholds configurable.
-- Return generic responses for throttled users.
-- Return generic responses for unknown users.
-- Return generic responses for consumed tokens.
-- Return generic responses for expired tokens.
-- Return generic responses for invalid tokens.
-- Fail closed on limiter storage failures.
-- Document the targeted-lockout tradeoff.
+- Return generic responses for throttled users, unknown users, and consumed,
+  expired or invalid tokens.
+- Fail closed when limiter storage fails.
+- Document the targeted-lockout trade-off.
 
 ## One supported way
 
-Do not add legacy support unless the project approves a versioned path.
+Do not add legacy support unless the project approves a versioned path. No
+dual-read, dual-write, compatibility fallback, old token parser branch or
+deprecated alias.
 
-Do not add these paths:
-
-- dual-read
-- dual-write
-- compatibility fallback
-- old token parser branch
-- deprecated alias
-
-You can use forward version markers.
+Forward version markers are fine. They name the one current format:
 
 ```text
 v1
@@ -934,56 +856,43 @@ pow-v1
 ml1
 ```
 
-They name the one current format.
-
 ## Dependency hygiene
 
-- Prefer small maintained crates.
+- Prefer small, maintained crates.
 - Avoid unnecessary untrusted-input parsers.
 - Keep cloud SDKs out of core crates.
 - Review crypto dependencies before use.
-- Run `cargo deny` or `cargo audit` before release.
-- Add dependency audit to `mise run verify`.
-- Document each crypto, parsing, HTTP, AWS, async, or token dependency.
+- Document each crypto, parsing, HTTP, AWS, async or token dependency.
+- Run `cargo deny` or `cargo audit` before release; the dependency audit is
+  part of `mise run verify`.
 
 ## Security checklist
 
-Before phase acceptance, confirm these items:
+Before phase acceptance, confirm:
 
-1. Source contains no secret values.
-2. Docs contain no secret values.
-3. Tests contain no secret values.
-4. Examples contain no secret values.
-5. `Debug` redacts sensitive types.
-6. Errors do not expose sensitive values.
-7. Tests cover tamper cases.
-8. Tests cover replay cases.
-9. Tests cover expiry cases.
-10. Tests cover malformed tokens.
-11. Tests cover unknown keys.
-12. Token parsers reject non-canonical encodings.
-13. Replay stores key on `Jti` or equivalent identity.
-14. Entropy generation meets minimums.
-15. Magic-link consume tests prove one-time use.
-16. Scanner flow tests prove `GET` is non-consuming.
-17. Scanner flow tests prove `POST` requires bound state.
-18. Confirmation pages prevent framing.
-19. A `Rejected` confirmation clears the confirm cookie; `Unavailable`
-    preserves it; clearing on `Internal` is optional.
-20. Redirects stay fixed or allowlisted.
-21. Cookie helpers use secure defaults.
-22. Logout revokes server state before cookie clearing.
-23. Key rotation tests cover active keys.
-24. Key rotation tests cover verify-only keys.
-25. Key rotation tests cover retired keys.
-26. PoW tests cover difficulty floor.
-27. PoW tests cover challenge entropy.
-28. PoW tests cover replay limits.
-29. Rate-limit tests cover email and selector domains.
-30. URL handling scrubs token material.
-31. Email input tests cover invalid structures.
-32. Timing review covers dummy work.
-33. Core code has no IO sources.
-34. Adapter errors map to safe public errors.
-35. Solve-timing consumers gate on fast deltas only; slow deltas stay soft.
-36. Dependency audit passes before release.
+1. Source, docs, tests and examples contain no secret values.
+2. `Debug` redacts sensitive types, and errors expose no sensitive values.
+3. Tests cover tamper, replay, expiry, malformed-token and unknown-key cases.
+4. Token parsers reject non-canonical encodings.
+5. Replay stores key on `Jti` or an equivalent identity.
+6. Entropy generation meets the minimums.
+7. Magic-link consume tests prove one-time use.
+8. Scanner flow tests prove `GET` does not consume and `POST` requires bound
+   state.
+9. Confirmation pages prevent framing.
+10. A `Rejected` confirmation clears the confirm cookie, `Unavailable`
+    preserves it, and clearing on `Internal` is optional.
+11. Redirects stay fixed or allowlisted.
+12. Cookie helpers use secure defaults.
+13. Logout revokes server state before clearing the cookie.
+14. Key rotation tests cover active, verify-only and retired keys.
+15. PoW tests cover the difficulty floor, challenge entropy and replay
+    limits.
+16. Rate-limit tests cover the email and selector domains.
+17. URL handling scrubs token material.
+18. Email input tests cover invalid structures.
+19. Timing review covers dummy work.
+20. Core code has no IO sources.
+21. Adapter errors map to safe public errors.
+22. Solve-timing consumers gate on fast deltas only; slow deltas stay soft.
+23. The dependency audit passes before release.

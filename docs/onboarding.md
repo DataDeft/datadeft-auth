@@ -1,7 +1,10 @@
 # Onboarding
 
-**Status:** `0.5.0` is a breaking pre-1.0 release, not yet published to the
-registries. Consume it via a git ref until publication.
+**Status:** `0.5.0` is a breaking pre-1.0 release. It is not yet published to
+the registries. Use a git ref until it is.
+
+To wire the libraries into your application, follow
+[integration.md](integration.md).
 
 ## Can a customer use this today?
 
@@ -14,17 +17,15 @@ registries. Consume it via a git ref until publication.
 | Session validation | Ready | Validate protected requests. Revoke server state on logout. |
 | PoW Rust admission | Ready | Wire the `datadeft-pow-axum` challenge and validate glue into your routes. Build the browser path. |
 | Browser PoW client | Ready | Serve the built worker and call `protect()` from your login page. |
-| Country-aware PoW | Not ready | Build upstream policy. Never lower below the floor. |
+| Country-aware PoW | Not ready | Build upstream policy. Never lower difficulty below the floor. |
 | Example app | Ready | Start with `examples/axum-magic-link`. |
-| Published crates | Pending | Pin to the 0.5.0 Git revision. Registry publish pending ([releasing.md](releasing.md)). |
+| Published crates | Pending | Pin the 0.5.0 git revision. Registry publish is pending ([releasing.md](releasing.md)). |
 
-Do not use fake secrets, fake clocks, or fake entropy in production.
-
-To wire the libraries into your application, follow [integration.md](integration.md).
+Never use fake secrets, fake clocks, or fake entropy in production.
 
 ## Production checklist
 
-A magic-link deployment can run in production after the app completes this list.
+A magic-link deployment is production-ready when the app completes this list.
 
 1. Use an OS CSPRNG.
 2. Use separate production secrets for each purpose.
@@ -61,24 +62,24 @@ PoW admission is shipped and recommended. Only country-aware difficulty
 | MVP-001 | P0 | Done | Keep the fake-backed Axum example runnable. |
 | MVP-002 | P0 | Per deployment | Attest token-safe logging. |
 | MVP-003 | P0 | AWS users | Validate live DynamoDB behavior. |
-| MVP-004 | P0 | Done | Consume by the 0.5.0 Git revision. Registry publish pending ([releasing.md](releasing.md)). |
+| MVP-004 | P0 | Done | Consume by the 0.5.0 git revision. Registry publish is pending ([releasing.md](releasing.md)). |
 | MVP-005 | P1 | Done | Trait futures require `+ Send`, static dispatch only (no `dyn`). |
-| MVP-006 | P1 | Decided | Inline SES delivery accepted. Implement the `MagicLinkOutbox` trait against a durable queue only if a deployment needs it. |
+| MVP-006 | P1 | Decided | Inline SES delivery is accepted. Implement `MagicLinkOutbox` against a durable queue only if a deployment needs it. |
 | MVP-007 | P1 | Decided | Store the normalized email at rest, protected by DynamoDB KMS and IAM. No app-side field encryption. |
 | MVP-010 | PoW | Done | `@datadeft/protect-client` (`packages/dd-protect-client`) ships the worker and client, vector-tested against `datadeft-pow-core`. |
 | MVP-011 | PoW | Ready | Wire the `datadeft-pow-axum` challenge and validate glue into routes. |
-| MVP-012 | PoW | Done | Ship the `dd_pow` proof cookie (`datadeft-pow-core`, `datadeft-pow-axum`). Stateless, reusable within its TTL. Reuse is bounded by the per-solve budget (`admit_proof`). |
-| MVP-013 | PoW | Not ready | Define trusted country source and difficulty policy. |
+| MVP-012 | PoW | Done | Ship the `dd_pow` proof cookie (`datadeft-pow-core`, `datadeft-pow-axum`). Stateless and reusable within its TTL; reuse is bounded by the per-solve budget (`admit_proof`). |
+| MVP-013 | PoW | Not ready | Define the trusted country source and difficulty policy. |
 | MVP-014 | P1 | Done | Keep session country as an opportunistic lock. |
-| MVP-020 | Assurance | Done | TLA+ safety models gated in CI (`formal-spec` job, `mise run spec`). Fairness-based liveness needs a checker with `WF` support. |
+| MVP-020 | Assurance | Done | TLA+ models gated in CI (`verify` job: `mise run spec`, `mise run spec-mutants`). Liveness under fairness needs a checker with `WF` support. |
 | MVP-021 | Assurance | Future | Add simulation and bounded checks. Fuzz targets exist (`mise run fuzz`). |
 
 ## PoW decisions
 
-Define these values before you implement MVP-013 (country-aware PoW). The
-shipped defaults already set the challenge lifetime (2 minutes), the
-proof-cookie lifetime (3 hours), and stateless replay behavior. See the backlog
-and [security.md](security.md).
+Decide these before you implement MVP-013 (country-aware PoW). The shipped
+defaults already set the challenge lifetime (2 minutes), the proof cookie
+lifetime (3 hours), and stateless replay behavior. See
+[security.md](security.md).
 
 1. Select the trusted country source.
 2. Select behavior when country is absent.
@@ -90,7 +91,7 @@ and [security.md](security.md).
 8. Set browser performance targets.
 9. Define accessibility fallback.
 
-Use this minimum invariant.
+Keep this minimum invariant:
 
 ```text
 effective_difficulty >= production_floor
@@ -112,4 +113,5 @@ country policy must not decrease difficulty
 9. Add independent PoW admission if required.
 10. Run all integration and release checks.
 
-See [architecture.md](architecture.md) for flows. See [formal-methods.md](formal-methods.md) for future assurance work.
+See [architecture.md](architecture.md) for flows and
+[formal-methods.md](formal-methods.md) for future assurance work.

@@ -4,38 +4,44 @@
 
 - Prefer explicit code over clever code.
 - Use plain functions, structs, enums, traits, and generics.
-- Do not write application macros.
-- Do not use `unwrap`, `expect`, or `panic!` in production paths.
-- Keep core crates deterministic and IO-free.
-- Put IO, network, clocks, and external mapping in adapters.
+- Do not write application or library macros (see
+  [No application macros](#no-application-macros)).
+- Do not use `unwrap`, `expect`, or `panic!` in production code.
+- Do not use `unsafe` without a written security or design note.
 - Redact `Debug` for sensitive values.
-- Do not use `unsafe` without a security note.
 
 ## Crate layering
 
 Allowed dependency graph:
 
 ```text
-datadeft-auth-token-core      -> no workspace crates
+datadeft-auth-token-core     -> no workspace crates
 datadeft-magic-link-core     -> datadeft-auth-token-core
 datadeft-magic-link-service  -> datadeft-magic-link-core, datadeft-auth-token-core
 datadeft-magic-link-axum     -> datadeft-magic-link-service
 datadeft-magic-link-aws      -> datadeft-magic-link-service
 datadeft-pow-core            -> datadeft-auth-token-core
 datadeft-pow-axum            -> datadeft-pow-core, datadeft-auth-token-core
-examples               -> selected adapters and services
+examples/*                   -> adapter and service crates as needed
 ```
 
-Rules:
+Core crates:
 
-- Keep `*-core` crates free of IO.
-- Keep Axum, Tokio, AWS SDK, tracing, files, env, and network out of core crates.
+- Keep `*-core` crates deterministic and free of IO.
+- Keep Axum, Tokio, AWS SDK, tracing, files, env, and network out of them.
 - Pass clock, entropy, and config into core functions.
-- Put Tokio, AWS, and Axum in adapter crates.
-- Keep Axum and AWS adapters as siblings.
-- Do not make adapters depend on each other.
+
+Adapters and services:
+
+- Put IO, network, clocks, and external mapping in adapter crates. Tokio,
+  AWS, and Axum belong there.
+- Keep the Axum and AWS adapters as siblings. Adapters do not depend on each
+  other.
 - Put shared adapter concerns in service traits or core types.
-- Make service crates depend on traits.
+- Service crates depend on traits, not concrete infrastructure.
+
+Everywhere:
+
 - Avoid circular dependencies.
 - Keep public APIs small.
 - Put optional integrations behind feature flags.
@@ -44,34 +50,19 @@ Rules:
 ## Error handling
 
 - Return typed errors from library APIs.
+- Use `anyhow` only in examples, binaries, tests, and setup code.
 - Scrub adapter errors before public conversion.
 - Do not leak tokens, cookies, HMAC inputs, key material, emails, or raw IDs.
 
-Public error enums should implement these traits where practical:
-
-- `Debug`
-- `Display`
-- `std::error::Error`
-- `Clone`
-- `Copy`
-- `Eq`
-- `PartialEq`
-
-Use `anyhow` only in examples, binaries, tests, and setup code.
+Public error enums should implement these traits where practical: `Debug`,
+`Display`, `std::error::Error`, `Clone`, `Copy`, `Eq`, `PartialEq`.
 
 ## No application macros
 
-Do not write macros for these tasks:
+Do not write macros for dispatch, key building, field mapping, trait
+forwarding, token parsing, storage shape generation, or route generation.
 
-- dispatch
-- key building
-- field mapping
-- trait forwarding
-- token parsing
-- storage shape generation
-- route generation
-
-You can use these macro forms:
+You may use:
 
 - serde derives
 - test macros
@@ -80,9 +71,7 @@ You can use these macro forms:
 
 ## Secrets and redaction
 
-Any type that wraps secret or sensitive material must redact `Debug`.
-
-Example:
+Any type that wraps secret or sensitive material must redact `Debug`:
 
 ```rust
 impl core::fmt::Debug for MagicLinkToken {
@@ -105,16 +94,10 @@ Redact these values:
 
 ## Determinism
 
-Core APIs must not call these sources:
+Core APIs must not call the system clock, random number generators,
+environment variables, the filesystem, the network, or logging.
 
-- system clock
-- random number generators
-- environment variables
-- filesystem
-- network
-- logging
-
-Callers inject these inputs:
+Callers inject these inputs instead:
 
 - `now_unix`
 - `now: UnixMillis` (PoW mint/verify; the library formats RFC3339 internally)
@@ -123,11 +106,12 @@ Callers inject these inputs:
 - key material
 - config values
 
-Adapters that create secrets or nonces must use OS-backed CSPRNGs. A reviewed cryptographic RNG can replace OS RNG when needed.
+Adapters that create secrets or nonces must use an OS-backed CSPRNG. A
+reviewed cryptographic RNG may replace the OS RNG when needed.
 
 ## Tests
 
-Each crate must include these tests:
+Each crate must include:
 
 - unit tests for pure functions
 - golden tests for token formats
@@ -135,15 +119,15 @@ Each crate must include these tests:
 - round-trip tests for mint, parse, encode, or decode flows
 - public API smoke tests with default features
 
-Prefer property tests for token grammar and crypto wrappers when cheap.
+Prefer property tests for token grammar and crypto wrappers when they are
+cheap.
 
-Test code may use `unwrap` and `expect`. Add a clear failure message when that helps.
-
-Production code must not use `unwrap` or `expect`.
+Test code may use `unwrap` and `expect`; add a clear failure message when it
+helps. Production code must not.
 
 ## Module layout
 
-Keep files small enough to read in one sitting, for humans and agents alike:
+Keep files small enough to read in one sitting:
 
 - Production files: about 400 lines at most.
 - Test files: about 600 lines at most.
@@ -153,8 +137,8 @@ Keep files small enough to read in one sitting, for humans and agents alike:
 No functions, types, or impls.
 
 Split a large module with the `module.rs` + `module/` layout. Never use
-`mod.rs`. The parent file says what the module is, declares its children, and
-re-exports, so the public API does not change:
+`mod.rs`. The parent file documents the module, declares its children, and
+re-exports them, so the public API does not change:
 
 ```text
 src/
@@ -166,8 +150,8 @@ src/
     flow_tests.rs         # `#[cfg(test)] mod flow_tests;` in service.rs
 ```
 
-A small module keeps the flat pattern: one feature file plus a co-located
-`*_tests.rs` wired with `#[path]`:
+A small module stays flat: one feature file plus a co-located `*_tests.rs`
+wired with `#[path]`:
 
 ```rust
 #[cfg(test)]
@@ -175,21 +159,24 @@ A small module keeps the flat pattern: one feature file plus a co-located
 mod magic_link_tests;
 ```
 
-Tests that share fixtures put them in a `test_support.rs` child module
-(`#[cfg(test)]`, items `pub(super)`).
+Shared test fixtures go in a `test_support.rs` child module (`#[cfg(test)]`,
+items `pub(super)`).
 
-Entry files decode, delegate, and encode. Put business logic in named modules.
+Entry files decode, delegate, and encode. Business logic goes in named
+modules.
 
 ## Naming
 
-- Rust symbols use `snake_case`.
-- Types, enums, and traits use `UpperCamelCase`.
-- JSON fields use `snake_case`.
-- Cookie names use lower `snake_case`.
-- HTTP paths use `kebab-case`.
-- CLI flags use `--kebab-case`.
-- Environment variables use `SCREAMING_SNAKE_CASE`.
-- Opaque IDs use `tag-<body>`.
+| Thing | Style |
+| --- | --- |
+| Rust symbols | `snake_case` |
+| Types, enums, traits | `UpperCamelCase` |
+| JSON fields | `snake_case` |
+| Cookie names | lower `snake_case` |
+| HTTP paths | `kebab-case` |
+| CLI flags | `--kebab-case` |
+| Environment variables | `SCREAMING_SNAKE_CASE` |
+| Opaque IDs | `tag-<body>` |
 
 Opaque IDs must not encode real-world facts.
 
@@ -208,5 +195,5 @@ Opaque IDs must not encode real-world facts.
 - Keep default features minimal.
 - Avoid dependencies for tiny helpers.
 - Put broad integration dependencies in adapter crates.
-- Give each crypto, parsing, HTTP, AWS, or async dependency an owner crate.
-- Record the reason for each such dependency.
+- Give each crypto, parsing, HTTP, AWS, or async dependency an owner crate,
+  and record the reason for it.

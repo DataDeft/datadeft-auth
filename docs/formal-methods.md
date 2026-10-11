@@ -1,8 +1,10 @@
 # Formal assurance roadmap
 
-**Status:** Draft and non-normative. The repository does not claim formal proof.
+**Status:** Draft and non-normative. The repository does not claim formal
+proof.
 
-Production work comes first. Formal methods will add evidence later. They do not replace crypto review, live tests, or deployment controls.
+Production work comes first. Formal methods add evidence later. They do not
+replace crypto review, live tests, or deployment controls.
 
 ## Tooling
 
@@ -14,9 +16,8 @@ The development environment has these tools:
 - Quint
 - Creusot
 
-The first TLA+ models live in [../spec/tla](../spec/tla). Run them with `mise
-run spec`. This document does not install the other tools. CI will pin their
-versions when each MVP starts.
+The TLA+ models live in [../spec/tla](../spec/tla). This document does not
+install the other tools. CI will pin their versions when each MVP starts.
 
 ## Claims to model
 
@@ -43,57 +44,70 @@ versions when each MVP starts.
 | LIVE-001 | The happy path always reaches a session, including through an ambiguous commit and its retry. | `Liveness.tla` | `model_flow_tests` |
 | BOUND-INV-001 | Parsers reject over-cap values safely. | Out of scope for TLA+ | Totality property tests; cargo-fuzz targets in `fuzz/` (`mise run fuzz`); Kani planned |
 
-`mise run spec` checks every model. `mise run spec-mutants` proves each
-invariant can fail: it breaks the model the way a plausible code bug would and
-requires the checker to report that exact violation. Both run in
-`mise run verify`. The `model_*_tests` in `datadeft-magic-link-aws` drive the
-real services and the fake store through random operation sequences and check
-the same invariants, which links the models to the code.
+## How the models are checked
 
-The Session configs check the shipped re-enable cutoff, which is inclusive
-since 0.5.0 (`WatermarkStrict = FALSE`, CeleraTax #12): a session created in
-the enable's own second is accepted, and `Inv_NoAcceptBeforeWatermark` checks
-that sessions created before it never validate. The inclusive cutoff is safe
-only because enable revokes first.
+| Task | What it does | In `mise run verify` |
+| --- | --- | --- |
+| `mise run spec` | Checks all 9 models in 10 configs (`Session.tla` also runs with `SessionAdmin.cfg`). | Yes |
+| `mise run spec-mutants` | Runs 44 mutants. Each breaks a model the way a plausible code bug would. The checker must report that exact violation. | Yes |
 
-Findings the models produced:
+Every `INVARIANT` and `PROPERTY` in a cfg (except `TypeOK`) has a mutant that
+targets it. An untargeted one fails `spec-mutants`.
 
-- **SES-F1 (fixed in 0.5.0).** A login host whose clock runs ahead
-  stamps `created_at` after a quick re-enable's watermark, and `enable_user`
-  did not wait for the disable's revocation, so a pre-disable session could
-  validate again. `enable_user` now revokes every live session before it
-  re-enables. Counterexample:
+The `model_*_tests` in `datadeft-magic-link-aws` link the models to the code.
+They drive the real services and the fake store through random operation
+sequences and check the same invariants.
+
+The Session configs check the shipped re-enable cutoff. It is inclusive since
+0.5.0 (`WatermarkStrict = FALSE`, CeleraTax #12): a session created in the
+enable's own second is accepted. `Inv_NoAcceptBeforeWatermark` checks that
+sessions created before it never validate. The inclusive cutoff is safe only
+because enable revokes first.
+
+## Findings
+
+- **SES-F1 (fixed in 0.5.0).** A login host whose clock runs ahead stamps
+  `created_at` after a quick re-enable's watermark. `enable_user` did not wait
+  for the disable's revocation, so a pre-disable session could validate again.
+  `enable_user` now revokes every live session before it re-enables.
+  Counterexample:
   `tla spec/tla/Session.tla --config spec/tla/SessionAdmin.cfg --allow-deadlock -c EnableRevokesFirst=FALSE`.
-- **ROT-F1 (fixed in 0.5.0).** During a rolling storage-key rotation,
-  a user created on a host with the new key had a lookup row only under that
-  key; a later login on a host still on the old key created a second
-  account. Creation now also writes the previous-key row. Counterexample:
+- **ROT-F1 (fixed in 0.5.0).** During a rolling storage-key rotation, a user
+  created on a host with the new key had a lookup row only under that key. A
+  later login on a host still on the old key created a second account.
+  Creation now also writes the previous-key row. Counterexample:
   `KeyRotation.tla` with `DualWrite = FALSE`.
 - **LIVE-F1 (fixed in the model).** The checker evaluates leads-to on cycles
-  only, and `--allow-deadlock` hid stuck states, so the old liveness model
+  only, and `--allow-deadlock` hid stuck states. So the old liveness model
   passed even with its retry removed. Success is now an explicit terminal
-  state and the model runs without `--allow-deadlock`.
+  state, and the model runs without `--allow-deadlock`.
 - **ADM-F1 (fixed in 0.5.0).** Concurrent admin actions on one user were
-  last-write-wins: an enable whose final write was delayed past another
+  last-write-wins. An enable whose final write was delayed past another
   admin's enable, a login, and a later disable undid that disable and revived
-  a session whose revocation failed. Not reachable by users. An enable is now
-  conditional on the profile's `admin_version` (a stale one fails with
-  `AdminError::Conflict`), and a disable is unconditional and always bumps the
-  version, so it fences a slow enable even on an already-disabled user and
-  never loses a race itself. `AdminRace.tla` checks both (each is a killed
-  mutant), and the race tests pin them in code.
+  a session whose revocation failed. Users cannot reach this. The fix:
+  - An enable is conditional on the profile's `admin_version`. A stale one
+    fails with `AdminError::Conflict`.
+  - A disable is unconditional and always bumps the version. So it fences a
+    slow enable even on an already-disabled user, and never loses a race
+    itself.
 
-The v0.2.0 solve-timing signal (`Verified::mint_to_verify_ms`, the proof-cookie
-solve-class byte) is deliberately outside the models. It is observational: it
-adds no admission transition and changes no invariant. The clock-unit change
-(seconds to milliseconds) is also invisible to the models, which treat expiry
-abstractly without time units. Timing-derived *policy* (for example, a fast
-floor that denies admission) would be a new guard on the accept transition and
-would need a model extension before shipping.
+  `AdminRace.tla` checks both (each is a killed mutant). The race tests pin
+  them in code.
+
+## Outside the models
+
+- The v0.2.0 solve-timing signal (`Verified::mint_to_verify_ms`, the
+  proof-cookie solve-class byte) is observational. It adds no admission
+  transition and changes no invariant.
+- The clock-unit change (seconds to milliseconds) is invisible to the models.
+  They treat expiry abstractly, without time units.
+- Timing-derived *policy* (for example, a fast floor that denies admission)
+  would be a new guard on the accept transition. It needs a model extension
+  before it ships.
 
 ## Magic-link model
 
-Use these abstract states:
+Abstract states:
 
 ```text
 Challenge = Absent | Issued | Consumed | Expired
@@ -102,16 +116,8 @@ Session   = Absent | Active | Revoked | Expired
 User      = Missing | Enabled | Disabled
 ```
 
-Use these actions:
-
-- RequestLink
-- Landing
-- Confirm
-- AtomicCommit
-- AmbiguousRetry
-- DisableUser
-- RevokeSession
-- AdvanceTime
+Actions: RequestLink, Landing, Confirm, AtomicCommit, AmbiguousRetry,
+DisableUser, RevokeSession, AdvanceTime.
 
 The model must include these cases:
 
@@ -124,7 +130,7 @@ The model must include these cases:
 
 ## PoW model
 
-Use these abstract states:
+Abstract states:
 
 ```text
 Challenge = Absent | Issued | Expired
@@ -132,30 +138,23 @@ Proof     = Absent | Verified | Spent
 Admission = Rejected | Accepted
 ```
 
-The policy model defines this rule:
+The policy rule:
 
 ```text
 EffectiveDifficulty(country) =
     Max(ProductionFloor, BaseDifficulty, CountryRequired(country))
 ```
 
-The model should include these actions:
+Actions: mint, country policy update, solve, verify, consume proof, replay,
+advance time.
 
-- mint
-- country policy update
-- solve
-- verify
-- consume proof
-- replay
-- advance time
-
-POW-INV-002 requires one rule. An active flow difficulty must not decrease after any policy or country transition.
+POW-INV-002: an active flow's difficulty must not decrease after any policy or
+country transition.
 
 ## Deterministic simulation tests
 
-Add a model-based harness after the state models stabilize.
-
-The harness should use injected clock, entropy, scheduler, and repository failpoints.
+Add a model-based harness after the state models stabilize. It should use an
+injected clock, entropy, scheduler, and repository failpoints.
 
 It should generate these cases:
 
@@ -166,14 +165,17 @@ It should generate these cases:
 - expiry at each boundary
 - proof replay and country difficulty changes
 
-The harness compares implementation state with a small reference state machine. Live DynamoDB tests remain necessary.
+The harness compares implementation state with a small reference state
+machine. Live DynamoDB tests remain necessary.
 
 ## Fuzzing and bounded checks
 
-The cargo-fuzz targets in `fuzz/` cover the untrusted-input parsers. Run them
-with `mise run fuzz`. The Kani and Creusot items are planned.
+`fuzz/` has 11 cargo-fuzz targets for the untrusted-input parsers.
+`mise run fuzz` runs each for 60 s with `-max_len=10000`. It needs nightly Rust
+and `cargo install cargo-fuzz`, and is not part of `mise run verify`. The Kani
+and Creusot items are planned.
 
-Start with these targets:
+Targets:
 
 - Kani for country difficulty monotonicity.
 - Kani for expiry arithmetic.
@@ -185,25 +187,21 @@ Start with these targets:
 - Cargo Fuzz for Axum parsers.
 - Cargo Fuzz for DynamoDB item decoding.
 - Creusot only for small pure functions.
-- Tamarin later if protocol ambiguity appears.
+- Tamarin later, if protocol ambiguity appears.
 
 ## Proof boundaries
 
-A successful model check proves only the model within configured bounds.
+A successful model check proves only the model, within its configured bounds.
+It does not prove that:
 
-It does not prove these claims:
+- the implementation matches the model
+- the crypto primitives are correct
+- AWS, SES, proxy, or browser behavior is correct
+- email delivery is live
+- a human recognizes the account page
+- logs outside the handler omit token material
 
-- The implementation matches the model.
-- The crypto primitives are correct.
-- AWS behavior is correct.
-- SES behavior is correct.
-- Proxy behavior is correct.
-- Browser behavior is correct.
-- Email delivery is live.
-- A human recognizes the account page.
-- Logs outside the handler omit token material.
-
-Each formal claim must link these artifacts:
+Each formal claim must link:
 
 1. Model action.
 2. Code path.

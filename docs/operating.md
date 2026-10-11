@@ -2,9 +2,7 @@
 
 ## Local development
 
-Use local path dependencies during initial work.
-
-Example consuming-project dependency:
+Use local path dependencies during initial work. From a consuming project:
 
 ```toml
 [dependencies]
@@ -12,11 +10,17 @@ datadeft-pow-core = { path = "../datadeft-auth/crates/datadeft-pow-core" }
 datadeft-magic-link-core = { path = "../datadeft-auth/crates/datadeft-magic-link-core" }
 ```
 
+Development loop:
+
+1. Work in this repository.
+2. Run `mise run verify`.
+3. Use local path deps from a consuming project.
+4. Run the consuming project's tests.
+5. Tag or publish only after those checks pass.
+
 ## Task runner
 
 Use `mise` tasks. Do not hand-type long command chains.
-
-Common tasks:
 
 ```sh
 mise run fmt
@@ -27,19 +31,19 @@ mise run audit
 mise run verify
 ```
 
-`verify` runs fmt-check, clippy, test, test-default-features, docs, audit, token-core-guard,
-ts-verify, spec, spec-mutants, release-check, and workflow-check.
+`verify` runs fmt-check, clippy, test, test-default-features, docs, audit,
+token-core-guard, ts-verify, spec, spec-mutants, release-check, and
+workflow-check.
 
-Further tasks:
+Other tasks:
 
-- `spec` and `spec-mutants`: check the TLA+ models and prove each invariant
-  can fail. Both run in `verify`.
-- `fuzz`: fuzz every untrusted-input parser for 60 s each. Needs nightly Rust
-  and `cargo install cargo-fuzz`. Not in `verify`.
-- `dynamodb-local-test`: integration tests against DynamoDB Local. Needs
-  Docker. Not in `verify`.
+| Task | What it does | In `verify` |
+| --- | --- | --- |
+| `spec`, `spec-mutants` | Check the TLA+ models and prove each invariant can fail. | Yes |
+| `fuzz` | Fuzz every untrusted-input parser for 60 s each. Needs nightly Rust and `cargo install cargo-fuzz`. | No |
+| `dynamodb-local-test` | Integration tests against DynamoDB Local. Needs Docker. | No |
 
-Recommended commands behind tasks:
+The core commands behind the tasks:
 
 ```sh
 cargo fmt --all --check
@@ -49,25 +53,17 @@ cargo doc --workspace --all-features --no-deps
 cargo deny check
 ```
 
-## Development loop
-
-1. Work in this repository.
-2. Run `mise run verify`.
-3. Use local path deps from a consuming project.
-4. Run consuming project tests.
-5. Tag or publish only after those checks pass.
-
 ## Multi-agent model
 
-Use one orchestrator and one owner for each crate.
-
-The orchestrator owns repo-wide decisions. The orchestrator owns user questions, dependency boundaries, merge order, and acceptance.
-
-Each implementation agent owns one crate or package. Agents must not edit another crate without orchestrator approval.
-
-Only one writer may modify a crate or worktree at a time. Use separate worktrees for concurrent implementation.
-
-Public API changes across crates need a short proposal first.
+- Use one orchestrator and one owner for each crate.
+- The orchestrator owns repo-wide decisions: user questions, dependency
+  boundaries, merge order, and acceptance.
+- Each implementation agent owns one crate or package. It must not edit
+  another crate without orchestrator approval.
+- Only one writer may modify a crate at a time. All work lands on `main`; no
+  feature branches or worktrees.
+- Public API changes across crates need a short proposal first (see
+  [Cross-crate changes](#cross-crate-changes)).
 
 ## Agent ownership
 
@@ -86,7 +82,7 @@ Public API changes across crates need a short proposal first.
 
 ## Work packet
 
-Each agent receives this packet.
+Each agent receives this packet:
 
 ```text
 Goal:
@@ -100,12 +96,13 @@ Validation commands:
 Escalation questions:
 ```
 
-Each agent returns this handoff.
+Each agent returns this handoff:
 
 ```text
 Changed files:
 Public API added or changed:
 Security-sensitive behavior:
+Tests added or updated:
 Validation run:
 Validation not run:
 Open questions:
@@ -114,7 +111,7 @@ Follow-up work:
 
 ## Cross-crate changes
 
-Write a proposal before you change another crate public API.
+Write a proposal before you change another crate's public API:
 
 ```text
 Producer crate:
@@ -142,7 +139,8 @@ The orchestrator accepts, changes, or rejects the proposal.
 10. Consuming-project integration.
 11. Publish preparation.
 
-A downstream agent may scaffold early. It must not lock public API against unreviewed upstream code.
+A downstream agent may scaffold early. It must not lock its public API against
+unreviewed upstream code.
 
 ## Versioning
 
@@ -151,16 +149,15 @@ The library is pre-1.0. Breaking changes bump the minor version. See
 
 ## Commit policy
 
-- Make small focused commits.
+- Make small, focused commits.
 - Change one crate or one behavior per commit where practical.
 - Commit generated lockfile changes.
-- Do not commit secrets.
-- Do not commit local `.env` files.
-- Include validation notes in commit or PR text.
+- Do not commit secrets or local `.env` files.
+- Include validation notes in the commit or PR text.
 
 ## Release policy
 
-Do not publish until the repo meets these conditions.
+Do not publish until all of these hold:
 
 1. Provenance audit passed.
 2. The maintainers have approved the MIT license (2026-10-08).
@@ -169,5 +166,7 @@ Do not publish until the repo meets these conditions.
 5. Public API review passed.
 6. Dependency audit passed.
 7. License audit passed.
-8. Workspace archive verification passed for every crate; per-crate registry dry-runs pass once their dependencies exist.
-9. Two maintainers approved the PR; registry bootstrap and OIDC setup follow [releasing.md](releasing.md).
+8. Workspace archive verification passed for every crate. Per-crate registry
+   dry-runs pass once their dependencies exist.
+9. Two maintainers approved the PR. Registry bootstrap and OIDC setup follow
+   [releasing.md](releasing.md).

@@ -1,8 +1,10 @@
 # Architecture
 
-**Status:** This document describes the current repository.
+This document describes the current repository.
 
-The repository provides reusable authentication libraries. The consuming application owns routes, deployment policy, secrets, email templates, and logs. It wires proof-of-work admission (with `datadeft-pow-axum`) and owns its edge policy.
+The repository provides reusable authentication libraries. The consuming
+application owns routes, deployment policy, secrets, email templates, logs, and
+edge policy. It wires proof-of-work admission with `datadeft-pow-axum`.
 
 ![Components and infrastructure](diagrams/components-infrastructure.svg)
 
@@ -19,12 +21,12 @@ The repository provides reusable authentication libraries. The consuming applica
 | `datadeft-magic-link-aws` | Store data in DynamoDB and send email with SES. | Ready for test deployment |
 | Consuming application | Configure routes, secrets, templates, logs, and edge policy. | Required |
 | `@datadeft/protect-client` | Solve PoW in the browser. | Ready |
-| Example app | Show a full fake-backed Axum flow. | Available |
+| Example app (`examples/axum-magic-link`) | Show a full fake-backed Axum flow. | Available |
 
-The dependency direction stays one-way.
+Dependencies point one way only:
 
 ```text
-datadeft-auth-token-core      -> no workspace crates
+datadeft-auth-token-core     -> no workspace crates
 datadeft-magic-link-core     -> datadeft-auth-token-core
 datadeft-magic-link-service  -> datadeft-magic-link-core, datadeft-auth-token-core
 datadeft-magic-link-axum     -> datadeft-magic-link-service
@@ -32,47 +34,61 @@ datadeft-magic-link-aws      -> datadeft-magic-link-service
 datadeft-pow-core            -> datadeft-auth-token-core
 datadeft-pow-axum            -> datadeft-pow-core, datadeft-auth-token-core
 
-consuming application  -> selected adapters and services
+consuming application        -> selected adapters and services
 ```
 
 ## Magic-link flow
 
 ![Magic-link sequence](diagrams/magic-link-sequence.svg)
 
-1. The request service validates consent, then normalizes (`NormalizedEmail::normalize`) and validates the email.
-2. The request service applies keyed-email limits.
-3. The request service creates an independent selector and verifier.
-4. The repository addresses records by keyed lookup material and never stores the raw token.
+Request (`POST`):
+
+1. The request service validates consent, then normalizes
+   (`NormalizedEmail::normalize`) and validates the email.
+2. It applies keyed-email limits.
+3. It creates an independent selector and verifier.
+4. The repository addresses records by keyed lookup material and never stores
+   the raw token.
 5. The outbox sends the bearer link.
-6. The `GET` landing route parses the token.
-7. The landing route applies a keyed-selector limit.
-8. The landing route reads repository state.
-9. The landing route compares verifier material in constant time.
-10. The landing route does dummy work on a miss.
-11. The landing route mints a five-minute confirm cookie.
-12. The confirm cookie binds selector, verifier proof, account, expiry, and nonce.
-13. The `GET` landing route never consumes the challenge.
-14. The page shows the account and asks for a same-origin `POST`.
-15. The `POST` route validates the flow state.
-16. The repository commits challenge consumption and session creation atomically.
-17. The browser gets a session cookie and a fixed `303` redirect.
-18. Session validation checks the cookie and server state.
-19. Logout revokes server state before it clears the cookie.
+
+Landing (`GET`):
+
+6. The landing route parses the token.
+7. It applies a keyed-selector limit.
+8. It reads repository state.
+9. It compares verifier material in constant time.
+10. It does dummy work on a miss.
+11. It mints a five-minute confirm cookie. The cookie binds the selector,
+    verifier proof, account, expiry, and nonce.
+12. It never consumes the challenge.
+13. The page shows the account and asks for a same-origin `POST`.
+
+Confirm (`POST`):
+
+14. The `POST` route validates the flow state.
+15. The repository commits challenge consumption and session creation
+    atomically.
+16. The browser gets a session cookie and a fixed `303` redirect.
+
+Session:
+
+17. Session validation checks the cookie and server state.
+18. Logout revokes server state before it clears the cookie.
 
 ## PoW flow
 
 ![PoW sequence](diagrams/pow-sequence.svg)
 
-`datadeft-pow-core` is deterministic. It does not read clocks, files, network, or environment variables.
+`datadeft-pow-core` is deterministic. It does not read clocks, files, network,
+or environment variables. It:
 
-It can do these tasks:
+1. Mints a challenge from a server secret, difficulty, time, and entropy.
+2. Authenticates challenge metadata with HMAC-SHA-256.
+3. Verifies freshness, minimum difficulty, and SHA-256 work.
+4. Returns a stable replay identifier.
 
-1. Mint a challenge from a server secret, difficulty, time, and entropy.
-2. Authenticate challenge metadata with HMAC-SHA-256.
-3. Verify freshness, minimum difficulty, and SHA-256 work.
-4. Return a stable replay identifier.
-
-The consuming application owns country-aware PoW policy. Country policy can only increase work.
+The consuming application owns country-aware PoW policy. Country policy can
+only increase work:
 
 ```text
 effective_difficulty = max(
@@ -84,10 +100,11 @@ effective_difficulty = max(
 
 The repository does not yet include a country-to-difficulty policy.
 
-Reuse of a proof is bounded by the per-solve budget (`admit_proof`), and the
-example wires PoW end to end, with `protectedFetch` in the browser.
+The per-solve budget (`admit_proof`) bounds reuse of a proof. The example wires
+PoW end to end, with `protectedFetch` in the browser.
 
-PoW stays independent from magic-link. Magic-link does not carry a PoW result, IP address, or client key.
+PoW stays independent from magic-link. Magic-link does not carry a PoW result,
+IP address, or client key.
 
 ## Trust boundaries
 
@@ -121,7 +138,8 @@ PoW stays independent from magic-link. Magic-link does not carry a PoW result, I
 
 ## Complexity
 
-Input sizes have bounds before expensive work starts. Let `n` mean bounded input length. Let `d` mean required zero hex characters.
+Every input is bounded before expensive work starts. `n` is the bounded input
+length. `d` is the number of required zero hex characters.
 
 | Operation | Time | Memory | Note |
 | --- | ---: | ---: | --- |
@@ -139,6 +157,7 @@ Input sizes have bounds before expensive work starts. Let `n` mean bounded input
 
 ## Related documents
 
+- [Integration guide](integration.md)
 - [Onboarding](onboarding.md)
 - [Security rules](security.md)
 - [Formal assurance](formal-methods.md)
