@@ -64,3 +64,14 @@ fn setting_a_previous_key_equal_to_the_current_one_is_a_no_op() {
     keys.set_previous(StorageHmacKey::new([0x22; STORAGE_HMAC_KEY_BYTES]));
     assert!(keys.previous().is_some());
 }
+
+#[test]
+fn lifetime_counter_ids_do_not_depend_on_the_storage_key_and_are_pinned() {
+    let key = datadeft_magic_link_service::RateLimitKey::parse("pow:budget:abc").expect("key");
+    let id = lifetime_counter_id(&key);
+    assert!(id.starts_with("lt_") && id.len() == 3 + 64, "{id}");
+    // Same id whatever storage key a node runs with: the function takes none.
+    assert_eq!(id, lifetime_counter_id(&key));
+    let other = datadeft_magic_link_service::RateLimitKey::parse("pow:budget:abd").expect("key");
+    assert_ne!(id, lifetime_counter_id(&other));
+}

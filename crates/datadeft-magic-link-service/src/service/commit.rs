@@ -154,15 +154,18 @@ pub(super) fn mint_country(
     config: &MagicLinkServiceConfig,
     country: Option<&str>,
 ) -> Result<Option<String>, MagicLinkServiceError> {
-    let pin = |country: &str| config.country_policy.pin(country).to_owned();
+    // A country equal to a group tag pins to nothing: it counts as missing.
+    let pinned = country.and_then(|country| config.country_policy.pin(country));
     if !config.enforce_country {
-        return Ok(country.map(pin));
+        return Ok(pinned.map(str::to_owned));
     }
     let Some(country) = country else {
         return Err(MagicLinkServiceError::MagicLinkUnavailable);
     };
     validate_country(country)?;
-    Ok(Some(pin(country)))
+    pinned
+        .map(|pinned| Some(pinned.to_owned()))
+        .ok_or(MagicLinkServiceError::MagicLinkUnavailable)
 }
 
 struct AuthenticationPlan {

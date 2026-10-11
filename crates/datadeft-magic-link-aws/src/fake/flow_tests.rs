@@ -419,3 +419,29 @@ async fn fake_limiter_uses_fixed_windows_from_service_clock() {
         RateLimitDecision::Allowed
     );
 }
+
+/// Stores on different storage keys (a rotation in progress, or after one)
+/// share one lifetime budget.
+#[tokio::test]
+async fn a_storage_key_rotation_keeps_one_lifetime_budget() {
+    let old_node = FakeDynamoDbAuthStore::new(StorageHmacKey::new([0x31; 32]));
+    // Same underlying data, mid-rotation, and after the previous key is gone.
+    let new_node = old_node.sharing_data_with_keys(
+        StorageHmacKey::new([0x32; 32]),
+        Some(StorageHmacKey::new([0x31; 32])),
+    );
+    let after = old_node.sharing_data_with_keys(StorageHmacKey::new([0x32; 32]), None);
+    let key = RateLimitKey::parse("pow:budget:rotation").expect("rate key");
+    let mut allowed = 0;
+    for store in [&old_node, &new_node, &after, &old_node, &new_node, &after] {
+        if store
+            .check_lifetime_limit(&key, 2, 10_000, 100)
+            .await
+            .expect("spend")
+            == RateLimitDecision::Allowed
+        {
+            allowed += 1;
+        }
+    }
+    assert_eq!(allowed, 2);
+}

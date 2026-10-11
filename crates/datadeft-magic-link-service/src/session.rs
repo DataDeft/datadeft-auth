@@ -144,7 +144,8 @@ where
     // Compare pinned values: a session bound to a group tag (CountryPolicy)
     // accepts any country of that group.
     if let Some(bound_country) = body.country.as_deref()
-        && request_country.map(|country| config.country_policy.pin(country)) != Some(bound_country)
+        && request_country.and_then(|country| config.country_policy.pin(country))
+            != Some(bound_country)
     {
         return Err(SessionValidationError::InvalidSession);
     }

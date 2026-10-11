@@ -588,3 +588,64 @@ where
     }
     outputs
 }
+
+/// A zero limit denies, like the fake: DynamoDB's condition alone would admit
+/// the first use of an absent counter.
+#[tokio::test]
+#[ignore = "needs DynamoDB Local: mise run dynamodb-local-test"]
+async fn a_zero_limit_denies_against_dynamodb() {
+    let client = client().await;
+    let store = DynamoDbAuthStore::new(
+        client.clone(),
+        table(&client, "zerolimit").await,
+        StorageHmacKey::new([0x31; 32]),
+    );
+    let key = RateLimitKey::parse(&format!("zero:{}", random_hex(8))).expect("key");
+    let now = 1_000_000_000;
+    assert_eq!(
+        store
+            .check_lifetime_limit(&key, 0, now + 60, now)
+            .await
+            .expect("lifetime"),
+        RateLimitDecision::Denied
+    );
+    assert_eq!(
+        store
+            .check_rate_limit(&key, 0, 60, now)
+            .await
+            .expect("windowed"),
+        RateLimitDecision::Denied
+    );
+}
+
+/// A storage-key rotation does not split or reset a lifetime budget: nodes on
+/// the old and the new key share one counter.
+#[tokio::test]
+#[ignore = "needs DynamoDB Local: mise run dynamodb-local-test"]
+async fn a_storage_key_rotation_keeps_one_lifetime_budget() {
+    let client = client().await;
+    let table = table(&client, "budgetrotation").await;
+    let old_node = DynamoDbAuthStore::new(
+        client.clone(),
+        table.clone(),
+        StorageHmacKey::new([0x31; 32]),
+    );
+    let new_node = DynamoDbAuthStore::new(client, table, StorageHmacKey::new([0x32; 32]))
+        .with_previous_storage_hmac_key(StorageHmacKey::new([0x31; 32]));
+    let key = RateLimitKey::parse(&format!("pow:budget:{}", random_hex(32))).expect("key");
+    let now = 1_000_000_000;
+    let mut allowed = 0;
+    for store in [
+        &old_node, &new_node, &old_node, &new_node, &old_node, &new_node,
+    ] {
+        if store
+            .check_lifetime_limit(&key, 3, now + 3_600, now)
+            .await
+            .expect("spend")
+            == RateLimitDecision::Allowed
+        {
+            allowed += 1;
+        }
+    }
+    assert_eq!(allowed, 3, "one budget across the rotation");
+}

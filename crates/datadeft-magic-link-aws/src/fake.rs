@@ -407,7 +407,7 @@ impl RateLimiter for FakeDynamoDbAuthStore {
         expires_at_unix: u64,
         now_unix: u64,
     ) -> Result<RateLimitDecision, DependencyError> {
-        let rate_hmac = format!("{}:lifetime", self.rate_hmac(key)?);
+        let rate_hmac = crate::hmac_key::lifetime_counter_id(key);
         let mut inner = self.lock_inner()?;
         Self::take_next_error(&mut inner)?;
         if expires_at_unix <= now_unix {

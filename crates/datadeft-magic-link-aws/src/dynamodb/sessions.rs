@@ -142,6 +142,11 @@ impl RateLimiter for DynamoDbAuthStore {
         window_secs: u64,
         now_unix: u64,
     ) -> Result<RateLimitDecision, DependencyError> {
+        // The condition admits an absent counter, so a zero limit is refused
+        // here, before any write.
+        if limit == 0 {
+            return Ok(RateLimitDecision::Denied);
+        }
         let pk = self
             .pk_rate(key, window_secs, now_unix)
             .map_err(DependencyError::from)?;
@@ -189,10 +194,10 @@ impl RateLimiter for DynamoDbAuthStore {
         expires_at_unix: u64,
         now_unix: u64,
     ) -> Result<RateLimitDecision, DependencyError> {
-        if expires_at_unix <= now_unix {
+        if limit == 0 || expires_at_unix <= now_unix {
             return Ok(RateLimitDecision::Denied);
         }
-        let pk = self.pk_lifetime_rate(key).map_err(DependencyError::from)?;
+        let pk = Self::pk_lifetime_rate(key);
         let ttl = expires_at_unix.saturating_add(self.cleanup_grace_secs);
         async {
             // The first use fixes the expiry (if_not_exists); the count only

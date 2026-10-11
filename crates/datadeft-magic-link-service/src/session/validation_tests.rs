@@ -448,6 +448,8 @@ async fn eu_group_sessions_move_within_the_group_only() {
     assert!(!check(&eu, Some("GB")).await, "EU -> non-EU");
     assert!(!check(&eu, Some("CH")).await, "EU -> non-EU");
     assert!(!check(&eu, None).await, "missing country fails closed");
+    // An edge that labels a request "EU" does not unlock an EU session.
+    assert!(!check(&eu, Some("EU")).await, "pseudo-code fails closed");
 
     // Outside every group: exact match only.
     let gb = cookie(&keyring, 900, 800, Some("GB"));

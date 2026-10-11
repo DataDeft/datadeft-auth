@@ -43,7 +43,8 @@ impl CountryGroup {
     /// members must be distinct, and there must be at least one. The tag must
     /// never name a real country, or a session pinned to it would also match
     /// that country's own traffic: use `EU` or an ISO 3166 user-assigned code
-    /// (`AA`, `QM`–`QZ`, `XA`–`XZ`, `ZZ`).
+    /// (`AA`, `QM`–`QZ`, `XA`–`XW`, `XY`, `XZ`, `ZZ`; not `XX`, which
+    /// Cloudflare sends for an unknown country).
     pub fn new<I, S>(tag: &str, members: I) -> Result<Self, CountryPolicyError>
     where
         I: IntoIterator<Item = S>,
@@ -118,15 +119,26 @@ impl CountryPolicy {
     }
 
     /// The value a session from `country` is pinned to: the tag of the group
-    /// containing it, or the country itself.
+    /// containing it, or the country itself. `None` when the request country
+    /// equals a configured group tag: that is an edge pseudo-code (some
+    /// geolocation sources send `EU`), never a viewer's country, and taken
+    /// as-is it would match every session of the group. It counts as a
+    /// missing country, which fails closed.
     #[must_use]
-    pub fn pin<'a>(&'a self, country: &'a str) -> &'a str {
+    pub fn pin<'a>(&'a self, country: &'a str) -> Option<&'a str> {
         match self {
-            Self::Exact => country,
-            Self::Groups(groups) => groups
-                .iter()
-                .find(|group| group.contains(country))
-                .map_or(country, CountryGroup::tag),
+            Self::Exact => Some(country),
+            Self::Groups(groups) => {
+                if groups.iter().any(|group| group.tag() == country) {
+                    return None;
+                }
+                Some(
+                    groups
+                        .iter()
+                        .find(|group| group.contains(country))
+                        .map_or(country, CountryGroup::tag),
+                )
+            }
         }
     }
 
@@ -137,6 +149,10 @@ impl CountryPolicy {
         for (index, group) in groups.iter().enumerate() {
             group.validate()?;
             for other in groups.iter().skip(index + 1) {
+                // Two groups with one tag would pin to the same value.
+                if group.tag == other.tag {
+                    return Err(CountryPolicyError::DuplicateTag);
+                }
                 if group.members.iter().any(|member| other.contains(member)) {
                     return Err(CountryPolicyError::OverlappingGroups);
                 }
@@ -157,6 +173,8 @@ pub enum CountryPolicyError {
     DuplicateMember,
     /// A country belongs to more than one group.
     OverlappingGroups,
+    /// Two groups share a tag, so their sessions would pin alike.
+    DuplicateTag,
 }
 
 impl fmt::Display for CountryPolicyError {
@@ -166,6 +184,7 @@ impl fmt::Display for CountryPolicyError {
             Self::InvalidMember => "country group members must be two uppercase letters",
             Self::DuplicateMember => "country group lists a country twice",
             Self::OverlappingGroups => "a country belongs to more than one group",
+            Self::DuplicateTag => "two country groups share a tag",
         })
     }
 }
@@ -180,7 +199,8 @@ fn is_group_tag(value: &str) -> bool {
     match value.as_bytes() {
         [b'A', b'A'] | [b'Z', b'Z'] => true,
         [b'Q', second] => (b'M'..=b'Z').contains(second),
-        [b'X', second] => second.is_ascii_uppercase(),
+        // `XX` is excluded: Cloudflare sends it for an unknown country.
+        [b'X', second] => second.is_ascii_uppercase() && *second != b'X',
         _ => false,
     }
 }

@@ -19,11 +19,13 @@ fn eu27_has_27_distinct_members_and_validates() {
 #[test]
 fn groups_pin_to_their_tag_and_other_countries_exactly() {
     let policy = CountryPolicy::eu27();
-    assert_eq!(policy.pin("HU"), "EU");
-    assert_eq!(policy.pin("AT"), "EU");
-    assert_eq!(policy.pin("GB"), "GB");
-    assert_eq!(policy.pin("US"), "US");
-    assert_eq!(CountryPolicy::Exact.pin("HU"), "HU");
+    assert_eq!(policy.pin("HU"), Some("EU"));
+    assert_eq!(policy.pin("AT"), Some("EU"));
+    assert_eq!(policy.pin("GB"), Some("GB"));
+    assert_eq!(policy.pin("US"), Some("US"));
+    assert_eq!(CountryPolicy::Exact.pin("HU"), Some("HU"));
+    // An edge pseudo-code equal to a group tag is never a viewer country.
+    assert_eq!(policy.pin("EU"), None);
     assert_eq!(CountryPolicy::default(), CountryPolicy::Exact);
 }
 
@@ -41,25 +43,38 @@ fn malformed_policies_are_refused() {
             "{real}"
         );
     }
+    assert_eq!(
+        CountryGroup::new("XX", ["AT"]).unwrap_err(),
+        CountryPolicyError::InvalidTag
+    );
     for reserved in ["EU", "AA", "QM", "QZ", "XA", "XZ", "ZZ"] {
         assert!(CountryGroup::new(reserved, ["AT"]).is_ok(), "{reserved}");
     }
     assert_eq!(
-        CountryGroup::new("XX", Vec::<String>::new()).unwrap_err(),
+        CountryGroup::new("XY", Vec::<String>::new()).unwrap_err(),
         CountryPolicyError::InvalidMember
     );
     assert_eq!(
-        CountryGroup::new("XX", ["AT", "aut"]).unwrap_err(),
+        CountryGroup::new("XY", ["AT", "aut"]).unwrap_err(),
         CountryPolicyError::InvalidMember
     );
     assert_eq!(
-        CountryGroup::new("XX", ["AT", "AT"]).unwrap_err(),
+        CountryGroup::new("XY", ["AT", "AT"]).unwrap_err(),
         CountryPolicyError::DuplicateMember
     );
     let nordic = CountryGroup::new("XN", ["SE", "NO"]).expect("group");
     assert_eq!(
         CountryPolicy::Groups(vec![CountryGroup::eu27(), nordic]).validate(),
         Err(CountryPolicyError::OverlappingGroups)
+    );
+    // Disjoint groups under one tag would pin Hungary and the US alike.
+    assert_eq!(
+        CountryPolicy::Groups(vec![
+            CountryGroup::new("XA", ["HU"]).expect("group"),
+            CountryGroup::new("XA", ["US"]).expect("group"),
+        ])
+        .validate(),
+        Err(CountryPolicyError::DuplicateTag)
     );
     let alpine = CountryGroup::new("XA", ["CH", "LI"]).expect("group");
     assert!(

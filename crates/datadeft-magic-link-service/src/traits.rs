@@ -165,6 +165,10 @@ pub trait RateLimiter {
     /// after `now_unix`. Set the expiry past the last moment the key can be
     /// used: an expired counter may keep counting until storage cleanup
     /// removes it. Used for per-solve proof-of-work budgets.
+    ///
+    /// The counter must stay one counter through storage-key rotations, so an
+    /// implementation may store it under an unkeyed hash of `key`: lifetime
+    /// keys must never carry personal data or secrets.
     fn check_lifetime_limit(
         &self,
         key: &RateLimitKey,

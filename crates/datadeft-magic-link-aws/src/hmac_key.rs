@@ -21,6 +21,22 @@ pub const EMAIL_LOOKUP_HMAC_PREFIX: &str = "emh";
 pub const RATE_LOOKUP_HMAC_PREFIX: &str = "rlh";
 
 const STORAGE_HMAC_DOMAIN: &[u8] = b"magic-link-aws-storage-v1";
+const LIFETIME_COUNTER_DOMAIN: &[u8] = b"magic-link-aws-lifetime-counter-v1";
+
+/// The storage id of a lifetime counter: a domain-separated SHA-256 of the
+/// rate-limit key, deliberately **not** keyed by the storage HMAC key. A
+/// budget must stay one counter through a storage-key rotation, or a rotation
+/// would split or reset it. Lifetime keys therefore must never carry personal
+/// data or secrets; the per-solve PoW budget keys on the solve's `tid`, a hash
+/// of the public challenge.
+pub(crate) fn lifetime_counter_id(key: &datadeft_magic_link_service::RateLimitKey) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(LIFETIME_COUNTER_DOMAIN);
+    hasher.update([0u8]);
+    hasher.update(key.as_str().as_bytes());
+    format!("lt_{}", hex::encode(hasher.finalize()))
+}
 // Never a storage prefix, so the probe value is never written anywhere.
 const KEY_PROBE_PREFIX: &str = "key-probe";
 const KEY_PROBE_VALUE: &str = "storage-key-identity";
