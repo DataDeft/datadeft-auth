@@ -165,9 +165,11 @@ modes.
   counted over the proof's whole lifetime (the first spend fixes an expiry past
   every cookie that solve can produce, and it never refills before then); fails
   closed.
-- Missing, invalid or expired proof → `401` + `WWW-Authenticate: DD-PoW`.
-  Exhausted budget or store failure → the constant `503`.
-- Tests: N admissions then `503`; a re-posted solution shares the budget; a
+- Missing, invalid or expired proof, or a used-up budget → `401` +
+  `WWW-Authenticate: DD-PoW`: a new solve buys a fresh budget, so an honest
+  client is never locked out until the cookie expires. Store failure → the
+  constant `503` (fail closed).
+- Tests: N admissions then `401` + `DD-PoW`, and a re-solve resumes; a re-posted solution shares the budget; a
   store failure fails closed; DynamoDB Local proves no refill across windows
   and that 20 concurrent spends from two nodes admit exactly the budget.
 
@@ -257,10 +259,10 @@ enable could undo a later disable (ADM-F1).
 
 | Status | Meaning | Body / headers | Client action |
 |---|---|---|---|
-| `401` + `WWW-Authenticate: DD-PoW` | Proof of work missing, invalid or expired, or a posted solution failed | Constant body, `no-store` | Solve, retry once |
+| `401` + `WWW-Authenticate: DD-PoW` | Proof of work missing, invalid or expired, its per-solve budget used up, or a posted solution failed | Constant body, `no-store` | Solve, retry once |
 | `401` + `WWW-Authenticate: DD-Session` | Session missing, invalid, expired or revoked | Constant body; clear-cookie header | Sign in again |
 | `400` | Shape error that leaks nothing: bad JSON, invalid email syntax, wrong content type, oversize body | One generic body | Fix the request; no retry |
-| `503` | Everything security-sensitive or failed: rate limits, quotas, exhausted PoW budget, dependency and server faults | One constant body, byte-identical across both Axum crates, `no-store`; reason internal (4.14) | Equal-jitter backoff |
+| `503` | Everything security-sensitive or failed: rate limits, quotas, dependency and server faults | One constant body, byte-identical across both Axum crates, `no-store`; reason internal (4.14) | Equal-jitter backoff |
 | `403` | Never sent by the library; the app's, for business authorization | — | App-defined |
 | `200` / `303` | Success; the generic accepted request response; landing redirects; flow-state answers | As in 4.2 | — |
 

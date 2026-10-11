@@ -70,6 +70,7 @@ async fn every_library_refusal_follows_the_contract() {
     // 401 + DD-PoW: solve, retry once.
     for response in [
         ProofRejection::ProofRequired.into_response(),
+        ProofRejection::BudgetExhausted.into_response(),
         PowFlowError::Rejected.into_response(),
     ] {
         let seen = seen(response).await;
@@ -98,7 +99,6 @@ async fn every_library_refusal_follows_the_contract() {
 
     // 503, byte-identical across both crates and every reason.
     let unavailable: Vec<Seen> = futures_seen([
-        ProofRejection::BudgetExhausted.into_response(),
         ProofRejection::Unavailable.into_response(),
         PowFlowError::Internal.into_response(),
         MagicLinkHttpError::Unavailable.into_response(),

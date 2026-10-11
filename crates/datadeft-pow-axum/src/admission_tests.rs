@@ -92,7 +92,7 @@ async fn admit(
 }
 
 #[tokio::test]
-async fn a_solve_buys_its_budget_then_answers_503() {
+async fn a_solve_buys_its_budget_then_asks_for_a_new_solve() {
     let store = MemoryBudget::default();
     let headers = headers_with(&proof_cookie(NOW));
     for offset in [0, 60, 3_000] {
@@ -184,30 +184,37 @@ async fn a_failing_store_fails_closed() {
 
 #[tokio::test]
 async fn rejections_render_the_public_contract() {
-    let required = ProofRejection::ProofRequired.into_response();
-    assert_eq!(required.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(
-        required.headers().get(WWW_AUTHENTICATE),
-        Some(&HeaderValue::from_static("DD-PoW"))
-    );
-
-    // Exhausted and unavailable are indistinguishable from outside.
-    let mut bodies = Vec::new();
-    for rejection in [ProofRejection::BudgetExhausted, ProofRejection::Unavailable] {
+    // A missing proof and a used-up budget are the same answer: solve again.
+    let mut solve_again = Vec::new();
+    for rejection in [
+        ProofRejection::ProofRequired,
+        ProofRejection::BudgetExhausted,
+    ] {
         let response = rejection.into_response();
-        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(response.headers().get(WWW_AUTHENTICATE), None);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(
-            response.headers().get(CACHE_CONTROL),
-            Some(&HeaderValue::from_static("no-store"))
+            response.headers().get(WWW_AUTHENTICATE),
+            Some(&HeaderValue::from_static("DD-PoW"))
         );
         let headers = response.headers().clone();
         let body = to_bytes(response.into_body(), 1024).await.expect("body");
-        bodies.push((headers, body));
+        solve_again.push((headers, body));
     }
-    assert_eq!(bodies[0], bodies[1]);
+    assert_eq!(solve_again[0], solve_again[1]);
+
+    // A store failure fails closed with the constant 503.
+    let unavailable = ProofRejection::Unavailable.into_response();
+    assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(unavailable.headers().get(WWW_AUTHENTICATE), None);
     assert_eq!(
-        bodies[0].1.as_ref(),
+        unavailable.headers().get(CACHE_CONTROL),
+        Some(&HeaderValue::from_static("no-store"))
+    );
+    assert_eq!(
+        to_bytes(unavailable.into_body(), 1024)
+            .await
+            .expect("body")
+            .as_ref(),
         br#"{"error":"unavailable","message":"The service is temporarily unavailable. Try again later."}"#
     );
     assert_ne!(
@@ -234,11 +241,11 @@ async fn solution_rejections_render_the_same_contract() {
     let internal = PowFlowError::Internal.into_response();
     assert_eq!(internal.status(), StatusCode::SERVICE_UNAVAILABLE);
     let internal = to_bytes(internal.into_body(), 1024).await.expect("body");
-    let exhausted = to_bytes(
-        ProofRejection::BudgetExhausted.into_response().into_body(),
+    let unavailable = to_bytes(
+        ProofRejection::Unavailable.into_response().into_body(),
         1024,
     )
     .await
     .expect("body");
-    assert_eq!(internal, exhausted);
+    assert_eq!(internal, unavailable);
 }

@@ -35,7 +35,8 @@ Consumer actions:
   the generic `400` body. `reason()` labels are namespaced (`magic_link_*`,
   `session_*`, `pow_*`).
 - Adopt the HTTP status contract (`docs/security.md`): `401` with
-  `WWW-Authenticate: DD-PoW` or `DD-Session`, `400` for shape errors, one
+  `WWW-Authenticate: DD-PoW` (missing proof or used-up per-solve budget) or
+  `DD-Session`, `400` for shape errors, one
   constant `503`, no library `403`/`500`. Alert on reason counts, not raw
   `5xx`; add a load-balancer health endpoint.
 - Optional: the redirect landing mode for static confirm pages, country groups

@@ -1,11 +1,10 @@
 //! The public HTTP contract for proof-of-work admission.
 //!
 //! - `401` with `WWW-Authenticate: DD-PoW`: the proof is missing, invalid,
-//!   or expired, or a posted solution failed. The client solves a challenge
-//!   and retries once. `@datadeft/protect-client` acts only on this header,
+//!   expired, or its per-solve budget is used up, or a posted solution
+//!   failed. The client solves a challenge and retries once. `@datadeft/protect-client` acts only on this header,
 //!   so an app's own `401`/`403` handling is unaffected.
-//! - One constant `503` for everything security-sensitive or failed: an
-//!   exhausted per-solve budget, a store or server fault. The client backs off
+//! - One constant `503` for every failure: a budget-store or server fault. The client backs off
 //!   with jitter and retries; the reason stays internal.
 //! - The library never sends `403`; that status is the app's.
 

@@ -24,7 +24,8 @@ and `Set-Cookie` headers. Your application owns the router, body limits,
 - Every gated route → `admit_proof` with a `ProofBudget` over a shared
   counter: it verifies the `dd_pow` cookie and spends one unit of its solve's
   budget. Return the `ProofRejection` on failure: `401` + `DD-PoW` without a
-  usable proof, the constant `503` once the budget is spent.
+  usable proof or once the budget is spent (a new solve buys a fresh
+  budget), the constant `503` if the budget store fails.
 - Record `PowAdmission::mint_to_verify_ms` in your metrics. Count `None`
   separately.
 

@@ -88,14 +88,17 @@ impl fmt::Debug for AdmittedProof {
 
 /// Why [`admit_proof`] refused a request: the typed reason, with
 /// [`Self::reason`] as its stable label for logs and metrics. The public
-/// response ([`IntoResponse`]) never says which it was beyond `401` versus
-/// `503`.
+/// response ([`IntoResponse`]) says only "solve again" (`401` + `DD-PoW`) or
+/// "back off" (`503`), never which reason.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ProofRejection {
     /// No usable proof cookie: missing, malformed, duplicated, forged, or
     /// expired. Answers `401` + `WWW-Authenticate: DD-PoW`.
     ProofRequired,
-    /// The solve's budget is used up. Answers the constant `503`.
+    /// The solve's budget is used up. Answers `401` + `WWW-Authenticate:
+    /// DD-PoW`, like a missing proof: a new solve buys a fresh budget, so
+    /// the client pays the intended price instead of being locked out until
+    /// the cookie expires. The re-solve's `dd_pow` cookie replaces this one.
     BudgetExhausted,
     /// The budget store or the configuration failed. Fails closed with the
     /// constant `503`.
@@ -118,8 +121,8 @@ impl ProofRejection {
 impl IntoResponse for ProofRejection {
     fn into_response(self) -> Response {
         match self {
-            Self::ProofRequired => pow_required_response(),
-            Self::BudgetExhausted | Self::Unavailable => unavailable_response(),
+            Self::ProofRequired | Self::BudgetExhausted => pow_required_response(),
+            Self::Unavailable => unavailable_response(),
         }
     }
 }

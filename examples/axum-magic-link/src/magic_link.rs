@@ -23,7 +23,7 @@ pub(super) async fn request_magic_link(
     request: Request,
 ) -> Response {
     // Gate on the dd_pow cookie and spend one unit of its solve's budget: a
-    // missing proof is 401 + DD-PoW, an exhausted budget the constant 503.
+    // missing proof or a used-up budget is 401 + DD-PoW (solve again).
     let Ok(now_unix) = current_unix() else {
         return MagicLinkHttpError::Unavailable.into_response();
     };

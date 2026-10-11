@@ -201,18 +201,40 @@ async fn sign_in_end_to_end_through_the_router() {
     .await;
     assert_ne!(replay.status(), StatusCode::SEE_OTHER);
 
-    // One solve buys five requests over its lifetime; the sixth is the
-    // constant 503, whatever the reason.
+    // One solve buys five requests over its lifetime; the sixth asks for a
+    // new solve (401 + DD-PoW), and a fresh solve buys a fresh budget.
     for _ in 1..5 {
         let again = send(&app, request_link(Some(&pow_cookie))).await;
         assert_eq!(again.status(), StatusCode::OK);
     }
     let exhausted = send(&app, request_link(Some(&pow_cookie))).await;
-    assert_eq!(exhausted.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(exhausted.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
-        text(exhausted).await,
-        r#"{"error":"unavailable","message":"The service is temporarily unavailable. Try again later."}"#
+        exhausted
+            .headers()
+            .get("www-authenticate")
+            .and_then(|v| v.to_str().ok()),
+        Some("DD-PoW")
     );
+    let challenge = send(
+        &app,
+        Request::post("/auth/pow/create")
+            .body(Body::empty())
+            .expect("req"),
+    )
+    .await;
+    let challenge: serde_json::Value = serde_json::from_str(&text(challenge).await).expect("json");
+    let revalidated = send(
+        &app,
+        Request::post("/auth/pow/validate")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(solve(&challenge).to_string()))
+            .expect("req"),
+    )
+    .await;
+    let fresh_cookie = cookie(&revalidated, "dd_pow").expect("fresh dd_pow cookie");
+    let resumed = send(&app, request_link(Some(&fresh_cookie))).await;
+    assert_eq!(resumed.status(), StatusCode::OK);
 }
 
 /// Redirect landing mode end to end: the link redirects to the static page

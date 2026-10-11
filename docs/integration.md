@@ -104,10 +104,10 @@ no data migration is provided, and every existing session ends.
   solves on `401` + `DD-PoW` and retries once, and backs off with equal jitter
   on `503` for repeatable requests. Replace status inference in the frontend
   with it.
-- **PoW statuses and the per-solve budget:** a rejected solution and a
-  missing or invalid proof answer `401` with `WWW-Authenticate: DD-PoW`
-  (`PowFlowError` and `ProofRejection` implement `IntoResponse`); faults and
-  an exhausted budget answer one constant `503`. The library no longer sends
+- **PoW statuses and the per-solve budget:** a rejected solution, a missing
+  or invalid proof, and a used-up budget answer `401` with
+  `WWW-Authenticate: DD-PoW` (`PowFlowError` and `ProofRejection` implement
+  `IntoResponse`); faults answer one constant `503`. The library no longer sends
   `403` or `500` here. Replace hand-written PoW budgets and cookie parsing
   with `admit_proof` and a `ProofBudget` over
   `RateLimiter::check_lifetime_limit`, which every `RateLimiter` must now
@@ -322,9 +322,10 @@ impl ProofBudget for MyBudget {
 ```
 
 On `Err`, return the `ProofRejection` itself: a missing, invalid or expired
-proof answers `401` with `WWW-Authenticate: DD-PoW` (the protect client then
-solves and retries once); an exhausted budget or a store failure answers the
-constant `503`. Log `ProofRejection::reason()` internally; never send it.
+proof, or one whose budget is used up, answers `401` with
+`WWW-Authenticate: DD-PoW` (the protect client then solves, which buys a fresh
+budget, and retries once); a store failure answers the constant `503` (fail
+closed). Log `ProofRejection::reason()` internally; never send it.
 
 Load both PoW keys from the auth secret document (`docs/security.md`, "Auth
 secret document"), not from app-specific fields:

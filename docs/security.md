@@ -828,10 +828,10 @@ about a refusal is public.
 
 | Response | Meaning | Client action |
 | --- | --- | --- |
-| `401` + `WWW-Authenticate: DD-PoW` | The proof of work is missing, invalid or expired, or a posted solution failed. | Solve a challenge, retry once. |
+| `401` + `WWW-Authenticate: DD-PoW` | The proof of work is missing, invalid or expired, its per-solve budget is used up, or a posted solution failed. | Solve a challenge, retry once. A new solve buys a fresh budget. |
 | `401` + `WWW-Authenticate: DD-Session` | The session is missing, invalid, expired or revoked. The response clears the cookie. | Sign in again. |
 | `400`, one generic body | A shape error that leaks nothing: bad JSON, an invalid email address, wrong content type, oversize body. | Fix the request; do not retry. |
-| `503`, one constant body, `no-store` | Everything security-sensitive or failed: rate limits, quotas, an exhausted per-solve budget, dependency or server faults. | Back off with equal jitter and retry. Never retry without jitter. |
+| `503`, one constant body, `no-store` | Everything security-sensitive or failed: rate limits, quotas, dependency or server faults. | Back off with equal jitter and retry. Never retry without jitter. |
 | `403` | Never sent by the library. It is the app's, for business authorization. | App-defined. |
 
 Exceptions, so they reveal nothing either: the magic-link request answers the
