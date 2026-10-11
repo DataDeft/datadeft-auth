@@ -4,6 +4,72 @@ All notable changes to this workspace are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crates follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0](https://github.com/DataDeft/datadeft-auth/compare/v0.4.1...v0.5.0) (2026-10-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **service:** landing outcomes and flow-state answers carry the masked account by default.
+* MagicLinkServiceError and MagicLinkHttpError gain an OutboxUnavailable variant.
+* **admin:** set_user_disabled_audited takes expected_version: Option<u64> (None for a disable, Some for an enable).
+* CountryPolicy::pin returns Option<&str>.
+* **pow:** ProofRejection::BudgetExhausted renders 401 + DD-PoW instead of 503.
+* **admin:** disable_user on an already-disabled user writes an audit event and bumps admin_version; DisableUser no longer requires the user to be enabled at the storage layer.
+* MagicLinkUnavailable now renders the generic 400 body, and reason() labels changed to namespaced values.
+* **admin:** AuthAdminRepository::set_user_disabled_audited takes the expected admin_version, UserSummary has admin_version, and AdminError has a Conflict variant.
+* **service:** RequestMagicLinkOutcome is an enum, not a unit struct.
+* **axum:** Internal and Unavailable are 503, 415/413 shape errors are 400, MagicLinkHttpError::Forbidden is gone, and session rejections carry WWW-Authenticate: DD-Session.
+* **pow:** PoW rejections are 401 + DD-PoW instead of the app's 403, and faults 503 instead of 500.
+* **service:** RateLimiter implementations must add check_lifetime_limit.
+* **service:** `MagicLinkEmail` has a new `locale` field and `MagicLinkRequestJson` a new `locale` field.
+* **core:** `NormalizedEmail::parse` is now `from_normalized` and refuses non-normalized input; requests are normalized, so addresses that differed only by case are one identity. Start from an empty table.
+* **service:** ids changed form. Stored 0.4 users, sessions and audit events, and every live session cookie (its body carries the session id), no longer parse: start from an empty table; all sessions end.
+* cookie config constructors and the `secure()` getter are renamed, and the secret document field `aws_storage_hmac_b64` is now `storage_hmac_b64`; documents with the old name no longer load.
+* **aws:** a secret document with the same value in two key fields no longer loads.
+* **token-core:** every KeyPurpose implementation declares LARGEST_BODY_BYTES (0 disables the check).
+* **aws:** the auth secret document requires pow_challenge_secret_b64 and pow_proof_cookie_root_b64, and its kid must be at most 12 bytes. LoadedAuthSecrets has new fields. Existing secret documents must be rewritten; there is no migration (pre-1.0, no deployments).
+
+### Features
+
+* **admin:** conditional admin writes; a lost race is AdminError::Conflict ([edfb88d](https://github.com/DataDeft/datadeft-auth/commit/edfb88d6034343ee9a9ef719f4cea32bae8de17c))
+* **aws:** inclusive re-enable cutoff, so an immediate re-login works ([6c8bfe7](https://github.com/DataDeft/datadeft-auth/commit/6c8bfe71896712723cec2320d7854f4629779b3a))
+* **aws:** PoW keys in the auth secret document ([b23ffff](https://github.com/DataDeft/datadeft-auth/commit/b23ffff962659c7c9f2d8c67052e073b4cd78678))
+* **aws:** refuse one value in two secret-document key fields ([b6e78f7](https://github.com/DataDeft/datadeft-auth/commit/b6e78f78646543b041ee9a6fd34ed1e9d0a4dbe6))
+* **axum:** flow state refuses a request without Sec-Fetch-Site ([624767f](https://github.com/DataDeft/datadeft-auth/commit/624767f49bec535e7e5339bf79285344b985a139))
+* **axum:** one response contract: 400 shape, 401 DD-Session, constant 503 ([e7f48fa](https://github.com/DataDeft/datadeft-auth/commit/e7f48fa1bd87c0c08d1fd4327dd2bbba36cf284c))
+* **axum:** redirect landing mode with a read-only flow-state route ([03de3b6](https://github.com/DataDeft/datadeft-auth/commit/03de3b6d9365842ee4e9bd4e252340a5e62d0e7b))
+* **axum:** SessionAuthRejection exposes its kind and clear-cookie header ([bfd967f](https://github.com/DataDeft/datadeft-auth/commit/bfd967fb707b85db09de42b78091884a4348c944))
+* CeleraTax validation feedback for 0.5.0 ([eba5088](https://github.com/DataDeft/datadeft-auth/commit/eba5088df84a14e62134f46940b7f807a0c980d5))
+* cookie constructors say Secure, storage_hmac_b64, disable_user docs ([82f0a31](https://github.com/DataDeft/datadeft-auth/commit/82f0a315f46da8540e1662cbf0b4d7d320459a4a))
+* **core:** the library normalizes email (trim + ASCII lowercase) ([ffec234](https://github.com/DataDeft/datadeft-auth/commit/ffec23422638fddbb3baa0664fea2b81c76130bc))
+* **example:** redirect landing mode end to end; quickstart shows both modes ([02c9d7a](https://github.com/DataDeft/datadeft-auth/commit/02c9d7adb7c9b46b27fb3bc16f74158c35f6f392))
+* **pow:** per-solve PoW budget and the 401 DD-PoW / 503 response contract ([33990aa](https://github.com/DataDeft/datadeft-auth/commit/33990aabe343d8ec1fd74dcad0c4cd235ef91ac9))
+* **protect-client:** protectedFetch follows the response contract ([03ceccb](https://github.com/DataDeft/datadeft-auth/commit/03ceccb9b0a2d5c9da654cb109f320dcc6934298))
+* **service:** country groups for session pinning (EU-27 built in) ([a974dd0](https://github.com/DataDeft/datadeft-auth/commit/a974dd07dcd69e6686f7773312fd88d49630e97a))
+* **service:** email locale from an allowlist, Reply-To in the SES config ([653beb1](https://github.com/DataDeft/datadeft-auth/commit/653beb1816215c69a1ab71f51b65f8aef0399c50))
+* **service:** hyphen ids (usr-, sid-, aid-, evt-, sess-) ([950e338](https://github.com/DataDeft/datadeft-auth/commit/950e33811ac20c9f0c39e540a510964addfda2fd))
+* **service:** mask the account on confirm pages and flow state ([bb940ad](https://github.com/DataDeft/datadeft-auth/commit/bb940ad9de77d92e7d492dacaffed47b09a7e668))
+* **service:** RateLimiter::check_lifetime_limit, a budget that never refills ([f73b868](https://github.com/DataDeft/datadeft-auth/commit/f73b868adadf7fcbd72df11dd39bebdefa22fdfb))
+* **service:** request outcome says Sent or Throttled(bucket), internally ([8cea62b](https://github.com/DataDeft/datadeft-auth/commit/8cea62bd1919c38b1dbf20b6fa69b4243a6d7548))
+* **token-core:** KeyPurpose::LARGEST_BODY_BYTES is required ([66c57bc](https://github.com/DataDeft/datadeft-auth/commit/66c57bcd672c9201af4f360dd6c7d13582a321d9))
+* **token-core:** public strict cookie selector shared by both Axum crates ([229f526](https://github.com/DataDeft/datadeft-auth/commit/229f5264a457d8b16577c70bb7821ab2783172ed))
+
+
+### Bug Fixes
+
+* **admin:** disables are unconditional; only enables are version-fenced ([9778517](https://github.com/DataDeft/datadeft-auth/commit/977851740a5958d142ec5267a22573b06a8f12bd))
+* **admin:** enable_user revokes live sessions before re-enabling ([df18d26](https://github.com/DataDeft/datadeft-auth/commit/df18d260262a069ea5b7d367dacc0e20b513586c))
+* **admin:** every disable fences a concurrent enable, even on a disabled user ([a5aca66](https://github.com/DataDeft/datadeft-auth/commit/a5aca66e837e1a07a6529dde1fb1b0e3497d086f))
+* **aws:** claim the previous-key email row when creating a user ([6e95cb3](https://github.com/DataDeft/datadeft-auth/commit/6e95cb3a960a7f7892d71dd7313ba52ad0ca5437))
+* **aws:** classify sign-up cancellations by the transaction's real layout ([e5825e0](https://github.com/DataDeft/datadeft-auth/commit/e5825e0b46d5eb800ae581066b72fe0555337c87))
+* **aws:** ignore a previous storage key equal to the current one ([7ac9a05](https://github.com/DataDeft/datadeft-auth/commit/7ac9a0563386315cf07f17db65a4e402e9ea5a9f))
+* **magic-link-core:** reject NUL in lookup HMAC domain and prefix ([afb4685](https://github.com/DataDeft/datadeft-auth/commit/afb46854dcecc3c9591dde781bd6e542792c9bcd))
+* **pow:** a used-up per-solve budget answers 401 + DD-PoW, not 503 ([543ce8d](https://github.com/DataDeft/datadeft-auth/commit/543ce8d97e619b6d77a3df019d7efacec17e8cbb))
+* pre-release review findings on budgets, country pinning and limits ([b09ce85](https://github.com/DataDeft/datadeft-auth/commit/b09ce8504a53e0e3973f93d3db289b91499a0320))
+* pre-release review findings on landing cookie, client and hygiene ([d4114b5](https://github.com/DataDeft/datadeft-auth/commit/d4114b5f58cffbd98d58a83c01d4a0419f5e6e15))
+* review findings on the 0.5.0 rework ([b2ebbc6](https://github.com/DataDeft/datadeft-auth/commit/b2ebbc62342da8ba7477d14fe273f2a0252d3a27))
+* second-pass review findings on country tags, paths and spec coverage ([5561948](https://github.com/DataDeft/datadeft-auth/commit/55619489bd87dab19d676e63bb891f31464b0924))
+
 ## [0.4.1](https://github.com/DataDeft/datadeft-auth/compare/v0.4.0...v0.4.1) (2026-10-09)
 
 
