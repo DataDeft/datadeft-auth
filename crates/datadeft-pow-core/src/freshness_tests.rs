@@ -307,7 +307,7 @@ fn garbage_tim_needs_valid_tag_first() {
         non: "0".to_string(),
         dif: 1,
         tim: "not-a-timestamp".to_string(),
-        tag: hmac_tag_hex(&s, &tag_message(chg, 1, "not-a-timestamp")),
+        tag: hmac_tag_hex(&s, &tag_message(chg, 1, "not-a-timestamp")).expect("tag"),
     };
     assert_eq!(
         verify_solution(&s, &sol, at(TIM_UNIX), MAX_AGE, 1),

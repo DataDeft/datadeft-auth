@@ -544,6 +544,26 @@ describe("protectedFetch", () => {
         expect(calls).toEqual([API, CREATE_URL, VALIDATE_URL, API]);
     });
 
+    test("matches the DD-PoW scheme case-insensitively", async () => {
+        installWorker(SolvingMockWorker);
+        const calls: string[] = [];
+        let apiCalls = 0;
+        mockFetch((url) => {
+            calls.push(url);
+            if (url === CREATE_URL) return jsonResponse(CHALLENGE);
+            if (url === VALIDATE_URL) return new Response(null, { status: 204 });
+            apiCalls += 1;
+            return apiCalls === 1
+                ? new Response("{}", { status: 401, headers: { "WWW-Authenticate": "dd-pow" } })
+                : jsonResponse({ status: "ok" });
+        });
+
+        const response = await protectedFetch(API, { method: "POST", body: "{}" }, config);
+
+        expect(response.status).toBe(200);
+        expect(calls).toEqual([API, CREATE_URL, VALIDATE_URL, API]);
+    });
+
     test("solves at most once: a second DD-PoW challenge is returned", async () => {
         installWorker(SolvingMockWorker);
         let solves = 0;

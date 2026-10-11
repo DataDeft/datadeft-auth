@@ -156,7 +156,8 @@ fn hmac_tag_matches_external_vector() {
         hmac_tag_hex(
             &secret(),
             &tag_message("somechg", 3, "2026-07-09T12:00:00Z"),
-        ),
+        )
+        .expect("tag"),
         "8b68060e834b2479e05ea4e7f2292500360351c2285ae2546da79502afed9850"
     );
 }
@@ -187,7 +188,7 @@ fn accepts_real_worker_style_vector() {
         non: nonce.to_string(),
         dif: 2,
         tim: TIM.to_string(),
-        tag: hmac_tag_hex(&s, &tag_message(chg, 2, TIM)),
+        tag: hmac_tag_hex(&s, &tag_message(chg, 2, TIM)).expect("tag"),
     };
     verify_solution(&s, &sol, at(TIM_UNIX + 1), MAX_AGE, 2).unwrap();
 }
@@ -205,7 +206,7 @@ fn hmac_matches_rfc_4231_vectors() {
         *b = 0x0b;
     }
     assert_eq!(
-        hmac_tag_hex(&PowSecret::new(k1), b"Hi There"),
+        hmac_tag_hex(&PowSecret::new(k1), b"Hi There").expect("tag"),
         "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
     );
     // Test Case 2: key = "Jefe", data = "what do ya want for nothing?".
@@ -214,7 +215,7 @@ fn hmac_matches_rfc_4231_vectors() {
         *dst = *src;
     }
     assert_eq!(
-        hmac_tag_hex(&PowSecret::new(k2), b"what do ya want for nothing?"),
+        hmac_tag_hex(&PowSecret::new(k2), b"what do ya want for nothing?").expect("tag"),
         "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
     );
 }

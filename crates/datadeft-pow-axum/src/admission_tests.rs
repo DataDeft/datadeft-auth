@@ -1,5 +1,5 @@
-//! Per-solve budget admission: N admissions per solve, then 503; no proof,
-//! 401 + DD-PoW; a failing store fails closed.
+//! Per-solve budget admission: N admissions per solve, then 401 + DD-PoW (solve
+//! again), as with no proof; a failing store fails closed with the 503.
 
 use std::collections::HashMap;
 use std::sync::Mutex;

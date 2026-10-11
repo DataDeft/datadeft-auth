@@ -26,6 +26,10 @@ fn same_origin_redirect_is_fully_prevalidated_for_location() {
         "/path%GG",
         "/mlv1.selector.verifier",
         "/café",
+        "/auth/../other",
+        "/auth/./confirm",
+        "/..",
+        "/auth/..?x=1",
     ] {
         assert!(
             SameOriginRedirect::parse(value).is_err(),

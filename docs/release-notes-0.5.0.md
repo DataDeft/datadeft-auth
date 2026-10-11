@@ -25,8 +25,13 @@ Consumer actions:
 - Email: drop app-side normalization; the library normalizes
   (`NormalizedEmail::normalize`); `parse` is `from_normalized`.
 - `RateLimiter` implementations add `check_lifetime_limit`.
-- `AuthAdminRepository::set_user_disabled_audited` takes the expected
-  `admin_version`; handle `AdminError::Conflict`.
+- `AuthAdminRepository::set_user_disabled_audited` takes
+  `expected_version: Option<u64>`: `None` for a disable (unconditional, bumps
+  `admin_version`), `Some(version)` for an enable (fenced on that version);
+  handle `AdminError::Conflict` from `enable_user`.
+- `CountryPolicy::pin` returns `Option<&str>`: `None` (fail closed) when the
+  request country equals a group tag. Group tags must be `EU` or an ISO
+  user-assigned code other than `XX`, and must be unique (`DuplicateTag`).
 - `RequestMagicLinkOutcome` is `Sent` / `Throttled(..)`; count it.
 - `MagicLinkEmail` and `MagicLinkRequestJson` gain `locale`;
   `MagicLinkServiceConfig` gains `country_policy` and `locales`, and
@@ -56,9 +61,10 @@ disable/enable in production.
   disagree. `enable_user` now revokes every live session before it re-enables.
   (`spec/tla/Session.tla`, finding SES-F1.)
 - **Concurrent admin actions were last-write-wins.** A delayed enable could
-  undo a later disable and revive a session whose revocation failed. Admin
-  writes are now conditional on the profile version; a lost race is
-  `AdminError::Conflict`. (`spec/tla/AdminRace.tla`, finding ADM-F1.)
+  undo a later disable and revive a session whose revocation failed. A disable
+  now always writes and bumps the profile version; an enable is conditional on
+  the version it read, and a lost race is `AdminError::Conflict`.
+  (`spec/tla/AdminRace.tla`, finding ADM-F1.)
 - **Keyed-lookup framing:** a NUL byte in a domain or prefix could make two
   distinct inputs frame identically; it is now refused.
 - **A previous storage key equal to the current one** made every sign-up fail

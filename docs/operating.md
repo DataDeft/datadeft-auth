@@ -27,7 +27,7 @@ mise run audit
 mise run verify
 ```
 
-`verify` runs fmt-check, clippy, test, docs, audit, token-core-guard,
+`verify` runs fmt-check, clippy, test, test-default-features, docs, audit, token-core-guard,
 ts-verify, spec, spec-mutants, release-check, and workflow-check.
 
 Further tasks:

@@ -120,6 +120,11 @@ The consuming application must follow these rules:
 11. Never log the raw token.
 12. HTML-escape rendered account identity.
 
+Accepted trade-off: a cross-site form `POST` to the confirmation route is
+rejected and clears the confirm cookie (rule 6), so another site can end a
+flow in progress. The user clicks the link again; nothing is consumed or
+created. The landing `GET` never clears the cookie on a rejected link.
+
 `datadeft-magic-link-axum` runs the input gauntlet. The application owns rendered responses under this contract.
 
 ## Bearer secret entropy
@@ -311,6 +316,13 @@ Invalid token states include expired, consumed, missing, malformed, and invalid 
 - The proof cookie is stateless and reusable within its lifetime; bound that
   reuse with the per-solve budget: gate routes with `admit_proof` and a shared
   `ProofBudget` (integration.md, "Per-solve budget").
+- An exhausted proof cookie replayed in a loop is answered `401` without a new
+  admission, but each attempt still costs one budget write. Per-IP and global
+  request limits at the edge bound that cost; the library does not.
+- Budget counters (`RateLimiter::check_lifetime_limit`) are stored under an
+  unkeyed, domain-separated SHA-256 of the key, so storage-key rotation never
+  splits or resets a budget. Lifetime keys must therefore carry no personal
+  data (the PoW budget keys by the random solve id).
 - Clear proof cookies on auth success.
 - Clear proof cookies on terminal auth failure.
 
@@ -780,9 +792,11 @@ with_redirect_landing`). The token still never reaches JavaScript:
 
 1. The emailed link hits the landing `GET`, which validates without
    consuming, sets the `HttpOnly` confirm cookie, and answers `303` to one
-   configured same-origin page for every link state. An unusable link gets a
-   cookie-clearing header instead of a cookie. `Location` never carries the
-   token, selector, verifier or confirmation value.
+   configured same-origin page for every link state. An unusable link gets no
+   `Set-Cookie` at all: a clearing header would let any site end a sign-in in
+   progress with a junk link (landings are cross-site by nature). A cookie left
+   from an earlier link still reads as that link's own state. `Location` never
+   carries the token, selector, verifier or confirmation value.
 2. The page `GET`s the flow-state route. It reads only the confirm cookie,
    requires exactly `Sec-Fetch-Site: same-origin`, sends no CORS headers,
    sends `Cross-Origin-Resource-Policy: same-origin` and the landing's security

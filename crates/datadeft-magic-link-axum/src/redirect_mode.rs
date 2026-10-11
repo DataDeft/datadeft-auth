@@ -5,7 +5,8 @@
 //!    the link without consuming it, sets the `HttpOnly` confirm cookie, and
 //!    answers `303` to the configured static page. Every outcome redirects to
 //!    the same page with no token material in `Location`; an unusable link
-//!    gets a cookie-clearing header instead of a cookie.
+//!    gets no cookie (and no clearing header, which another site could abuse
+//!    to end a flow in progress).
 //! 2. The static page `GET`s the flow-state route → [`magic_link_flow_state`]:
 //!    `{ "usable": true, "account": …, "confirmation": … }` from the confirm
 //!    cookie, or `{ "usable": false }` for any missing, invalid, expired or
@@ -62,13 +63,13 @@ where
         return MagicLinkHttpError::Internal.into_response();
     };
     let set_cookie = match magic_link_landing(request, config, begin).await {
-        Ok(landing) => landing.confirm_cookie,
-        // Same status and Location as success. Only the Set-Cookie differs
-        // (a cookie versus a clearing header), which only the link holder's
-        // browser sees.
-        Err(MagicLinkFlowResponseError::Rejected) => {
-            clear_confirm_cookie_header(config.confirm_cookie())
-        }
+        Ok(landing) => Some(landing.confirm_cookie),
+        // Same status and Location as success, and no Set-Cookie: clearing
+        // here would let any site end someone's sign-in in progress with a
+        // junk token (a landing cannot refuse cross-site requests; webmail
+        // clicks are cross-site). A stale cookie is harmless: flow state
+        // reads it as unusable, or it is the user's own earlier valid link.
+        Err(MagicLinkFlowResponseError::Rejected) => None,
         Err(MagicLinkFlowResponseError::Unavailable) => {
             return MagicLinkHttpError::Unavailable.into_response();
         }
@@ -79,7 +80,9 @@ where
     let mut response = StatusCode::SEE_OTHER.into_response();
     let headers = response.headers_mut();
     headers.insert(LOCATION, location);
-    headers.append(SET_COOKIE, set_cookie);
+    if let Some(set_cookie) = set_cookie {
+        headers.append(SET_COOKIE, set_cookie);
+    }
     apply_magic_link_security_headers(headers);
     response
 }

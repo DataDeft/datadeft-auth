@@ -112,9 +112,17 @@ run = "bun scripts/registry-release.ts publish"
 description = "Check the declared minimum Rust version (install rustup toolchain 1.88.0 first)"
 run = "cargo +1.88.0 check --workspace --all-targets --all-features --locked"
 
+[tasks.test-default-features]
+description = "Build every crate's tests with default features, one crate at a time (workspace feature unification hides gaps)"
+run = """
+for crate in datadeft-auth-token-core datadeft-magic-link-core datadeft-magic-link-service datadeft-magic-link-axum datadeft-magic-link-aws datadeft-pow-core datadeft-pow-axum; do
+  cargo test -q -p "$crate" --no-run || exit 1
+done
+"""
+
 [tasks.verify]
-description = "Full verification: fmt-check + clippy + test + docs + audit + token-core-guard + ts-verify + spec + spec-mutants + release-check + workflow-check"
-depends = ["fmt-check", "clippy", "test", "docs", "audit", "token-core-guard", "ts-verify", "spec", "spec-mutants", "release-check", "workflow-check"]
+description = "Full verification: fmt-check + clippy + test + test-default-features + docs + audit + token-core-guard + ts-verify + spec + spec-mutants + release-check + workflow-check"
+depends = ["fmt-check", "clippy", "test", "test-default-features", "docs", "audit", "token-core-guard", "ts-verify", "spec", "spec-mutants", "release-check", "workflow-check"]
 
 [tasks.js-lock]
 description = "Update Bun dependencies and normalize the lockfile for release-please"

@@ -131,10 +131,14 @@ const unusable = 'This link cannot be used. Request a new one.';
       credentials: 'same-origin',
       body: JSON.stringify({ confirmation: state.confirmation }),
     });
-    form.hidden = true;
     if (confirmed.ok) {
+      form.hidden = true;
       window.location.assign('/auth/complete');
+    } else if (confirmed.status === 503) {
+      // Nothing was consumed; the link still works. Keep the form.
+      status.textContent = 'The service is busy. Try again in a moment.';
     } else {
+      form.hidden = true;
       status.textContent = unusable;
     }
   });

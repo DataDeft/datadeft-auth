@@ -437,14 +437,14 @@ pub async fn resolve_auth_secrets(
         Some(previous) => Some(load_secret_string(client, previous).await?),
         None => None,
     };
-    LoadedAuthSecrets::from_json(&active, previous.as_deref())
+    LoadedAuthSecrets::from_json(&active, previous.as_ref().map(|p| p.as_str()))
 }
 
 #[cfg(feature = "aws")]
 async fn load_secret_string(
     client: &aws_sdk_secretsmanager::Client,
     reference: &SecretRef,
-) -> Result<String, AwsAdapterError> {
+) -> Result<Zeroizing<String>, AwsAdapterError> {
     match reference.manager {
         SupportedSecretManager::AwsSecretsManager => {}
     }
@@ -459,7 +459,7 @@ async fn load_secret_string(
         .map_err(crate::error::map_secretsmanager_get_secret_value_error)?;
     output
         .secret_string()
-        .map(str::to_owned)
+        .map(|secret| Zeroizing::new(secret.to_owned()))
         .ok_or(AwsAdapterError::Internal)
 }
 

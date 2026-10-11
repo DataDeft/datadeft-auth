@@ -52,7 +52,7 @@ fn the_confirm_cookie_must_cover_the_flow_state_route() {
 }
 
 #[tokio::test]
-async fn an_unusable_link_redirects_to_the_same_page_and_clears_the_cookie() {
+async fn an_unusable_link_redirects_to_the_same_page_and_leaves_the_cookie_alone() {
     let config = redirect_config();
     let response = magic_link_landing_redirect(landing_request(), &config, |_command| async {
         Err(fixture_flow_error(FixtureFlowError::MagicLinkUnavailable).await)
@@ -66,12 +66,8 @@ async fn an_unusable_link_redirects_to_the_same_page_and_clears_the_cookie() {
         .expect("location");
     assert_eq!(location, "/hu/login/confirm");
     assert!(!location.contains("mlv1"));
-    let cookie = headers
-        .get(SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("cookie");
-    assert!(cookie.starts_with("dd_auth_confirm=;"), "{cookie}");
-    assert!(cookie.contains("Max-Age=0"));
+    // A cross-site junk link must not end a flow in progress.
+    assert!(headers.get(SET_COOKIE).is_none());
     assert_eq!(
         headers.get(CACHE_CONTROL).map(HeaderValue::as_bytes),
         Some(&b"no-store"[..])

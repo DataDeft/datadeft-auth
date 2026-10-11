@@ -357,3 +357,36 @@ Decided by the maintainers:
 Also resolved: the flow-state route is app-chosen and validated against the
 confirm cookie path; erasure is deferred; no release candidates; shape errors
 are `400`.
+
+## 11. Pre-release review findings (2026-10-11)
+
+Simplify, code and security reviews of `v0.4.1..HEAD`, merged with an external
+agent's review. Only real issues were taken; marginal refactors are listed as
+deferred.
+
+| Finding | Verdict | Status |
+| --- | --- | --- |
+| Storage-key rotation reset per-solve budgets (counter id was keyed) | Real | Fixed: unkeyed domain-separated SHA-256 id (`lt_…`); DynamoDB Local test |
+| Duplicate country group tags accepted | Real | Fixed: `DuplicateTag` |
+| Request country equal to a group tag (`EU`) pinned as that group | Real | Fixed: `pin` returns `None`, fails closed; `XX` refused as a tag |
+| Disable retry loop could reverse a concurrent enable | Real | Fixed: disable unconditional (bumps version), only enable fenced; `AdminRace.tla` updated |
+| Token-core tests did not build with default features (hidden by feature unification) | Real | Fixed: gated; new `mise run test-default-features` in `verify` |
+| A zero limit admitted one request | Real | Fixed: `limit == 0` denies, both limiter checks |
+| Rejected landing cleared the confirm cookie (cross-site junk link ended a live flow) | Real | Fixed: no `Set-Cookie` on a rejected landing |
+| Example page treated a `503` on confirm as a dead link | Real | Fixed: keeps the form, "try again" |
+| `protectedFetch` matched `DD-PoW` case-sensitively | Real | Fixed: case-insensitive (RFC 9110) |
+| Raw secret JSON string not zeroized after load | Real (hygiene) | Fixed: `Zeroizing<String>`; the SDK's own buffer is out of our control |
+| `expect` in pow-core `hmac_tag_raw` | Rule violation | Fixed: error propagated |
+| Dot segments accepted in same-origin paths | Config footgun | Fixed: `.`/`..` segments refused |
+| Flow-state `503` headers differ from other routes' `503` | Not an issue | Within a route every `503` is identical; extra headers are per route |
+| Exhausted cookie replay costs a budget write per request | Documented | Edge per-IP limits bound it (`security.md`) |
+| Cross-site confirm `POST` clears the confirm cookie | Accepted | User clicks the link again; nothing consumed (`security.md`) |
+| `previous_pow_challenge_secret` needs app-side fallback verification | Documented | `integration.md` |
+
+Deferred (marginal or cross-crate API proposals, not 0.5.0): shared cookie
+building in token-core; `MAX_BODY_BYTES` semantics; one
+`RateLimiter::check_counter`; `ConstantTimeEq` for `LookupHmacKey`; a pow-core
+test-support solver; `BatchGetItem` for admin session reads; decoding the
+secret document once; sharing one in-progress solve across `protectedFetch`
+calls; a role-based cancellation classifier; test-wrapper dedup; country
+policies valid by construction.

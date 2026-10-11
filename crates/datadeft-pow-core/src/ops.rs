@@ -92,7 +92,7 @@ pub fn mint_challenge(
     // `chg` is a hash of entropy + time only (no IP/client binding).
     let chg_raw = format!("Time={tim}:Nonce={}", hex::encode(entropy));
     let chg = blake3::hash(chg_raw.as_bytes()).to_string();
-    let tag = hmac_tag_hex(secret, &tag_message(&chg, difficulty, &tim));
+    let tag = hmac_tag_hex(secret, &tag_message(&chg, difficulty, &tim))?;
     Ok(Challenge {
         chg,
         dif: difficulty,
@@ -172,7 +172,7 @@ pub fn verify_solution_with_clock_skew(
     let expected_tag = hmac_tag_raw(
         secret,
         &tag_message(&solution.chg, solution.dif, &solution.tim),
-    );
+    )?;
     // The shape check above guarantees `tag` is exactly 64 lowercase hex
     // chars, so this decodes into the stack buffer without allocating. The
     // code keeps the error mapping as a defensive backstop.
@@ -301,14 +301,15 @@ pub(crate) fn has_leading_zero_prefix(sol: &str, dif: u8) -> bool {
         .is_some_and(|prefix| prefix.iter().all(|&byte| byte == b'0'))
 }
 
-pub(crate) fn hmac_tag_raw(secret: &PowSecret, message: &[u8]) -> [u8; 32] {
-    // HMAC accepts keys of any length, so `new_from_slice` cannot fail.
+pub(crate) fn hmac_tag_raw(secret: &PowSecret, message: &[u8]) -> Result<[u8; 32], PowError> {
+    // HMAC accepts keys of any length, so this error is unreachable; it is
+    // mapped instead of unwrapped to keep panics out of production code.
     let mut mac =
-        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key length");
+        HmacSha256::new_from_slice(secret.as_bytes()).map_err(|_| PowError::InvalidTag)?;
     mac.update(message);
-    mac.finalize().into_bytes().into()
+    Ok(mac.finalize().into_bytes().into())
 }
 
-pub(crate) fn hmac_tag_hex(secret: &PowSecret, message: &[u8]) -> String {
-    hex::encode(hmac_tag_raw(secret, message))
+pub(crate) fn hmac_tag_hex(secret: &PowSecret, message: &[u8]) -> Result<String, PowError> {
+    hmac_tag_raw(secret, message).map(hex::encode)
 }

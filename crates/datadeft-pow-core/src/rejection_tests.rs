@@ -107,7 +107,7 @@ fn zero_difficulty_rejected() {
         non: "0".to_string(),
         dif: 0,
         tim: TIM.to_string(),
-        tag: hmac_tag_hex(&s, &tag_message(chg, 0, TIM)),
+        tag: hmac_tag_hex(&s, &tag_message(chg, 0, TIM)).expect("tag"),
     };
     assert_eq!(
         verify_solution(&s, &sol, at(TIM_UNIX + 1), MAX_AGE, 0),

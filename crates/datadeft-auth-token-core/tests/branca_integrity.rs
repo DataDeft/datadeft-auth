@@ -13,6 +13,7 @@
 //! Labeling: a non-canonical spelling that authenticates is *malleability*
 //! (same payload, new string), not forgery. A bit flip that authenticates
 //! would be forgery. Both are asserted absent here.
+#![cfg(feature = "test-support")]
 
 use datadeft_auth_token_core::TokenError;
 use datadeft_auth_token_core::base62;

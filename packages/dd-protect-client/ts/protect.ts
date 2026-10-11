@@ -370,8 +370,9 @@ function isProofOfWorkChallenge(response: Response): boolean {
     if (response.status !== 401) {
         return false;
     }
+    // Auth schemes are case-insensitive (RFC 9110 §11.1).
     const scheme = (response.headers.get("WWW-Authenticate") ?? "").trim().split(/[\s,]/)[0];
-    return scheme === DD_POW_AUTH_SCHEME;
+    return scheme?.toLowerCase() === DD_POW_AUTH_SCHEME.toLowerCase();
 }
 
 function isRepeatableByDefault(input: RequestInfo | URL, init?: RequestInit): boolean {
