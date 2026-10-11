@@ -51,10 +51,10 @@ Everywhere:
 
 - Return typed errors from library APIs.
 - Use `anyhow` only in examples, binaries, tests, and setup code.
-- Scrub adapter errors before public conversion.
+- Scrub adapter errors before you convert them to public errors.
 - Do not leak tokens, cookies, HMAC inputs, key material, emails, or raw IDs.
 
-Public error enums should implement these traits where practical: `Debug`,
+Where practical, implement these traits on public error enums: `Debug`,
 `Display`, `std::error::Error`, `Clone`, `Copy`, `Eq`, `PartialEq`.
 
 ## No application macros
@@ -100,7 +100,8 @@ environment variables, the filesystem, the network, or logging.
 Callers inject these inputs instead:
 
 - `now_unix`
-- `now: UnixMillis` (PoW mint/verify; the library formats RFC3339 internally)
+- `now: UnixMillis` for PoW mint and verify (the library formats RFC3339
+  internally)
 - CSPRNG entropy bytes
 - deterministic fixture entropy for tests
 - key material
@@ -119,11 +120,11 @@ Each crate must include:
 - round-trip tests for mint, parse, encode, or decode flows
 - public API smoke tests with default features
 
-Prefer property tests for token grammar and crypto wrappers when they are
-cheap.
+When property tests are cheap, prefer them for token grammar and crypto
+wrappers.
 
-Test code may use `unwrap` and `expect`; add a clear failure message when it
-helps. Production code must not.
+Test code may use `unwrap` and `expect`. When it helps, add a clear failure
+message. Production code must not use them.
 
 ## Module layout
 
@@ -134,7 +135,7 @@ Keep files small enough to read in one sitting:
 - Split along feature boundaries, never mid-feature.
 
 `lib.rs` holds only crate docs, `mod` declarations, and `pub use` re-exports.
-No functions, types, or impls.
+It holds no functions, types, or impls.
 
 Split a large module with the `module.rs` + `module/` layout. Never use
 `mod.rs`. The parent file documents the module, declares its children, and
@@ -159,10 +160,10 @@ wired with `#[path]`:
 mod magic_link_tests;
 ```
 
-Shared test fixtures go in a `test_support.rs` child module (`#[cfg(test)]`,
+Put shared test fixtures in a `test_support.rs` child module (`#[cfg(test)]`,
 items `pub(super)`).
 
-Entry files decode, delegate, and encode. Business logic goes in named
+Entry files decode, delegate, and encode. Put business logic in named
 modules.
 
 ## Naming
@@ -186,7 +187,7 @@ Opaque IDs must not encode real-world facts.
 - Use `&str` and `&[u8]` inside crates where helpful.
 - Avoid lifetime-heavy public APIs without a clear payoff.
 - Expose builders or config structs for required config.
-- Add `#[non_exhaustive]` only when we reserve expansion space.
+- Add `#[non_exhaustive]` only when you reserve expansion space.
 - Document security invariants on public types and functions.
 - Gate serde support when core behavior does not require it.
 
@@ -195,5 +196,5 @@ Opaque IDs must not encode real-world facts.
 - Keep default features minimal.
 - Avoid dependencies for tiny helpers.
 - Put broad integration dependencies in adapter crates.
-- Give each crypto, parsing, HTTP, AWS, or async dependency an owner crate,
-  and record the reason for it.
+- Give each crypto, parsing, HTTP, AWS, or async dependency an owner crate.
+  Record the reason for the dependency.

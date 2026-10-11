@@ -23,11 +23,11 @@ install the other tools. CI will pin their versions when each MVP starts.
 
 | Claim | Safety property | Model (`spec/tla`) | Code evidence |
 | --- | --- | --- | --- |
-| ML-INV-001 | `GET` landing never consumes a challenge. | `MagicLink.tla` | Service and Axum tests; `model_flow_tests` |
-| ML-INV-002 | One challenge has at most one consume. | `MagicLink.tla`, `MagicLinkRace.tla` | Fake race tests, DynamoDB conditions; `model_flow_tests` |
-| ML-INV-003 | Confirmation pairs consume and session creation. | `MagicLink.tla` | Repository contract tests; `model_flow_tests` |
-| ML-INV-004 | Wrong bound data cannot authenticate. | `MagicLink.tla` | Tamper tests; `hmac_and_confirm_properties` |
-| ML-INV-005 | Disabled-user failures do not burn a challenge. | `MagicLink.tla` | Fake transaction tests; `model_flow_tests` |
+| ML-INV-001 | `GET` landing never consumes a challenge. | `MagicLink.tla` | Service and Axum tests, `model_flow_tests` |
+| ML-INV-002 | One challenge has at most one consume. | `MagicLink.tla`, `MagicLinkRace.tla` | Fake race tests, DynamoDB conditions, `model_flow_tests` |
+| ML-INV-003 | Confirmation pairs consume and session creation. | `MagicLink.tla` | Repository contract tests, `model_flow_tests` |
+| ML-INV-004 | Wrong bound data cannot authenticate. | `MagicLink.tla` | Tamper tests, `hmac_and_confirm_properties` |
+| ML-INV-005 | Disabled-user failures do not burn a challenge. | `MagicLink.tla` | Fake transaction tests, `model_flow_tests` |
 | SES-INV-001 | A revoked session never validates. | `Session.tla` | `model_session_tests` |
 | SES-INV-002/003 | No session validates past its absolute or idle lifetime. | `Session.tla` | `model_session_tests`, `model_boundary_tests`, `cookie_integrity` |
 | SES-INV-004/005 | A disabled owner's sessions, and sessions created before the enable watermark, never validate. | `Session.tla` (`SessionAdmin.cfg`) | `model_session_tests` |
@@ -37,12 +37,12 @@ install the other tools. CI will pin their versions when each MVP starts.
 | POW-INV-004 | One PoW solve buys at most its budget of admissions across all nodes and its lifetime. | `PowBudget.tla` | `admission_tests`, `lifetime_limit_never_refills_against_dynamodb` |
 | ADM-INV-001 | No enable applies on top of a change it did not see (a disable is unconditional by design). | `AdminRace.tla` | `a_stale_admin_write_conflicts_instead_of_undoing_a_later_one`, `a_stale_admin_write_is_refused_against_dynamodb` |
 | ADM-INV-002 | An enable never undoes a disable reported as successful after the enable read the user. | `AdminRace.tla` | `a_disable_of_a_disabled_user_still_fences_a_slow_enable` |
-| ERASE-INV-001..005 | Erasure leaves no lookup to the user, no address in the profile, no valid session, no account from an older link; re-signup is a new user (planned, low priority). | `Erasure.tla` | Not implemented yet |
-| POW-INV-001 | Accepted proof met the production floor. | `Pow.tla` | PoW vectors, tamper tests; `pow_security` |
+| ERASE-INV-001..005 | Erasure leaves no lookup to the user, no address in the profile, no valid session, no account from an older link. Re-signup is a new user (planned, low priority). | `Erasure.tla` | Not implemented yet |
+| POW-INV-001 | Accepted proof met the production floor. | `Pow.tla` | PoW vectors, tamper tests, `pow_security` |
 | POW-INV-002 | A policy change after mint never lowers a challenge's difficulty. | `Pow.tla` | `pow_security` |
-| POW-INV-003 | Superseded by POW-INV-004: reuse of a proof within its TTL is bounded by the per-solve budget (`admit_proof`), keyed by `Verified::tid`. | `PowBudget.tla` | `admission_tests`, `pow_security` (tid stability) |
+| POW-INV-003 | POW-INV-004 supersedes this claim. The per-solve budget (`admit_proof`), keyed by `Verified::tid`, bounds reuse of a proof within its TTL. | `PowBudget.tla` | `admission_tests`, `pow_security` (tid stability) |
 | LIVE-001 | The happy path always reaches a session, including through an ambiguous commit and its retry. | `Liveness.tla` | `model_flow_tests` |
-| BOUND-INV-001 | Parsers reject over-cap values safely. | Out of scope for TLA+ | Totality property tests; cargo-fuzz targets in `fuzz/` (`mise run fuzz`); Kani planned |
+| BOUND-INV-001 | Parsers reject over-cap values safely. | Out of scope for TLA+ | Totality property tests, cargo-fuzz targets in `fuzz/` (`mise run fuzz`), Kani planned |
 
 ## How the models are checked
 
@@ -58,11 +58,11 @@ The `model_*_tests` in `datadeft-magic-link-aws` link the models to the code.
 They drive the real services and the fake store through random operation
 sequences and check the same invariants.
 
-The Session configs check the shipped re-enable cutoff. It is inclusive since
-0.5.0 (`WatermarkStrict = FALSE`, CeleraTax #12): a session created in the
-enable's own second is accepted. `Inv_NoAcceptBeforeWatermark` checks that
-sessions created before it never validate. The inclusive cutoff is safe only
-because enable revokes first.
+The Session configs check the shipped re-enable cutoff. Since 0.5.0 the cutoff
+is inclusive (`WatermarkStrict = FALSE`, CeleraTax #12). Validation accepts a
+session created in the enable's own second. `Inv_NoAcceptBeforeWatermark`
+checks that sessions created before it never validate. The inclusive cutoff is
+safe only because enable revokes first.
 
 ## Findings
 
@@ -82,9 +82,10 @@ because enable revokes first.
   passed even with its retry removed. Success is now an explicit terminal
   state, and the model runs without `--allow-deadlock`.
 - **ADM-F1 (fixed in 0.5.0).** Concurrent admin actions on one user were
-  last-write-wins. An enable whose final write was delayed past another
-  admin's enable, a login, and a later disable undid that disable and revived
-  a session whose revocation failed. Users cannot reach this. The fix:
+  last-write-wins. Take an enable whose final write arrived after three
+  events: another admin's enable, a login, and a later disable. That enable
+  undid the disable. It also revived a session whose revocation failed. Users
+  cannot reach this. The fix:
   - An enable is conditional on the profile's `admin_version`. A stale one
     fails with `AdminError::Conflict`.
   - A disable is unconditional and always bumps the version. So it fences a

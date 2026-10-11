@@ -2,7 +2,8 @@
 
 ## Local development
 
-Use local path dependencies during initial work. From a consuming project:
+Use local path dependencies during initial work. Add them in a consuming
+project:
 
 ```toml
 [dependencies]
@@ -14,13 +15,13 @@ Development loop:
 
 1. Work in this repository.
 2. Run `mise run verify`.
-3. Use local path deps from a consuming project.
+3. In a consuming project, use the local path dependencies.
 4. Run the consuming project's tests.
-5. Tag or publish only after those checks pass.
+5. After those checks pass, tag or publish.
 
 ## Task runner
 
-Use `mise` tasks. Do not hand-type long command chains.
+Use `mise` tasks. Do not type long command chains by hand.
 
 ```sh
 mise run fmt
@@ -40,8 +41,8 @@ Other tasks:
 | Task | What it does | In `verify` |
 | --- | --- | --- |
 | `spec`, `spec-mutants` | Check the TLA+ models and prove each invariant can fail. | Yes |
-| `fuzz` | Fuzz every untrusted-input parser for 60 s each. Needs nightly Rust and `cargo install cargo-fuzz`. | No |
-| `dynamodb-local-test` | Integration tests against DynamoDB Local. Needs Docker. | No |
+| `fuzz` | Fuzz every untrusted-input parser for 60 s each. It needs nightly Rust and `cargo install cargo-fuzz`. | No |
+| `dynamodb-local-test` | Run integration tests against DynamoDB Local. It needs Docker. | No |
 
 The core commands behind the tasks:
 
@@ -60,8 +61,8 @@ cargo deny check
   boundaries, merge order, and acceptance.
 - Each implementation agent owns one crate or package. It must not edit
   another crate without orchestrator approval.
-- Only one writer may modify a crate at a time. All work lands on `main`; no
-  feature branches or worktrees.
+- Only one writer may change a crate at a time. All work goes to `main`. Do
+  not use feature branches or worktrees.
 - Public API changes across crates need a short proposal first (see
   [Cross-crate changes](#cross-crate-changes)).
 
@@ -111,7 +112,7 @@ Follow-up work:
 
 ## Cross-crate changes
 
-Write a proposal before you change another crate's public API:
+Before you change the public API of another crate, write a proposal:
 
 ```text
 Producer crate:
@@ -145,28 +146,29 @@ unreviewed upstream code.
 ## Versioning
 
 The library is pre-1.0. Breaking changes bump the minor version. See
-[CHANGELOG.md](../CHANGELOG.md). No pre-release versions are published.
+[CHANGELOG.md](../CHANGELOG.md). The project publishes no pre-release
+versions.
 
 ## Commit policy
 
 - Make small, focused commits.
-- Change one crate or one behavior per commit where practical.
+- Where practical, change one crate or one behavior per commit.
 - Commit generated lockfile changes.
 - Do not commit secrets or local `.env` files.
 - Include validation notes in the commit or PR text.
 
 ## Release policy
 
-Do not publish until all of these hold:
+Before you publish, make sure that all of these conditions are true:
 
-1. Provenance audit passed.
+1. The provenance audit passed.
 2. The maintainers have approved the MIT license (2026-10-08).
-3. Docs exist.
-4. Examples compile.
-5. Public API review passed.
-6. Dependency audit passed.
-7. License audit passed.
-8. Workspace archive verification passed for every crate. Per-crate registry
-   dry-runs pass once their dependencies exist.
-9. Two maintainers approved the PR. Registry bootstrap and OIDC setup follow
-   [releasing.md](releasing.md).
+3. The docs exist.
+4. The examples compile.
+5. The public API review passed.
+6. The dependency audit passed.
+7. The license audit passed.
+8. The workspace archive verification passed for every crate. Each per-crate
+   registry dry run passes when its dependencies exist.
+9. Two maintainers approved the PR. The registry bootstrap and the OIDC setup
+   follow [releasing.md](releasing.md).

@@ -66,8 +66,8 @@ Landing (`GET`):
 Confirm (`POST`):
 
 14. The `POST` route validates the flow state.
-15. The repository commits challenge consumption and session creation
-    atomically.
+15. The repository consumes the challenge and creates the session in one
+    atomic commit.
 16. The browser gets a session cookie and a fixed `303` redirect.
 
 Session:
@@ -138,8 +138,8 @@ IP address, or client key.
 
 ## Complexity
 
-Every input is bounded before expensive work starts. `n` is the bounded input
-length. `d` is the number of required zero hex characters.
+The libraries bound every input before expensive work starts. `n` is the
+bounded input length. `d` is the number of required zero hex characters.
 
 | Operation | Time | Memory | Note |
 | --- | ---: | ---: | --- |
