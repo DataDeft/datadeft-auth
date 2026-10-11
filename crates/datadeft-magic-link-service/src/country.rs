@@ -120,25 +120,24 @@ impl CountryPolicy {
 
     /// The value a session from `country` is pinned to: the tag of the group
     /// containing it, or the country itself. `None` when the request country
-    /// equals a configured group tag: that is an edge pseudo-code (some
-    /// geolocation sources send `EU`), never a viewer's country, and taken
-    /// as-is it would match every session of the group. It counts as a
-    /// missing country, which fails closed.
+    /// is in the group-tag namespace (`EU` or an ISO user-assigned code),
+    /// under any policy: that is an edge pseudo-code (some geolocation
+    /// sources send `EU`), never a viewer's country, and taken as-is it would
+    /// match sessions pinned to a group, including ones pinned before a
+    /// policy change. It counts as a missing country, which fails closed.
     #[must_use]
     pub fn pin<'a>(&'a self, country: &'a str) -> Option<&'a str> {
+        if is_group_tag(country) {
+            return None;
+        }
         match self {
             Self::Exact => Some(country),
-            Self::Groups(groups) => {
-                if groups.iter().any(|group| group.tag() == country) {
-                    return None;
-                }
-                Some(
-                    groups
-                        .iter()
-                        .find(|group| group.contains(country))
-                        .map_or(country, CountryGroup::tag),
-                )
-            }
+            Self::Groups(groups) => Some(
+                groups
+                    .iter()
+                    .find(|group| group.contains(country))
+                    .map_or(country, CountryGroup::tag),
+            ),
         }
     }
 
@@ -199,8 +198,9 @@ fn is_group_tag(value: &str) -> bool {
     match value.as_bytes() {
         [b'A', b'A'] | [b'Z', b'Z'] => true,
         [b'Q', second] => (b'M'..=b'Z').contains(second),
-        // `XX` is excluded: Cloudflare sends it for an unknown country.
-        [b'X', second] => second.is_ascii_uppercase() && *second != b'X',
+        // Excluded: `XX`, Cloudflare's unknown country, and `XK`, Kosovo's
+        // code at every major geolocation source. Both are request values.
+        [b'X', second] => second.is_ascii_uppercase() && !matches!(second, b'X' | b'K'),
         _ => false,
     }
 }

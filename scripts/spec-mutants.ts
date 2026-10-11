@@ -1,15 +1,17 @@
-// Mutation check for the TLA+ models: every invariant must be able to fail.
+// Mutation check for the TLA+ models: every invariant and liveness property
+// must be able to fail.
 //
 // Each mutant edits one model (or flips one constant) the way a plausible bug
-// in the Rust code would, and runs the checker with ONLY the target invariant
-// (or the deadlock check) enabled. The mutant passes the harness only when the
-// checker reports that exact violation. A mutant the checker accepts means the
-// invariant has no teeth, and this script fails.
+// in the Rust code would, and runs the checker with ONLY the target invariant,
+// property (or the deadlock check) enabled. The mutant passes the harness only
+// when the checker reports that violation. A mutant the checker accepts means
+// the obligation has no teeth, and this script fails. So does any INVARIANT or
+// PROPERTY in a cfg that no mutant targets (TypeOK aside).
 //
 // Run: mise run spec-mutants
 
 import { $ } from "bun";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -102,6 +104,30 @@ const MUTANTS: Mutant[] = [
     ]],
     expect: "Inv_AtMostOneSession",
   },
+  {
+    name: "commit does not record its consumer",
+    spec: "MagicLinkRace",
+    edits: [[
+      "    /\\ consumedBy' = a\n    /\\ sessions' = sessions \\cup {a}\n    /\\ clientStatus'",
+      "    /\\ consumedBy' = consumedBy\n    /\\ sessions' = sessions \\cup {a}\n    /\\ clientStatus'",
+    ]],
+    expect: "Inv_ConsumedIffConsumer",
+  },
+  {
+    name: "an applied ambiguous commit loses its consumer",
+    spec: "MagicLinkRace",
+    edits: [["          /\\ consumedBy' = a\n", "          /\\ consumedBy' = consumedBy\n"]],
+    expect: "Inv_SessionOnlyForConsumer",
+  },
+  {
+    name: "a conflicted attempt gets a session",
+    spec: "MagicLinkRace",
+    edits: [[
+      "    /\\ clientStatus' = [clientStatus EXCEPT ![a] = \"conflict\"]\n    /\\ UNCHANGED << challenge, consumedBy, sessions >>",
+      "    /\\ clientStatus' = [clientStatus EXCEPT ![a] = \"conflict\"]\n    /\\ sessions' = sessions \\cup {a}\n    /\\ UNCHANGED << challenge, consumedBy >>",
+    ]],
+    expect: "Inv_ConflictNoSession",
+  },
   // --- Session.tla: validation and refresh (Session.cfg) -------------------
   {
     name: "validation ignores revocation",
@@ -174,6 +200,12 @@ const MUTANTS: Mutant[] = [
     expect: "Inv_OneAccountPerEmail",
   },
   {
+    name: "0.4.1 create: completed sign-ups land on two accounts",
+    spec: "KeyRotation",
+    constants: { DualWrite: "FALSE" },
+    expect: "Inv_CompletedSignupsAgree",
+  },
+  {
     // Dropping the previous-key fallback in find is not a safety mutant: the
     // fixed create's previous-key condition still refuses the duplicate (the
     // user sees a retryable conflict). The current-key condition is the one
@@ -241,12 +273,30 @@ const MUTANTS: Mutant[] = [
     constants: { EraseAllKeys: "FALSE" },
     expect: "Inv_NoLookupToErased",
   },
+  {
+    name: "a link consumed after erasure resolves to the erased user",
+    spec: "Erasure",
+    constants: { EraseAllKeys: "FALSE" },
+    expect: "Inv_NewUserAfterErase",
+  },
+  {
+    name: "erasure keeps the stored email",
+    spec: "Erasure",
+    edits: [["    /\\ email' = [email EXCEPT ![u] = \"erased\"]\n", "    /\\ email' = email\n"]],
+    expect: "Inv_ErasedEmailGone",
+  },
   // --- Pow.tla -------------------------------------------------------------
   {
     name: "verify ignores the bound difficulty",
     spec: "Pow",
     edits: [["         /\\ w >= mintedDiff\n", ""]],
     expect: "Inv002_AcceptedMeetsMint",
+  },
+  {
+    name: "verify accepts work below the production floor",
+    spec: "Pow",
+    edits: [["         /\\ w >= mintedDiff\n", ""]],
+    expect: "Inv001_AcceptedMeetsFloor",
   },
   {
     name: "verify checks the current policy, not the bound difficulty",
@@ -268,6 +318,33 @@ const MUTANTS: Mutant[] = [
     expect: "deadlock",
     liveness: true,
   },
+  {
+    name: "direct confirm creates a session without consuming",
+    spec: "Liveness",
+    edits: [["    /\\ challenge' = \"Consumed\"\n    /\\ session' = \"Active\"", "    /\\ challenge' = challenge\n    /\\ session' = \"Active\""]],
+    expect: "Inv_SessionImpliesConsumed",
+  },
+  {
+    name: "request loops without issuing a link",
+    spec: "Liveness",
+    edits: [["    /\\ challenge' = \"Issued\"\n    /\\ UNCHANGED << landed, pending, session >>", "    /\\ UNCHANGED vars"]],
+    expect: "Live_ReachesSession",
+    liveness: true,
+  },
+  {
+    name: "landing repeats without progressing",
+    spec: "Liveness",
+    edits: [["    /\\ ~landed\n    /\\ landed' = TRUE", "    /\\ landed' = TRUE"]],
+    expect: "Live_LandedReachesSession",
+    liveness: true,
+  },
+  {
+    name: "landing stalls before it lands",
+    spec: "Liveness",
+    edits: [["    /\\ ~landed\n    /\\ landed' = TRUE\n    /\\ UNCHANGED << challenge, pending, session >>", "    /\\ ~landed\n    /\\ UNCHANGED vars"]],
+    expect: "Live_EveryStateReachesSession",
+    liveness: true,
+  },
 ];
 
 const root = join(import.meta.dir, "..", "spec", "tla");
@@ -284,19 +361,39 @@ function applyEdits(text: string, edits: [string, string][], label: string): str
   return out;
 }
 
-// Keep SPECIFICATION and CONSTANT lines; keep only the target invariant.
+function isTarget(line: string, mutant: Mutant): boolean {
+  const trimmed = line.trim();
+  return trimmed === `INVARIANT ${mutant.expect}` || trimmed === `PROPERTY ${mutant.expect}`;
+}
+
+// Keep SPECIFICATION and CONSTANT lines; keep only the target obligation.
 function focusConfig(cfg: string, mutant: Mutant): string {
   const lines = cfg.split("\n").filter((line) => {
     const trimmed = line.trim();
     if (trimmed.startsWith("INVARIANT") || trimmed.startsWith("PROPERTY")) {
-      return mutant.expect !== "deadlock" && trimmed === `INVARIANT ${mutant.expect}`;
+      return mutant.expect !== "deadlock" && isTarget(line, mutant);
     }
     return true;
   });
-  if (mutant.expect !== "deadlock" && !lines.some((l) => l.trim() === `INVARIANT ${mutant.expect}`)) {
+  if (mutant.expect !== "deadlock" && !lines.some((l) => isTarget(l, mutant))) {
     throw new Error(`${mutant.name}: ${mutant.expect} is not checked by the model's cfg`);
   }
   return lines.join("\n");
+}
+
+// Every configured obligation needs a mutant that kills it.
+function untargetedObligations(): string[] {
+  const targeted = new Set(MUTANTS.map((m) => m.expect));
+  const missing = new Set<string>();
+  for (const file of readdirSync(root).filter((f) => f.endsWith(".cfg"))) {
+    for (const line of readFileSync(join(root, file), "utf8").split("\n")) {
+      const match = /^(INVARIANT|PROPERTY)\s+(\S+)/.exec(line.trim());
+      if (match && match[2] !== "TypeOK" && !targeted.has(match[2])) {
+        missing.add(`${file}: ${match[2]}`);
+      }
+    }
+  }
+  return [...missing];
 }
 
 let failures = 0;
@@ -314,11 +411,14 @@ for (const mutant of MUTANTS) {
 
     const result = await $`tla ${args}`.nothrow().quiet();
     const output = result.stdout.toString() + result.stderr.toString();
+    // The checker does not name a violated property; the focused cfg holds
+    // only the target, so any liveness violation is that one.
     const caught =
       result.exitCode !== 0 &&
       (mutant.expect === "deadlock"
         ? output.includes("Deadlock detected")
-        : output.includes(`(${mutant.expect}) violated`));
+        : output.includes(`(${mutant.expect}) violated`) ||
+          (/^Live_/.test(mutant.expect) && output.includes("Liveness property violated")));
     console.log(`${caught ? "killed " : "SURVIVED"}  ${mutant.spec}: ${mutant.name}`);
     if (!caught) {
       failures += 1;
@@ -327,6 +427,12 @@ for (const mutant of MUTANTS) {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+const untargeted = untargetedObligations();
+if (untargeted.length > 0) {
+  console.error(`No mutant targets: ${untargeted.join(", ")}`);
+  failures += untargeted.length;
 }
 
 if (failures > 0) {

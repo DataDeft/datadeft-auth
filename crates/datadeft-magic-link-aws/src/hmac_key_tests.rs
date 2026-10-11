@@ -69,9 +69,12 @@ fn setting_a_previous_key_equal_to_the_current_one_is_a_no_op() {
 fn lifetime_counter_ids_do_not_depend_on_the_storage_key_and_are_pinned() {
     let key = datadeft_magic_link_service::RateLimitKey::parse("pow:budget:abc").expect("key");
     let id = lifetime_counter_id(&key);
-    assert!(id.starts_with("lt_") && id.len() == 3 + 64, "{id}");
-    // Same id whatever storage key a node runs with: the function takes none.
-    assert_eq!(id, lifetime_counter_id(&key));
+    // Pinned: a change would orphan every live budget counter. Computed
+    // outside Rust: sha256(domain || 0x00 || key).
+    assert_eq!(
+        id,
+        "lt_952cdd8fe2cbc9ac3c77dfe0e178850e9d4bc329ab5d930e918c71f29c469c8a"
+    );
     let other = datadeft_magic_link_service::RateLimitKey::parse("pow:budget:abd").expect("key");
     assert_ne!(id, lifetime_counter_id(&other));
 }

@@ -482,6 +482,22 @@ async fn an_eu_tagged_session_fails_closed_under_exact_policy() {
     );
 }
 
+/// After a switch from groups to exact pinning, an `EU` pseudo-code from the
+/// edge must not keep an `EU`-pinned session alive.
+#[tokio::test]
+async fn an_eu_tagged_session_rejects_the_eu_pseudo_code_under_exact_policy() {
+    let keyring = keyring();
+    let sessions = TestSessions::with_record(record(800));
+    let clock = TestClock::at(900);
+    let eu = cookie(&keyring, 900, 800, Some("EU"));
+    assert_eq!(
+        validate_session(&eu, Some("EU"), &keyring, &sessions, &clock, &config())
+            .await
+            .unwrap_err(),
+        SessionValidationError::InvalidSession
+    );
+}
+
 #[tokio::test]
 async fn session_minted_before_rotation_validates_with_verify_only_key() {
     let cookie = cookie(&keyring(), 900, 800, None);

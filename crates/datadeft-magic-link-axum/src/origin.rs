@@ -234,13 +234,16 @@ fn is_safe_same_origin_path(value: &str) -> bool {
         && !has_dot_segment(value)
 }
 
-/// `.` and `..` segments are refused: browsers resolve them before sending,
-/// so the path the config checks (for example against the confirm cookie's
-/// `Path`) would not be the path requested.
+/// `.` and `..` segments, plain or percent-encoded (`%2e`, any case, mixed),
+/// are refused: browsers resolve them before sending, so the path the config
+/// checks (for example against the confirm cookie's `Path`) would not be the
+/// path requested.
 fn has_dot_segment(value: &str) -> bool {
     let path = value.split(['?', '#']).next().unwrap_or(value);
-    path.split('/')
-        .any(|segment| segment == "." || segment == "..")
+    path.split('/').any(|segment| {
+        let decoded = segment.to_ascii_lowercase().replace("%2e", ".");
+        decoded == "." || decoded == ".."
+    })
 }
 
 fn has_well_formed_percent_encoding(value: &str) -> bool {

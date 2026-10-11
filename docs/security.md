@@ -853,8 +853,11 @@ one human page on failure.
 
 Rules:
 
-- The `503` body and headers are byte-identical for every reason, across
-  `datadeft-magic-link-axum` and `datadeft-pow-axum`.
+- The `503` body, status and `Cache-Control: no-store` are byte-identical for
+  every reason, across `datadeft-magic-link-axum` and `datadeft-pow-axum`.
+  A route may add its own fixed security headers (the flow-state route sends
+  the landing's headers on every answer); within one route every `503` is
+  byte-identical, so no reason is distinguishable.
 - Log the internal reason and count it; never send it. The typed reasons are
   `MagicLinkHttpError`, `ProofRejection`, `SessionRejectionKind`, and, for
   the request endpoint whose public answer is always the same `200`,

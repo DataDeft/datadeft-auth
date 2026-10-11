@@ -382,6 +382,13 @@ deferred.
 | Exhausted cookie replay costs a budget write per request | Documented | Edge per-IP limits bound it (`security.md`) |
 | Cross-site confirm `POST` clears the confirm cookie | Accepted | User clicks the link again; nothing consumed (`security.md`) |
 | `previous_pow_challenge_secret` needs app-side fallback verification | Documented | `integration.md` |
+| Second pass: an `EU`-pinned session survived a switch to `Exact` when the edge sent `EU` | Real | Fixed: tag-namespace request countries (`EU`, user-assigned codes) fail closed under every policy; `XK` (Kosovo) refused as a tag |
+| Second pass: percent-encoded dot segments (`%2e%2e`) passed the path check | Real | Fixed: decoded before the dot-segment check |
+| Second pass: liveness missed a stalled cycle (cycle-only leads-to) | Real | Fixed: `Live_EveryStateReachesSession == TRUE ~> Active`, with a stall mutant |
+| Second pass: 8 invariants and the liveness properties had no mutant; no inventory check | Real | Fixed: 44 mutants; the harness fails on any untargeted `INVARIANT`/`PROPERTY` |
+| Second pass: lifetime counter id test compared the function with itself | Real | Fixed: exact digest vector computed outside Rust |
+| Second pass: `503` header rule contradicted per-route headers; ADM-INV-001 wording | Docs | Fixed: rule is per route; ADM-INV-001 is about enables |
+| Second pass: fuzz `-max_len` 4096 below the 8192-byte cookie cap | Real | Fixed: 10000 |
 
 Deferred (marginal or cross-crate API proposals, not 0.5.0): shared cookie
 building in token-core; `MAX_BODY_BYTES` semantics; one
@@ -389,4 +396,7 @@ building in token-core; `MAX_BODY_BYTES` semantics; one
 test-support solver; `BatchGetItem` for admin session reads; decoding the
 secret document once; sharing one in-progress solve across `protectedFetch`
 calls; a role-based cancellation classifier; test-wrapper dedup; country
-policies valid by construction.
+policies valid by construction. Fuzzing past the MAC checks (valid
+cookies/challenges, then mutate), HTTP and DynamoDB decoding targets, retained
+corpora, coverage and CI campaigns: after 0.5.0. Kani/Creusot proofs remain
+planned.

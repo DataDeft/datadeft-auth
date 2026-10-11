@@ -34,7 +34,7 @@ versions when each MVP starts.
 | SES-INV-009 | No session that existed at a re-enable validates afterwards, whatever the clocks say. | `Session.tla` (`SessionAdmin.cfg`) | `pre_disable_session_from_a_clock_ahead_node_stays_dead_after_enable` |
 | ROT-INV-001/002 | One email never has two accounts during a rolling storage-key rotation. | `KeyRotation.tla` | `rolling_rotation_*`, `model_rotation_tests` |
 | POW-INV-004 | One PoW solve buys at most its budget of admissions across all nodes and its lifetime. | `PowBudget.tla` | `admission_tests`, `lifetime_limit_never_refills_against_dynamodb` |
-| ADM-INV-001 | No admin write applies on top of a change it did not see. | `AdminRace.tla` | `a_stale_admin_write_conflicts_instead_of_undoing_a_later_one`, `a_stale_admin_write_is_refused_against_dynamodb` |
+| ADM-INV-001 | No enable applies on top of a change it did not see (a disable is unconditional by design). | `AdminRace.tla` | `a_stale_admin_write_conflicts_instead_of_undoing_a_later_one`, `a_stale_admin_write_is_refused_against_dynamodb` |
 | ADM-INV-002 | An enable never undoes a disable reported as successful after the enable read the user. | `AdminRace.tla` | `a_disable_of_a_disabled_user_still_fences_a_slow_enable` |
 | ERASE-INV-001..005 | Erasure leaves no lookup to the user, no address in the profile, no valid session, no account from an older link; re-signup is a new user (planned, low priority). | `Erasure.tla` | Not implemented yet |
 | POW-INV-001 | Accepted proof met the production floor. | `Pow.tla` | PoW vectors, tamper tests; `pow_security` |

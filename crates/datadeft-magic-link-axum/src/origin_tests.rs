@@ -30,6 +30,10 @@ fn same_origin_redirect_is_fully_prevalidated_for_location() {
         "/auth/./confirm",
         "/..",
         "/auth/..?x=1",
+        "/auth/%2e%2e/flow-state",
+        "/auth/%2E./flow-state",
+        "/auth/.%2e/flow-state",
+        "/auth/%2e/confirm",
     ] {
         assert!(
             SameOriginRedirect::parse(value).is_err(),

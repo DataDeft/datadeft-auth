@@ -76,7 +76,7 @@ description = "Fuzz every untrusted-input parser for 60 s each (cargo-fuzz, nigh
 dir = "fuzz"
 run = """
 for target in $(cargo +nightly fuzz list); do
-  cargo +nightly fuzz run "$target" -- -max_total_time=60 -max_len=4096 || exit 1
+  cargo +nightly fuzz run "$target" -- -max_total_time=60 -max_len=10000 || exit 1
 done
 """
 

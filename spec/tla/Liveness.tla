@@ -90,4 +90,8 @@ Inv_SessionImpliesConsumed ==
 \* Progress: the flow always reaches a session, including via retry.
 Live_ReachesSession == (challenge = "Absent") ~> (session = "Active")
 Live_LandedReachesSession == landed ~> (session = "Active")
+\* From every state. The checker evaluates leads-to on cycles only, so the
+\* two above miss a cycle where their antecedent is false (a landing that
+\* loops without progressing); this one holds on every cycle but Done.
+Live_EveryStateReachesSession == TRUE ~> (session = "Active")
 ==========================================================================

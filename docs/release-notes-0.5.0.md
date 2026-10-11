@@ -29,9 +29,11 @@ Consumer actions:
   `expected_version: Option<u64>`: `None` for a disable (unconditional, bumps
   `admin_version`), `Some(version)` for an enable (fenced on that version);
   handle `AdminError::Conflict` from `enable_user`.
-- `CountryPolicy::pin` returns `Option<&str>`: `None` (fail closed) when the
-  request country equals a group tag. Group tags must be `EU` or an ISO
-  user-assigned code other than `XX`, and must be unique (`DuplicateTag`).
+- `CountryPolicy::pin` returns `Option<&str>`: `None` (fail closed) under any
+  policy when the request country is `EU` or an ISO user-assigned code (an
+  edge pseudo-code, never a viewer's country). Group tags must be `EU` or a
+  user-assigned code other than `XX` and `XK`, and must be unique
+  (`DuplicateTag`).
 - `RequestMagicLinkOutcome` is `Sent` / `Throttled(..)`; count it.
 - `MagicLinkEmail` and `MagicLinkRequestJson` gain `locale`;
   `MagicLinkServiceConfig` gains `country_policy` and `locales`, and
