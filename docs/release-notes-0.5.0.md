@@ -75,7 +75,20 @@ disable/enable in production.
 
 ## Changelog cleanup
 
-- Drop the generated entry for `fix(aws): classify sign-up cancellations…`
-  (e5825e0): it fixed a regression that never shipped.
-- Move `fix(aws): ignore a previous storage key equal to the current one`
-  under "Security fixes" above, noted as 0.5.0-only.
+Apply these to the generated 0.5.0 entry in the release PR, as the last step
+before merge (release-please rewrites the PR on every push to main).
+
+- Insert "Upgrade summary" and "Security fixes" above under the 0.5.0 heading.
+- Breaking changes: merge the two `set_user_disabled_audited` entries into
+  one: it takes `expected_version: Option<u64>` (`None` for a disable, `Some`
+  for an enable); `UserSummary` has `admin_version`; `AdminError` has
+  `Conflict`.
+- Breaking changes: in the secret-document entry, replace "(pre-1.0, no
+  deployments)" with "(pre-1.0; no migration tooling)".
+- Bug fixes: drop `classify sign-up cancellations…` (e5825e0); it fixed a
+  regression that never shipped.
+- Bug fixes: merge a5aca66 and 9778517 into one line: "disables are
+  unconditional and fence concurrent enables; only enables are
+  version-fenced".
+- Bug fixes: move `ignore a previous storage key equal to the current one`
+  (7ac9a05) under "Security fixes", noted as 0.5.0-only.

@@ -319,6 +319,11 @@ Rules:
    - a log probe confirming no token material reaches any log.
 3. Fix findings, then publish 0.5.0 to crates.io and npm.
 
+Status (2026-10-11): implementation and both review passes are on `main` and
+pushed; CeleraTax has the pin. Release PR #5 is open; its changelog gets the
+cleanup in `release-notes-0.5.0.md` right before merge. After the release,
+delete this plan and `release-notes-0.5.0.md`.
+
 ## 9. CeleraTax adoption checklist (PR #149)
 
 - `usr-` ids. Remove the `usr_` changes from the 0.4 migration.
