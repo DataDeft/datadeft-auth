@@ -1,6 +1,7 @@
 # Onboarding
 
-**Status:** Released as `v0.1.0` (2026-08-02). Bug fixes only from here.
+**Status:** `0.5.0` is a breaking pre-1.0 release, not yet published to the
+registries. Consume it via a git ref until publication.
 
 ## Can a customer use this today?
 
@@ -15,7 +16,7 @@
 | Browser PoW client | Ready | Serve the built worker and call `protect()` from your login page. |
 | Country-aware PoW | Not ready | Build upstream policy. Never lower below the floor. |
 | Example app | Ready | Start with `examples/axum-magic-link`. |
-| Published crates | Tagged | Pin to the `v0.1.0` tag or a Git revision. crates.io publish deferred. |
+| Published crates | Pending | Pin to the 0.5.0 Git revision. Registry publish pending ([releasing.md](releasing.md)). |
 
 Do not use fake secrets, fake clocks, or fake entropy in production.
 
@@ -50,7 +51,8 @@ A magic-link deployment can run in production after the app completes this list.
 23. Run the consuming app integration tests.
 24. Pin an immutable commit or tag.
 
-PoW is optional app admission. Complete the PoW backlog before you require PoW.
+PoW admission is shipped and recommended. Only country-aware difficulty
+(MVP-013) is open.
 
 ## Implementation backlog
 
@@ -59,13 +61,13 @@ PoW is optional app admission. Complete the PoW backlog before you require PoW.
 | MVP-001 | P0 | Done | Keep the fake-backed Axum example runnable. |
 | MVP-002 | P0 | Per deployment | Attest token-safe logging. |
 | MVP-003 | P0 | AWS users | Validate live DynamoDB behavior. |
-| MVP-004 | P0 | Done | `v0.1.0` tag cut. Consume by the `v0.1.0` tag or a Git revision. crates.io publish deferred. |
+| MVP-004 | P0 | Done | Consume by the 0.5.0 Git revision. Registry publish pending ([releasing.md](releasing.md)). |
 | MVP-005 | P1 | Done | Trait futures require `+ Send`, static dispatch only (no `dyn`). |
 | MVP-006 | P1 | Decided | Inline SES delivery accepted. Implement the `MagicLinkOutbox` trait against a durable queue only if a deployment needs it. |
 | MVP-007 | P1 | Decided | Store the normalized email at rest, protected by DynamoDB KMS and IAM. No app-side field encryption. |
-| MVP-010 | PoW | Done | `dd-protect-client` ships the worker and client, vector-tested against `datadeft-pow-core`. |
+| MVP-010 | PoW | Done | `@datadeft/protect-client` (`packages/dd-protect-client`) ships the worker and client, vector-tested against `datadeft-pow-core`. |
 | MVP-011 | PoW | Ready | Wire the `datadeft-pow-axum` challenge and validate glue into routes. |
-| MVP-012 | PoW | Done | Ship the `dd_pow` proof cookie (`datadeft-pow-core`, `datadeft-pow-axum`). Stateless, reusable within its TTL. |
+| MVP-012 | PoW | Done | Ship the `dd_pow` proof cookie (`datadeft-pow-core`, `datadeft-pow-axum`). Stateless, reusable within its TTL. Reuse is bounded by the per-solve budget (`admit_proof`). |
 | MVP-013 | PoW | Not ready | Define trusted country source and difficulty policy. |
 | MVP-014 | P1 | Done | Keep session country as an opportunistic lock. |
 | MVP-020 | Assurance | Done | TLA+ safety models gated in CI (`formal-spec` job, `mise run spec`). Fairness-based liveness needs a checker with `WF` support. |

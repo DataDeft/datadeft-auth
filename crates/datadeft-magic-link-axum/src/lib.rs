@@ -30,10 +30,11 @@
 //!   scanners fetch link URLs. The landing must be safe to fetch any number of
 //!   times without burning the link. [`magic_link_landing`] guarantees this on
 //!   the library side: do not add consuming side effects in your handler.
-//! - **Respond uniformly (non-enumeration).** Return
-//!   [`MagicLinkFlowResponseError::Rejected`] with the **same HTTP status you
-//!   use for success** so an attacker cannot probe whether a link is
-//!   valid/expired. Only genuine `Unavailable`/`Internal` failures use a 5xx.
+//! - **Respond uniformly (non-enumeration).** Answer a rejected *landing*
+//!   ([`MagicLinkFlowResponseError::Rejected`]) with the **same HTTP status you
+//!   use for success**, and a rejected confirmation with one generic failure,
+//!   so an attacker cannot probe whether a link is valid/expired. Only genuine
+//!   `Unavailable`/`Internal` failures use the constant `503`.
 //! - **Clear the confirm cookie** on a rejected/internal confirmation
 //!   ([`clear_confirm_cookie_header`]). Preserve it on `Unavailable` so the
 //!   user can retry.

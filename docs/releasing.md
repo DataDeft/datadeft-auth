@@ -1,8 +1,10 @@
 # Registry releases
 
-This prepares `0.3.0` as the first registry release. `v0.2.0` already exists as a
-git release; never move that tag. All seven Rust crates and the npm client use
-one version and one release PR. No package has been published by this work.
+`0.5.0` is the first registry release. Earlier git tags remain; never move
+them. No release-candidate or other pre-release versions are published;
+consumers test an unpublished version via a git ref. All seven Rust crates and
+the npm client use one version and one release PR. No package has been
+published by this work.
 
 ## Approval and one-time setup (maintainers)
 
@@ -111,8 +113,10 @@ mise run crates-dry-run
 ```
 
 `verify` includes Rust formatting, Clippy, tests, docs, cargo-deny, API guards,
-release metadata checks, the five TLA+ safety/liveness models, and the npm build,
-tests, dry-run, and isolated packed-consumer checks. `msrv` requires
+default-feature tests (`test-default-features`), release metadata checks, the
+nine TLA+ safety/liveness models (ten configs, `spec`), the 44 spec mutants
+(`spec-mutants`), and the npm build, tests, dry-run, and isolated
+packed-consumer checks. `msrv` requires
 `rustup toolchain install 1.88.0 --profile minimal` once.
 
 `package-crates` uses current stable Cargo's workspace staging registry to

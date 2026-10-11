@@ -67,7 +67,8 @@
 //!
 //! There is no server-side replay counter in this crate. [`Verified::tid`] is
 //! a stable hash of `chg`, so the caller gets a replay-safe identity for
-//! idempotency and per-tid budgets.
+//! idempotency and per-tid budgets. For per-solve budgets, see
+//! [`ProofBudget`] (this crate) and `datadeft-pow-axum::admit_proof`.
 //!
 //! # Solve timing
 //!

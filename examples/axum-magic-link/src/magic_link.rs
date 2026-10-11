@@ -107,7 +107,7 @@ pub(super) async fn landing_route(State(state): State<AppState>, request: Reques
             response
         }
         // Same 200 status as success (non-enumeration); dependency/internal
-        // failures may use their own status.
+        // failures are the constant 503.
         Err(MagicLinkFlowResponseError::Rejected) => scanner_page(
             StatusCode::OK,
             "<!doctype html><h1>Unable to continue sign in</h1><p>Request a new link.</p>",

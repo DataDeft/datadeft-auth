@@ -21,9 +21,20 @@ secrets, email templates, logs, and edge policy.
 
 Do not invent an approach. Follow the example and the trait contracts.
 
-## Install registry versions
+## Install
 
-Use these dependencies. Rust 1.88 or newer is required.
+Rust 1.88 or newer is required. Until 0.5.0 is published, pin a git revision:
+
+```toml
+[dependencies]
+datadeft-pow-core           = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }
+datadeft-magic-link-service = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }
+datadeft-magic-link-axum    = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }
+datadeft-magic-link-aws     = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>", features = ["aws"] }
+# Add datadeft-pow-axum from the same rev for the PoW HTTP helpers.
+```
+
+After 0.5.0 is published to the registries:
 
 ```toml
 [dependencies]
@@ -40,7 +51,8 @@ bun add @datadeft/protect-client
 
 The other core crates arrive transitively. The service and Axum crates
 re-export the types needed for magic-link integration. Commit the consumer
-lockfiles. No git credentials or vendored TypeScript are needed.
+lockfiles. Once published, no git credentials or vendored TypeScript are
+needed.
 
 ### Upgrading from 0.4
 
@@ -243,11 +255,12 @@ See [security.md](security.md) for the full set. The critical ones:
   `GET`.
 - Keep the landing `GET` side-effect-free and repeatable. Email scanners
   prefetch it.
-- Respond uniformly. Return a rejected landing or confirmation with the same
-  HTTP status as success, so an attacker cannot probe link validity. Only
-  genuine `Unavailable` or `Internal` failures use a 5xx.
-- Clear `dd_auth_confirm` on a rejected or internal confirmation. Preserve it on
-  `Unavailable` so the user can retry.
+- Respond uniformly, so an attacker cannot probe link validity. Return a
+  rejected landing with the same HTTP status as success. Give a rejected
+  confirmation one generic failure (the example answers `400`). Only genuine
+  `Unavailable` or `Internal` failures use the constant `503`.
+- Clear `dd_auth_confirm` on a `Rejected` confirmation. Preserve it on
+  `Unavailable` so the user can retry. Clearing it on `Internal` is optional.
 - Stamp security headers on every landing and confirmation response.
 - Never echo the raw token into a body or logs. HTML-escape any rendered account
   identity.
@@ -271,10 +284,6 @@ unreviewed outer stack safe. See the "Mandatory deployment gate" section in
 
 Proof-of-work is the primary defense against dumb bots. It is recommended.
 
-Migrating an existing consumer from v0.1.x? Follow
-[migration-v0.2.0.md](migration-v0.2.0.md); it is written to be handed to an
-implementation agent as-is.
-
 Wire the `datadeft-pow-axum` glue. `POST` to `mint_pow_challenge` for `pow/create`,
 and `POST` to `verify_pow_solution` for `pow/validate`, which returns a
 `PowAdmission`: the `dd_pow` `Set-Cookie` header plus the server-derived
@@ -294,7 +303,8 @@ default, configurable, and stateless.
 A proof cookie is stateless, so on its own one solve admits unlimited
 requests for 3 hours. Bound it: gate every protected route with
 `admit_proof`, which verifies the `dd_pow` cookie and spends one unit of its
-solve's budget (`ProofBudgetPolicy::new(5)` buys 5 admissions per solve).
+solve's budget (`ProofBudgetPolicy::new(5)` buys 5 admissions per solve;
+`new` accepts `1..=1000`, `MAX_PROOF_BUDGET_PER_SOLVE`).
 The budget is:
 
 - **shared:** one counter per solve (`tid`) for the whole deployment, never

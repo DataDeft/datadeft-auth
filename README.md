@@ -5,9 +5,9 @@ tokens, and scanner-safe magic-link login. Extracted from internal
 application code into small, deterministic, IO-free cores plus optional
 framework and cloud adapters.
 
-> **Status:** preparing the first registry release, `0.3.0`. APIs are pre-1.0.
-> Publishing awaits maintainer approval and registry setup; the commands below
-> apply once that release is available. See [releasing.md](docs/releasing.md).
+> **Status:** `0.5.0` is a breaking pre-1.0 release. It is not yet on
+> crates.io or npm. Until publication, consume it via a git ref. See
+> [releasing.md](docs/releasing.md).
 > Start with [`docs/architecture.md`](docs/architecture.md) and
 > [`docs/onboarding.md`](docs/onboarding.md).
 > [`docs/security.md`](docs/security.md) is the normative security policy.
@@ -28,7 +28,9 @@ issuer/audience values, email templates, or product-specific policies.
 That excludes:
 
 - application-specific cookie names, issuers, audiences, and domains
-- CDN, viewer-country, or regional enforcement logic
+- country detection and CDN header logic (country pinning policy,
+  `CountryPolicy`, is library-owned; the country value comes from the
+  application's trusted edge)
 - audit/WAL event emission
 - application package names and branded email templates
 
@@ -52,6 +54,8 @@ datadeft-magic-link-core     -> datadeft-auth-token-core
 datadeft-magic-link-service  -> datadeft-magic-link-core, datadeft-auth-token-core
 datadeft-magic-link-axum     -> datadeft-magic-link-service
 datadeft-magic-link-aws      -> datadeft-magic-link-service
+datadeft-pow-core            -> datadeft-auth-token-core
+datadeft-pow-axum            -> datadeft-pow-core, datadeft-auth-token-core
 ```
 
 ### `datadeft-pow-core`
@@ -185,7 +189,9 @@ the core crates are not direct dependencies:
 datadeft-magic-link-service = { path = "../datadeft-auth/crates/datadeft-magic-link-service" }
 datadeft-magic-link-axum    = { path = "../datadeft-auth/crates/datadeft-magic-link-axum" }
 datadeft-magic-link-aws     = { path = "../datadeft-auth/crates/datadeft-magic-link-aws", features = ["aws"] }
-# Optional pre-request admission hardening:
+# Optional pre-request admission hardening (admit_proof, PowAdmission):
+datadeft-pow-axum           = { path = "../datadeft-auth/crates/datadeft-pow-axum" }
+# ProofBudget trait for the per-solve budget store:
 datadeft-pow-core           = { path = "../datadeft-auth/crates/datadeft-pow-core" }
 ```
 
@@ -202,7 +208,18 @@ authenticated session, and logout, wired on the shipped fakes. It is
 there. A compiling quickstart also lives in the `datadeft-magic-link-axum` crate
 docs.
 
-## Install from registries
+## Install
+
+Until 0.5.0 is published, pin a git revision:
+
+```toml
+[dependencies]
+datadeft-pow-core = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }
+# Optional HTTP integration:
+datadeft-pow-axum = { git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }
+```
+
+After 0.5.0 is published to the registries:
 
 ```toml
 [dependencies]
@@ -215,8 +232,8 @@ datadeft-pow-axum = "0.5"
 bun add @datadeft/protect-client
 ```
 
-Rust requires 1.88 or newer. Applications no longer need git credentials or
-vendored client sources. Use the [integration guide](docs/integration.md) for
+Rust requires 1.88 or newer. Once published, applications no longer need git
+credentials or vendored client sources. Use the [integration guide](docs/integration.md) for
 magic-link dependencies, crate/import renames, and configurable clock skew.
 
 For library development, local `path` dependencies remain supported.
@@ -267,6 +284,8 @@ status and MVP IDs in `docs/onboarding.md`.
 - [Formal assurance roadmap](docs/formal-methods.md)
 - [Rust standards](docs/rust-standards.md)
 - [Operating model](docs/operating.md)
+- [Integration guide](docs/integration.md)
+- [Releasing](docs/releasing.md)
 
 ## License
 

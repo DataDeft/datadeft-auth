@@ -99,7 +99,10 @@ works from any country in the group, not only the victim's. Choose the
 smallest group your users need. It is still much safer than rewriting the
 trusted header at the edge, which would also hide the real country from
 everything else. Never put a country in two groups; configuration validation
-refuses it.
+refuses it. Validation also refuses duplicate tags and tags other than `EU` or
+ISO user-assigned codes (`XX` and `XK` excluded). A request country of `EU` or
+a user-assigned code pins to nothing under every policy: it is treated as
+missing and fails closed.
 
 ### Scanner-safe response contract
 
@@ -113,7 +116,7 @@ The consuming application must follow these rules:
 4. Return uniform landing and confirmation failures.
 5. Use the same status for rejected landing and successful landing.
 6. Clear the confirm cookie on rejected confirmation.
-7. Clear the confirm cookie on internal confirmation failure.
+7. Clearing the confirm cookie on internal confirmation failure is optional.
 8. Preserve the confirm cookie on dependency failure.
 9. Add `no-store`, CSP, and frame-denial headers.
 10. Never echo the raw token into a body.
@@ -309,9 +312,10 @@ Invalid token states include expired, consumed, missing, malformed, and invalid 
 - Version challenge formats.
 - Domain-separate challenge formats.
 - MAC challenge random data and metadata.
-- Bind proof cookies to the challenge and auth flow.
+- Bind proof cookies to the solved challenge (`tid`).
 - Keep PoW admission outside magic-link APIs.
-- Treat proof cookies as short-lived flow values.
+- Treat proof cookies as short-lived values whose reuse is bounded by the
+  per-solve budget.
 - Bound the proof-cookie lifetime with a configurable TTL under a hard ceiling.
 - The proof cookie is stateless and reusable within its lifetime; bound that
   reuse with the per-solve budget: gate routes with `admit_proof` and a shared
@@ -323,8 +327,8 @@ Invalid token states include expired, consumed, missing, malformed, and invalid 
   unkeyed, domain-separated SHA-256 of the key, so storage-key rotation never
   splits or resets a budget. Lifetime keys must therefore carry no personal
   data (the PoW budget keys by the random solve id).
-- Clear proof cookies on auth success.
-- Clear proof cookies on terminal auth failure.
+- The PoW layer owns the proof-cookie lifecycle. Magic-link does not clear the
+  proof cookie.
 
 ### Solve-timing signal
 
@@ -366,7 +370,7 @@ Consumption rules:
   Genuine cohorts mix device speeds, so their solve-time distribution is a
   mixture of exponentials; tests against a single theoretical exponential
   reject honest traffic.
-- The browser-side floor exists only because the shipped `dd-protect-client`
+- The browser-side floor exists only because the shipped `@datadeft/protect-client`
   worker pays an async `crypto.subtle` round trip per attempt. A WASM or
   native-speed client, including a future optimization of the official
   client, erases it. Revisit every threshold before changing the client's
@@ -655,7 +659,8 @@ previous document's HMAC keys only when they differ from the active ones.
 4. Keep the previous document for at least 31 days so pre-rotation sessions
    expire naturally, then remove it.
 
-Rate-limit counters restart once at rotation; limits are best-effort.
+Keyed window rate-limit counters restart once at rotation; limits are
+best-effort. Per-solve lifetime counters do not restart.
 Removing the previous storage key before step 3 strands users who have not
 logged in since the rotation: their next login creates a second account.
 
@@ -842,7 +847,7 @@ about a refusal is public.
 | --- | --- | --- |
 | `401` + `WWW-Authenticate: DD-PoW` | The proof of work is missing, invalid or expired, its per-solve budget is used up, or a posted solution failed. | Solve a challenge, retry once. A new solve buys a fresh budget. |
 | `401` + `WWW-Authenticate: DD-Session` | The session is missing, invalid, expired or revoked. The response clears the cookie. | Sign in again. |
-| `400`, one generic body | A shape error that leaks nothing: bad JSON, an invalid email address, wrong content type, oversize body. | Fix the request; do not retry. |
+| `400`, one generic body | A shape error that leaks nothing: bad JSON, an invalid email address, wrong content type, oversize body, an unusable magic link (`MagicLinkUnavailable`). | Fix the request; do not retry. |
 | `503`, one constant body, `no-store` | Everything security-sensitive or failed: rate limits, quotas, dependency or server faults. | Back off with equal jitter and retry. Never retry without jitter. |
 | `403` | Never sent by the library. It is the app's, for business authorization. | App-defined. |
 
@@ -963,7 +968,8 @@ Before phase acceptance, confirm these items:
 16. Scanner flow tests prove `GET` is non-consuming.
 17. Scanner flow tests prove `POST` requires bound state.
 18. Confirmation pages prevent framing.
-19. Terminal failures clear confirm cookies.
+19. A `Rejected` confirmation clears the confirm cookie; `Unavailable`
+    preserves it; clearing on `Internal` is optional.
 20. Redirects stay fixed or allowlisted.
 21. Cookie helpers use secure defaults.
 22. Logout revokes server state before cookie clearing.
@@ -980,4 +986,4 @@ Before phase acceptance, confirm these items:
 33. Core code has no IO sources.
 34. Adapter errors map to safe public errors.
 35. Solve-timing consumers gate on fast deltas only; slow deltas stay soft.
-35. Dependency audit passes before release.
+36. Dependency audit passes before release.

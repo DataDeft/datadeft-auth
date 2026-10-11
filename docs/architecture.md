@@ -2,7 +2,7 @@
 
 **Status:** This document describes the current repository.
 
-The repository provides reusable authentication libraries. The consuming application owns routes, deployment policy, secrets, email templates, logs, and proof-of-work admission.
+The repository provides reusable authentication libraries. The consuming application owns routes, deployment policy, secrets, email templates, and logs. It wires proof-of-work admission (with `datadeft-pow-axum`) and owns its edge policy.
 
 ![Components and infrastructure](diagrams/components-infrastructure.svg)
 
@@ -11,13 +11,14 @@ The repository provides reusable authentication libraries. The consuming applica
 | Component | Responsibility | Status |
 | --- | --- | --- |
 | `datadeft-pow-core` | Mint and verify PoW challenges. | Ready |
+| `datadeft-pow-axum` | Axum PoW create/validate, proof cookie, `admit_proof`. | Ready |
 | `datadeft-auth-token-core` | Encrypt cookies and manage purpose keys. | Ready |
 | `datadeft-magic-link-core` | Parse tokens and compute HMAC lookup values. | Ready |
 | `datadeft-magic-link-service` | Run request, confirmation, session, and repository logic. | Ready |
 | `datadeft-magic-link-axum` | Parse HTTP input and create safe responses. | Ready |
 | `datadeft-magic-link-aws` | Store data in DynamoDB and send email with SES. | Ready for test deployment |
 | Consuming application | Configure routes, secrets, templates, logs, and edge policy. | Required |
-| `dd-protect-client` | Solve PoW in the browser. | Ready |
+| `@datadeft/protect-client` | Solve PoW in the browser. | Ready |
 | Example app | Show a full fake-backed Axum flow. | Available |
 
 The dependency direction stays one-way.
@@ -28,9 +29,10 @@ datadeft-magic-link-core     -> datadeft-auth-token-core
 datadeft-magic-link-service  -> datadeft-magic-link-core, datadeft-auth-token-core
 datadeft-magic-link-axum     -> datadeft-magic-link-service
 datadeft-magic-link-aws      -> datadeft-magic-link-service
+datadeft-pow-core            -> datadeft-auth-token-core
+datadeft-pow-axum            -> datadeft-pow-core, datadeft-auth-token-core
 
 consuming application  -> selected adapters and services
-PoW admission          -> datadeft-pow-core
 ```
 
 ## Magic-link flow
@@ -80,10 +82,7 @@ effective_difficulty = max(
 )
 ```
 
-The repository does not yet include these PoW parts:
-
-- country-to-difficulty policy
-- upstream PoW middleware
+The repository does not yet include a country-to-difficulty policy.
 
 Reuse of a proof is bounded by the per-solve budget (`admit_proof`), and the
 example wires PoW end to end, with `protectedFetch` in the browser.

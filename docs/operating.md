@@ -75,12 +75,13 @@ Public API changes across crates need a short proposal first.
 | --- | --- | --- |
 | Repo setup | Workspace root, CI, licensing, docs, tasks | Buildable repo |
 | PoW core | `crates/datadeft-pow-core` | Deterministic PoW core |
+| PoW Axum | `crates/datadeft-pow-axum` | PoW HTTP glue, proof cookie, `admit_proof` |
 | Auth token core | `crates/datadeft-auth-token-core` | Token and cookie primitives |
 | Magic-link core | `crates/datadeft-magic-link-core` | Magic-link primitives |
 | Magic-link service | `crates/datadeft-magic-link-service` | Trait-based auth flow |
 | Axum adapter | `crates/datadeft-magic-link-axum` | HTTP integration |
 | AWS adapter | `crates/datadeft-magic-link-aws` | DynamoDB and SES adapters |
-| Browser client | `packages/dd-protect-client` | Browser PoW client |
+| Browser client | `@datadeft/protect-client` (`packages/dd-protect-client`) | Browser PoW client |
 | Example | `examples/axum-magic-link` | Integration proof |
 
 ## Work packet
@@ -132,28 +133,21 @@ The orchestrator accepts, changes, or rejects the proposal.
 1. Repo setup.
 2. `datadeft-pow-core`.
 3. `datadeft-auth-token-core`.
-4. `datadeft-magic-link-core`.
-5. `datadeft-magic-link-service`.
-6. `datadeft-magic-link-axum`.
-7. `datadeft-magic-link-aws`.
-8. `dd-protect-client` and examples.
-9. Consuming-project integration.
-10. Publish preparation.
+4. `datadeft-pow-axum`.
+5. `datadeft-magic-link-core`.
+6. `datadeft-magic-link-service`.
+7. `datadeft-magic-link-axum`.
+8. `datadeft-magic-link-aws`.
+9. `@datadeft/protect-client` and examples.
+10. Consuming-project integration.
+11. Publish preparation.
 
 A downstream agent may scaffold early. It must not lock public API against unreviewed upstream code.
 
 ## Versioning
 
-Use `0.x` versions before public publishing.
-
-Recommended early versions:
-
-```text
-0.1.0 - first local extraction
-0.2.0 - first second-project integration
-0.3.0 - API cleanup after integration feedback
-1.0.0 - stable public API after audits
-```
+The library is pre-1.0. Breaking changes bump the minor version. See
+[CHANGELOG.md](../CHANGELOG.md). No pre-release versions are published.
 
 ## Commit policy
 
