@@ -16,6 +16,8 @@ publishes no release candidates.
 | V06-006 | Reference log probe in the example | Should | CeleraTax (file pending) |
 | V06-007 | Fuzzing past the MAC checks, and fuzzing in CI | Should | 0.5.0 review |
 | V06-008 | Branch protection and CI publishing | Should | 0.5.0 release |
+| V06-009 | Remove `remove_legacy_session_ttl` | Should | 0.5.0 docs audit |
+| V06-010 | Decide on the `__Host-` prefix for the session cookie | Should | 0.5.0 docs audit |
 
 ## 2. Work items
 
@@ -110,6 +112,26 @@ process. Use the CeleraTax probe as the base when the file arrives.
 - Optional: enable CI publishing (trusted publishing on crates.io and npm,
   the `registry-release` environment, `REGISTRY_PUBLISH_ENABLED`). This
   removes the manual token step and adds npm provenance.
+
+### V06-009 Remove `remove_legacy_session_ttl`
+
+`DynamoDbAuthStore::remove_legacy_session_ttl` removes a `ttl` attribute that
+old versions set on session rows. 0.5.0 needs a fresh table, so no such rows
+exist. The "one supported way" rule says to remove compatibility paths.
+
+- Remove the method and its tests from datadeft-magic-link-aws.
+- This is a breaking API change. Name it in the changelog.
+
+### V06-010 `__Host-` prefix for the session cookie
+
+The `__Host-` prefix makes the browser refuse the cookie unless it is
+`Secure`, has `Path=/` and has no `Domain`. A sibling subdomain then cannot
+set or overwrite it. The session cookie meets these conditions. The confirm
+cookie cannot use the prefix, because it needs a narrow path.
+
+Open question: rename the session cookie to `__Host-dd_session` by default,
+or offer the prefix as an option. A rename ends every live session once.
+`insecure_local(..)` cannot use the prefix, because it is not `Secure`.
 
 ## 3. Candidates (take only when they fix a real problem)
 
