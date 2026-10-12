@@ -36,8 +36,7 @@ datadeft-auth-token-core    = "0.5"
 datadeft-magic-link-core    = "0.5"
 ```
 
-The latest published version is 0.4.1. Until 0.5.0 is on the registries,
-replace each version with
+To test an unpublished commit, replace each version with
 `{ git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }`.
 Keep `features`.
 

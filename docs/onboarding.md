@@ -1,7 +1,6 @@
 # Onboarding
 
-**Status:** pre-1.0. `0.5.0` is a breaking release that is in validation. The
-latest published version is `0.4.1`.
+**Status:** pre-1.0. The latest version on crates.io and npm is `0.5.0`.
 
 To integrate the libraries into your application, follow
 [integration.md](integration.md).
@@ -19,7 +18,7 @@ To integrate the libraries into your application, follow
 | Browser PoW client | Ready | Serve the built worker and call `protect()` from your login page. |
 | Country-aware PoW | Not ready | Build an upstream policy. Never lower the difficulty below the floor. |
 | Example app | Ready | Start with `examples/axum-magic-link`. |
-| Published crates | Done | `0.4.1` is on crates.io and npm. `0.5.0` follows validation ([releasing.md](releasing.md)). |
+| Published crates | Done | `0.5.0` is on crates.io and npm ([releasing.md](releasing.md)). |
 
 Never use fake secrets, fake clocks, or fake entropy in production.
 

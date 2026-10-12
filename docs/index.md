@@ -27,8 +27,3 @@
 - [Rust standards](rust-standards.md)
 - [Operating model](operating.md)
 - [Registry release runbook](releasing.md)
-
-## 0.5.0 release
-
-- [0.5.0 plan](plan-0.5.0.md)
-- [0.5.0 release notes](release-notes-0.5.0.md)

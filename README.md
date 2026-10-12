@@ -4,8 +4,7 @@ Reusable Rust authentication libraries: proof-of-work (PoW), encrypted session
 tokens, and scanner-safe magic-link login. Small, deterministic, IO-free cores
 plus optional framework and cloud adapters.
 
-**Status:** pre-1.0. `0.5.0` is a breaking release being validated; the latest
-published version on crates.io and npm is `0.4.1`.
+**Status:** pre-1.0. The latest version on crates.io and npm is `0.5.0`.
 
 ## What this is
 
@@ -65,10 +64,6 @@ datadeft-pow-core           = "0.5"
 datadeft-auth-token-core    = "0.5"
 datadeft-magic-link-core    = "0.5"
 ```
-
-Until 0.5.0 is on the registries (latest published: 0.4.1), replace each
-version with `{ git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }`
-(keep `features`).
 
 ```sh
 bun add @datadeft/protect-client

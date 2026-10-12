@@ -1,15 +1,57 @@
 # Registry releases
 
 All seven Rust crates and the npm client share one version and one release PR.
-The registries hold `0.4.0` and `0.4.1`. The next version is `0.5.0`. The
-project publishes no release-candidate or other pre-release versions.
-Consumers test an unpublished version through a git ref. Never move a release
-tag.
+The registries hold `0.4.0`, `0.4.1` and `0.5.0`. The project publishes no
+release-candidate or other pre-release versions. Consumers test an unpublished
+version through a git ref. Never move a release tag.
+
+CI publishing is not enabled yet: the repository variable
+`REGISTRY_PUBLISH_ENABLED` is unset and the `registry-release` environment
+does not exist. The release workflow therefore runs `verify` and skips both
+upload jobs. Until a maintainer completes the setup below, publish by hand
+([Manual publish](#manual-publish)).
+
+## Manual publish
+
+Run these steps after the release PR is merged and release-please has created
+the `vX.Y.Z` tag. Paste each block separately and check it before the next.
+
+```fish
+# 1. Prepare and check the tagged release.
+git fetch --tags
+git checkout vX.Y.Z
+rm -rf target/package
+mise run verify; and mise run package-crates
+```
+
+```fish
+# 2. Publish the crates in dependency order. The loop stops at a failure.
+cargo login
+for c in datadeft-auth-token-core datadeft-pow-core datadeft-pow-axum datadeft-magic-link-core datadeft-magic-link-service datadeft-magic-link-aws datadeft-magic-link-axum
+    cargo publish --locked -p $c; or break
+    sleep 2
+end
+```
+
+```fish
+# 3. Publish the npm client, then clean up.
+npm login
+mise run ts-verify
+cd packages/dd-protect-client
+npm publish --access public --ignore-scripts
+cd ../..
+git checkout main
+cargo logout
+```
+
+If a crate fails, do not publish the earlier crates again. Fix the cause and
+continue from the crate that failed. Revoke the crates.io token afterwards. A
+manual npm publish carries no provenance.
 
 ## Approval and one-time setup (maintainers)
 
-The maintainers did this setup for `0.4.0`. Keep it as a reference for new
-maintainers. Before the first publication, do these steps:
+The first publication (`0.4.0`) is done. The remaining steps enable CI
+publishing. Before you set `REGISTRY_PUBLISH_ENABLED`, do these steps:
 
 1. Confirm the seven `datadeft-*` names below and `@datadeft/protect-client`.
    The license is MIT (approved 2026-10-08).
