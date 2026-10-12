@@ -8,16 +8,15 @@ replace crypto review, live tests, or deployment controls.
 
 ## Tooling
 
-The development environment has these tools:
+`mise.toml` pins one formal tool: the Rust `tla` checker (`tla-checker` 0.3.9
+from crates.io, the `tla` binary). The TLA+ models live in
+[../spec/tla](../spec/tla).
 
-- Rust `tla` checker: `tla-checker` 0.3.9 from crates.io (the `tla` binary)
-- Kani
-- Cargo Fuzz
-- Quint
-- Creusot
+Cargo Fuzz runs the fuzz targets. It is not pinned in `mise.toml`. See
+[Fuzzing and bounded checks](#fuzzing-and-bounded-checks).
 
-The TLA+ models live in [../spec/tla](../spec/tla). This document does not
-install the other tools. CI will pin their versions when each MVP starts.
+Kani, Quint, and Creusot are planned tools. The repository does not install
+them. CI will pin their versions when each MVP starts.
 
 ## Claims to model
 
@@ -97,98 +96,76 @@ safe only because enable revokes first.
 
 ## Outside the models
 
-- The v0.2.0 solve-timing signal (`Verified::mint_to_verify_ms`, the
-  proof-cookie solve-class byte) is observational. It adds no admission
-  transition and changes no invariant.
-- The clock-unit change (seconds to milliseconds) is invisible to the models.
-  They treat expiry abstractly, without time units.
+- The solve-timing signal (`Verified::mint_to_verify_ms`, the proof-cookie
+  solve-class byte) is observational. It adds no admission transition and
+  changes no invariant.
 - Timing-derived *policy* (for example, a fast floor that denies admission)
   would be a new guard on the accept transition. It needs a model extension
   before it ships.
 
-## Magic-link model
+## Model sketches
 
-Abstract states:
-
-```text
-Challenge = Absent | Issued | Consumed | Expired
-Flow      = Absent | Started | Expired
-Session   = Absent | Active | Revoked | Expired
-User      = Missing | Enabled | Disabled
-```
-
-Actions: RequestLink, Landing, Confirm, AtomicCommit, AmbiguousRetry,
-DisableUser, RevokeSession, AdvanceTime.
-
-The model must include these cases:
-
-1. Competing confirmations.
-2. Disable before commit.
-3. Session-ID conflict.
-4. Ambiguous transaction result.
-5. Replay.
-6. Expiry boundaries.
-
-## PoW model
-
-Abstract states:
-
-```text
-Challenge = Absent | Issued | Expired
-Proof     = Absent | Verified | Spent
-Admission = Rejected | Accepted
-```
-
-The policy rule:
-
-```text
-EffectiveDifficulty(country) =
-    Max(ProductionFloor, BaseDifficulty, CountryRequired(country))
-```
-
-Actions: mint, country policy update, solve, verify, consume proof, replay,
-advance time.
-
-POW-INV-002: an active flow's difficulty must not decrease after any policy or
-country transition.
+[../spec/tla/README.md](../spec/tla/README.md) describes each model and how to
+run it. The [claims table](#claims-to-model) maps each invariant to its model.
+The `effective_difficulty` rule is in
+[onboarding.md](onboarding.md#pow-decisions).
 
 ## Deterministic simulation tests
 
-Add a model-based harness after the state models stabilize. It should use an
-injected clock, entropy, scheduler, and repository failpoints.
+Done: the `model_*_tests` in
+`crates/datadeft-magic-link-aws/src/fake` are the simulation harness. They
+drive the real services and the fake store through random operation
+sequences. A plain-Rust reference model checks every step. The harness injects
+the clock, the entropy, and repository faults.
 
-It should generate these cases:
+The harness covers these cases:
 
 - concurrent confirmations and replays
-- failures before and after repository operations
-- ambiguous transaction responses with exact retry
+- failures before and after admin repository operations
+- ambiguous commit results with exact retry
 - user disable and session revoke races
 - expiry at each boundary
-- proof replay and country difficulty changes
+- rolling storage-key rotation
 
-The harness compares implementation state with a small reference state
-machine. Live DynamoDB tests remain necessary.
+These items remain:
+
+- PoW proof replay and budget sequences. No model test drives
+  `datadeft-pow-axum`.
+- Country difficulty changes. The repository has no country policy yet.
+- Seeded fault schedules for the DynamoDB adapter. The harness uses the fake
+  store only, so live DynamoDB tests remain necessary.
 
 ## Fuzzing and bounded checks
 
 `fuzz/` has 11 cargo-fuzz targets for the untrusted-input parsers.
 `mise run fuzz` runs each for 60 s with `-max_len=10000`. It needs nightly Rust
-and `cargo install cargo-fuzz`, and is not part of `mise run verify`. The Kani
-and Creusot items are planned.
+and `cargo install cargo-fuzz`. It is not part of `mise run verify`.
 
-Targets:
+Fuzz targets in `fuzz/fuzz_targets`:
+
+| Target | Input under test |
+| --- | --- |
+| `base62_decode` | Base62 decode and re-encode round trip |
+| `bound_cookie_parse` | Bound cookie and cookie wrapper parse |
+| `branca_decode` | Branca decode |
+| `confirm_cookie` | Magic-link confirm cookie verify |
+| `cookie_header` | `Cookie` header value selection |
+| `magic_link_token` | Magic-link token grammar |
+| `normalized_email` | `NormalizedEmail` normalize and validate |
+| `pow_proof_cookie` | PoW proof cookie verify |
+| `pow_solution` | PoW solution verify |
+| `request_json` | Axum magic-link request JSON parse |
+| `session_body` | Session cookie body encode and decode |
+
+Planned bounded checks:
 
 - Kani for country difficulty monotonicity.
 - Kani for expiry arithmetic.
 - Kani for fixed flow-body framing.
 - Kani for pure transition helpers.
-- Cargo Fuzz for magic-link grammar.
-- Cargo Fuzz for Branca and Base62 decode.
-- Cargo Fuzz for flow and session cookie wrappers.
-- Cargo Fuzz for Axum parsers.
-- Cargo Fuzz for DynamoDB item decoding.
 - Creusot only for small pure functions.
 - Tamarin later, if protocol ambiguity appears.
+- Cargo Fuzz for DynamoDB item decoding (no target yet).
 
 ## Proof boundaries
 
@@ -216,9 +193,11 @@ Until those artifacts exist, call the work planned assurance.
 
 ## Planned deliverables
 
+MVP-020 (TLA+ models) is done. CI checks every model and mutant in
+`mise run verify`.
+
 | ID | Deliverable | Done when |
 | --- | --- | --- |
-| MVP-020 | TLA+ magic-link and PoW models | CI checks all listed invariants. |
 | MVP-021 | Simulation and fault schedules | Seeded schedules cover failure transitions. |
 | MVP-022 | Fuzz and Kani targets | CI keeps corpus and proof reports. |
 | MVP-023 | Claim evidence report | Each claim links code, tests, models, and risk. |

@@ -1,14 +1,14 @@
 # Registry releases
 
 All seven Rust crates and the npm client share one version and one release PR.
-The registries hold `0.4.0`, `0.4.1` and `0.5.0`. The project publishes no
+For the published versions, see crates.io and npm. The project publishes no
 release-candidate or other pre-release versions. Consumers test an unpublished
 version through a git ref. Never move a release tag.
 
-CI publishing is not enabled yet: the repository variable
-`REGISTRY_PUBLISH_ENABLED` is unset and the `registry-release` environment
-does not exist. The release workflow therefore runs `verify` and skips both
-upload jobs. Until a maintainer completes the setup below, publish by hand
+CI publishing is not enabled yet. The repository variable
+`REGISTRY_PUBLISH_ENABLED` is unset. The `registry-release` environment does
+not exist. The release workflow therefore runs `verify` and skips both upload
+jobs. Until a maintainer completes the setup below, publish by hand
 ([Manual publish](#manual-publish)).
 
 ## Manual publish
@@ -50,77 +50,40 @@ manual npm publish carries no provenance.
 
 ## Approval and one-time setup (maintainers)
 
-The first publication (`0.4.0`) is done. The remaining steps enable CI
-publishing. Before you set `REGISTRY_PUBLISH_ENABLED`, do these steps:
+The package names, the MIT license, and the npm `datadeft` organization exist
+since `0.4.0`. The remaining steps enable CI publishing. Before you set
+`REGISTRY_PUBLISH_ENABLED`, do these steps:
 
-1. Confirm the seven `datadeft-*` names below and `@datadeft/protect-client`.
-   The license is MIT (approved 2026-10-08).
-2. Get **approval from two maintainers** on the implementation PR and on every
+1. Get **approval from two maintainers** on the implementation PR and on every
    release PR. Configure branch protection for two approvals. Verify the
    identities before you merge. CODEOWNERS does not replace this rule. A
    two-reviewer environment also does not replace it, because an environment
    accepts any one of its reviewers.
-3. Create the npm `datadeft` organization and add the maintainers. Enable 2FA
-   for the account and for the organization. Give the maintainers publishing
-   rights for the scope. On GitHub and crates.io, use maintainer accounts with
-   2FA where the service supports it.
-4. Keep the source repository public. **npm provenance requires public
+2. Keep 2FA enabled for the npm account and for the `datadeft` organization.
+   Give the maintainers publishing rights for the scope. On GitHub and
+   crates.io, use maintainer accounts with 2FA where the service supports it.
+3. Keep the source repository public. **npm provenance requires public
    source**, even for a public package. To publish from a different public
    repository, update the package and workflow identity to match. A crate
    publication already makes its bundled source public.
-5. In the repository Actions settings, let Actions create PRs. Keep the
+4. In the repository Actions settings, let Actions create PRs. Keep the
    built-in `GITHUB_TOKEN`. Do not put a PAT, an npm token, or a crates.io
    token in repository secrets. For PRs that a bot creates, a maintainer may
    have to select **Approve workflows to run** before CI starts.
-6. Create the GitHub environment **`registry-release`**. Require maintainer
+5. Create the GitHub environment **`registry-release`**. Require maintainer
    review. Where GitHub supports it, prevent self-review. Restrict deployment
    to protected `v*` tags. Protect release tags against unauthorized creation,
    deletion, and replacement. Leave the repository variable
-   **`REGISTRY_PUBLISH_ENABLED` unset** until the bootstrap and the sign-offs
-   are complete.
+   **`REGISTRY_PUBLISH_ENABLED` unset** until the sign-offs are complete.
 
-## First-publish bootstrap is a separate, manual approval
+## First-publish bootstrap
 
-The maintainers did this bootstrap for `0.4.0`. It applies again only to a new
-package name.
-
-You cannot currently do a first publication with OIDC only. Both registries
-require the package to exist before you can configure a trusted publisher.
-crates.io also requires an API token for the first upload. See the
-[crates.io prerequisites](https://crates.io/docs/trusted-publishing) and
-[npm trust prerequisites](https://docs.npmjs.com/cli/v11/commands/npm-trust/).
-
-When the approved release has its tag, a maintainer bootstraps the real,
-reviewed packages from that exact tag. Do not create placeholder packages. Do
-not put bootstrap credentials in CI.
-
-1. Get a local, narrowly scoped, short-lived crates.io credential.
-2. Use an interactive npm login with 2FA.
-3. Run the checks below.
-4. Publish the crates one at a time in this order. Do a dry run of each crate
-   immediately before its upload. Each published crate becomes resolvable for
-   the next crate.
-   1. `datadeft-auth-token-core`
-   2. `datadeft-pow-core`
-   3. `datadeft-pow-axum`
-   4. `datadeft-magic-link-core`
-   5. `datadeft-magic-link-service`
-   6. `datadeft-magic-link-aws`
-   7. `datadeft-magic-link-axum`
-5. From the same tag, build and pack the npm client.
-6. Publish the npm client interactively as public.
-7. When you are done, revoke the local bootstrap credential.
-
-`datadeft-magic-link-aws` comes before `datadeft-magic-link-axum` because the
-documentation tests of the Axum crate use the SDK-free fakes of the AWS crate.
-The example application stays `publish = false`. `scripts/registry-release.ts`
-holds the authoritative order.
-
-A local bootstrap cannot carry GitHub OIDC provenance. If provenance is
-mandatory on the very first npm version, stop and approve a separate bootstrap
-design. Do not silently remove `--provenance` from CI. Later releases use the
-prepared OIDC/provenance workflow. Registry versions are immutable. Never rerun
-automated publication for a version that is already uploaded.
+Do a bootstrap only for a new package name. Both registries need the package
+to exist before you can configure OIDC trusted publishing. A maintainer
+publishes the reviewed package locally from the release tag. Use the order in
+`scripts/registry-release.ts` and the steps in
+[Manual publish](#manual-publish). Do not create placeholder packages. Do not
+put bootstrap credentials in CI. Do not remove `--provenance` from CI.
 
 ## Registry trusted-publisher configuration
 
@@ -151,6 +114,15 @@ verify the setup. This variable is a non-secret opt-in switch, not a
 credential. The environment stays the human approval gate for uploads.
 
 ## Verification and release flow
+
+Before you publish, make sure that these conditions are true:
+
+1. The provenance audit passed.
+2. The public API review passed.
+3. The docs exist and the examples compile.
+4. The dependency and license audits (`cargo deny check`) passed.
+5. The archive verification (`package-crates`) passed for every crate.
+6. Two maintainers approved the release PR.
 
 On a clean, committed checkout, run these tasks:
 
@@ -219,13 +191,6 @@ automatically. A manual workflow dispatch must select the exact release tag.
 Branch dispatches do not publish.
 
 ## Public-source review
-
-The publication review covered `docs/security.md`. The file contains security
-policy, architecture, synthetic examples, and placeholder key fields. The
-review found no production secret, credential, cookie capture, or customer
-data. The design disclosure is intentional, because source secrecy is not a
-security boundary. This review does not replace the separate security review
-or the required provenance sign-off.
 
 Rust tarballs allow only sources, tests (including deterministic vectors),
 README, and license texts. They also allow Cargo-generated metadata and

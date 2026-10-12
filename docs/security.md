@@ -103,8 +103,9 @@ Configuration validation refuses:
 - duplicate tags
 - tags other than `EU` or ISO user-assigned codes (`XX` and `XK` excluded)
 
-A request country of `EU` or a user-assigned code pins to nothing under every
-policy. The library treats it as missing, so it fails closed.
+A request country of `EU` or a user-assigned code other than `XX` and `XK`
+pins to nothing under every policy. The library treats it as missing, so it
+fails closed. The library pins `XX` and `XK` like any other country.
 
 ## Bearer secret entropy
 
@@ -143,38 +144,28 @@ other form and refuse the 0.4 underscore form.
 
 The library validates ids on input and redacts them in `Debug`. Keyed lookup
 values (`emh_`, `mlh_`, `mlv_`, `sih_`, `rlh_`) are storage material, not
-ids, and keep their underscore form.
+ids, and keep their underscore form. Per-solve budget counters use `lt_`, an
+unkeyed hash that key rotation does not change (see
+[Proof-of-work requirements](#proof-of-work-requirements)).
 
 ## TTL baseline
 
 Use these values unless the consuming app configures stricter ones.
 
-| Config | Value |
-| --- | ---: |
-| `magic_link_ttl` | 10 minutes |
-| `magic_link_flow_ttl` | 5 minutes |
-| `pow_challenge_ttl` | 2 minutes |
-| `pow_proof_cookie_ttl` | 3 hours default, 24-hour ceiling |
-| `session_idle_ttl` | 24 hours |
-| `session_absolute_ttl` | 30 days |
-| `magic_link_cleanup_grace` | 24 hours after expiry |
-
-### Token and cookie inventory
-
-| Item | Secret | TTL |
-| --- | --- | ---: |
-| Magic-link token | Yes | 10 minutes |
-| Magic-link selector | Lookup only | 10 minutes |
-| Magic-link verifier | Yes | 10 minutes |
-| Confirm cookie | Sensitive | 5 minutes |
-| PoW challenge token | MACed | 2 minutes |
-| PoW solution | No long-term secret | One request |
-| Proof cookie (`dd_pow`) | Sensitive | 3 hours (default) |
-| Session ID or token | Yes | Session TTL |
-| Session cookie | Yes | 24 hours idle, 30 days absolute |
-| Key ID | No | No independent TTL |
-| HMAC lookup value | Sensitive | Cleanup TTL only |
-| Rate-limit key | Sensitive | Window-specific |
+| Item | Secrecy | TTL or limit | Config |
+| --- | --- | --- | --- |
+| Magic-link token | Yes | 10 minutes | `MagicLinkServiceConfig::magic_link_ttl_secs` |
+| Magic-link selector | Lookup only | 10 minutes | `magic_link_ttl_secs` |
+| Magic-link verifier | Yes | 10 minutes | `magic_link_ttl_secs` |
+| Confirm cookie (flow state) | Sensitive | 5 minutes | `MagicLinkServiceConfig::magic_link_flow_ttl_secs` |
+| PoW challenge token | MACed | 2 minutes | `PowPolicy::new` (`challenge_max_age_secs`) |
+| PoW solution | No long-term secret | One request | None |
+| Proof cookie (`dd_pow`) | Sensitive | 3 hours default, 24-hour ceiling | `PowProofCookieConfig::secure` (`ttl_secs`) |
+| Session ID or token | Yes | Session TTL | `session_idle_secs`, `session_absolute_secs` |
+| Session cookie | Yes | 24 hours idle, 30 days absolute | `MagicLinkServiceConfig::session_idle_secs`, `session_absolute_secs` |
+| Key ID | No | No independent TTL | None |
+| HMAC lookup value | Sensitive | Cleanup TTL only: 24 hours after expiry | `DynamoDbAuthStore::with_cleanup_grace_secs` |
+| Rate-limit key | Sensitive | Window-specific | `RateLimitConfig` |
 
 ### Lifetime rules
 
@@ -203,7 +194,7 @@ attribute) only on rows with no audit value:
 | User profile, email lookup | Kept. Disabling is a flag, never a delete |
 | Session, per-user session index | Kept. Expiry and revocation are fields |
 | Admin audit events | Kept. Append-only |
-| Magic-link challenge | TTL: expiry plus `magic_link_cleanup_grace` |
+| Magic-link challenge | TTL: expiry plus cleanup grace (`with_cleanup_grace_secs`) |
 | Rate-limit counter | TTL: window end plus cleanup grace |
 | Lifetime counter (per-solve budget) | TTL: the expiry fixed at first use plus cleanup grace |
 
@@ -291,10 +282,6 @@ fixed in 0.5.0):
 - The library, not IAM, enforces "append-only". The admin role needs
   `TransactWriteItems`, which can also overwrite rows. For tamper evidence,
   enable DynamoDB point-in-time recovery or stream exports.
-- If you upgrade from a version that set `ttl` on session rows, run
-  `DynamoDbAuthStore::remove_legacy_session_ttl` once. This stops TTL from
-  deleting retained sessions. Admin listings skip index rows whose session
-  row is gone.
 - Admin ids and reasons have length caps and must not contain control
   characters. `Debug` redacts the reason.
 
@@ -317,7 +304,8 @@ fixed in 0.5.0):
   Per-IP and global request limits at the edge bound that cost. The library
   does not bound it.
 - Budget counters (`RateLimiter::check_lifetime_limit`) use an unkeyed,
-  domain-separated SHA-256 of the key as their storage key. Thus storage-key
+  domain-separated SHA-256 of the key as their storage key (`lt_` prefix,
+  `datadeft-magic-link-aws` `hmac_key.rs`). Thus storage-key
   rotation never splits or resets a budget. For this reason, lifetime keys
   must carry no personal data. The PoW budget keys by the random solve id.
 - The PoW layer owns the proof-cookie lifecycle. The magic-link flow does not
@@ -404,8 +392,8 @@ secrets or PII:
 
 ## Data at rest
 
-- The library never stores raw tokens, selectors or verifiers. It stores only
-  keyed HMACs and verifier hashes. HMACs keep raw selectors, verifiers,
+- The library stores only keyed HMACs and verifier hashes (see
+  [Token design](#token-design)). HMACs keep raw selectors, verifiers,
   session IDs and emails out of record keys.
 - The library stores the normalized email as a readable record attribute.
   The app needs it to send mail and to identify the account. The atomic
@@ -459,8 +447,9 @@ Enumeration-resistant flows need bounded dummy work:
 - Use at least 256 bits for symmetric keys and peppers.
 - Validate and domain-separate key IDs. Bind key derivation to purpose and
   key ID.
-- Mint with active keys. Use verify-only keys for migration. Reject retired,
-  disabled and unknown keys.
+- Mint with active keys only. Never mint with verify-only keys. Use them for
+  migration only.
+- Fail closed on unknown, missing, retired, disabled or malformed key IDs.
 - Test active-key minting, verify-only validation, and retired-key and
   unknown-key rejection.
 
@@ -495,6 +484,10 @@ pub struct SecretRef {
 - Map `AWSCURRENT` to active material by explicit config. Map `AWSPREVIOUS`
   to verify-only material only when the config enables it. Never load
   retired keys.
+- If the previous reference is the `AWSPREVIOUS` stage of the active secret,
+  the loader skips it when it is missing. Before the first rotation, that
+  stage does not exist. A previous reference to a different secret name must
+  exist. Otherwise, loading fails, so a typo cannot pass.
 - Redact secret names, ARNs, version IDs, version stages and secret payloads
   in `Debug`.
 - Zeroize secret payloads where practical.
@@ -531,6 +524,10 @@ proof cookie root.
 - Every field is required. The loader ignores unknown fields, so an app can
   keep its own fields in the document. Give these fields names that cannot
   collide with future library fields (for example, an `app_` prefix).
+- To read app fields, call `fetch_auth_secret_documents`. It fetches the
+  documents once and returns `AuthSecretDocuments` with the raw JSON. Read
+  your fields, then call `load()`. `load()` ignores the app fields.
+  `resolve_auth_secrets` does both steps when the app has no own fields.
 - `mint_until_unix` sets the active mint window. `verify_until_unix` sets the
   verify window. It must cover the longest purpose lifetime.
 - Each `*_b64` value must decode to 32 bytes. Generate each value
@@ -557,21 +554,17 @@ lifetime after they stop minting.
 | Secret class | Active rotation | Verify-only retention |
 | --- | ---: | ---: |
 | Session cookie keys | 90 days | 31 days |
-| Branca session token keys | 90 days | 31 days |
 | Magic-link lookup HMAC key | 90 days | Link TTL plus 24 hours |
 | Storage HMAC key | 90 days | 31 days, and until `rekey_email_lookups` runs |
-| PoW signing keys | 90 days | Needs challenge TTL plus 24 hours. In practice, it lasts while the app loads the previous document (see below). |
-| Rate-limit HMAC keys | 90 days | Longest window plus 24 hours |
+| PoW signing keys | 90 days | Challenge TTL plus 24 hours (see below) |
 
-- `AWSCURRENT` is active material. `AWSPREVIOUS` is verify-only material when
-  the config enables it.
-- Never mint with verify-only keys. Never mint HMAC lookup values with old
-  keys. Use previous HMAC keys only as a read fallback during rotation.
-- Do not rotate session keys faster than their verify retention. Keep
-  previous session keys for at least 31 days.
+Rate-limit keys have no own secret. The storage HMAC key keys them (`rlh_`).
+
+- Never mint HMAC lookup values with old keys. Use previous HMAC keys only as
+  a read fallback during rotation.
+- Do not rotate session keys faster than their verify retention.
 - Reissue cookies with active keys after normal authorization checks.
 - Retire magic-link and PoW keys sooner than session keys.
-- Fail closed on unknown, missing, retired, disabled or malformed key IDs.
 
 All keys share one document. The previous PoW keys (challenge secret and
 proof cookie root) stay verifiable while the app loads the previous
@@ -622,7 +615,8 @@ best-effort. Per-solve lifetime counters do not restart.
 Cookie helpers use safe settings by default:
 
 - Lower `snake_case` names. v1 does not require `__Host-` and `__Secure-`.
-  Review the `__Host-` defaults again before public release.
+  Open for 0.6: the `__Host-` prefix for the session cookie. The confirm
+  cookie cannot use it because it needs a narrow path.
 - `HttpOnly` for auth cookies.
 - `Secure` outside local development.
 - Conservative `SameSite`.
@@ -689,10 +683,12 @@ link or complete a login:
 3. The flow state binds the selector, verifier proof, account, expiry and an
    independent confirmation nonce.
 4. The page identifies the account and asks the user to click a button. It
-   exposes no raw token material. By default the service masks the account
-   (`AccountDisplay::Masked`, for example `i•••••@datadeft.eu`). Anyone who
-   holds the link sees this value, so the full address never crosses the
-   network. `AccountDisplay::Full` is an explicit opt-in.
+   exposes no raw token material. `AccountDisplay` sets how the page and the
+   flow-state route show the account. The default, `AccountDisplay::Masked`,
+   shows the first character, five bullets and the full domain (for example
+   `i•••••@datadeft.eu`). Anyone who holds the link sees this value, so the
+   full address never crosses the network. `AccountDisplay::Full` is an
+   explicit opt-in.
 5. A same-origin `POST` validates the bound flow state. It commits token
    consumption and session creation atomically. Then it clears temporary
    state and redirects to a clean URL.
@@ -721,9 +717,8 @@ Limits of the design:
   one-time consumption and generic failures stop active scanners that submit
   forms.
 - The confirmation page mitigates login CSRF because it shows the account.
-  The masked form keeps the first character and the full domain, which is
-  enough for the user to recognize the account. If the app needs a stronger
-  mode, offer one.
+  The masked form (step 4) is enough for the user to recognize the account.
+  If the app needs a stronger mode, offer one.
 
 ### Scanner-safe response contract
 
@@ -767,7 +762,8 @@ token also never reaches JavaScript:
      the landing
    - has the same per-selector throttle as the landing, and never writes
    - answers `{ "usable": true, "account": …, "confirmation": … }` for a
-     usable link. `account` follows `AccountDisplay` (masked by default)
+     usable link. `account` follows `AccountDisplay` (see
+     [Magic-link URL handling](#magic-link-url-handling))
    - answers `{ "usable": false }` and clears the cookie for anything
      unusable
    - answers the constant `503` on an outage
@@ -832,7 +828,8 @@ Rules:
   route sends the security headers of the landing on every answer. In one
   route, every `503` is byte-identical, so no reason is distinguishable.
 - Log and count the internal reason. Never send it. The typed reasons are
-  `MagicLinkHttpError`, `ProofRejection` and `SessionRejectionKind`. The
+  `MagicLinkHttpError`, `ProofRejection`, `PowFlowError` and
+  `SessionRejectionKind`. The
   request endpoint always answers `200` in public. Its typed reason is
   `RequestMagicLinkOutcome` (`Sent` or `Throttled(RequestThrottle)`). Each
   type has a stable `reason()` label for metrics. The label contains no

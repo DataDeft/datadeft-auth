@@ -19,12 +19,12 @@ A Rust API service calls these libraries from its own HTTP handlers.
 The public crates and the npm package contain no application-specific code:
 
 - no application branding, domains, cookie names, issuers, or audiences
-- no branded email templates or application package names; the application
-  supplies the subject, text, and HTML, and the SES sender sends only that
-  app-provided content
-- no country detection or CDN header logic (country pinning policy,
-  `CountryPolicy`, is library-owned; the country value comes from the
-  application's trusted edge)
+- no branded email templates or application package names. The application
+  supplies the subject, text, and HTML. The SES sender sends only that
+  app-provided content.
+- no country detection or CDN header logic. The library owns the country
+  pinning policy (`CountryPolicy`). The country value comes from the trusted
+  edge of the application.
 - no audit/WAL event emission
 
 The only login path is scanner-safe: a `GET` landing never consumes the link,
@@ -35,7 +35,7 @@ and a same-origin `POST` confirms it. There is no raw consume alternative. See
 
 | Crate | Purpose |
 | --- | --- |
-| `datadeft-auth-token-core` | Branca, base62, keyring, session-cookie, and PoW-cookie primitives. All names, TTLs, and keys are configurable. |
+| `datadeft-auth-token-core` | Generic Branca, base62, keyring, and bound-cookie primitives. The session cookie purpose lives in `datadeft-magic-link-service`. The PoW proof cookie purpose lives in `datadeft-pow-core`. |
 | `datadeft-magic-link-core` | IO-free token grammar, selector/verifier types, and verifier hashes. Stores only keyed lookup material. |
 | `datadeft-magic-link-service` | Framework-neutral request, scanner-safe confirmation, and server-revocable sessions. Depends on traits only. |
 | `datadeft-magic-link-axum` | Optional Axum helpers: request guards, same-origin confirmation, cookies, safe error mapping. Does not force a router. |
@@ -44,14 +44,14 @@ and a same-origin `POST` confirms it. There is no raw consume alternative. See
 | `datadeft-pow-axum` | Optional Axum PoW endpoints, proof cookie, and per-solve admission (`admit_proof`). |
 | `@datadeft/protect-client` | Optional browser PoW client (`packages/dd-protect-client`). Matches the `datadeft-pow-core` vectors exactly. |
 
-The adapters are siblings; neither depends on the other. See
+The adapters are siblings. Neither adapter depends on the other. See
 [architecture.md](docs/architecture.md) for the dependency graph.
 
 ## Install
 
-Rust 1.88 or newer is required. The common case is Axum plus DynamoDB. The
-service crate re-exports the keyring and lookup-key types, so you do not
-depend on the core crates directly.
+This is the single install block for the libraries. You need Rust 1.88 or
+newer. The common case is Axum plus DynamoDB. The service crate re-exports
+the keyring and lookup-key types.
 
 ```toml
 [dependencies]
@@ -60,7 +60,9 @@ datadeft-magic-link-axum    = "0.5"
 datadeft-magic-link-aws     = { version = "0.5", features = ["aws"] }
 datadeft-pow-axum           = "0.5"
 datadeft-pow-core           = "0.5"
-# Only when you use their items directly:
+# Optional core crates. Add them only when you use their items directly
+# (for example, you implement KeyPurpose or read token and email types
+# that are not re-exported):
 datadeft-auth-token-core    = "0.5"
 datadeft-magic-link-core    = "0.5"
 ```
@@ -68,6 +70,11 @@ datadeft-magic-link-core    = "0.5"
 ```sh
 bun add @datadeft/protect-client
 ```
+
+Pin the crate version from crates.io and commit your lockfiles. To test an
+unpublished commit, replace each version with
+`{ git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }`.
+Keep `features`.
 
 For tests, use `datadeft-magic-link-aws` **without** the `aws` feature. It is
 SDK-free and provides `FakeDynamoDbAuthStore` and `FakeMagicLinkOutbox`. For

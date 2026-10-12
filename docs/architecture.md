@@ -61,7 +61,8 @@ Landing (`GET`):
 11. It mints a five-minute confirm cookie. The cookie binds the selector,
     verifier proof, account, expiry, and nonce.
 12. It never consumes the challenge.
-13. The page shows the account and asks for a same-origin `POST`.
+13. The page shows the account and asks for a same-origin `POST`. The account
+    is masked by default (`AccountDisplay`).
 
 Confirm (`POST`):
 
@@ -87,17 +88,8 @@ or environment variables. It:
 3. Verifies freshness, minimum difficulty, and SHA-256 work.
 4. Returns a stable replay identifier.
 
-The consuming application owns country-aware PoW policy. Country policy can
-only increase work:
-
-```text
-effective_difficulty = max(
-    production_floor,
-    configured_base_difficulty,
-    country_required_difficulty
-)
-```
-
+The consuming application owns country-aware PoW policy. The
+`effective_difficulty` rule is in [PoW decisions](onboarding.md#pow-decisions).
 The repository does not yet include a country-to-difficulty policy.
 
 The per-solve budget (`admit_proof`) bounds reuse of a proof. The example wires

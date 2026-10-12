@@ -3,7 +3,9 @@
 **Status:** pre-1.0. The latest version on crates.io and npm is `0.5.0`.
 
 To integrate the libraries into your application, follow
-[integration.md](integration.md).
+[integration.md](integration.md) step by step. See
+[architecture.md](architecture.md) for the flows and
+[formal-methods.md](formal-methods.md) for future assurance work.
 
 ## Can a customer use this today?
 
@@ -49,7 +51,7 @@ A magic-link deployment is production-ready when the app completes this list.
 21. Follow the normalized-email storage controls in [security.md](security.md).
 22. Run `mise run verify`.
 23. Run the integration tests of the consuming app.
-24. Pin an immutable commit or tag.
+24. Pin the crate version from crates.io and commit your lockfiles.
 
 The library ships PoW admission. The project recommends it. Only
 country-aware difficulty (MVP-013) is open.
@@ -58,25 +60,17 @@ country-aware difficulty (MVP-013) is open.
 
 | ID | Priority | Status | Work |
 | --- | --- | --- | --- |
-| MVP-001 | P0 | Done | Keep the fake-backed Axum example runnable. |
 | MVP-002 | P0 | Per deployment | Attest token-safe logging. |
 | MVP-003 | P0 | AWS users | Validate live DynamoDB behavior. |
-| MVP-004 | P0 | Done | Published to crates.io and npm since `0.4.0` ([releasing.md](releasing.md)). |
-| MVP-005 | P1 | Done | Trait futures require `+ Send`. The traits use static dispatch only (no `dyn`). |
 | MVP-006 | P1 | Decided | The project accepts inline SES delivery. Implement `MagicLinkOutbox` against a durable queue only if a deployment needs it. |
 | MVP-007 | P1 | Decided | Store the normalized email at rest. DynamoDB KMS and IAM protect it. Do not add app-side field encryption. |
-| MVP-010 | PoW | Done | `@datadeft/protect-client` (`packages/dd-protect-client`) ships the worker and client, vector-tested against `datadeft-pow-core`. |
-| MVP-011 | PoW | Ready | Add the `datadeft-pow-axum` challenge and validate glue to routes. |
-| MVP-012 | PoW | Done | Ship the `dd_pow` proof cookie (`datadeft-pow-core`, `datadeft-pow-axum`). The cookie is stateless and reusable within its TTL. The per-solve budget (`admit_proof`) limits reuse. |
 | MVP-013 | PoW | Not ready | Define the trusted country source and difficulty policy. |
-| MVP-014 | P1 | Done | Keep session country as an opportunistic lock. |
-| MVP-020 | Assurance | Done | CI gates the TLA+ models (`verify` job: `mise run spec`, `mise run spec-mutants`). Liveness under fairness needs a checker with `WF` support. |
 | MVP-021 | Assurance | Future | Add simulation and bounded checks. Fuzz targets exist (`mise run fuzz`). |
 | V06-001 | 0.6 | Planned | GDPR erasure (`erase_user`). The model is ready: `spec/tla/Erasure.tla`. |
 | V06-002 | 0.6 | Planned | Optional `aud` claim in session and confirm cookies. |
 | V06-003 | 0.6 | Planned | Locale-keyed confirm pages in redirect landing mode. |
 | V06-004 | 0.6 | Planned | Finer internal reasons for landing and confirm failures (expired, consumed, throttled, wrong verifier). |
-| V06-005 | 0.6 | Planned | Docs: `Referrer-Policy` `strict-origin` compared with `no-referrer`. |
+| V06-005 | 0.6 | Done | Docs: `Referrer-Policy` `strict-origin` compared with `no-referrer` ([security.md](security.md#magic-link-url-handling)). |
 | V06-006 | 0.6 | Planned | Reference log probe in the example (CeleraTax offered theirs). |
 
 ## PoW decisions
@@ -84,7 +78,7 @@ country-aware difficulty (MVP-013) is open.
 Before you implement MVP-013 (country-aware PoW), decide these items. The
 shipped defaults already set the challenge lifetime (2 minutes), the proof
 cookie lifetime (3 hours), and the stateless replay behavior. See
-[security.md](security.md).
+[TTL baseline](security.md#ttl-baseline).
 
 1. Select the trusted country source.
 2. Select the behavior when the country is absent.
@@ -104,19 +98,3 @@ effective_difficulty >= configured_base_difficulty
 country policy may increase difficulty
 country policy must not decrease difficulty
 ```
-
-## Integration order
-
-1. Pin an immutable repository revision.
-2. Connect the service, the Axum helpers, and the fakes.
-3. Start from `examples/axum-magic-link`.
-4. Replace the fakes with the adapters that you select.
-5. Add session authentication.
-6. Add server-side logout.
-7. Complete the logging checks.
-8. Complete the live storage checks.
-9. If you need it, add independent PoW admission.
-10. Run all integration and release checks.
-
-See [architecture.md](architecture.md) for flows and
-[formal-methods.md](formal-methods.md) for future assurance work.

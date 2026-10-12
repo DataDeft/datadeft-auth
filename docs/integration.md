@@ -21,32 +21,12 @@ Do not invent an approach. Follow the example and the trait contracts.
 
 ## Install
 
-You need Rust 1.88 or newer.
-
-```toml
-[dependencies]
-datadeft-pow-core           = "0.5"
-datadeft-magic-link-service = "0.5"
-datadeft-magic-link-axum    = "0.5"
-datadeft-magic-link-aws     = { version = "0.5", features = ["aws"] }
-# Add datadeft-pow-axum = "0.5" for the PoW HTTP helpers.
-# Add these when you use their items directly (for example, you implement
-# KeyPurpose or read token and email types that are not re-exported):
-datadeft-auth-token-core    = "0.5"
-datadeft-magic-link-core    = "0.5"
-```
-
-To test an unpublished commit, replace each version with
-`{ git = "https://github.com/DataDeft/datadeft-auth", rev = "<commit>" }`.
-Keep `features`.
-
-```sh
-bun add @datadeft/protect-client
-```
+Use the dependency block and the git-ref testing note in
+[README.md](../README.md#install). You need Rust 1.88 or newer.
 
 Cargo adds the other core crates as transitive dependencies. The service and
-Axum crates re-export the types that you need. Commit your lockfiles. After
-0.5.0 is on the registries, you need no git credentials and no vendored
+Axum crates re-export the types that you need. Commit your lockfiles. 0.5.0 is
+on crates.io and npm, so you need no git credentials and no vendored
 TypeScript.
 
 To upgrade an existing app, see [Upgrading from 0.4](#upgrading-from-04).
@@ -100,14 +80,15 @@ plus prepared cookie headers. Your application renders the responses.
    the token. Select one mode:
    - **Server-rendered mode:** `magic_link_landing`
      (`begin_magic_link_landing`). Render the account and a same-origin `POST`
-     form.
+     form. The account is masked by default (`AccountDisplay`).
    - **Redirect landing mode:** use it for UIs that you serve as static files.
      Enable it with
      `MagicLinkScannerFlowConfig::with_redirect_landing(page, flow_state)`.
      `magic_link_landing_redirect` answers `303` to `page` for every link
      state. The page sends a `GET` to `flow_state` (`magic_link_flow_state`,
      `read_magic_link_flow_state`) to get `{ usable, account, confirmation }`.
-     Then the page shows the account and posts the confirmation. Obey the
+     Then the page shows the account and posts the confirmation. The account is
+     masked by default (`AccountDisplay`). Obey the
      static page rules in [security.md](security.md#redirect-landing-mode).
 
    Never return the landing that carries the token as JSON for a static page to
@@ -122,11 +103,14 @@ plus prepared cookie headers. Your application renders the responses.
 
 ## Cookies
 
-| Cookie | Purpose | Default lifetime | Path |
-| --- | --- | --- | --- |
-| `dd_session` (session cookie) | logged-in session | 24h idle, 30d absolute | `/` |
-| `dd_auth_confirm` (confirm cookie) | scanner-safe confirmation flow | 5 minutes | `/auth` |
-| `dd_pow` (proof cookie) | proof-of-work admission | 3 hours | `/` |
+| Cookie | Purpose | Path |
+| --- | --- | --- |
+| `dd_session` (session cookie) | logged-in session | `/` |
+| `dd_auth_confirm` (confirm cookie) | scanner-safe confirmation flow | `/auth` |
+| `dd_pow` (proof cookie) | proof-of-work admission | `/` |
+
+For the default lifetime of each cookie, see the
+[TTL baseline](security.md#ttl-baseline).
 
 All three cookies are `HttpOnly`, `Secure` (outside local development),
 `SameSite=Lax`, and host-only.
@@ -191,9 +175,9 @@ On the server, wire `datadeft-pow-axum`:
 2. For `pow/validate`, route a `POST` to `verify_pow_solution`. It returns a
    `PowAdmission`. The `PowAdmission` holds the `dd_pow` `Set-Cookie` header
    and the server-derived `mint_to_verify_ms` solve-timing signal (see
-   [security.md](security.md#solve-timing-signal)). Its `classify_solve` hook
-   can put an app-defined class byte into the cookie. To opt out, pass
-   `|_| None`.
+   [security.md](security.md#solve-timing-signal)). `verify_pow_solution` also
+   takes a `classify_solve` parameter. That function can put an app-defined
+   class byte into the cookie. To opt out, pass `|_| None`.
 3. Gate the magic-link request behind a valid `dd_pow` cookie.
 
 In the browser, bundle the `@datadeft/protect-client/worker` entry into an ES
@@ -247,7 +231,8 @@ On `Err`, return the `ProofRejection` itself:
   retries once. The new solve gets a new budget.
 - A store failure answers the constant `503` (fail closed).
 
-Log `ProofRejection::reason()` internally. Never send it.
+Log `ProofRejection::reason()` and `PowFlowError::reason()` internally. Never
+send them.
 
 ### PoW keys
 
@@ -302,10 +287,6 @@ particular, make sure that:
 - A production-like probe confirms that logs contain no token material.
 - The consuming application tests pass.
 
-Report the changed files, the traits that you implemented, and the
-security-sensitive decisions. Also report the tests that you added and each
-checklist item that you could not complete.
-
 ## Upgrading from 0.4
 
 0.5.0 is a breaking release. The library is pre-1.0 and has no production
@@ -321,6 +302,8 @@ library provides no data migration, and every existing session ends.
   because it carries the session id. Start from an empty table.
 - **Keyed lookup values** (`emh_`, `mlh_`, `mlv_`, `sih_`, `rlh_`) are
   unchanged.
+- **Per-solve budget counters** use new `lt_` ids. An `lt_` id is an unkeyed
+  SHA-256 of the rate-limit key. A storage-key rotation does not change it.
 
 ### Configuration and types
 
@@ -342,20 +325,31 @@ library provides no data migration, and every existing session ends.
   `SesMagicLinkOutbox::with_reply_to` sets Reply-To for every email. Remove
   per-request outboxes.
 - **New config fields:** `MagicLinkServiceConfig` gains `country_policy`
-  (default `CountryPolicy::Exact`) and `locales` (default `None`).
-  `MagicLinkConfigError` gains `InvalidCountryPolicy`. Struct literals and
-  exhaustive matches must add them.
+  (default `CountryPolicy::Exact`), `locales` (default `None`), and
+  `account_display`. `MagicLinkConfigError` gains `InvalidCountryPolicy`.
+  Struct literals and exhaustive matches must add them.
+- **Masked account:** `account_display` defaults to `AccountDisplay::Masked`.
+  The confirm page and the flow-state route show a masked account. To show
+  the full address, set `AccountDisplay::Full`.
 - **Country groups:** `MagicLinkServiceConfig::country_policy` can be
   `CountryPolicy::eu27()`. With this policy, sessions move between EU countries.
   Outside the group, the country match stays exact. Remove edge rewrites of the
   country header. `ValidatedSession::country()` returns the pinned value, which
   is `EU` for a session in the group.
+- **`CountryPolicy::pin` returns `Option<&str>`:** it returns `None` under
+  every policy when the request country is `EU` or an ISO user-assigned code.
+  `XX` and `XK` are exceptions, because they are request values. A `None`
+  counts as a missing country and fails closed.
+- **Group tags:** a group tag must be `EU` or a user-assigned code other than
+  `XX` and `XK`. Two groups cannot share a tag (`DuplicateTag`).
 - **Admin writes are versioned:**
   `AuthAdminRepository::set_user_disabled_audited` takes
   `expected_version: Option<u64>`. Use `None` for an unconditional disable. Use
   `Some(version read)` for an enable. `UserSummary` carries `admin_version`. If
   an enable loses a race, it returns `AdminError::Conflict` and writes nothing.
   Then read again and decide again.
+- **Repeated disable:** a disable of an already-disabled user writes a
+  `DisableUser` audit event and bumps `admin_version`.
 - **Request outcome:** `request_magic_link` returns
   `RequestMagicLinkOutcome::Sent` or `Throttled(RequestThrottle)` instead of a
   unit struct. Count the outcome. The public answer stays the same `200`.
@@ -375,6 +369,13 @@ library provides no data migration, and every existing session ends.
   - 0.5 removes `MagicLinkHttpError::Forbidden`. The library sends no `403`.
   - `reason()` labels use namespaces (`magic_link_*`, `session_*`, `pow_*`).
     Alert on their counts, not on raw `5xx` rates.
+- **Outbox failure:** `MagicLinkServiceError` and `MagicLinkHttpError` gain
+  `OutboxUnavailable`. It answers the same constant `503`, with the reason
+  `magic_link_outbox_unavailable`. Add it to exhaustive matches.
+- **`PowFlowError::reason()`:** `PowFlowError` now has a `reason()` label.
+  Log it internally. Never send it.
+- **Health endpoint:** add a dedicated load-balancer health endpoint. Point
+  health checks at it. A bot flood causes many `503`s by design.
 - **Browser client:** `@datadeft/protect-client` adds `protectedFetch`. On
   `401` + `DD-PoW`, it solves and retries once. On `503`, it uses a backoff
   with equal jitter for repeatable requests. In the frontend, replace status
@@ -435,22 +436,6 @@ library provides no data migration, and every existing session ends.
 - The library ignores a previous storage key that is equal to the current key.
 - `pow_proof_keyring` refuses the session and confirm cookie purposes, so the
   PoW root never keys those cookies.
-
-## Upgrading from the git-tag crates
-
-The crates once had `dd-*` names, and apps used them as git dependencies.
-
-- `dd-<name>` is now `datadeft-<name>`. Imports `dd_<name>` become
-  `datadeft_<name>`. The browser client is now `@datadeft/protect-client`.
-- Replace old git or vendored dependencies with the dependencies in
-  [Install](#install). Update the imports and regenerate the lockfiles. You
-  need Rust 1.88 or newer.
-- No compatibility aliases exist.
-- Cookie names (`dd_pow`, `dd_session`, `dd_auth_confirm`), HMAC/HKDF domains,
-  stored keys, and wire formats are unchanged. Thus you need no session or data
-  migration.
-- 0.3.0 also changes `mint_to_verify_ms` to `Option<u64>` (see
-  `CHANGELOG.md`).
-- `@datadeft/protect-client` now starts a module worker. See the
-  [client README](../packages/dd-protect-client/README.md) for the worker
-  entry.
+- `SameOriginRedirect::parse` refuses a configured same-origin path that has
+  dot segments. This includes plain (`/auth/../x`) and percent-encoded
+  (`/auth/%2e%2e/x`) forms.

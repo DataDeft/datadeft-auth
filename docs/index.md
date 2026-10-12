@@ -11,16 +11,8 @@
 
 ## Libraries
 
-| Library | Purpose |
-| --- | --- |
-| `datadeft-auth-token-core` | Token, keyring, session, and cookie primitives. |
-| `datadeft-magic-link-core` | Magic-link token and HMAC primitives. |
-| `datadeft-magic-link-service` | Request, confirmation, session, and repository logic. |
-| `datadeft-magic-link-axum` | Optional Axum HTTP helpers. |
-| `datadeft-magic-link-aws` | Optional DynamoDB and SES adapters. |
-| `datadeft-pow-core` | Pure PoW challenge mint and verify code. |
-| `datadeft-pow-axum` | Axum PoW endpoints, proof cookie, per-solve admission. |
-| `@datadeft/protect-client` | Browser PoW client (`packages/dd-protect-client`). |
+The [crate table in README.md](../README.md#crates) lists each library and
+its purpose.
 
 ## Contributor documents
 

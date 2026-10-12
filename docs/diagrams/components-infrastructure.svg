@@ -26,5 +26,5 @@
 
   <path d="M205 120H275" class="line"/><path d="M397 210V250" class="line"/><path d="M520 295H610V150" class="line"/><path d="M397 340V390" class="line"/><path d="M520 435H565V290H610" class="line"/><path d="M732 335V385" class="line"/><path d="M855 290H930" class="line"/><path d="M855 300C900 300 900 445 930 445" class="line"/><path d="M930 130H880V430H855" class="line"/><path d="M275 552H230V120H205" class="line"/>
 
-  <text x="42" y="662" class="small">Green = implemented library component · Blue = consuming application responsibility · Purple = infrastructure · Dashed amber = planned/not complete</text>
+  <text x="42" y="662" class="small">Green = implemented library component · Blue = consuming application responsibility · Purple = infrastructure</text>
 </svg>

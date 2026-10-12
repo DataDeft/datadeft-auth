@@ -12,18 +12,9 @@
 
 ## Crate layering
 
-Allowed dependency graph:
-
-```text
-datadeft-auth-token-core     -> no workspace crates
-datadeft-magic-link-core     -> datadeft-auth-token-core
-datadeft-magic-link-service  -> datadeft-magic-link-core, datadeft-auth-token-core
-datadeft-magic-link-axum     -> datadeft-magic-link-service
-datadeft-magic-link-aws      -> datadeft-magic-link-service
-datadeft-pow-core            -> datadeft-auth-token-core
-datadeft-pow-axum            -> datadeft-pow-core, datadeft-auth-token-core
-examples/*                   -> adapter and service crates as needed
-```
+The allowed dependency graph is in
+[architecture.md](architecture.md#components). Dependencies point one way
+only.
 
 Core crates:
 
