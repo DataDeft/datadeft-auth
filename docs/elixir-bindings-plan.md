@@ -1,7 +1,8 @@
 # Proposal: Elixir bindings for datadeft-auth
 
 **Status:** proposed; no implementation until explicit scope approval.
-**Baseline:** Rust 0.5.0; reconcile with the proposed 0.6.0 API before starting.
+**Release alignment:** target the settled Rust 0.6.0 API and use the repository's
+shared release version; reconcile the current 0.5.0 baseline before implementation.
 **This PR:** documentation only. No runtime, API, dependency, version, or security
 behavior changes; design approval does not authorize publication or credentials.
 
@@ -18,8 +19,9 @@ Use a separate Rust process for native crash isolation. Required deployment
 targets are Linux glibc on 64-bit x86_64/AMD64 and ARM64/AArch64.
 
 Deliver the first usable release as high-level magic-link and session workflows,
-backed by the Rust service and application-supplied storage, delivery and limits.
-The Port/async bridge is required infrastructure, not a later optional feature.
+backed by the Rust service and existing DynamoDB storage/limiter adapter.
+Applications configure AWS resources and delivery; email transport remains to be
+confirmed. The Port/async execution path is required infrastructure.
 Include independent high-level PoW operations; callers never assemble crypto steps.
 
 Build in gated packets (section 9), then add a Phoenix example and, separately,
@@ -41,11 +43,15 @@ Reviewer decisions:
       no 32-bit x86. Other platforms are outside the initial deployment matrix.
 - [x] Runtime baseline: Elixir >= 1.16 and OTP >= 26; validate the supported
       version combinations in CI before publishing compatibility claims.
-- [ ] Confirm Hex publishing ownership.
-- [ ] Approve the dependency graph, workspace strategy, and shared release version;
-      decide whether to ship with or after 0.6.0.
-- [ ] Select the first production transactional backend or confirm a behaviours-only
-      release with a fake-backed example and explicit production-adapter requirements.
+- [x] Create a DataDeft-controlled Hex organization, provisionally `datadeft`,
+      to own publishing. Provisioning is pending authenticated maintainer setup,
+      organization-name availability and any applicable Hex plan/billing requirements.
+- [x] Target the settled Rust 0.6.0 API and keep the shared repository release version.
+      This approves release alignment, not publication or implementation start.
+- [x] Production storage: AWS only, using the existing DynamoDB adapter; no
+      Postgres/Ecto or generic Elixir storage-callback API in the initial release.
+- [ ] Confirm email delivery transport; SES is available but not implicitly approved.
+- [ ] Approve the dependency graph and unpublished Cargo workspace member strategy.
 
 ## 2. Architecture and ownership
 
@@ -59,11 +65,12 @@ Any Elixir application (Phoenix optional)
        -> datadeft-magic-link-core
        -> datadeft-pow-core
        -> datadeft-magic-link-service
+       -> datadeft-magic-link-aws (DynamoDB storage and limits)
 ```
 
 Rust owns canonical parsing, AEAD, HKDF/HMAC, constant-time verification,
-freshness and service state transitions. Elixir owns supervision, storage and
-email adapters, HTTP wiring and deployment config. Routes, templates, redirects,
+freshness, service state transitions and AWS storage/limiter IO. Elixir owns
+supervision, HTTP wiring and deployment config; email integration is still open. Routes, templates, redirects,
 consent policy, business authorization and trusted-edge interpretation remain
 application responsibilities. Do not depend on Axum, add AWS/Tokio to core
 crates. The Port adapter owns the executor needed for service futures.
@@ -80,7 +87,7 @@ independently deployed service is required.
 One agent owns `packages/datadeft-auth-elixir/`, including its native crate:
 
 - Mix metadata/lockfile, formatter, mise tasks, README and license.
-- `lib/datadeft_auth.ex`, public config/auth/PoW/error types and behaviours;
+- `lib/datadeft_auth.ex`, public config/auth/PoW/error types;
   private Port/protocol/key/token plumbing.
 - `native/datadeft_auth_port/` with Cargo metadata, executable and Rust modules.
 - Rust tests, ExUnit boundary tests and package/consumer checks.
@@ -89,12 +96,13 @@ Keep entry points decode/delegate/encode and modules small. Existing crates are
 read-only; public API changes need a separate proposal. The orchestrator owns
 root CI/tasks, release tooling and shared docs.
 
-Approve new edges from `datadeft-auth-port` to the three cores and the service
-crate; no reverse edges. Recommend a workspace member with
+Approve new edges from `datadeft-auth-port` to the cores, service and AWS adapter;
+no reverse edges. Recommend a workspace member with
 `publish = false`, inheriting lint/version policy. Rust-only builds need no Erlang;
 Mix integration tests do.
 
-Dependencies: existing cores/service, an adapter-owned async executor, reviewed
+Dependencies: existing cores/service/AWS adapter with its `aws` feature, an
+adapter-owned async executor (Tokio for AWS SDK integration), reviewed
 OS-backed entropy compatible with their `rand_core` API, and small audited
 protocol codecs (proposed JSON with serde on
 Rust and a reviewed Elixir codec). No Rustler/FFI dependency. Phoenix/Plug belong
@@ -110,7 +118,7 @@ workflows, not finalized arities; use validated config and command structs.
 
 | Operation | Consumer-facing contract |
 | --- | --- |
-| Start/configure supervised client | Supply adapters, secret loader and policy; validate key purposes/windows internally; ready only after worker initialization |
+| Start/configure supervised client | Configure AWS resources, secret loading, delivery and policy; validate key purposes/windows internally; ready only after initialization |
 | `Auth.request_magic_link` | Normalize/validate email, enforce consent and keyed limits, persist challenge and enqueue delivery; generic public accepted response |
 | `Auth.begin_confirmation` | Scanner-safe landing: validate/throttle link and prepare short-lived bound flow state/account display, without consuming or creating a session |
 | `Auth.read_confirmation` | Read usable flow state where needed, preserving selector limits and generic failure behavior |
@@ -131,8 +139,8 @@ public responses. Supply a concise end-to-end example of these operations.
 Generic Branca encrypt/decrypt, raw token-part generation, standalone HMAC and
 caller-defined crypto purposes are out of the initial public API. Verification
 is never authorization by decryption alone. PoW admission remains independent
-of magic-link operations and requires the shared budget behaviour, not a local
-counter. Reuse core verification/minting; keep any new admission glue adapter-owned
+of magic-link operations and requires shared DynamoDB-backed lifetime counters,
+not a local counter. Reuse core verification/minting; keep any new admission glue adapter-owned
 and test against the existing contract.
 
 Inject a clock dependency in client config, not timestamps on every public call;
@@ -198,47 +206,45 @@ the adapter; callers do not supply nonces.
   exceptions, snapshots or public errors. Fixtures use synthetic data and
   test-only vectors. Internal fixed reason labels stay out of HTTP responses.
 
-## 5. Required infrastructure: asynchronous service bridge
+## 5. Required infrastructure: Rust service and AWS integration
 
-Existing service traits are generic and return `Send` futures, not object-safe
-trait objects. Keep orchestration in Rust: concrete trait adapters exchange
-bounded callback request/reply frames with supervised Elixir adapters over the
-same Port. A Rust executor drives futures while the protocol loop continues
-processing replies; do not block that loop waiting on callbacks. Keep this
-runtime in the adapter, not core/service crates. Prove:
+Run the existing generic Rust service directly against `DynamoDbAuthStore`,
+reusing its repository, session, keyed limiter and lifetime-counter behavior.
+Do not add Elixir storage callbacks or another storage backend. The Rust process
+owns the AWS SDK clients and executor; keep IO out of core/service crates and
+keep the Port loop responsive while bounded service jobs await AWS.
 
-1. Unique correlation references, authorized responders, immutable context,
-   deadlines, monitored callers and at most one accepted reply.
-2. Bounded queues/jobs/replies; fail closed on overload, death, restart, timeout
-   or malformed replies. Late, duplicate, stale and spoofed replies cannot
-   complete another operation; shutdown has explicit drain/abandon semantics.
-3. Separate operation/callback IDs and owned data; concurrent protocol IO cannot
-   deadlock an operation awaiting an Elixir storage/email reply.
-4. **Timeout is not rollback.** After dispatching an atomic commit, preserve the
-   identical command/attempt ID for reconciliation. Do not regenerate entropy
-   or replan while its outcome is ambiguous. Prove durable recovery across
-   worker/process restarts or block production release.
+Use deployment roles and the supported AWS credential chain, not embedded keys
+or per-call credentials. Apply least-privilege IAM, explicit resource/region
+configuration, provider encryption and token-safe diagnostics. Reuse supported
+Secrets Manager loading where configured; keyrings remain loaded inputs to cores.
+Email transport is a separate pending choice: SES can reuse the existing outbox;
+another choice needs its own bounded delivery design, not a storage bridge.
 
-Elixir behaviours mirror `MagicLinkRepository`,
-`MagicLinkAuthenticationRepository`, `SessionRepository`, `RateLimiter`,
-`MagicLinkOutbox` and `Clock`; a proof-budget behaviour mirrors `ProofBudget`
-for independent PoW admission. Use validated typed values/bounded replies, never
-raw verifiers. The outbox must receive—and redact—the delivery link. Storage
-adapters apply existing HMAC keying to IDs, email and limiter values.
+Prove lifecycle and transaction safety:
 
-Preserve the atomic repository contract: consume the expected unexpired link,
-validate immutable account linkage/consent, and create the session in one
-transaction. Confirmed conflicts may replan with a new attempt ID; ambiguous
-outcomes permit only identical-command/ID retries. No read-modify-write consume.
+1. Correlate bounded jobs/replies with unique IDs, deadlines and monitored callers;
+   fail closed on overload/death/restart. Ignore stale/duplicate replies and
+   define shutdown/drain behavior. AWS waits must not stall protocol processing.
+2. **Timeout is not rollback.** Once a commit is dispatched, preserve the identical
+   command/attempt ID for reconciliation. Do not generate entropy or replan while
+   its result is ambiguous. Prove durable recovery across Rust/BEAM restarts or
+   block production release; never blindly retry the public login operation.
+3. Consume the expected unexpired link, validate immutable account linkage/consent
+   and create the session in one atomic transaction. Confirmed conflicts may
+   replan with new attempt IDs; ambiguous outcomes permit only identical retries.
+4. Retain existing storage HMAC keying, strongly consistent auth reads,
+   expiry/revocation checks, shared counters and rotation behavior. No raw
+   verifier reaches storage; outbox delivery must redact its bearer link.
 
-Require shared transactional-backend conformance tests. Fakes are not production
-storage; Ecto/Postgres, DynamoDB or another first-party backend needs separate
-ownership/security review and is not implicitly included.
+Use shipped SDK-free fakes for fast end-to-end tests and the existing DynamoDB
+Local suite for real transaction, contention, retry and limiter coverage. Prove
+multi-node lifetime PoW admission through DynamoDB; no node-local substitute.
+Document provisioning/permissions and distinguish fake-backed examples from
+production deployments.
 
-These behaviours are required for the first high-level release, not deferred
-until after a primitives release. Rust retains country policy,
-locale/consent handling and account masking. Admin and 0.6 erasure need explicit
-scope approval before claiming full parity.
+Rust retains country policy, locale/consent and account masking. Admin and erasure
+are deferred; do not claim full Rust API parity.
 
 ## 6. Phoenix example only
 
@@ -289,12 +295,18 @@ removing repo-relative paths in a temporary packaging tree for registry builds.
 Verify the unpacked archive in isolation; never mutate working source or skip
 verification to package it.
 
-Keep the shared release version unless maintainers choose otherwise. Update
+Approved release alignment: target the settled Rust 0.6.0 API and keep the
+shared repository version. Update
 release-please, lockfiles, archive boundaries and checks that currently assume
 seven Rust crates/one npm package; keep the Port executable crate unpublished on crates.io.
 Release Rust first, build/test the exact Hex artifact against those versions,
-then approve Hex publication. Review Hex authentication/least privilege separately;
-this plan does not enable uploads or credentials.
+then approve Hex publication. Create the `datadeft` Hex organization under a
+maintainer-controlled account, confirm availability/plan requirements, configure
+maintainer roles and verify ownership of the intended public package before upload.
+Verify whether organization publishing changes the package's repository namespace;
+the intended consumer dependency remains public `datadeft_auth`. Review Hex
+authentication/least privilege separately; do not commit credentials or enable
+uploads in this planning PR.
 
 Approved initial distribution: source builds requiring Rust, Erlang/Elixir and
 platform build tools in the build environment. The deployed release includes the
@@ -314,7 +326,7 @@ unverified mutable install-time downloads.
 | Security | Expiry/skew units/boundaries, active/verify-only rotation, RNG failure/independent draws, no fixed-nonce production API, forged solve rejection |
 | Process/protocol safety | Redaction, finite atom count; fragmented/oversized/malformed frames, version mismatch, duplicate IDs, stale handles, queue saturation, deadlines, worker kill/restart, key reload and orphan cleanup; BEAM survives child crash; latency/memory under load |
 | Distribution | Unpacked Hex outside repo, clean Mix consumer/release, executable permissions/path, native ARM64/x86_64 tests on supported OS/libc targets, archive/license/advisory audit, no core test-support |
-| Service bridge | End-to-end flows, backend conformance, concurrent confirm creates exactly one session, identical ambiguous retries, conflict/replan, spoofed/stale replies, death/restart/overload/shutdown |
+| AWS/service integration | Fake-backed flows plus DynamoDB Local transaction/limiter tests; concurrent confirm creates exactly one session, identical ambiguous retries, conflict/replan, stale replies, death/restart/overload/shutdown, least-privilege configuration |
 | Session/admission | Revocation/disable, idle/absolute expiry and refresh, country policy; multi-node proof budgets, replay, expiry, rotation and storage failure |
 | HTTP | Uniform bodies/headers, scanner safety, origin/CSRF/frame defenses, escaped accounts, scrubbed redirects and cookie lifecycle |
 
@@ -329,14 +341,14 @@ root `elixir-verify` after toolchain provisioning review. Run full
 | --- | --- | --- |
 | P0 | Plan review only | Explicit implementation scope approval |
 | P1 | Package/Port executable scaffold and root wiring | Handshake/lifecycle, isolated Hex/release build, CPU/OS/libc matrix settled |
-| P2 | Required async bridge spike | Correlation/lifecycle, callback bounds and durable ambiguous-commit recovery proven |
-| P3 | High-level auth/session API and backend conformance | End-to-end request/confirm/logout, concurrent one-time consume, revocation and refresh proven |
-| P4 | High-level PoW API and budget behaviour | Browser interoperability and shared lifetime admission/failure tests |
+| P2 | Rust service/AWS execution spike | Bounded jobs, responsive Port lifecycle and durable ambiguous-commit recovery proven |
+| P3 | High-level auth/session API with DynamoDB | End-to-end request/confirm/logout, concurrent one-time consume, revocation and refresh proven |
+| P4 | High-level PoW API and DynamoDB budget | Browser interoperability and shared lifetime admission/failure tests |
 | P5 | First-release docs/tasks/artifact readiness | Security/API review, full verify, clean consumer build and explicit release approval |
 | P6 | Standalone Phoenix example | Full HTTP security-contract tests; no framework dependencies in the library |
 | P7 | Precompiled distribution | Target/provenance/recovery review |
 
-Resolve packaging before expanding the API. Do not report the async spike as
+Resolve packaging before expanding the API. Do not report the AWS execution spike as
 complete authentication. Each packet reports paths/API changes, security behavior,
 tests, validation run/not run, open questions and follow-ups. Cross-crate changes
 remain proposals; no implementation or publishing starts on implicit approval.
