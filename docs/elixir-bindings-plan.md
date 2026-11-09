@@ -31,7 +31,8 @@ Reviewer decisions:
 
 - [x] Use a separate Rust process, not Rustler/NIFs, to isolate native crashes.
 - [x] Start with high-level workflows, framework-independent; Phoenix only an example.
-- [ ] Confirm whether admin/erasure parity is required for the first release.
+- [x] Admin operations and account erasure are not required for the first release;
+      defer them to separately approved follow-up work.
 - [ ] Confirm Hex name/ownership, source-build acceptance, and required OS/OTP targets.
 - [ ] Approve the dependency graph, workspace strategy, and shared release version;
       decide whether to ship with or after 0.6.0.
