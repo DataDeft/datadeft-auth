@@ -14,8 +14,8 @@ Port. No Rust code is loaded into BEAM; do not port crypto/security policy to El
 **Confirmed scope:** high-level authentication operations first, without framework
 dependencies. The library requires neither Plug nor Phoenix; Phoenix is an example
 consumer only. "Framework-independent" does not mean a public crypto toolkit.
-Use a separate Rust process for native crash isolation. Support ARM64 and x86
-(assumed x86_64/AMD64; confirm whether 32-bit x86 is needed).
+Use a separate Rust process for native crash isolation. Required deployment
+targets are Linux glibc on 64-bit x86_64/AMD64 and ARM64/AArch64.
 
 Deliver the first usable release as high-level magic-link and session workflows,
 backed by the Rust service and application-supplied storage, delivery and limits.
@@ -37,7 +37,11 @@ Reviewer decisions:
       is accepted. Prebuilt executables are deferred.
 - [x] Hex package name: `datadeft_auth`; Elixir namespace: `DatadeftAuth`.
       Project branding remains `datadeft-auth`; registry availability must be checked.
-- [ ] Confirm Hex publishing ownership and required OS/OTP targets.
+- [x] Deployment platforms: Linux glibc on x86_64/AMD64 and ARM64/AArch64;
+      no 32-bit x86. Other platforms are outside the initial deployment matrix.
+- [x] Runtime baseline: Elixir >= 1.16 and OTP >= 26; validate the supported
+      version combinations in CI before publishing compatibility claims.
+- [ ] Confirm Hex publishing ownership.
 - [ ] Approve the dependency graph, workspace strategy, and shared release version;
       decide whether to ship with or after 0.6.0.
 - [ ] Select the first production transactional backend or confirm a behaviours-only
@@ -265,12 +269,15 @@ country headers.
 
 ## 7. Packaging, compatibility and release
 
-Required architectures: ARM64 and x86 (provisionally x86_64; confirm 32-bit needs).
-Proposed baseline: Elixir >= 1.16, OTP >= 26, Rust >= 1.88. Confirm OS/libc coverage;
-propose Linux glibc on both architectures and macOS ARM64, with macOS x86_64,
-musl and Windows requiring explicit scope. Every supported target needs native
-execution tests, not cross-compilation alone. The executable has an OS/CPU/libc
-target, not an Erlang NIF ABI; the versioned protocol is the compatibility boundary.
+Approved deployment targets: Linux glibc on x86_64/AMD64 and ARM64/AArch64,
+both 64-bit. No initial 32-bit x86, musl/Alpine or Windows support. macOS ARM64
+can be used for development but is not an approved deployment target.
+Approved runtime baseline: Elixir >= 1.16 and OTP >= 26. Rust build baseline:
+>= 1.88. Validate supported Elixir/OTP combinations in CI and test/document the
+minimum supported glibc version.
+Both deployment targets need native execution tests, not cross-compilation alone.
+The executable has an OS/CPU/libc target, not an Erlang NIF ABI; the versioned
+protocol is the compatibility boundary.
 
 Use Hex dependencies for consumers and local paths for development. Test any
 unpublished monorepo git/subdirectory installation in a clean consumer app.
