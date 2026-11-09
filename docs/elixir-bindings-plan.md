@@ -1,6 +1,7 @@
 # Proposal: Elixir bindings for datadeft-auth
 
-**Status:** proposed; no implementation until explicit scope approval.
+**Status:** design decisions approved; implementation not started. Review/merge
+this planning PR and explicitly authorize implementation before coding.
 **Release alignment:** target the settled Rust 0.6.0 API and use the repository's
 shared release version; reconcile the current 0.5.0 baseline before implementation.
 **This PR:** documentation only. No runtime, API, dependency, version, or security
@@ -51,7 +52,8 @@ Reviewer decisions:
 - [x] Production storage: AWS only, using the existing DynamoDB adapter; no
       Postgres/Ecto or generic Elixir storage-callback API in the initial release.
 - [x] Email delivery: AWS SES, reusing the existing Rust adapter.
-- [ ] Approve the dependency graph and unpublished Cargo workspace member strategy.
+- [x] Keep the Rust executable as an unpublished Cargo workspace member, sharing
+      dependencies, checks and version policy; approve its adapter dependency graph.
 
 ## 2. Architecture and ownership
 
@@ -97,8 +99,8 @@ Keep entry points decode/delegate/encode and modules small. Existing crates are
 read-only; public API changes need a separate proposal. The orchestrator owns
 root CI/tasks, release tooling and shared docs.
 
-Approve new edges from `datadeft-auth-port` to the cores, service and AWS adapter;
-no reverse edges. Recommend a workspace member with
+Approved edges: `datadeft-auth-port` to the cores, service and AWS adapter;
+no reverse edges. Use a workspace member with
 `publish = false`, inheriting lint/version policy. Rust-only builds need no Erlang;
 Mix integration tests do.
 
