@@ -43,9 +43,9 @@ Reviewer decisions:
       no 32-bit x86. Other platforms are outside the initial deployment matrix.
 - [x] Runtime baseline: Elixir >= 1.16 and OTP >= 26; validate the supported
       version combinations in CI before publishing compatibility claims.
-- [x] Create a DataDeft-controlled Hex organization, provisionally `datadeft`,
-      to own publishing. Provisioning is pending authenticated maintainer setup,
-      organization-name availability and any applicable Hex plan/billing requirements.
+- [x] Publish public `datadeft_auth` under the existing personal Hex account
+      [`l1x`](https://hex.pm/users/l1x). No paid Hex organization is required;
+      DataDeft remains the project branding.
 - [x] Target the settled Rust 0.6.0 API and keep the shared repository release version.
       This approves release alignment, not publication or implementation start.
 - [x] Production storage: AWS only, using the existing DynamoDB adapter; no
@@ -300,11 +300,10 @@ shared repository version. Update
 release-please, lockfiles, archive boundaries and checks that currently assume
 seven Rust crates/one npm package; keep the Port executable crate unpublished on crates.io.
 Release Rust first, build/test the exact Hex artifact against those versions,
-then approve Hex publication. Create the `datadeft` Hex organization under a
-maintainer-controlled account, confirm availability/plan requirements, configure
-maintainer roles and verify ownership of the intended public package before upload.
-Verify whether organization publishing changes the package's repository namespace;
-the intended consumer dependency remains public `datadeft_auth`. Review Hex
+then approve Hex publication. Use the existing personal Hex account `l1x` as the
+initial owner of public `datadeft_auth`; do not provision a paid organization.
+Check package-name availability and configure any additional maintainer access
+before release. The consumer dependency remains `datadeft_auth`. Review Hex
 authentication/least privilege separately; do not commit credentials or enable
 uploads in this planning PR.
 
