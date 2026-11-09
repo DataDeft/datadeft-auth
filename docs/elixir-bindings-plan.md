@@ -1,420 +1,305 @@
 # Proposal: Elixir bindings for datadeft-auth
 
-**Status:** proposed; review required before implementation.
-**Baseline:** current Rust API at 0.5.0; reconcile with the separately proposed
-0.6.0 changes before implementation.
-**Deliverable of this PR:** this plan only. No NIF, runtime dependency,
-implementation, release, or publishing configuration is authorized by merging
-this document alone. Explicit approval of the implementation scope is required.
+**Status:** proposed; no implementation until explicit scope approval.
+**Baseline:** Rust 0.5.0; reconcile with the proposed 0.6.0 API before starting.
+**This PR:** documentation only. No runtime, API, dependency, version, or security
+behavior changes; design approval does not authorize publication or credentials.
 
-## 1. Decision summary
+## 1. Recommendation and review decisions
 
-Create an optional Hex package, provisionally named `datadeft_auth`, exposing
-existing Rust functionality through Rustler NIFs. Do not port the crypto or
-reimplement security policy in Elixir.
+Create an optional Hex package, provisionally `datadeft_auth`, that calls the
+existing Rust implementation through Rustler NIFs. Do not port the crypto or
+security policy to Elixir.
 
-Recommended sequence:
+**Confirmed scope:** lowest-level, framework-independent bindings first. The
+library requires neither Plug nor Phoenix; Phoenix is an example consumer only.
 
-1. A bounded, source-built binding to the three deterministic core crates.
-2. A separately approved asynchronous bridge to the magic-link service traits.
-3. Optional Plug/Phoenix integration after the service bridge passes its gates.
-4. Precompiled binaries only after source-build packaging and release controls
-   are proven.
+Deliver in separately approved phases:
 
-Phase 1 is a **primitives binding**, not a complete Phoenix authentication
-solution. A complete magic-link login requires phases 2 and 3. Do not advertise
-feature parity until those phases are implemented and validated.
+1. **Core primitives:** bounded, source-built bindings to the three core crates.
+2. **Magic-link service:** a framework-neutral asynchronous bridge to Rust traits.
+3. **Example:** a Phoenix consumer showing application-owned HTTP integration.
+4. **Precompiled binaries:** only after source packaging/release controls work.
 
-### Review decisions
+Phase 1 is not a complete authentication solution. Full magic-link login needs
+the service bridge plus application-owned storage, delivery and HTTP wiring—not
+Phoenix. Do not claim parity while service/admin features are missing. Reusable
+Plug helpers are deferred and require a separate proposal.
 
-- [ ] Approve Rustler rather than a Rust sidecar/port or an Elixir rewrite.
-- [ ] Approve phase 1 as the first implementation scope.
-- [ ] Confirm whether full magic-link orchestration is a required follow-up.
-- [ ] Confirm package name/Hex ownership and supported Elixir/OTP versions.
-- [ ] Approve source-build-only initial distribution.
-- [ ] Approve the new adapter dependency graph and workspace/release changes.
-- [ ] Decide whether Plug support ships separately or as an optional integration.
-- [ ] Approve a documentation-only branch exception to the no-branches rule
-      when opening this plan as a standalone draft PR.
+Reviewer decisions:
 
-## 2. Why reuse Rust, and what remains Elixir
+- [ ] Accept same-VM native crash risk and Rustler, rather than a port/sidecar.
+- [x] Start with low-level, framework-independent bindings; Phoenix only an example.
+- [ ] Confirm whether full login and admin/erasure parity are required follow-ups.
+- [ ] Decide whether generic Branca tokens should be public or only typed cookies.
+- [ ] Confirm Hex name/ownership, source-build acceptance, and required OS/OTP targets.
+- [ ] Approve the dependency graph, workspace strategy, and shared release version;
+      decide whether to ship with or after 0.6.0.
+- [ ] Select a transactional backend for phase 2, if any.
+
+## 2. Architecture and ownership
 
 ```text
-Phoenix / consuming Elixir application
-  -> DatadeftAuth public Elixir modules
+Any Elixir application (Phoenix optional)
+  -> DatadeftAuth public API
   -> private Rustler NIF adapter
        -> datadeft-auth-token-core
        -> datadeft-magic-link-core
        -> datadeft-pow-core
-       -> datadeft-magic-link-service (phase 2 only)
+       -> datadeft-magic-link-service (phase 2)
 ```
 
-Rust remains authoritative for parsing, canonical encodings, AEAD, HKDF, HMAC,
-constant-time verification, freshness, and service state transitions. Elixir
-owns supervision, application wiring, storage implementations, delivery,
-HTTP/Plug integration, and deployment config. Routes, templates, redirects,
-consent policy, trusted-edge interpretation, and business authorization remain
-application responsibilities.
+Rust owns canonical parsing, AEAD, HKDF/HMAC, constant-time verification,
+freshness and service state transitions. Elixir owns supervision, storage and
+email adapters, HTTP wiring and deployment config. Routes, templates, redirects,
+consent policy, business authorization and trusted-edge interpretation remain
+application responsibilities. Do not depend on Axum, add AWS/Tokio to core
+crates, or embed an async runtime for phase 1.
 
-Do not depend on the Axum adapters. Do not pull AWS/Tokio into core crates.
-Do not embed a Tokio runtime merely to execute phase 1 functions.
+Rustler offers direct reuse, low call overhead and resource-backed secrets, but
+native faults can terminate the VM. A port/sidecar offers crash isolation at the
+cost of a protocol, lifecycle management and deployment/IO overhead. An Elixir
+rewrite removes native tooling but duplicates security maintenance. If NIF
+safety or target validation fails, review the port alternative before proceeding.
 
-Alternatives:
+### Package and dependencies
 
-| Approach | Benefit | Cost / reason not selected initially |
-| --- | --- | --- |
-| Rustler NIF | Direct reuse, small call overhead, resource-backed secrets | Native faults can terminate the VM; requires scheduler and release review |
-| External Rust port/sidecar | Native crash isolation | Protocol, process lifecycle, deployment and IO overhead |
-| Elixir implementation | No native toolchain | Duplicated crypto/protocol maintenance and security review |
+One agent owns `packages/datadeft-auth-elixir/`, including its native crate:
 
-If native safety or supported-target validation fails, stop and review the port
-alternative rather than quietly switching architecture.
+- Mix metadata/lockfile, formatter, mise tasks, README and license.
+- `lib/datadeft_auth.ex` and `{native,keys,email,token,magic_link,pow,error}` modules.
+- `native/datadeft_auth_nif/` with Cargo metadata and corresponding Rust modules.
+- Rust tests, ExUnit boundary tests and package/consumer checks.
 
-## 3. Proposed owned paths and dependencies
+Keep entry points decode/delegate/encode and modules small. Existing crates are
+read-only; public API changes need a separate proposal. The orchestrator owns
+root CI/tasks, release tooling and shared docs.
 
-One implementation agent owns the new package, including its native crate.
-Existing crates are read-only unless a separate public-API proposal is approved.
-The orchestrator owns root tasks, CI, release tooling, and shared docs.
+Approve new edges from `datadeft-auth-nif` to the three cores and, in phase 2,
+the service crate; no reverse edges. Recommend a workspace member with
+`publish = false`, inheriting lint/version policy. First assess whether workspace
+CI would require Erlang for Rust-only builds; if so, propose a separately locked
+native workspace and verify both build graphs.
 
-```text
-packages/datadeft-auth-elixir/
-  mix.exs
-  mix.lock
-  .formatter.exs
-  .gitignore
-  mise.toml
-  README.md
-  LICENSE
-  lib/datadeft_auth.ex
-  lib/datadeft_auth/{native,keys,email,token,magic_link,pow,error}.ex
-  native/datadeft_auth_nif/
-    Cargo.toml
-    src/lib.rs
-    src/{boundary,keys,email,token,magic_link,pow,error}.rs
-  test/...
-```
+Dependencies: Rustler for build/loading and FFI; existing cores; reviewed
+OS-backed entropy compatible with their `rand_core` API. Phoenix/Plug dependencies
+belong only to the separately packaged example. Pin and audit dependencies/test tools. No production core `test-support` feature
+or deterministic RNG. Use established Rustler attributes/derives/registration
+macros, not custom application macros. Document Rustler's unsafe FFI trust scope;
+no handwritten unsafe code is proposed.
 
-Names/layout are proposed, not promised public APIs. Keep modules small and
-entry points limited to decode/delegate/encode. Rustler's established attributes,
-derives and registration macros are permitted subject to review; do not author
-application macros. No handwritten unsafe code is proposed. Rustler itself has
-an FFI/unsafe boundary, so document that dependency's trust scope explicitly.
+## 3. Phase 1 API
 
-New allowed edges: `datadeft-auth-nif` -> the three core crates; optionally the
-service crate after phase 2 approval. No reverse edges. This extends the current
-approved graph and requires review before implementation.
+Provide typespecs and `{:ok, value} | {:error, %DatadeftAuth.Error{}}`, including
+malformed arguments. Use fixed error codes without offending input; no initial
+bang API. `Native` is private infrastructure. Names/arities below are proposals;
+finalize config structs and options in API review.
 
-Recommend a workspace member at `packages/datadeft-auth-elixir/native/datadeft_auth_nif`
-with `publish = false`, inheriting workspace lint/version policy. Root Cargo
-membership and all-member CI will need an Erlang/NIF build assessment first.
-If that would force Erlang onto Rust-only consumers, propose a separately locked
-native workspace instead; do not introduce an unverified second build graph.
+| Operation | Rust delegation / public contract |
+| --- | --- |
+| `Keys.load/1` | Purpose-specific opaque keyrings; validate slots, IDs and validity windows |
+| `Email.normalize/1` | `NormalizedEmail::normalize`: trim, then ASCII-lowercase the whole address |
+| `MagicLink.generate/0` | `MagicLinkToken::generate`; independent selector/verifier draws |
+| `MagicLink.parse/1` | Strict parser; opaque parsed handle, not proof of authentication |
+| `MagicLink.lookup_material/2` | Keyed selector lookup/verifier hash; sensitive storage wrappers, no raw verifier fields |
+| `Token.encrypt/4`, `Token.decrypt/4` | Branca primitives with mandatory freshness policy in the wrapper |
+| `Pow.mint_challenge/3` | Exact browser-compatible `{chg, dif, tim, tag}` fields |
+| `Pow.verify_solution/3` | Existing skew-aware verifier; opaque verified solve, timing/identity accessors |
+| `Pow.mint_proof/3`, `Pow.verify_proof/3` | Purpose-bound cookies; typed keyrings, mandatory TTL/skew, bind to verified solve |
 
-Dependencies and owners:
+Do not expose arbitrary key purposes or string-selected crypto dispatch. Export
+bearer values only through explicit accessors needed for delivery/cookies/storage.
+Parsed and verified resources are distinct: proof minting must accept a native
+verified solve, never a fabricated map.
 
-- Elixir package: Rustler for native build/loading; no Phoenix requirement.
-- Native adapter: Rustler, existing core crates, reviewed OS-backed entropy
-  support compatible with the existing `rand_core` API.
-- Optional Elixir integration: Plug, only after phase 3 approval.
-- Test/docs tools: minimum necessary, pinned; review licenses and advisories.
-- No Rust `test-support` feature or deterministic RNG in production builds.
+**Token decryption is not session authorization.** Raw Branca decode checks
+integrity, not time. Require injected `now_unix`, max age and skew; validate
+bounds/authenticated timestamps before returning plaintext. It supplies no
+revocation, country locks, idle refresh or server-side checks. Omit generic
+Branca from the first release if this distinction cannot be made safe.
 
-## 4. Proposed phase 1 API
+**Proof verification is not admission.** Do not expose `admit_proof` until a
+shared atomic lifetime-budget adapter is wired and tested.
 
-Use documented typespecs and `{:ok, value} | {:error, %DatadeftAuth.Error{}}` for
-fallible calls, including malformed public arguments. Avoid bang functions in
-the initial API. Error structs contain fixed codes, never offending input.
-`Native` is private infrastructure, not a supported consumer API.
+Use explicit units: PoW `now_unix_ms`; token/key-window `now_unix` seconds.
+Inject the clock; no environment reads or implicit system time in deterministic
+operations. Adapter-owned entropy comes from an OS CSPRNG, not caller nonces.
 
-| Module / operation | Existing Rust behavior | Elixir result / constraints |
-| --- | --- | --- |
-| `Keys.load/1` | Root secrets, typed purpose keyrings and validity windows | Opaque, purpose-specific native handles; reject malformed/duplicate slots |
-| `Email.normalize/1` | `NormalizedEmail::normalize` | Validated normalized address; trim then ASCII-lowercase the whole address |
-| `MagicLink.generate/0` | `MagicLinkToken::generate` | Bearer token wrapper; selector and verifier generated independently |
-| `MagicLink.parse/1` | Strict `MagicLinkToken::parse` | Opaque parsed handle; syntax validity is not authentication |
-| `MagicLink.lookup_material/2` | Keyed selector lookup and verifier hash | Sensitive storage wrappers; no raw verifier fields |
-| `Token.encrypt/4`, `Token.decrypt/4` | Branca encode/decode | Advanced low-level API; mandatory freshness policy in wrapper |
-| `Pow.mint_challenge/3` | `mint_challenge` | Exact browser-compatible `{chg, dif, tim, tag}` fields |
-| `Pow.verify_solution/3` | `verify_solution_with_clock_skew` | Opaque verified solve with safe accessors for timing/identity |
-| `Pow.mint_proof/3`, `Pow.verify_proof/3` | Existing purpose-bound proof cookies | Bind proof to verified solve, use typed keyring and mandatory TTL/skew |
+## 4. NIF and security invariants
 
-Arities are illustrative: finalize options/struct fields in the phase 1 API
-review. Prefer config structs over long positional argument lists. Do not
-expose arbitrary caller-defined key purposes or generic string-selected crypto
-operations. Export raw bearer values only through explicitly named accessors
-needed for delivery, cookie setting, or persistence boundaries.
+`docs/security.md` is normative; this binding adds no weaker interpretation.
 
-`Token` is an advanced primitive, **not session authorization**. Raw Branca
-decode authenticates bytes but does not check freshness. The public wrapper must
-require `now_unix`, max age and skew, verify authenticated timestamps, and apply
-bounds before returning plaintext. It does not supply revocation, country locks,
-idle refresh, or server-side session checks. If this cannot be presented safely,
-omit the generic token API from the first release in favor of typed cookies.
+### BEAM boundary
 
-Proof minting takes a native verified-solve resource, not a caller-fabricated
-map. Parsed and verified states must be distinct types. Stateless proof
-verification is not admission: there must be no misleading `admit_proof`
-function until a shared atomic lifetime-budget adapter is wired and tested.
-
-Time units must be explicit: PoW uses `now_unix_ms`; tokens/key windows use
-`now_unix` seconds. The application injects the clock; do not read environment
-variables or silently use system time inside deterministic operations.
-
-## 5. NIF boundary and BEAM safety
-
-- Validate public argument type, byte size, integer range, collection count and
-  option keys in Elixir; repeat security-relevant bounds in Rust because private
-  NIF entry points are still callable. Check bounds before copying/allocating.
-- Accept binaries, not arbitrary charlists/iolists. Validate UTF-8 only where
-  required. Do not deserialize an arbitrary JSON/term blob to select operations.
-- Reuse Rust caps. Examples: Branca payload <= 1024 bytes and token <= 1437
-  bytes; magic-link and PoW limits come from their own current parsers. Maintain
-  an explicit audited table where a Rust constant is not public.
-- Initially schedule crypto/parsing on dirty CPU schedulers. Benchmark bounded
-  normalization before allowing it on normal schedulers. Never solve PoW inside
-  a NIF, perform network IO there, or block waiting for an Elixir callback.
-- No production `unwrap`, `expect`, `panic!`, logging, or new unsafe code. Review
-  Rustler panic behavior and build profile; panic catching is not protection
-  from aborts, OOM, UB, or a native crash.
-- Native resources own keys and verified states, with redacted Rust `Debug` and
-  Elixir `Inspect`. Immutable resources avoid shared mutation and lock-order
-  hazards; destructors must not block or perform IO.
-- Do not create atoms from input. Use a finite compile-time set of error atoms;
-  fixed string keys for protocol data when useful.
-- Use native key handles after startup so keys are not repeatedly copied through
-  BEAM heaps. Key imports and exported tokens still create BEAM binaries: GC is
-  not guaranteed zeroization, and redacted `Inspect` does not stop tracing or
+- Validate types, sizes, integer ranges, collection counts and option keys in
+  Elixir and repeat security bounds in Rust, before copying/allocating. Accept
+  binaries, not arbitrary iolists; validate UTF-8 where needed. No generic
+  JSON/term-driven operation dispatch.
+- Reuse parser caps: Branca payload <= 1024 bytes, token <= 1437 bytes; audit
+  magic-link/PoW caps against current Rust parsers, recording non-public limits.
+- Start crypto/parsing on dirty CPU schedulers; benchmark normalization before
+  using normal schedulers. Never solve PoW, perform network IO, or wait for an
+  Elixir callback in a NIF.
+- No production `unwrap`, `expect`, `panic!`, logging or new unsafe code. Review
+  Rustler panic/build behavior; catching panics cannot contain aborts, OOM or UB.
+- Immutable native resources own keys/verified states; redact Rust `Debug` and
+  Elixir `Inspect`. Destructors must not block or do IO. Never serialize handles.
+- No input-derived atoms: use finite error atoms and fixed protocol keys.
+- Key handles reduce BEAM copies but cannot erase imported/exported binaries.
+  GC does not guarantee zeroization; Inspect redaction does not stop tracing or
   crash dumps. Document operational controls and avoid secret-bearing exceptions.
-- Handle NIF load/ABI errors explicitly. No silent pure-Elixir crypto fallback.
-- Pin a supported NIF ABI. Test resource lifetime, concurrency, code upgrades
-  and invalid resource types. Until upgrade compatibility is demonstrated,
-  require rolling VM restarts for native upgrades; never serialize resources.
+- Pin Rustler/NIF ABI and handle load errors explicitly, without crypto fallback.
+  Require rolling VM restarts until resource/code-upgrade safety is demonstrated.
 
-## 6. Security parity requirements
+### Protocol parity
 
-`docs/security.md` remains normative. The binding must not weaken these rules:
+- Independent CSPRNG draws, fail-closed entropy errors, no production nonce
+  injection. Purpose-separated keys/peppers, active/verify-only windows, unknown
+  key rejection, rotation coverage and no key-byte accessor.
+- Secret-derived comparisons stay constant-time in Rust, never Elixir equality.
+  Accept only canonical current formats; no legacy fallback or email alias rules.
+- TTL baseline: link 10m, confirm 5m, challenge 2m, proof 3h, session idle 24h,
+  absolute 30d; cleanup grace 24h. Preserve hard ceilings. Skew defaults to 60s,
+  configurable up to 300s where supported; never extends expiry/key validity.
+- Configurable PoW difficulty with production guidance of 5–6 leading zero hex
+  characters, benchmarked in browsers; explicit test-only low values. Preserve
+  wire fields and downgrade protection. Shared lifetime budgets never refill on
+  rotation or fail open; no ETS/node-local production substitute.
+- No keys, addresses, cookies, token URLs or identifiers in logs, telemetry,
+  exceptions, snapshots or public errors. Fixtures use synthetic data and
+  test-only vectors. Internal fixed reason labels stay out of HTTP responses.
 
-- OS CSPRNG at the adapter; independent selector/verifier draws; no production
-  nonce injection. Fail closed on entropy failure.
-- Purpose-separated keys/peppers, active versus verify-only windows, unknown-key
-  rejection, rotation coverage and no key-byte accessor.
-- Constant-time secret-derived comparisons remain in Rust. Elixir equality must
-  never substitute for verifier/MAC verification.
-- Strict canonical current token grammar; no legacy parser or compatibility
-  fallback. No Gmail dot/plus folding or provider-specific email rules.
-- Baseline TTLs: link 10m, confirm 5m, challenge 2m, proof 3h, session idle 24h,
-  absolute 30d; cleanup grace 24h. Respect existing hard ceilings. Default clock
-  skew 60s; optional stricter settings; maximum 300s where supported. A skew
-  allowance never extends expiry or a key window.
-- PoW difficulty configurable with production floor guidance 5–6 leading zero
-  hex characters, benchmarked for supported browsers; test-only low difficulty
-  must be explicit. Reject downgrade attempts and preserve exact wire fields.
-- A solve can only buy its shared lifetime budget; no ETS/node-local production
-  substitute, refill on rotation, or fail-open behavior.
-- No credentials, addresses, cookie values, or token-bearing URLs in logs,
-  telemetry metadata, exception messages, fixtures, snapshots or error returns.
-  Use synthetic test data and deterministic vectors only in tests.
-- Internal fixed reason labels are for trusted diagnostics, not HTTP responses.
+## 5. Phase 2: asynchronous service bridge
 
-## 7. Phase 2: service bridge (separate approval gate)
+Existing service traits are generic and return `Send` futures, not object-safe
+trait objects. Do not synchronously call Elixir from a NIF or rewrite the flow
+in Elixir to bypass this constraint.
 
-The service crate uses generic dependency traits returning `Send` futures, not
-object-safe dynamic traits. Direct synchronous callbacks from a NIF into Elixir
-are not an acceptable implementation. Do not rewrite the flow in Elixir just
-to avoid this boundary.
+Spike concrete Rust trait adapters that send bounded, correlated requests to a
+supervised Elixir process. A bounded worker/executor runs service futures outside
+NIF schedulers; short reply NIFs resolve pending work. Prove this lifecycle before
+committing to it:
 
-Recommended spike: concrete Rust implementations of the existing traits send
-bounded correlated requests to a supervised Elixir adapter process. A bounded
-Rust worker/executor runs service futures outside NIF schedulers. Replies enter
-through a short NIF and resolve pending operations. This is a proposal to prove,
-not an assumption that existing Rustler APIs solve the lifecycle automatically.
+1. Unique correlation references, authorized responders, immutable context,
+   deadlines, monitored callers and at most one accepted reply.
+2. Bounded queues/jobs/replies; fail closed on overload, death, restart, timeout
+   or malformed replies. Late, duplicate, stale and spoofed replies cannot
+   complete another operation; shutdown has explicit drain/abandon semantics.
+3. Owned cross-thread data and supported Rustler messaging; no borrowed terms or
+   NIF environments surviving their call.
+4. **Timeout is not rollback.** After dispatching an atomic commit, preserve the
+   identical command/attempt ID for reconciliation. Do not regenerate entropy
+   or replan while its outcome is ambiguous. Prove durable recovery across
+   worker/process restarts or block production release.
 
-Before committing to this bridge, demonstrate:
-
-1. Each job has a unique correlation reference, authorized responder, immutable
-   context, bounded deadline, monitored caller, and at most one accepted reply.
-2. Queue depth, outstanding jobs and reply sizes are capped. Overload, owner
-   death, worker restart, timeout and malformed replies fail closed.
-3. NIF environments/borrowed terms never outlive a call; cross-thread data is
-   owned and Rustler's supported thread/message facilities are used.
-4. Cancellation cannot be interpreted as rollback. Once an atomic authentication
-   commit is dispatched, a timeout may mean it committed. Preserve the identical
-   command and attempt id for reconciliation; never regenerate entropy/replan
-   while that result is ambiguous. A worker/process restart must not lose this
-   obligation; prove a durable strategy or block production release.
-5. Late, duplicate, stale and spoofed replies cannot complete another operation.
-6. Shutdown drains or safely abandons jobs, with documented commit semantics.
-
-Proposed Elixir behaviours mirror `MagicLinkRepository`,
+Elixir behaviours mirror `MagicLinkRepository`,
 `MagicLinkAuthenticationRepository`, `SessionRepository`, `RateLimiter`,
-`MagicLinkOutbox`, and `Clock`. Callbacks carry validated typed values and bounded
-results; never raw verifier secrets. The outbox necessarily receives the link
-for delivery and must redact it. Storage adapters key IDs/email/limiter values
-according to the existing HMAC policy.
+`MagicLinkOutbox` and `Clock`. Use validated typed values/bounded replies, never
+raw verifiers. The outbox must receive—and redact—the delivery link. Storage
+adapters apply existing HMAC keying to IDs, email and limiter values.
 
-Preserve the exact atomic repository contract: consume expected unexpired link,
-validate immutable account linkage/consent, and create session in one transaction.
-Confirmed conflicts may replan with a new attempt id; ambiguous dependency
-outcomes may retry only the identical command/id. No read-modify-write consume.
+Preserve the atomic repository contract: consume the expected unexpired link,
+validate immutable account linkage/consent, and create the session in one
+transaction. Confirmed conflicts may replan with a new attempt ID; ambiguous
+outcomes permit only identical-command/ID retries. No read-modify-write consume.
 
-Release the service bridge only with a shared transactional backend conformance
-suite. Test fakes are not production storage. Selecting Ecto/Postgres, DynamoDB,
-or another first-party backend requires its own ownership and security review;
-no new production backend is implicitly included here.
+Require shared transactional-backend conformance tests. Fakes are not production
+storage; Ecto/Postgres, DynamoDB or another first-party backend needs separate
+ownership/security review and is not implicitly included.
 
-Service API coverage: request, scanner-safe landing, optional flow-state read,
-confirmation, session validation/refresh, logout/revocation. Country policy,
-locale/consent handling and account masking must remain Rust-owned. Admin APIs
-and 0.6 erasure are deferred until explicit scope approval, not silently dropped
-from a claim of full parity.
+Cover request, scanner-safe landing, optional flow-state read, confirmation,
+session validation/refresh and logout/revocation. Rust retains country policy,
+locale/consent handling and account masking. Admin and 0.6 erasure need explicit
+scope approval before claiming full parity.
 
-## 8. Phase 3: optional Plug/Phoenix adapter
+## 6. Phase 3: Phoenix example only
 
-Keep it framework-neutral Plug, with a Phoenix example, not a generated router.
-Use service operations from phase 2; no Axum reuse or policy port hidden in HTTP
-helpers. Reproduce the normative response and cookie contracts:
+Provide a separately packaged, fake-backed Phoenix example—not a library framework
+dependency or generated router. It demonstrates application-owned HTTP wiring to
+phase 2; other stacks can wire the same APIs. The example must preserve the
+normative HTTP contract:
 
-- `GET` landing never consumes/creates sessions; keyed-selector throttle and
+- Landing `GET` never consumes/creates sessions; keyed-selector throttle and
   dummy miss work. Same-origin confirmation `POST` binds selector, verifier
   proof, exact account, expiry and independent nonce.
-- Identify the account (masked by default), HTML-escape it, prevent framing,
-  use no-store/CSP/X-Frame-Options and `Referrer-Policy: strict-origin`.
-- Fixed/same-origin/allowlisted clean redirects; no token in Location or JS.
-- Host-only lower snake_case cookies; HttpOnly; Secure except explicit local
-  dev; conservative SameSite; explicit TTL and paths (`/` for session).
-- Revoke server state before clearing session cookie. Clear temporary cookies
-  on success/terminal failure, preserve on dependency failure as required.
-  Logout is CSRF-protected POST. PoW owns its independent cookie lifecycle.
-- Generic 400 for non-sensitive shape failures, 401 with `DD-PoW`/`DD-Session`,
-  one byte-identical no-store 503 for sensitive failures. Never library-generated
-  403/500/429; preserve generic request/landing exceptions in the security spec.
-- Same-origin flow-state fetch rules and cookie path coverage if redirect
-  landing is included. No permissive CORS shortcut.
+- Mask account by default, HTML-escape it, prevent framing, and set no-store,
+  CSP/X-Frame-Options and `Referrer-Policy: strict-origin`. Redirect only to
+  clean fixed/same-origin/allowlisted URLs; no token in Location or JavaScript.
+- Host-only lower snake_case cookies, HttpOnly, Secure except explicit local
+  dev, conservative SameSite, explicit TTL/path (`/` for session). Revoke before
+  clearing session; clear temporary state on success/terminal failure, preserve
+  on dependency failure as specified. Logout is CSRF-protected POST; PoW owns
+  its own cookie lifecycle.
+- Generic 400 shape errors, 401 with `DD-PoW`/`DD-Session`, byte-identical
+  no-store 503 for sensitive failures; never library-generated 403/500/429.
+  Preserve generic request/landing exceptions from the security spec.
+- If redirect landing is included, enforce same-origin flow-state fetch rules
+  and cookie-path coverage; no permissive CORS shortcut.
 
-Add a complete fake-backed example and a production-readiness checklist. State
-clearly that edge/IP/global controls and trusted country headers belong to apps.
+Document production readiness, app-owned IP/global/edge controls and trusted
+country headers.
 
-## 9. Build, packaging and release
+## 7. Packaging, compatibility and release
 
-Proposed compatibility starting point: Elixir >= 1.16, OTP >= 26, Rust >= 1.88.
-These are targets to validate against the selected Rustler version, not support
-claims. Pin the tested Rustler version and NIF ABI; publish an exact CI matrix.
-Start source-build testing with Linux x86_64 glibc and macOS arm64. Add Linux
-arm64, musl and Windows only with native test coverage, not compilation alone.
+Proposed starting targets: Elixir >= 1.16, OTP >= 26, Rust >= 1.88; Linux x86_64
+glibc and macOS arm64. Validate against pinned Rustler/NIF ABI before claiming
+support. Add Linux arm64, musl or Windows only with native execution tests, not
+cross-compilation alone.
 
-Consumers should install a Hex dependency normally; local development uses a
-path dependency. An unpublished git dependency must document the monorepo
-package/subdirectory requirements and be tested in a clean consumer app.
+Use Hex dependencies for consumers and local paths for development. Test any
+unpublished monorepo git/subdirectory installation in a clean consumer app.
 
-Hex cannot rely on relative paths into the repository. The artifact must include
-reviewed NIF source and resolve released Rust dependencies by exact compatible
-versions, or bundle an approved self-contained source layout. Recommend version
-plus local-path Cargo dependencies for development, with packaging that removes
-repo-relative paths in a temporary staging tree and uses registry versions.
-Prove it with an isolated unpacked Hex build outside the checkout. Never mutate
-the working source tree or skip verification to package it.
+**Hex must build outside this repository.** Include reviewed NIF source and
+resolve exact compatible released Rust versions, or approve a self-contained
+source bundle. Recommend version-plus-path Cargo dependencies in development,
+removing repo-relative paths in a temporary packaging tree for registry builds.
+Verify the unpacked archive in isolation; never mutate working source or skip
+verification to package it.
 
-Follow the repository's shared release version unless maintainers approve a
-separate policy. Extend release-please, release checks, lockfiles and package
-boundaries deliberately; the current tooling assumes seven publishable Rust
-crates and one npm package. The NIF crate remains unpublished on crates.io.
-Publish order: Rust crates first, then build/test the exact Hex artifact against
-those released versions, then approved Hex upload. Do not add Hex publishing
-credentials or enable uploads in this planning PR. Review the actual Hex auth
-mechanism and least-privilege release process before enabling it.
+Keep the shared release version unless maintainers choose otherwise. Update
+release-please, lockfiles, archive boundaries and checks that currently assume
+seven Rust crates/one npm package; keep the NIF crate unpublished on crates.io.
+Release Rust first, build/test the exact Hex artifact against those versions,
+then approve Hex publication. Review Hex authentication/least privilege separately;
+this plan does not enable uploads or credentials.
 
-Initial release builds from source and needs Rust, Erlang/Elixir, and platform
-build tools. Future RustlerPrecompiled support requires an approved target/ABI
-matrix, immutable tagged artifacts, checksums, provenance, dependency auditing,
-source fallback tests and release authorization. Do not download unsigned or
-unverified mutable binaries during installation.
+Initial source installs require Rust, Erlang/Elixir and platform build tools.
+Future RustlerPrecompiled support needs an approved target/ABI matrix, immutable
+tagged artifacts, checksums/provenance, audits, source-fallback tests and release
+approval. No unsigned or unverified mutable install-time downloads.
 
-## 10. Test plan and release gates
+## 8. Validation
 
-Phase 1:
-
-- Rust unit and Elixir boundary tests, typespec/docs examples, round trips.
-- Existing core golden vectors through the binding; Rust-minted values parsed
-  in Elixir API and browser PoW vectors verified by Rust through the NIF.
-- Synthetic malformed, tampered, noncanonical and trailing input; invalid UTF-8,
-  overlong binaries/maps, integer overflow/negative values, wrong key/resource,
-  unknown kid and expired/verify-only key behavior.
-- Expiry/skew boundaries in explicit units; no TTL bypass on generic tokens.
-- Independent draws, RNG failure handling, no production fixed-nonce entrypoint.
-- Attempted forged verified-solve handles cannot mint proof cookies.
-- Redacted Inspect/Debug/errors and telemetry; finite atom count under fuzzed
-  input. No secret-bearing assertion failures in shared CI output.
-- Parallel calls, resource GC, NIF loading, supported OTP/OS matrix, release mode,
-  representative scheduler latency and bounded-memory measurements under load.
-- Unpacked Hex archive tests outside repo; clean consuming Mix app; archive
-  allowlist, dependency/license audit, build without core test-support features.
-
-Phases 2–3 add:
-
-- Request/landing/confirm/session/logout end-to-end tests against trait fakes and
-  shared transactional backend conformance tests.
-- Concurrent confirm: exactly one session; ambiguous commit identical retry;
-  conflict/replan; stale replies; owner/worker crash; queue overflow and shutdown.
-- Multi-node lifetime PoW budget, expiry, exhausted proof replay, rotation and
-  unavailable budget storage; never node-local admission.
-- Account-disable/revocation, idle/absolute lifetime, refresh and country policy.
-- Uniform HTTP body/header tests; scanner safety, origin/CSRF/frame protection,
-  redirect scrubbing, account escaping, cookie creation/clearing/preservation.
-
-Task integration proposed for implementation: package-level `fmt`, `fmt-check`,
-`check`, `test`, `docs`, `package-check`, `verify`; root `elixir-verify` included in
-`mise run verify` only after toolchain provisioning is reviewed. Use mise tasks
-rather than duplicate command pipelines. Run full `mise run verify` before
-calling implementation complete; existing Rust/TS/formal checks must still pass.
-
-## 11. Work packets and sequencing
-
-| Packet | Owned changes | Exit gate |
-| --- | --- | --- |
-| P0: approve design | This plan only | Reviewer decisions recorded; no implementation yet |
-| P1: packaging spike | New package/native scaffold; orchestrator root wiring | NIF loads; isolated source package builds; ABI matrix selected |
-| P2: core binding | Package API, resources, errors, core delegation | All phase 1 vectors/tamper/resource/scheduler tests pass |
-| P3: phase 1 release readiness | Docs, tasks, release metadata and artifact checks | Security/API review plus full verify; explicit release approval |
-| P4: async bridge spike | Approved service bridge, test behaviours | Correlation, lifecycle and ambiguous-commit durability proven |
-| P5: service integration | Bridge APIs and backend conformance | One-time concurrent consume and revocable sessions proven |
-| P6: optional HTTP integration | Approved Plug package/example | Full security-contract integration tests pass |
-| P7: precompiled distribution | Separate release infrastructure change | Native target, provenance and recovery review |
-
-P1 must settle Cargo/Hex packaging before P2 expands the API. P4 cannot be
-reported as complete authentication support. Each packet returns changed paths,
-public API deltas, security behavior, tests, validation run/not run, open
-questions and follow-up work. Cross-crate API needs are proposals, not drive-by
-edits. No implementation starts until explicit scope approval after plan review.
-
-## 12. Risks and remaining questions
-
-| Risk | Mitigation / blocking decision |
+| Area | Required coverage |
 | --- | --- |
-| Native fault terminates VM | Small audited boundary, no new unsafe, malformed-input tests; reconsider port if unacceptable |
-| Dirty scheduler saturation | Strict caps, application admission/edge limits, latency/load measurements |
-| Secrets copied on BEAM heap | Opaque key resources, redacted wrappers, explicit export points and operational guidance |
-| Async callback lifecycle/ambiguous commits | Phase 2 proof and durable reconciliation gate before production |
-| Hex archive depends on monorepo | Isolated artifact build gate before first release |
-| Release tooling assumes existing package count | Orchestrator-reviewed changes; no new automatic uploads initially |
-| 0.6 API changes while binding is designed | Pin/reconcile baseline; no obsolete compatibility API |
+| Core delegation | Rust units, ExUnit boundaries, typespec/docs examples, round trips, existing golden vectors and browser PoW interoperability |
+| Hostile input | Tamper/noncanonical/trailing input, UTF-8, oversized binaries/maps, negative/overflow integers, wrong resources/keys, unknown kid |
+| Security | Expiry/skew units/boundaries, active/verify-only rotation, RNG failure/independent draws, no fixed-nonce production API, forged solve rejection |
+| BEAM safety | Redacted errors/Inspect/Debug/telemetry, fuzzed finite atom count, concurrency/GC, NIF load/upgrade behavior, OTP/OS/release builds, scheduler latency and bounded memory under load |
+| Distribution | Unpacked Hex outside repo, clean Mix consumer, archive allowlist, license/advisory audit, no core test-support in production |
+| Service bridge | End-to-end flows, backend conformance, concurrent confirm creates exactly one session, identical ambiguous retries, conflict/replan, spoofed/stale replies, death/restart/overload/shutdown |
+| Session/admission | Revocation/disable, idle/absolute expiry and refresh, country policy; multi-node proof budgets, replay, expiry, rotation and storage failure |
+| HTTP | Uniform bodies/headers, scanner safety, origin/CSRF/frame defenses, escaped accounts, scrubbed redirects and cookie lifecycle |
 
-Open review questions:
+Tests must not leak secrets through assertion output. Add package mise tasks
+`fmt`, `fmt-check`, `check`, `test`, `docs`, `package-check`, `verify`; integrate
+root `elixir-verify` after toolchain provisioning review. Run full
+`mise run verify` before completion; existing Rust/TS/formal checks must pass.
 
-1. Is the first goal core functionality, or a complete Phoenix login integration?
-2. Are source builds acceptable for the first release, and which deployment
-   targets/OTP versions are actually required?
-3. Is same-VM native crash risk acceptable, or is a port required?
-4. Should advanced generic Branca tokens be public, or only typed cookies?
-5. Which first-party transactional backend should phase 2 target, if any?
-6. Should admin/erasure parity be required before calling the binding complete?
-7. Should this ship with 0.6 or follow independently after that Rust API settles?
-8. Who owns the Hex name and approves the eventual publishing setup?
+## 9. Implementation gates and handoff
 
-## 13. Planning PR validation and scope
+| Packet | Deliverable | Exit gate |
+| --- | --- | --- |
+| P0 | Plan review only | Explicit implementation scope approval |
+| P1 | Package/native scaffold and orchestrator root wiring | NIF loads, isolated Hex source build, workspace/ABI matrix settled |
+| P2 | Core API/resources/errors | Phase 1 vectors, tamper, resource and scheduler tests |
+| P3 | Phase 1 docs/tasks/release metadata | Security/API review, full verify, separate release approval |
+| P4 | Async bridge spike | Correlation/lifecycle and durable ambiguous-commit recovery proven |
+| P5 | Service integration/backend conformance | Concurrent one-time consume and revocable sessions proven |
+| P6 | Standalone Phoenix example | Full HTTP security-contract tests; no framework dependencies in the library |
+| P7 | Precompiled distribution | Target/provenance/recovery review |
 
-Only this Markdown proposal changes. No public API, security behavior, package
-version, dependencies or runtime code change. Review source references and
-Markdown structure; run repository verification where available and record its
-actual outcome in the handoff. Implementation-specific tests are deliberately
-not present in this PR. Approval of this design is not approval to publish a
-package or enable CI credentials.
+Resolve packaging before expanding the API. Do not report the async spike as
+complete authentication. Each packet reports paths/API changes, security behavior,
+tests, validation run/not run, open questions and follow-ups. Cross-crate changes
+remain proposals; no implementation or publishing starts on implicit approval.
