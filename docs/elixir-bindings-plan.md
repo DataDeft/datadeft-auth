@@ -33,7 +33,9 @@ Reviewer decisions:
 - [x] Start with high-level workflows, framework-independent; Phoenix only an example.
 - [x] Admin operations and account erasure are not required for the first release;
       defer them to separately approved follow-up work.
-- [ ] Confirm Hex name/ownership, source-build acceptance, and required OS/OTP targets.
+- [x] Source builds for the first release; requiring Rust in the build environment
+      is accepted. Prebuilt executables are deferred.
+- [ ] Confirm Hex name/ownership and required OS/OTP targets.
 - [ ] Approve the dependency graph, workspace strategy, and shared release version;
       decide whether to ship with or after 0.6.0.
 - [ ] Select the first production transactional backend or confirm a behaviours-only
@@ -285,8 +287,10 @@ Release Rust first, build/test the exact Hex artifact against those versions,
 then approve Hex publication. Review Hex authentication/least privilege separately;
 this plan does not enable uploads or credentials.
 
-Initial source installs require Rust, Erlang/Elixir and platform build tools.
-Build the executable into the Mix release and verify its executable permissions,
+Approved initial distribution: source builds requiring Rust, Erlang/Elixir and
+platform build tools in the build environment. The deployed release includes the
+executable; production hosts need no Rust compiler. Prebuilt distribution is
+follow-up work. Build the executable into the Mix release and verify its permissions,
 path and child lifecycle in an isolated deployment. Future prebuilt executables
 need a target/libc matrix, immutable tagged artifacts, checksums/provenance,
 audits, source-build fallback tests and release approval. No unsigned or
