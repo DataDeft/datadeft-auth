@@ -7,7 +7,7 @@ behavior changes; design approval does not authorize publication or credentials.
 
 ## 1. Recommendation and review decisions
 
-Create an optional Hex package, provisionally `datadeft_auth`, that calls the
+Create an optional Hex package named `datadeft_auth` that calls the
 existing Rust implementation through a supervised Rust executable over an Erlang
 Port. No Rust code is loaded into BEAM; do not port crypto/security policy to Elixir.
 
@@ -35,7 +35,9 @@ Reviewer decisions:
       defer them to separately approved follow-up work.
 - [x] Source builds for the first release; requiring Rust in the build environment
       is accepted. Prebuilt executables are deferred.
-- [ ] Confirm Hex name/ownership and required OS/OTP targets.
+- [x] Hex package name: `datadeft_auth`; Elixir namespace: `DatadeftAuth`.
+      Project branding remains `datadeft-auth`; registry availability must be checked.
+- [ ] Confirm Hex publishing ownership and required OS/OTP targets.
 - [ ] Approve the dependency graph, workspace strategy, and shared release version;
       decide whether to ship with or after 0.6.0.
 - [ ] Select the first production transactional backend or confirm a behaviours-only
