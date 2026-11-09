@@ -20,8 +20,8 @@ targets are Linux glibc on 64-bit x86_64/AMD64 and ARM64/AArch64.
 
 Deliver the first usable release as high-level magic-link and session workflows,
 backed by the Rust service and existing DynamoDB storage/limiter adapter.
-Applications configure AWS resources and delivery; email transport remains to be
-confirmed. The Port/async execution path is required infrastructure.
+Applications configure AWS resources and email content; delivery reuses the
+existing Rust SES adapter. The Port/async execution path is required infrastructure.
 Include independent high-level PoW operations; callers never assemble crypto steps.
 
 Build in gated packets (section 9), then add a Phoenix example and, separately,
@@ -50,7 +50,7 @@ Reviewer decisions:
       This approves release alignment, not publication or implementation start.
 - [x] Production storage: AWS only, using the existing DynamoDB adapter; no
       Postgres/Ecto or generic Elixir storage-callback API in the initial release.
-- [ ] Confirm email delivery transport; SES is available but not implicitly approved.
+- [x] Email delivery: AWS SES, reusing the existing Rust adapter.
 - [ ] Approve the dependency graph and unpublished Cargo workspace member strategy.
 
 ## 2. Architecture and ownership
@@ -65,12 +65,13 @@ Any Elixir application (Phoenix optional)
        -> datadeft-magic-link-core
        -> datadeft-pow-core
        -> datadeft-magic-link-service
-       -> datadeft-magic-link-aws (DynamoDB storage and limits)
+       -> datadeft-magic-link-aws (DynamoDB storage/limits and SES delivery)
 ```
 
 Rust owns canonical parsing, AEAD, HKDF/HMAC, constant-time verification,
 freshness, service state transitions and AWS storage/limiter IO. Elixir owns
-supervision, HTTP wiring and deployment config; email integration is still open. Routes, templates, redirects,
+supervision, HTTP wiring and deployment config. Rust uses the existing SES adapter
+for delivery. Routes, templates, redirects,
 consent policy, business authorization and trusted-edge interpretation remain
 application responsibilities. Do not depend on Axum, add AWS/Tokio to core
 crates. The Port adapter owns the executor needed for service futures.
@@ -218,8 +219,9 @@ Use deployment roles and the supported AWS credential chain, not embedded keys
 or per-call credentials. Apply least-privilege IAM, explicit resource/region
 configuration, provider encryption and token-safe diagnostics. Reuse supported
 Secrets Manager loading where configured; keyrings remain loaded inputs to cores.
-Email transport is a separate pending choice: SES can reuse the existing outbox;
-another choice needs its own bounded delivery design, not a storage bridge.
+Use `SesMagicLinkOutbox` for delivery, with application-supplied templates/content
+and configured sender/Reply-To. No alternate email transport or Elixir delivery
+callback is needed for the initial release.
 
 Prove lifecycle and transaction safety:
 
