@@ -142,7 +142,9 @@ defmodule DatadeftAuth.Connection do
     :ok
   end
 
-  @impl true
+  # OTP 25+ invokes this callback, but Elixir only declares it since 1.17.
+  # Keep redaction on every supported OTP without an unknown-callback warning.
+  @impl {:format_status, 1} in GenServer.behaviour_info(:callbacks)
   def format_status(status) do
     Map.new(status, fn
       {:log, _} -> {:log, []}

@@ -36,6 +36,31 @@ defmodule DatadeftAuthTest do
     assert :sys.get_status(pid) |> inspect() |> String.contains?(":redacted")
   end
 
+  test "OTP status and error formatting redact transport data" do
+    secret = "private-transport-data"
+
+    assert DatadeftAuth.Connection.format_status(%{
+             state: secret,
+             message: secret,
+             reason: secret,
+             log: [secret],
+             sys_state: :running
+           }) == %{
+             state: :redacted,
+             message: :redacted,
+             reason: :redacted,
+             log: [],
+             sys_state: :running
+           }
+
+    pid = start_supervised!({DatadeftAuth, []})
+    ready(pid)
+    :sys.replace_state(pid, &%{&1 | buffer: secret})
+    status = pid |> :sys.get_status() |> inspect()
+    assert String.contains?(status, ":redacted")
+    refute String.contains?(status, secret)
+  end
+
   test "normal owner shutdown closes stdin and leaves no Rust child" do
     pid = start_supervised!({DatadeftAuth, []})
     ready(pid)
