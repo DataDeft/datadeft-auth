@@ -2,12 +2,32 @@ defmodule DatadeftAuth.Protocol do
   @moduledoc false
   @max_frame 4096
 
+  @typedoc "Nonzero uint32 wire ID, never reused within one Port connection."
+  @type request_id :: 1..0xFFFFFFFF
+
+  @typedoc "Wire operation string: currently only \"handshake\" or \"ping\"."
+  @type operation :: String.t()
+
+  @type result :: :handshake | :ping
+  @type failure :: {:error, :protocol}
+
+  @typedoc "JSON body without its four-byte length prefix; validated at the boundary."
+  @type frame :: binary()
+
+  @typedoc "An incomplete prefix or body retained between raw Port chunks."
+  @type buffer :: binary()
+
+  @type feed_result :: {:ok, [frame()], buffer()} | failure()
+
+  @spec max_frame() :: 4096
   def max_frame, do: @max_frame
 
+  @spec build_version() :: String.t()
   def build_version do
     Application.spec(:datadeft_auth, :vsn) |> to_string()
   end
 
+  @spec request(request_id(), operation()) :: binary()
   def request(id, operation) do
     data = Jason.encode!(%{version: 1, id: id, operation: operation, payload: %{}})
     <<byte_size(data)::unsigned-big-32, data::binary>>
@@ -15,8 +35,10 @@ defmodule DatadeftAuth.Protocol do
 
   # Raw stream framing checks the prefix before retaining an advertised body.
   # packet: 4 in the VM driver would allocate the body before our size check.
+  @spec feed(buffer(), binary()) :: feed_result()
   def feed(buffer, chunk), do: frames(buffer <> chunk, [])
 
+  @spec frames(binary(), [frame()]) :: feed_result()
   defp frames(<<length::unsigned-big-32, _::binary>>, _acc)
        when length == 0 or length > @max_frame,
        do: {:error, :protocol}
@@ -29,6 +51,7 @@ defmodule DatadeftAuth.Protocol do
 
   defp frames(buffer, acc), do: {:ok, Enum.reverse(acc), buffer}
 
+  @spec reply(term()) :: {:ok, request_id(), result()} | failure()
   def reply(frame) when is_binary(frame) and byte_size(frame) in 1..@max_frame do
     with {:ok, decoded} <- Jason.decode(frame, objects: :ordered_objects),
          {:ok, envelope} <- object(decoded, ["version", "id", "result"]),
@@ -43,6 +66,7 @@ defmodule DatadeftAuth.Protocol do
 
   def reply(_), do: {:error, :protocol}
 
+  @spec result(term()) :: {:ok, result()} | failure()
   defp result(%Jason.OrderedObject{values: fields} = value) do
     case List.keyfind(fields, "operation", 0) do
       {"operation", "handshake"} ->
@@ -67,6 +91,7 @@ defmodule DatadeftAuth.Protocol do
 
   defp result(_), do: {:error, :protocol}
 
+  @spec object(term(), [String.t()]) :: {:ok, %{String.t() => term()}} | failure()
   defp object(%Jason.OrderedObject{values: fields}, keys) do
     # Sorting preserves duplicate keys so they cannot be silently overwritten.
     if Enum.sort(Enum.map(fields, &elem(&1, 0))) == Enum.sort(keys) do

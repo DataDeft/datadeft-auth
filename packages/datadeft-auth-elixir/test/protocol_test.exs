@@ -17,6 +17,18 @@ defmodule DatadeftAuth.ProtocolTest do
     assert {:error, :protocol} = Protocol.feed(<<>>, <<0xFFFFFFFF::32>>)
   end
 
+  test "reply IDs accept the inclusive uint32 bounds but not the internal sentinel" do
+    for id <- [1, 0xFFFFFFFF] do
+      frame = Jason.encode!(%{version: 1, id: id, result: %{operation: "ping"}})
+      assert {:ok, ^id, :ping} = Protocol.reply(frame)
+    end
+
+    for id <- [-1, 0, 0x100000000] do
+      frame = Jason.encode!(%{version: 1, id: id, result: %{operation: "ping"}})
+      assert {:error, :protocol} = Protocol.reply(frame)
+    end
+  end
+
   test "strict response schema rejects duplicates, unknown fields and forged shapes" do
     valid = ~s({"version":1,"id":2,"result":{"operation":"ping"}})
     assert {:ok, 2, :ping} = Protocol.reply(valid)

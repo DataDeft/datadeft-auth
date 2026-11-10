@@ -61,6 +61,21 @@ defmodule DatadeftAuthTest do
     refute String.contains?(status, secret)
   end
 
+  test "the last uint32 ID succeeds and the exhausted sentinel is never sent" do
+    pid = start_supervised!({DatadeftAuth, [restart_delay: 1000]})
+    ready(pid)
+    :sys.replace_state(pid, &%{&1 | next_id: 0xFFFFFFFF})
+
+    assert {:ok, :transport_ready} = DatadeftAuth.status(pid)
+    assert :sys.get_state(pid).next_id == 0x100000000
+    assert {:error, %Error{code: :unavailable}} = DatadeftAuth.status(pid)
+
+    state = :sys.get_state(pid)
+    assert state.next_id == 0x100000000
+    assert state.port == nil
+    assert state.pending == %{}
+  end
+
   test "normal owner shutdown closes stdin and leaves no Rust child" do
     pid = start_supervised!({DatadeftAuth, []})
     ready(pid)
