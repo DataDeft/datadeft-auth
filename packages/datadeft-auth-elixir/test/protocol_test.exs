@@ -3,7 +3,7 @@ defmodule DatadeftAuth.ProtocolTest do
   alias DatadeftAuth.Protocol
 
   test "framing handles fragmented prefixes, bodies and coalesced messages" do
-    frame = Protocol.request(1, "handshake")
+    frame = Protocol.request(1, :handshake)
     <<first::binary-size(2), rest::binary>> = frame
     assert {:ok, [], ^first} = Protocol.feed(<<>>, first)
     assert {:ok, [body, second], <<>>} = Protocol.feed(first, rest <> frame)

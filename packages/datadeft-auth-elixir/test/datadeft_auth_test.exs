@@ -53,6 +53,8 @@ defmodule DatadeftAuthTest do
              sys_state: :running
            }
 
+    # Readiness keeps the handshake reply out of flight, so the planted
+    # buffer is not cleared by a protocol disconnect before the assertion.
     pid = start_supervised!({DatadeftAuth, []})
     ready(pid)
     :sys.replace_state(pid, &%{&1 | buffer: secret})

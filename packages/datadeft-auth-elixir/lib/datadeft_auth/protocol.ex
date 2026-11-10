@@ -1,12 +1,14 @@
 defmodule DatadeftAuth.Protocol do
   @moduledoc false
   @max_frame 4096
+  @max_request_id 0xFFFFFFFF
 
+  # Typespecs cannot reference module attributes; the literals mirror them.
   @typedoc "Nonzero uint32 wire ID, never reused within one Port connection."
   @type request_id :: 1..0xFFFFFFFF
 
-  @typedoc "Wire operation string: currently only \"handshake\" or \"ping\"."
-  @type operation :: String.t()
+  @typedoc "Closed operation set; encoded as strings on the wire."
+  @type operation :: :handshake | :ping
 
   @type result :: :handshake | :ping
   @type failure :: {:error, :protocol}
@@ -21,6 +23,9 @@ defmodule DatadeftAuth.Protocol do
 
   @spec max_frame() :: 4096
   def max_frame, do: @max_frame
+
+  @spec max_request_id() :: 0xFFFFFFFF
+  def max_request_id, do: @max_request_id
 
   @spec build_version() :: String.t()
   def build_version do
@@ -56,7 +61,7 @@ defmodule DatadeftAuth.Protocol do
     with {:ok, decoded} <- Jason.decode(frame, objects: :ordered_objects),
          {:ok, envelope} <- object(decoded, ["version", "id", "result"]),
          %{"version" => 1, "id" => id, "result" => result} <- envelope,
-         true <- is_integer(id) and id > 0 and id <= 0xFFFFFFFF,
+         true <- is_integer(id) and id > 0 and id <= @max_request_id,
          {:ok, result} <- result(result) do
       {:ok, id, result}
     else

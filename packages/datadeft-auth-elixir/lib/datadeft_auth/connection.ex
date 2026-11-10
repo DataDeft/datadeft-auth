@@ -3,41 +3,38 @@ defmodule DatadeftAuth.Connection do
   use GenServer
   alias DatadeftAuth.{Error, Protocol}
 
+  # Default and inclusive upper limit per integer option; :name and
+  # :executable are validated separately. These limits are the single source
+  # for validation, the state type and the public option bound types.
+  @request_timeout_limit 60_000
+  @max_pending_limit 1024
+  @restart_delay_limit 5000
+  @int_options [
+    request_timeout: {1000, @request_timeout_limit},
+    max_pending: {32, @max_pending_limit},
+    restart_delay: {100, @restart_delay_limit}
+  ]
+  @defaults Enum.map(@int_options, fn {key, {default, _limit}} -> {key, default} end)
+  @allowed [:name, :executable] ++ Keyword.keys(@int_options)
+
   @typep pending_request ::
            %{from: nil, monitor: nil, timer: reference()}
            | %{from: GenServer.from(), monitor: reference(), timer: reference()}
 
   # The uint32 maximum plus one is an exhausted-ID sentinel, never a wire ID.
   @typep next_id :: 1..0x100000000
-  @typep state(id) :: %{
+  @typep state :: %{
            port: port() | nil,
            ready: boolean(),
            buffer: Protocol.buffer(),
            pending: %{optional(Protocol.request_id()) => pending_request()},
-           next_id: id,
+           next_id: next_id(),
            executable: String.t() | nil,
-           timeout: 1..60_000,
-           max_pending: 1..1024,
-           restart_delay: 1..5000,
-           backoff: 1..5000
+           timeout: DatadeftAuth.request_timeout(),
+           max_pending: DatadeftAuth.max_pending(),
+           restart_delay: DatadeftAuth.restart_delay(),
+           backoff: DatadeftAuth.restart_delay()
          }
-
-  @typep state :: state(next_id())
-
-  @typep call_result ::
-           {:reply, DatadeftAuth.status_result(), state()} | {:noreply, state()}
-
-  # Default and inclusive upper limit per integer option; :name and
-  # :executable are validated separately.
-  @int_options [
-    request_timeout: {1000, 60_000},
-    max_pending: {32, 1024},
-    restart_delay: {100, 5000}
-  ]
-  @defaults Enum.map(@int_options, fn {key, {default, _limit}} -> {key, default} end)
-  @allowed [:name, :executable] ++ Keyword.keys(@int_options)
-  # Reconnect backoff doubles up to the highest configurable restart delay.
-  @backoff_limit @int_options |> Keyword.fetch!(:restart_delay) |> elem(1)
 
   @spec start_link(DatadeftAuth.options()) :: GenServer.on_start()
   def start_link(opts) do
@@ -74,7 +71,8 @@ defmodule DatadeftAuth.Connection do
   end
 
   @impl true
-  @spec handle_call(:status, GenServer.from(), state()) :: call_result()
+  @spec handle_call(:status, GenServer.from(), state()) ::
+          {:reply, DatadeftAuth.status_result(), state()} | {:noreply, state()}
   def handle_call(:status, _from, %{ready: false} = state),
     do: {:reply, error(:unavailable), state}
 
@@ -83,11 +81,11 @@ defmodule DatadeftAuth.Connection do
       map_size(state.pending) >= state.max_pending ->
         {:reply, error(:overloaded), state}
 
-      state.next_id > 0xFFFFFFFF ->
+      state.next_id > Protocol.max_request_id() ->
         {:reply, error(:unavailable), disconnect(state, :unavailable)}
 
       true ->
-        case send_request(state, "ping", from) do
+        case send_request(state, :ping, from) do
           {:ok, state} -> {:noreply, state}
           :error -> {:reply, error(:unavailable), disconnect(state, :unavailable)}
         end
@@ -101,7 +99,7 @@ defmodule DatadeftAuth.Connection do
       {:ok, port} ->
         state = %{state | port: port, buffer: <<>>, ready: false, next_id: 1}
 
-        case send_request(state, "handshake", nil) do
+        case send_request(state, :handshake, nil) do
           {:ok, state} -> {:noreply, state}
           :error -> {:noreply, disconnect(state, :unavailable)}
         end
@@ -218,12 +216,15 @@ defmodule DatadeftAuth.Connection do
     end
   end
 
-  @spec send_request(state(Protocol.request_id()), Protocol.operation(), GenServer.from() | nil) ::
+  # The exhausted-ID sentinel is never sent; this fails closed if a caller
+  # skips the handle_call guard.
+  @spec send_request(state(), Protocol.operation(), GenServer.from() | nil) ::
           {:ok, state()} | :error
   defp send_request(state, operation, from) do
     id = state.next_id
     # nosuspend avoids blocking the GenServer on a busy OS pipe.
-    if Port.command(state.port, Protocol.request(id, operation), [:nosuspend]) do
+    if id <= Protocol.max_request_id() and
+         Port.command(state.port, Protocol.request(id, operation), [:nosuspend]) do
       monitor = if from, do: Process.monitor(elem(from, 0)), else: nil
       timer = Process.send_after(self(), {:deadline, state.port, id}, state.timeout)
       pending = %{from: from, timer: timer, monitor: monitor}
@@ -245,7 +246,7 @@ defmodule DatadeftAuth.Connection do
   @spec schedule_restart(state()) :: state()
   defp schedule_restart(state) do
     Process.send_after(self(), :connect, state.backoff)
-    %{state | backoff: min(state.backoff * 2, @backoff_limit)}
+    %{state | backoff: min(state.backoff * 2, @restart_delay_limit)}
   end
 
   @spec finish(pending_request(), DatadeftAuth.status_result() | :ok) :: :ok | nil
@@ -275,7 +276,6 @@ defmodule DatadeftAuth.Connection do
     _ -> :error
   end
 
-  @spec close(port() | nil) :: true | :ok
   defp close(nil), do: :ok
 
   defp close(port) do
@@ -284,7 +284,6 @@ defmodule DatadeftAuth.Connection do
     ArgumentError -> :ok
   end
 
-  @spec default_executable() :: String.t()
   defp default_executable do
     :code.priv_dir(:datadeft_auth) |> to_string() |> Path.join("datadeft-auth-port")
   end
@@ -300,10 +299,8 @@ defmodule DatadeftAuth.Connection do
 
   defp valid_options?(_), do: false
 
-  @spec valid_keys?([atom()]) :: boolean()
   defp valid_keys?(keys), do: Enum.all?(keys, &(&1 in @allowed)) and keys == Enum.uniq(keys)
 
-  @spec valid_name?(keyword()) :: boolean()
   defp valid_name?(opts) do
     case Keyword.fetch(opts, :name) do
       :error -> true
@@ -311,7 +308,6 @@ defmodule DatadeftAuth.Connection do
     end
   end
 
-  @spec valid_path?(term()) :: boolean()
   defp valid_path?(nil), do: true
 
   defp valid_path?(path) when is_binary(path),
@@ -319,6 +315,5 @@ defmodule DatadeftAuth.Connection do
 
   defp valid_path?(_), do: false
 
-  @spec error(Error.code()) :: {:error, Error.t()}
   defp error(code), do: {:error, %Error{code: code}}
 end

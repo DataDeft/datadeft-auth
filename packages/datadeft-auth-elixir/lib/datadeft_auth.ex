@@ -13,13 +13,22 @@ defmodule DatadeftAuth do
 
   alias DatadeftAuth.{Connection, Error}
 
+  # Typespecs cannot reference module attributes; these literals mirror the
+  # limits in Connection's @int_options validation table.
+  @typedoc "Validated bound of the :request_timeout option, in milliseconds."
+  @type request_timeout :: 1..60_000
+  @typedoc "Validated bound of the :max_pending option."
+  @type max_pending :: 1..1024
+  @typedoc "Validated bound of the :restart_delay option, in milliseconds."
+  @type restart_delay :: 1..5000
+
   @typedoc "Transport options. Executable paths are trusted deployment configuration."
   @type option ::
           {:name, atom()}
           | {:executable, String.t() | nil}
-          | {:request_timeout, 1..60_000}
-          | {:max_pending, 1..1024}
-          | {:restart_delay, 1..5000}
+          | {:request_timeout, request_timeout()}
+          | {:max_pending, max_pending()}
+          | {:restart_delay, restart_delay()}
 
   @typedoc "Optional transport settings; duplicate and unknown keys are rejected."
   @type options :: [option()]
@@ -28,7 +37,6 @@ defmodule DatadeftAuth do
   @type status_result :: {:ok, :transport_ready} | {:error, Error.t()}
 
   @doc "Starts the transport owner. Readiness is asynchronous and checked with status/1."
-  @spec start_link() :: GenServer.on_start()
   @spec start_link(options()) :: GenServer.on_start()
   def start_link(opts \\ []), do: Connection.start_link(opts)
 

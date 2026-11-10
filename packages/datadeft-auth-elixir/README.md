@@ -25,8 +25,8 @@ mise run elixir-verify
 Critical APIs, protocol parsing and connection lifecycle helpers have typespecs.
 The contracts cover configuration bounds, closed error codes, wire IDs/results,
 pending callers/timers and connection state, including the exhausted-ID sentinel.
-`test/type_contract_test.exs` guards against accidentally dropping these specs or
-types. Typespecs do not enforce runtime validation or prove implementation
+`test/type_contract_test.exs` guards the public contracts and the redaction
+callback against accidentally dropping their specs or types. Typespecs do not enforce runtime validation or prove implementation
 correctness; runtime checks remain necessary, and Dialyzer is not yet configured.
 
 Use `deps-update` only when intentionally updating the committed Mix lockfile.
