@@ -3,8 +3,17 @@ defmodule DatadeftAuth.Connection do
   use GenServer
   alias DatadeftAuth.{Error, Protocol}
 
-  @allowed [:name, :executable, :request_timeout, :max_pending, :restart_delay]
-  @defaults [request_timeout: 1000, max_pending: 32, restart_delay: 100]
+  # Default and inclusive upper limit per integer option; :name and
+  # :executable are validated separately.
+  @int_options [
+    request_timeout: {1000, 60_000},
+    max_pending: {32, 1024},
+    restart_delay: {100, 5000}
+  ]
+  @defaults Enum.map(@int_options, fn {key, {default, _limit}} -> {key, default} end)
+  @allowed [:name, :executable] ++ Keyword.keys(@int_options)
+  # Reconnect backoff doubles up to the highest configurable restart delay.
+  @backoff_limit @int_options |> Keyword.fetch!(:restart_delay) |> elem(1)
 
   def start_link(opts) do
     if valid_options?(opts) do
@@ -18,6 +27,9 @@ defmodule DatadeftAuth.Connection do
   def init(opts) do
     Process.flag(:trap_exit, true)
 
+    opts = Keyword.merge(@defaults, opts)
+    restart_delay = Keyword.fetch!(opts, :restart_delay)
+
     state = %{
       port: nil,
       ready: false,
@@ -25,10 +37,10 @@ defmodule DatadeftAuth.Connection do
       pending: %{},
       next_id: 1,
       executable: Keyword.get(opts, :executable, default_executable()),
-      timeout: Keyword.get(opts, :request_timeout, 1000),
-      max_pending: Keyword.get(opts, :max_pending, 32),
-      restart_delay: Keyword.get(opts, :restart_delay, 100),
-      backoff: Keyword.get(opts, :restart_delay, 100)
+      timeout: Keyword.fetch!(opts, :request_timeout),
+      max_pending: Keyword.fetch!(opts, :max_pending),
+      restart_delay: restart_delay,
+      backoff: restart_delay
     }
 
     send(self(), :connect)
@@ -195,7 +207,7 @@ defmodule DatadeftAuth.Connection do
 
   defp schedule_restart(state) do
     Process.send_after(self(), :connect, state.backoff)
-    %{state | backoff: min(state.backoff * 2, 5000)}
+    %{state | backoff: min(state.backoff * 2, @backoff_limit)}
   end
 
   defp finish(pending, result) do
@@ -236,26 +248,24 @@ defmodule DatadeftAuth.Connection do
   end
 
   defp valid_options?(opts) when is_list(opts) do
-    Keyword.keyword?(opts) and
-      Enum.all?(Keyword.keys(opts), &(&1 in @allowed)) and
-      length(Keyword.keys(opts)) == length(Enum.uniq(Keyword.keys(opts))) and
-      Enum.all?(@defaults, fn {key, default} ->
+    Keyword.keyword?(opts) and valid_keys?(Keyword.keys(opts)) and
+      Enum.all?(@int_options, fn {key, {default, limit}} ->
         value = Keyword.get(opts, key, default)
-
-        limit =
-          case key do
-            :max_pending -> 1024
-            :restart_delay -> 5000
-            :request_timeout -> 60_000
-          end
-
         is_integer(value) and value > 0 and value <= limit
-      end) and valid_path?(Keyword.get(opts, :executable)) and
-      (not Keyword.has_key?(opts, :name) or
-         (is_atom(Keyword.get(opts, :name)) and Keyword.get(opts, :name) != nil))
+      end) and valid_path?(Keyword.get(opts, :executable)) and valid_name?(opts)
   end
 
   defp valid_options?(_), do: false
+
+  defp valid_keys?(keys), do: Enum.all?(keys, &(&1 in @allowed)) and keys == Enum.uniq(keys)
+
+  defp valid_name?(opts) do
+    case Keyword.fetch(opts, :name) do
+      :error -> true
+      {:ok, name} -> is_atom(name) and name != nil
+    end
+  end
+
   defp valid_path?(nil), do: true
 
   defp valid_path?(path) when is_binary(path),

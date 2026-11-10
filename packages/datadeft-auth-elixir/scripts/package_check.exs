@@ -12,7 +12,9 @@ defmodule PackageCheck do
     File.mkdir_p!(stage)
 
     try do
-      for item <- ["lib", "test", "mix.exs", "mix.lock", ".formatter.exs", "README.md", "LICENSE"] do
+      # The native entries are staged separately below with a rewritten manifest.
+      for item <- Mix.Project.config()[:package][:files],
+          not String.starts_with?(item, "native/") do
         File.cp_r!(Path.join(root, item), Path.join(stage, item))
       end
 
@@ -21,13 +23,18 @@ defmodule PackageCheck do
       File.cp_r!(Path.join([root, native, "src"]), Path.join([stage, native, "src"]))
       manifest = File.read!(Path.join([root, native, "Cargo.toml"]))
 
-      fields = [
-        {"version", Mix.Project.config()[:version]},
-        {"edition", "2024"},
-        {"rust-version", "1.94.1"},
-        {"license", "MIT"},
-        {"repository", "https://github.com/DataDeft/datadeft-auth"}
-      ]
+      # Inherited package metadata comes from the workspace manifest, so the
+      # staged standalone crate cannot drift from the tree that was tested.
+      workspace_manifest = File.read!(Path.join(root, "../../Cargo.toml"))
+
+      fields =
+        [{"version", Mix.Project.config()[:version]}] ++
+          for key <- ["edition", "rust-version", "license", "repository"] do
+            case Regex.run(~r/^#{key} = "([^"]+)"/m, workspace_manifest) do
+              [_, value] -> {key, value}
+              nil -> raise "#{key} not found in the workspace Cargo.toml"
+            end
+          end
 
       manifest =
         Enum.reduce(fields, manifest, fn {key, value}, source ->
@@ -35,6 +42,7 @@ defmodule PackageCheck do
         end)
 
       manifest = String.replace(manifest, "[lints]\nworkspace = true", "")
+      if String.contains?(manifest, "workspace = true"), do: raise("unreplaced workspace field")
       File.write!(Path.join([stage, native, "Cargo.toml"]), manifest <> "\n[workspace]\n")
 
       cmd!("cargo", ["generate-lockfile", "--manifest-path", "#{native}/Cargo.toml"], stage)

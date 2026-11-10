@@ -12,6 +12,15 @@ license = "MIT"
 repository = "https://github.com/DataDeft/datadeft-auth"
 authors = ["Istvan <dev@l1x.be>"]
 
+# Security-baseline floors, bumped in one place. Maintained Smithy releases
+# remove pin-utils and require Rust 1.94.1. Members add their own features.
+[workspace.dependencies]
+aws-sdk-dynamodb = { version = "1.137", default-features = false, features = ["rt-tokio"] }
+aws-sdk-secretsmanager = { version = "1.125", default-features = false, features = ["rt-tokio"] }
+aws-sdk-sesv2 = { version = "1.145", default-features = false, features = ["rt-tokio"] }
+aws-smithy-http-client = { version = "1.5.2" }
+tokio = { version = "1.53.3", default-features = false }
+
 # Shared lint policy: production code never unwraps or leaves stubs behind.
 # Test code is exempted via clippy.toml (allow-unwrap-in-tests etc.).
 [workspace.lints.clippy]

@@ -1,5 +1,9 @@
 # Workspace task runner. Run `mise tasks` to list tasks.
 
+[vars]
+# Keep in sync with workspace.package.rust-version in Cargo.toml.
+msrv = "1.94.1"
+
 [tools]
 bun = "latest"
 node = "24"
@@ -114,11 +118,11 @@ run = "bun scripts/registry-release.ts publish"
 
 [tasks.msrv-install]
 description = "Install the declared minimum Rust toolchain"
-run = "rustup toolchain install 1.94.1 --profile minimal"
+run = "rustup toolchain install {{vars.msrv}} --profile minimal"
 
 [tasks.msrv]
 description = "Check the declared minimum Rust version (mise run msrv-install first)"
-run = "cargo +1.94.1 check --workspace --all-targets --all-features --locked"
+run = "cargo +{{vars.msrv}} check --workspace --all-targets --all-features --locked"
 
 [tasks.test-default-features]
 description = "Build every crate's tests with default features, one crate at a time (workspace feature unification hides gaps)"

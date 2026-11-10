@@ -3,9 +3,6 @@ ExUnit.start()
 defmodule DatadeftAuth.TestSupport do
   import ExUnit.Assertions
 
-  def executable,
-    do: :code.priv_dir(:datadeft_auth) |> to_string() |> Path.join("datadeft-auth-port")
-
   def eventually(fun, attempts \\ 150)
 
   def eventually(fun, attempts) when attempts > 0 do
@@ -44,7 +41,7 @@ defmodule DatadeftAuth.TestSupport do
         result: %{
           operation: "handshake",
           build_version: DatadeftAuth.Protocol.build_version(),
-          max_frame_bytes: 4096
+          max_frame_bytes: DatadeftAuth.Protocol.max_frame()
         }
       })
       |> Base.encode64()

@@ -13,7 +13,7 @@ defmodule DatadeftAuth.ProtocolTest do
 
   test "rejects zero and oversized prefixes without waiting for a body" do
     assert {:error, :protocol} = Protocol.feed(<<>>, <<0::32>>)
-    assert {:error, :protocol} = Protocol.feed(<<>>, <<4097::32>>)
+    assert {:error, :protocol} = Protocol.feed(<<>>, <<Protocol.max_frame() + 1::32>>)
     assert {:error, :protocol} = Protocol.feed(<<>>, <<0xFFFFFFFF::32>>)
   end
 
@@ -34,7 +34,7 @@ defmodule DatadeftAuth.ProtocolTest do
           "{} {}",
           <<255>>,
           "[]",
-          String.duplicate(" ", 4097),
+          String.duplicate(" ", Protocol.max_frame() + 1),
           :not_a_binary
         ] do
       assert {:error, :protocol} = Protocol.reply(frame)

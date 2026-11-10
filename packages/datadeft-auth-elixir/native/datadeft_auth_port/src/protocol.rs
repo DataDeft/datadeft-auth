@@ -52,9 +52,8 @@ pub fn serve(reader: &mut impl Read, writer: &mut impl Write) -> Result<(), Fram
             version,
             id,
             operation,
-            payload,
+            payload: Empty {},
         } = serde_json::from_slice(&frame).map_err(|_| FrameError::Invalid)?;
-        let _ = payload;
         if version != PROTOCOL_VERSION || id <= last_id {
             return Err(FrameError::Invalid);
         }

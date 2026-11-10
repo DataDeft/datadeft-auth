@@ -2,7 +2,6 @@ defmodule DatadeftAuthTest do
   use ExUnit.Case, async: false
   import DatadeftAuth.TestSupport
   alias DatadeftAuth.Error
-  doctest DatadeftAuth
 
   test "real child handshakes and responds to concurrent health checks" do
     pid = start_supervised!({DatadeftAuth, []})

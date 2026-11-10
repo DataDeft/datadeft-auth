@@ -6,13 +6,15 @@ defmodule Mix.Tasks.Compile.DatadeftPort do
   def run(_args) do
     root = File.cwd!()
     manifest = Path.join(root, "native/datadeft_auth_port/Cargo.toml")
-    target = Path.join(Mix.Project.build_path(), "datadeft_native") |> Path.expand()
+    # The binary is Mix-env independent: share one cargo target dir under
+    # _build so dev/test/prod compiles reuse the same release build.
+    target =
+      Mix.Project.build_path() |> Path.dirname() |> Path.join("datadeft_native") |> Path.expand()
 
     args = ["build", "--release", "--locked", "--manifest-path", manifest, "--target-dir", target]
 
     case System.cmd("cargo", args, stderr_to_stdout: true) do
-      {output, 0} ->
-        Mix.shell().info(output)
+      {_output, 0} ->
         priv = Path.join(Mix.Project.app_path(), "priv")
         File.mkdir_p!(priv)
 
@@ -24,7 +26,8 @@ defmodule Mix.Tasks.Compile.DatadeftPort do
         File.chmod!(Path.join(priv, "datadeft-auth-port"), 0o755)
         {:ok, []}
 
-      {_output, _status} ->
+      {output, _status} ->
+        Mix.shell().info(output)
         Mix.shell().error("datadeft_auth Rust executable build failed")
         {:error, []}
     end
