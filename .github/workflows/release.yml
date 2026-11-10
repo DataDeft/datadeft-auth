@@ -18,6 +18,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: '26.2'
+          elixir-version: '1.16.3'
       - name: Validate the tag and reviewed ancestry
         run: |
           test "$GITHUB_REF_NAME" = "v$(cat version.txt)"

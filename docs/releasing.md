@@ -140,7 +140,7 @@ mise run crates-dry-run
   configs, `spec`) and the 44 spec mutants (`spec-mutants`). Last, it runs the
   npm build, tests, dry run, and isolated packed-consumer checks.
 - Before the first `msrv` run, run
-  `rustup toolchain install 1.88.0 --profile minimal` one time.
+  `mise run msrv-install` one time (Rust 1.94.1).
 - `package-crates` uses the workspace staging registry of current stable
   Cargo. Before any public upload, it packages and builds all seven archives
   with all features.

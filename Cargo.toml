@@ -1,13 +1,13 @@
 [workspace]
 resolver = "3"
-# Rust crates and examples are workspace members. The optional
-# `packages/dd-protect-client` TS package is managed separately.
-members = ["crates/*", "examples/*"]
+# Rust crates, examples and the private Elixir Port executable share a workspace.
+# The optional `packages/dd-protect-client` TS package is managed separately.
+members = ["crates/*", "examples/*", "packages/datadeft-auth-elixir/native/datadeft_auth_port"]
 
 [workspace.package]
 version = "0.5.0" # x-release-please-version
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.94.1"
 license = "MIT"
 repository = "https://github.com/DataDeft/datadeft-auth"
 authors = ["Istvan <dev@l1x.be>"]

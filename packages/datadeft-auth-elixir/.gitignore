@@ -1,0 +1,5 @@
+/_build/
+/deps/
+/priv/datadeft-auth-port
+/*.tar
+/native/datadeft_auth_port/target/

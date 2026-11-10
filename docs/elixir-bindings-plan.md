@@ -1,11 +1,12 @@
 # Proposal: Elixir bindings for datadeft-auth
 
-**Status:** design decisions approved; implementation not started. Review/merge
-this planning PR and explicitly authorize implementation before coding.
+**Status:** design approved and implementation authorized. P1 transport foundation
+is in progress in `packages/datadeft-auth-elixir`; authentication/AWS integration
+and remaining release gates are not implemented yet.
 **Release alignment:** target the settled Rust 0.6.0 API and use the repository's
 shared release version; reconcile the current 0.5.0 baseline before implementation.
-**This PR:** documentation only. No runtime, API, dependency, version, or security
-behavior changes; design approval does not authorize publication or credentials.
+**Approval boundary:** PR #7 approved this design; implementation was subsequently
+authorized. Publication and publishing credentials still require separate approval.
 
 ## 1. Recommendation and review decisions
 
@@ -283,8 +284,9 @@ Approved deployment targets: Linux glibc on x86_64/AMD64 and ARM64/AArch64,
 both 64-bit. No initial 32-bit x86, musl/Alpine or Windows support. macOS ARM64
 can be used for development but is not an approved deployment target.
 Approved runtime baseline: Elixir >= 1.16 and OTP >= 26. Rust build baseline:
->= 1.88. Validate supported Elixir/OTP combinations in CI and test/document the
-minimum supported glibc version.
+>= 1.94.1 (raised to use the maintained AWS SDK/Smithy dependency chain).
+Validate supported Elixir/OTP combinations in CI and test/document the minimum
+supported glibc version.
 Both deployment targets need native execution tests, not cross-compilation alone.
 The executable has an OS/CPU/libc target, not an Erlang NIF ABI; the versioned
 protocol is the compatibility boundary.

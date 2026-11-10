@@ -1,0 +1,31 @@
+[tasks.deps-update]
+description = "Resolve dependencies and update mix.lock intentionally"
+run = "mix deps.get"
+
+[tasks.deps]
+description = "Fetch the locked Mix dependencies"
+run = "mix deps.get --check-locked"
+
+[tasks.fmt]
+run = "mix format"
+
+[tasks.fmt-check]
+run = "mix format --check-formatted"
+
+[tasks.check]
+run = "mix compile --warnings-as-errors"
+
+[tasks.test]
+run = "mix test --warnings-as-errors"
+
+[tasks.docs]
+description = "Check documented examples (ExUnit doctests)"
+run = "mix test test/datadeft_auth_test.exs --warnings-as-errors"
+
+[tasks.package-check]
+description = "Build and test an isolated source Hex archive and Mix release"
+run = "mix run --no-start scripts/package_check.exs"
+
+[tasks.verify]
+depends = ["fmt-check", "check", "test"]
+run = "mise run package-check"
