@@ -446,8 +446,7 @@ Enumeration-resistant flows need bounded dummy work:
 ## Configuration
 
 - Production secrets come from the consuming application.
-- Make cookie names, TTLs, peppers and keys configurable. Where you use an
-  issuer and audience, make them configurable too.
+- Make cookie names, TTLs, peppers and keys configurable.
 - Use fake development values only in examples.
 - Never assume production defaults silently.
 

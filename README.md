@@ -18,7 +18,7 @@ A Rust API service calls these libraries from its own HTTP handlers.
 
 The public crates and the npm package contain no application-specific code:
 
-- no application branding, domains, cookie names, issuers, or audiences
+- no application branding, domains, cookie names, or issuers
 - no branded email templates or application package names; the application
   supplies the subject, text, and HTML, and the SES sender sends only that
   app-provided content
