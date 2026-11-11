@@ -128,6 +128,15 @@ defmodule DatadeftAuthFlowTest do
     assert {:ok, :transport_ready} = DatadeftAuth.status(pid)
   end
 
+  test "invalid UTF-8 input is refused locally without crashing the owner" do
+    pid = start_configured()
+
+    # Percent-decoded URL input can be any byte sequence; it must fail as
+    # this request's bad_request, never as a connection fault.
+    assert {:error, %Error{code: :bad_request}} = DatadeftAuth.landing(pid, <<0xFF, 0xFE>>)
+    assert {:ok, :transport_ready} = DatadeftAuth.status(pid)
+  end
+
   test "secret material is redacted in inspected results" do
     pid = start_configured()
 
