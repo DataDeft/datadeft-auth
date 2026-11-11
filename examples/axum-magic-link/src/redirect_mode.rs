@@ -4,6 +4,8 @@
 //! `/login/confirm`. That page reads `/auth/magic-link/flow-state` and posts
 //! the confirmation to the same route as the server-rendered mode.
 
+use std::sync::Arc;
+
 use axum::extract::{Path, Request, State};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, REFERRER_POLICY, X_FRAME_OPTIONS};
 use axum::http::{HeaderMap, HeaderValue};
@@ -11,6 +13,7 @@ use axum::response::{Html, IntoResponse, Response};
 use datadeft_magic_link_axum::{magic_link_flow_state, magic_link_landing_redirect};
 use rand_core::OsRng;
 
+use super::locales::UiLocale;
 use super::state::AppState;
 
 /// `GET /auth/magic-link/open?token=…`: `303` to the static page for every
@@ -51,7 +54,7 @@ pub(super) async fn flow_state_route(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
-    let config = state.http_config.clone();
+    let config = Arc::clone(state.default_config());
     magic_link_flow_state(&headers, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
         state
@@ -62,17 +65,12 @@ pub(super) async fn flow_state_route(
     .await
 }
 
-/// `GET /login/confirm`: the static confirm page. In production it is a file
-/// on a CDN; the headers below are what that CDN must send. It holds the
-/// account and the confirmation value, so: scripts only from this origin, no
-/// third-party anything, no framing.
-pub(super) async fn confirm_page() -> Response {
-    static_page(include_str!("confirm.en.html"))
-}
-
-/// Hungarian static page: same protocol and security headers, translated UI.
-pub(super) async fn confirm_page_hu() -> Response {
-    static_page(include_str!("confirm.hu.html"))
+/// One locale's static confirm page (routed per locale-table row). In
+/// production it is a file on a CDN; the headers below are what that CDN must
+/// send. It holds the account and the confirmation value, so: scripts only
+/// from this origin, no third-party anything, no framing.
+pub(super) fn confirm_page(locale: &'static UiLocale) -> Response {
+    static_page(locale.confirm_page_html)
 }
 
 fn static_page(html: &'static str) -> Response {
@@ -105,15 +103,11 @@ fn static_page_headers(headers: &mut HeaderMap) {
     headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
 }
 
+// Each locale's page carries its own translated status messages as `data-*`
+// attributes on the status element, so this shared script stays language-free.
 const CONFIRM_PAGE_JS: &str = r#"const status = document.getElementById('status');
 const form = document.getElementById('confirm');
-const messages = document.documentElement.lang === 'hu' ? {
-  unusable: 'Ez a hivatkozás nem használható. Kérj újat.',
-  busy: 'A szolgáltatás jelenleg nem érhető el. Próbáld újra később.',
-} : {
-  unusable: 'This link cannot be used. Request a new one.',
-  busy: 'The service is busy. Try again in a moment.',
-};
+const messages = { unusable: status.dataset.unusable, busy: status.dataset.busy };
 
 (async () => {
   const response = await fetch('/auth/magic-link/flow-state', {

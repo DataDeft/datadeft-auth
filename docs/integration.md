@@ -241,7 +241,7 @@ Load both PoW keys from the auth secret document
 fields:
 
 ```rust
-let secrets = resolve_auth_secrets(&secrets_manager, &config.secrets).await?;
+let secrets = resolve_auth_secrets(&secrets_manager, &config.secrets, None).await?;
 let pow_secret = PowSecret::new(*secrets.pow_challenge_secret.as_bytes());
 let pow_proof_keyring = secrets.pow_proof_keyring::<PowProofCookie>()?; // at startup
 ```

@@ -15,19 +15,23 @@ producer APIs. They remain subject to review in this draft implementation PR.
 - Producer: `datadeft-auth-token-core`.
 - Consumers: `datadeft-magic-link-aws`, and applications injecting keyrings into
   the existing service APIs.
-- Proposed API: validated `keyring::Audience`, and consuming
-  `KeyRing::with_audience(&Audience)`.
+- Proposed API: validated `keyring::Audience`, and the constructor
+  `KeyRing::new_with_audience(keys, &Audience)` — binding happens at
+  construction, so a second binding is unrepresentable rather than a runtime
+  error.
 - Service API: re-export `Audience` alongside the existing keyring types so
   sibling adapters keep their allowed dependency graph.
-- Adapter API: `LoadedAuthSecrets::with_audience(&Audience)` scopes both session
-  and confirmation rings together, including verify-only slots.
+- Adapter API: the secret loaders (`LoadedAuthSecrets::from_json`,
+  `AuthSecretDocuments::load`, `resolve_auth_secrets`) take an optional
+  `&Audience` and scope both session and confirmation rings together,
+  including verify-only slots.
 - Reason: isolate cookies between application contexts without adding an `aud`
   field, a second token parser, or per-request configuration reads.
 - Construction: derive each slot's audience key using HKDF-SHA256 over its
   existing purpose/kid-derived key. Pin a new versioned domain plus explicit
   length framing for purpose, kid and audience. Keep mint/verify windows and
-  slot status unchanged. Reject rebinding a ring rather than silently stacking
-  scopes. Replaced key bytes and temporary output retain best-effort zeroization.
+  slot status unchanged. Scopes cannot stack: a ring is bound once, when it is
+  built. Replaced key bytes and temporary output retain best-effort zeroization.
 - Security: no unscoped or alternate-audience verification fallback. Different
   audiences fail the existing constant-time AEAD authentication. Audience is
   trusted startup configuration, never a claim accepted from a request. This

@@ -464,3 +464,44 @@ async fn redirect_flow_case(hint: Option<&str>, landing_path: &str, page_path: &
         serde_json::from_str(&text(send(&app, flow_state()).await).await).expect("json");
     assert_eq!(after, serde_json::json!({ "usable": false }));
 }
+
+/// Everything locale-dependent derives from the one `UI_LOCALES` table, so
+/// every allowlisted locale has its own page and config: a row resolves to
+/// itself, serves a page declaring its own language with its own status
+/// messages, and selects its own redirect config — never another row's.
+#[tokio::test]
+async fn every_allowlisted_locale_has_its_own_page_and_config() {
+    use std::collections::HashSet;
+    use std::sync::Arc;
+
+    let state = build_state().expect("state");
+    let app = app(state.clone());
+    let locales = state.config.locales.as_ref().expect("allowlist");
+    let mut routes = HashSet::new();
+    for (index, row) in UI_LOCALES.iter().enumerate() {
+        assert_eq!(locales.resolve(Some(row.tag)).as_str(), row.tag);
+        assert!(routes.insert(row.confirm_page_route), "route reused");
+        assert!(Arc::ptr_eq(
+            &state.redirect_config(Some(row.tag)),
+            &state.redirect_configs[index]
+        ));
+        let response = send(
+            &app,
+            Request::get(row.confirm_page_route)
+                .body(Body::empty())
+                .expect("req"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let html = text(response).await;
+        assert!(html.contains(&format!("<html lang=\"{}\">", row.tag)));
+        assert!(html.contains("data-unusable=") && html.contains("data-busy="));
+    }
+    // Unknown hints and no hint select the default row.
+    for hint in [Some("xx"), None] {
+        assert!(Arc::ptr_eq(
+            &state.redirect_config(hint),
+            &state.redirect_configs[0]
+        ));
+    }
+}

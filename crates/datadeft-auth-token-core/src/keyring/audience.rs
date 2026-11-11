@@ -1,4 +1,4 @@
-//! Optional startup-only audience separation for already purpose-derived rings.
+//! Optional construction-time audience separation for purpose-derived rings.
 
 use core::fmt;
 
@@ -47,27 +47,32 @@ impl fmt::Debug for Audience {
 }
 
 impl<P: KeyPurpose> KeyRing<P> {
-    /// Consume an unscoped ring and bind every slot to one startup audience.
+    /// Build a ring with every slot bound to one startup audience.
     ///
-    /// HKDF-SHA256 derives a new key per purpose, kid and exact audience. Both
-    /// active and verify-only slots retain their existing status/windows.
-    /// Verification never tries unscoped or other-audience keys: a wrong scope
-    /// fails the existing AEAD tag check, not a string comparison after decode.
-    /// Calling this again is a configuration error, even with the same audience.
+    /// HKDF-SHA256 derives a new key per purpose, kid and exact audience
+    /// before the ring is assembled, so a bound ring is scoped for its whole
+    /// lifetime and a second binding is unrepresentable rather than a runtime
+    /// error. Both active and verify-only slots keep their status/windows,
+    /// and ring validation is exactly [`KeyRing::new`]'s. Verification never
+    /// tries unscoped or other-audience keys: a wrong scope fails the
+    /// existing AEAD tag check, not a string comparison after decode.
     ///
     /// Enabling/changing the audience invalidates old cookies. Configure the
     /// same scope on mint, validation, refresh and logout on every node. This
     /// isolates cookie use, not holders of the shared root secret, and does not
     /// replace authorization. It does not change the token/storage wire format.
-    pub fn with_audience(mut self, audience: &Audience) -> Result<Self, TokenError> {
-        if self.audience_bound {
-            return Err(TokenError::KeyringMisconfigured);
-        }
-        for slot in &mut self.keys {
-            slot.key = scoped_key(slot, audience)?;
-        }
-        self.audience_bound = true;
-        Ok(self)
+    pub fn new_with_audience(
+        keys: Vec<KeySlot<P>>,
+        audience: &Audience,
+    ) -> Result<Self, TokenError> {
+        let keys = keys
+            .into_iter()
+            .map(|mut slot| {
+                slot.key = scoped_key(&slot, audience)?;
+                Ok(slot)
+            })
+            .collect::<Result<Vec<_>, TokenError>>()?;
+        Self::new(keys)
     }
 }
 

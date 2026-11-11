@@ -8,6 +8,7 @@
 //! `/dev/latest-magic-link` helper instead of sending email.
 
 mod dev;
+mod locales;
 mod magic_link;
 mod pow;
 mod redirect_mode;
@@ -22,6 +23,7 @@ use axum::Router;
 use axum::routing::{get, post};
 
 use self::dev::*;
+use self::locales::*;
 use self::magic_link::*;
 use self::pow::*;
 use self::redirect_mode::*;
@@ -45,7 +47,7 @@ async fn main() -> AppResult<()> {
 
 /// The example's routes.
 fn app(state: AppState) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/", get(index))
         .route("/auth/pow/create", post(pow_create))
         .route("/auth/pow/validate", post(pow_validate))
@@ -59,13 +61,20 @@ fn app(state: AppState) -> Router {
             get(localized_redirect_landing_route),
         )
         .route("/auth/magic-link/flow-state", get(flow_state_route))
-        .route("/login/confirm", get(confirm_page))
-        .route("/hu/login/confirm", get(confirm_page_hu))
         .route("/login/confirm.js", get(confirm_page_script))
         .route("/auth/complete", get(auth_complete))
         .route("/me", get(me))
         .route("/logout", post(logout))
-        .route("/dev/latest-magic-link", get(dev_latest_magic_link))
+        .route("/dev/latest-magic-link", get(dev_latest_magic_link));
+    // One static confirm page per locale-table row.
+    UI_LOCALES
+        .iter()
+        .fold(router, |router, locale| {
+            router.route(
+                locale.confirm_page_route,
+                get(move || async move { confirm_page(locale) }),
+            )
+        })
         .with_state(state)
 }
 

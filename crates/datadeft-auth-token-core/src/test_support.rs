@@ -191,9 +191,25 @@ impl RngCore for FailOnCallRng {
 
 impl CryptoRng for FailOnCallRng {}
 
-/// Single-active-slot keyring for tests: root `[seed; 32]`, derived for
-/// purpose `P` under `kid`, minting until `mint_until_unix` and verifying
-/// until `verify_until_unix`.
+/// Active slot for tests: root `[seed; 32]`, derived for purpose `P` under
+/// `kid`, minting until `mint_until_unix` and verifying until
+/// `verify_until_unix`. For rings that need extra slots or an audience
+/// constructor.
+#[must_use]
+pub fn test_active_slot_with_windows<P: KeyPurpose>(
+    seed: u8,
+    kid: &str,
+    mint_until_unix: u64,
+    verify_until_unix: u64,
+) -> KeySlot<P> {
+    let kid = KeyId::parse(kid).expect("test kid parses");
+    let key = RootSecret::new([seed; KEY_BYTES])
+        .derive_key::<P>(&kid)
+        .expect("test key derives");
+    KeySlot::active_with_windows(kid, key, mint_until_unix, verify_until_unix)
+}
+
+/// Single-active-slot keyring from [`test_active_slot_with_windows`].
 #[must_use]
 pub fn test_keyring_with_windows<P: KeyPurpose>(
     seed: u8,
@@ -201,13 +217,9 @@ pub fn test_keyring_with_windows<P: KeyPurpose>(
     mint_until_unix: u64,
     verify_until_unix: u64,
 ) -> KeyRing<P> {
-    let kid = KeyId::parse(kid).expect("test kid parses");
-    let key = RootSecret::new([seed; KEY_BYTES])
-        .derive_key::<P>(&kid)
-        .expect("test key derives");
-    KeyRing::new(vec![KeySlot::active_with_windows(
+    KeyRing::new(vec![test_active_slot_with_windows(
+        seed,
         kid,
-        key,
         mint_until_unix,
         verify_until_unix,
     )])

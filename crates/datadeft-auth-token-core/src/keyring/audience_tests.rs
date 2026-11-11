@@ -1,16 +1,25 @@
 use super::*;
 use crate::cookie::{MaxAge, mint_bound_cookie, parse_bound_cookie};
 use crate::keyring::{KeyId, KeyStatus, RootSecret};
-use crate::test_support::{CountingRng, TestCookieA, TestCookieB, test_keyring_with_windows};
+use crate::test_support::{
+    CountingRng, TestCookieA, TestCookieB, test_active_slot_with_windows, test_keyring_with_windows,
+};
 
 fn ring<P: KeyPurpose>() -> KeyRing<P> {
     test_keyring_with_windows(0x11, "test-active", 1000, 10000)
 }
 
 fn scoped<P: KeyPurpose>(name: &str) -> KeyRing<P> {
-    ring()
-        .with_audience(&Audience::parse(name).expect("audience"))
-        .expect("scope")
+    KeyRing::new_with_audience(
+        vec![test_active_slot_with_windows(
+            0x11,
+            "test-active",
+            1000,
+            10000,
+        )],
+        &Audience::parse(name).expect("audience"),
+    )
+    .expect("scope")
 }
 
 #[test]
@@ -49,9 +58,16 @@ fn audience_hkdf_vector_and_separation_are_pinned() {
         ring::<TestCookieA>(),
         scoped::<TestCookieA>("admin"),
         scoped::<TestCookieA>("API"),
-        test_keyring_with_windows::<TestCookieA>(0x11, "different-kid", 1000, 10000)
-            .with_audience(&Audience::parse("api").expect("audience"))
-            .expect("scope"),
+        KeyRing::new_with_audience(
+            vec![test_active_slot_with_windows::<TestCookieA>(
+                0x11,
+                "different-kid",
+                1000,
+                10000,
+            )],
+            &Audience::parse("api").expect("audience"),
+        )
+        .expect("scope"),
     ] {
         assert_ne!(
             api.active().key().as_bytes(),
@@ -98,9 +114,13 @@ fn scoping_preserves_previous_slot_windows_and_mint_status() {
     let old_id = KeyId::parse("old").expect("kid");
     let new_id = KeyId::parse("new").expect("kid");
     let old_root = RootSecret::new([0x22; 32]);
-    let old = test_keyring_with_windows::<TestCookieA>(0x22, "old", 1000, 10000)
-        .with_audience(&audience)
-        .expect("old scope");
+    let old = KeyRing::new_with_audience(
+        vec![test_active_slot_with_windows::<TestCookieA>(
+            0x22, "old", 1000, 10000,
+        )],
+        &audience,
+    )
+    .expect("old scope");
     let token = mint_bound_cookie(
         b"fixture",
         &old,
@@ -110,26 +130,27 @@ fn scoping_preserves_previous_slot_windows_and_mint_status() {
         100,
     )
     .expect("mint old");
-    let rotated = KeyRing::new(vec![
-        KeySlot::active_with_windows(
-            new_id.clone(),
-            RootSecret::new([0x33; 32])
-                .derive_key::<TestCookieA>(&new_id)
-                .expect("new key"),
-            1000,
-            10000,
-        ),
-        KeySlot::verify_only(
-            old_id.clone(),
-            old_root
-                .derive_key::<TestCookieA>(&old_id)
-                .expect("old key"),
-            500,
-        ),
-    ])
-    .expect("rotation")
-    .with_audience(&audience)
-    .expect("scope rotation");
+    let rotated = KeyRing::new_with_audience(
+        vec![
+            KeySlot::active_with_windows(
+                new_id.clone(),
+                RootSecret::new([0x33; 32])
+                    .derive_key::<TestCookieA>(&new_id)
+                    .expect("new key"),
+                1000,
+                10000,
+            ),
+            KeySlot::verify_only(
+                old_id.clone(),
+                old_root
+                    .derive_key::<TestCookieA>(&old_id)
+                    .expect("old key"),
+                500,
+            ),
+        ],
+        &audience,
+    )
+    .expect("scoped rotation");
     assert_eq!(rotated.minting_key_at(1000).expect("active").kid(), &new_id);
     assert_eq!(
         rotated.minting_key_at(1001).unwrap_err(),
@@ -152,8 +173,24 @@ fn scoping_preserves_previous_slot_windows_and_mint_status() {
         parse_bound_cookie(&token, &rotated, 501, MaxAge::fixed(600)).unwrap_err(),
         TokenError::InvalidToken
     );
+}
+
+#[test]
+fn audience_construction_enforces_the_same_ring_invariants() {
+    let audience = Audience::parse("api").expect("audience");
     assert_eq!(
-        rotated.with_audience(&audience).unwrap_err(),
+        KeyRing::<TestCookieA>::new_with_audience(Vec::new(), &audience).unwrap_err(),
+        TokenError::KeyringMisconfigured
+    );
+    assert_eq!(
+        KeyRing::new_with_audience(
+            vec![
+                test_active_slot_with_windows::<TestCookieA>(0x11, "twin", 1000, 10000),
+                test_active_slot_with_windows::<TestCookieA>(0x22, "twin", 1000, 10000),
+            ],
+            &audience,
+        )
+        .unwrap_err(),
         TokenError::KeyringMisconfigured
     );
 }

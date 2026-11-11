@@ -1,22 +1,19 @@
 use datadeft_auth_token_core::cookie::{MaxAge, mint_bound_cookie, parse_bound_cookie};
 use datadeft_auth_token_core::test_support::CountingRng;
-use datadeft_magic_link_service::{
-    Audience, KeyRing, MagicLinkConfirmCookie, SessionCookie, TokenError,
-};
+use datadeft_magic_link_service::{Audience, KeyRing, MagicLinkConfirmCookie, SessionCookie};
 
 use super::*;
 
 fn loaded(scope: Option<&str>, rotate: bool) -> LoadedAuthSecrets {
     let active = secret_json("active", 0x10, 1000, 4_000_000);
     let previous = secret_json("previous", 0x20, 1000, 4_000_000);
-    let secrets = LoadedAuthSecrets::from_json(&active, rotate.then_some(previous.as_str()))
-        .expect("loaded fixtures");
-    match scope {
-        Some(scope) => secrets
-            .with_audience(&Audience::parse(scope).expect("audience"))
-            .expect("bound"),
-        None => secrets,
-    }
+    let audience = scope.map(|scope| Audience::parse(scope).expect("audience"));
+    LoadedAuthSecrets::from_json(
+        &active,
+        rotate.then_some(previous.as_str()),
+        audience.as_ref(),
+    )
+    .expect("loaded fixtures")
 }
 
 fn assert_isolation<P: KeyPurpose>(select: fn(&LoadedAuthSecrets) -> &KeyRing<P>) {
@@ -50,17 +47,15 @@ fn assert_isolation<P: KeyPurpose>(select: fn(&LoadedAuthSecrets) -> &KeyRing<P>
 }
 
 #[test]
-fn startup_binding_isolates_both_real_cookie_purposes_with_no_fallback() {
+fn construction_binding_isolates_both_real_cookie_purposes_with_no_fallback() {
     assert_isolation::<SessionCookie>(|loaded| &loaded.session_keyring);
     assert_isolation::<MagicLinkConfirmCookie>(|loaded| &loaded.confirm_keyring);
 }
 
 fn assert_rotation<P: KeyPurpose>(select: fn(&LoadedAuthSecrets) -> &KeyRing<P>) {
     let previous = secret_json("previous", 0x20, 1000, 4_000_000);
-    let old = LoadedAuthSecrets::from_json(&previous, None)
-        .expect("old")
-        .with_audience(&Audience::parse("api").expect("audience"))
-        .expect("scope");
+    let audience = Audience::parse("api").expect("audience");
+    let old = LoadedAuthSecrets::from_json(&previous, None, Some(&audience)).expect("old");
     let cookie = mint_bound_cookie(
         b"fixture",
         select(&old),
@@ -98,20 +93,18 @@ fn assert_rotation<P: KeyPurpose>(select: fn(&LoadedAuthSecrets) -> &KeyRing<P>)
 }
 
 #[test]
-fn startup_binding_scopes_previous_session_and_confirm_slots_too() {
+fn construction_binding_scopes_previous_session_and_confirm_slots_too() {
     assert_rotation::<SessionCookie>(|loaded| &loaded.session_keyring);
     assert_rotation::<MagicLinkConfirmCookie>(|loaded| &loaded.confirm_keyring);
 }
 
 #[test]
-fn startup_binding_rejects_rebinding_without_changing_independent_pow_material() {
+fn construction_binding_leaves_independent_pow_and_hmac_material_unchanged() {
     let unbound = loaded(None, true);
     let proof_before = unbound
         .pow_proof_keyring::<ProofLikePurpose>()
         .expect("proof");
-    let bound = unbound
-        .with_audience(&Audience::parse("api").expect("audience"))
-        .expect("bound");
+    let bound = loaded(Some("api"), true);
     let proof_after = bound
         .pow_proof_keyring::<ProofLikePurpose>()
         .expect("proof");
@@ -130,12 +123,4 @@ fn startup_binding_rejects_rebinding_without_changing_independent_pow_material()
     );
     assert!(bound.previous_lookup_hmac_key.is_some());
     assert!(bound.previous_storage_hmac_key.is_some());
-    // Rebinding keeps its typed core signal instead of collapsing to an
-    // opaque adapter-internal failure.
-    assert_eq!(
-        bound
-            .with_audience(&Audience::parse("admin").expect("audience"))
-            .unwrap_err(),
-        TokenError::KeyringMisconfigured
-    );
 }

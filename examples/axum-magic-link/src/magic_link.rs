@@ -1,5 +1,7 @@
 //! Magic-link routes: request, scanner-safe landing, and confirmation.
 
+use std::sync::Arc;
+
 use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::header::{LOCATION, SET_COOKIE};
@@ -83,7 +85,7 @@ async fn request_magic_link_inner(
 // same-origin; only that POST consumes the link. A rejected link gets the same
 // 200 status as a valid one, so link validity is not enumerable.
 pub(super) async fn landing_route(State(state): State<AppState>, request: Request) -> Response {
-    let config = state.http_config.clone();
+    let config = Arc::clone(state.default_config());
     let result = magic_link_landing(request, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
         let mut service = state.flow_service(&mut rng);
@@ -126,7 +128,7 @@ pub(super) async fn landing_route(State(state): State<AppState>, request: Reques
 // session. On success this app 303-redirects to /auth/complete with the session
 // cookie. An SPA would return JSON instead.
 pub(super) async fn confirm_route(State(state): State<AppState>, request: Request) -> Response {
-    let config = state.http_config.clone();
+    let config = Arc::clone(state.default_config());
     let result = magic_link_confirmation(request, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
         let mut service = state.flow_service(&mut rng);

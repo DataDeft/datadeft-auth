@@ -21,6 +21,7 @@ use datadeft_pow_axum::{
 use datadeft_pow_core::{PowProofCookie, PowSecret};
 use rand_core::{OsRng, RngCore};
 
+use super::locales::{UI_LOCALES, locale_index};
 use super::util::current_unix;
 use super::*;
 
@@ -42,8 +43,9 @@ pub(super) struct AppState {
     pub(super) auth: FakeDynamoDbAuthStore,
     pub(super) outbox: FakeMagicLinkOutbox,
     pub(super) config: MagicLinkServiceConfig,
-    pub(super) http_config: Arc<MagicLinkScannerFlowConfig>,
-    pub(super) http_config_hu: Arc<MagicLinkScannerFlowConfig>,
+    /// One redirect config per [`UI_LOCALES`] row, in table order; row 0 (the
+    /// default locale) also serves every non-localized route.
+    pub(super) redirect_configs: Arc<[Arc<MagicLinkScannerFlowConfig>]>,
     pub(super) lookup_hmac_key: Arc<LookupHmacKey>,
     pub(super) confirm_keyring: Arc<KeyRing<MagicLinkConfirmCookie>>,
     pub(super) session_keyring: Arc<KeyRing<SessionCookie>>,
@@ -55,21 +57,20 @@ pub(super) struct AppState {
 }
 
 impl AppState {
+    /// The default-locale config, used by every non-localized route.
+    pub(super) fn default_config(&self) -> &Arc<MagicLinkScannerFlowConfig> {
+        &self.redirect_configs[0]
+    }
+
     /// Locale is presentation only. Resolve before link lookup, and never use
     /// link validity or account data to choose a redirect.
     pub(super) fn redirect_config(&self, hint: Option<&str>) -> Arc<MagicLinkScannerFlowConfig> {
         // No hint means the default page; skip resolution entirely.
-        let hungarian = hint.is_some()
-            && self
-                .config
-                .locales
-                .as_ref()
-                .is_some_and(|locales| locales.resolve(hint).as_str() == "hu");
-        if hungarian {
-            Arc::clone(&self.http_config_hu)
-        } else {
-            Arc::clone(&self.http_config)
-        }
+        let index = match (hint, self.config.locales.as_ref()) {
+            (Some(_), Some(locales)) => locale_index(locales.resolve(hint).as_str()),
+            _ => 0,
+        };
+        Arc::clone(&self.redirect_configs[index])
     }
 
     /// The flow service over this app's store, keys, and config.
@@ -112,10 +113,15 @@ impl Clock for LocalClock {
 pub(super) fn build_state() -> AppResult<AppState> {
     let now_unix = current_unix().map_err(|_| SetupError("system clock before unix epoch"))?;
     let mut config = MagicLinkServiceConfig::new("example-terms-v1", "example-privacy-v1");
-    // Emails go out in English or Hungarian; a request's `locale` hint picks
-    // one, anything else gets English (CeleraTax #5).
+    // The allowlist is the locale table: a request's `locale` hint picks a
+    // row, anything else gets the default row (CeleraTax #5). Deriving it
+    // here means an allowlisted locale always has its own page and config.
     config.locales = Some(
-        LocaleAllowlist::new("en", ["hu"]).map_err(|_| SetupError("invalid locale allowlist"))?,
+        LocaleAllowlist::new(
+            UI_LOCALES[0].tag,
+            UI_LOCALES.iter().skip(1).map(|locale| locale.tag),
+        )
+        .map_err(|_| SetupError("invalid locale allowlist"))?,
     );
     // Sessions move between EU countries and stay exact elsewhere (CeleraTax #6).
     config.country_policy = CountryPolicy::eu27();
@@ -125,9 +131,12 @@ pub(super) fn build_state() -> AppResult<AppState> {
     // (`resolve_auth_secrets`); the example generates one with fresh keys so
     // every key takes the same path.
     let audience = Audience::parse("example-web")?;
-    let secrets = LoadedAuthSecrets::from_json(&development_secret_document(now_unix)?, None)
-        .map_err(|_| SetupError("invalid development secret document"))?
-        .with_audience(&audience)?;
+    let secrets = LoadedAuthSecrets::from_json(
+        &development_secret_document(now_unix)?,
+        None,
+        Some(&audience),
+    )
+    .map_err(|_| SetupError("invalid development secret document"))?;
     // Built at startup so a `kid` too long for the proof cookie fails here.
     let pow_proof_keyring = secrets
         .pow_proof_keyring::<PowProofCookie>()
@@ -142,36 +151,35 @@ pub(super) fn build_state() -> AppResult<AppState> {
     } = secrets;
 
     let session_cookie = SessionCookieConfig::insecure_local(&config)?;
-    // Both locale configs share the one flow-state route.
+    // Every locale's config shares the one flow-state route and differs only
+    // in which static confirm page the landing redirect selects.
     let flow_state_route = SameOriginRedirect::parse("/auth/magic-link/flow-state")
         .map_err(|_| SetupError("invalid flow-state route"))?;
-    let http_config = MagicLinkScannerFlowConfig::new(
+    let base_config = MagicLinkScannerFlowConfig::new(
         SameOriginRedirect::parse("/auth/magic-link/consume")
             .map_err(|_| SetupError("invalid magic-link POST action"))?,
         SameOriginPostConfig::parse(LOCAL_ORIGIN)?,
         session_cookie,
         ConfirmCookieConfig::insecure_local_defaults(),
-    )?
-    // Redirect landing mode: the confirm cookie (`Path=/auth`) covers the
-    // flow-state route and the POST action.
-    .with_redirect_landing(
-        SameOriginRedirect::parse("/login/confirm")
-            .map_err(|_| SetupError("invalid confirm page"))?,
-        flow_state_route.clone(),
     )?;
-
-    let http_config_hu = http_config.clone().with_redirect_landing(
-        SameOriginRedirect::parse("/hu/login/confirm")
-            .map_err(|_| SetupError("invalid Hungarian confirm page"))?,
-        flow_state_route,
-    )?;
+    let mut redirect_configs = Vec::with_capacity(UI_LOCALES.len());
+    for locale in UI_LOCALES {
+        // Redirect landing mode: the confirm cookie (`Path=/auth`) covers the
+        // flow-state route and the POST action.
+        redirect_configs.push(Arc::new(
+            base_config.clone().with_redirect_landing(
+                SameOriginRedirect::parse(locale.confirm_page_route)
+                    .map_err(|_| SetupError("invalid confirm page route"))?,
+                flow_state_route.clone(),
+            )?,
+        ));
+    }
 
     Ok(AppState {
         auth: FakeDynamoDbAuthStore::new(storage_hmac_key),
         outbox: FakeMagicLinkOutbox::default(),
         config,
-        http_config: Arc::new(http_config),
-        http_config_hu: Arc::new(http_config_hu),
+        redirect_configs: redirect_configs.into(),
         lookup_hmac_key: Arc::new(lookup_hmac_key),
         confirm_keyring: Arc::new(confirm_keyring),
         session_keyring: Arc::new(session_keyring),
@@ -229,7 +237,7 @@ mod tests {
             serde_json::from_str(&development_secret_document(1_000).expect("document"))
                 .expect("json");
         document["kid"] = serde_json::Value::from(kid);
-        LoadedAuthSecrets::from_json(&document.to_string(), None).expect("loaded")
+        LoadedAuthSecrets::from_json(&document.to_string(), None, None).expect("loaded")
     }
 
     /// Pins the aws crate's documented 12-byte `kid` limit against the real

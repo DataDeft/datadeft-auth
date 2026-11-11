@@ -59,7 +59,7 @@ async fn logged_in(state: &AppState) -> (String, datadeft_magic_link_service::Se
 
 fn logout_headers(state: &AppState, cookie: &str, origin: Option<&str>) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    let name = state.http_config.session_cookie().name();
+    let name = state.default_config().session_cookie().name();
     headers.insert(
         COOKIE,
         HeaderValue::from_str(&format!("{name}={cookie}")).expect("cookie"),

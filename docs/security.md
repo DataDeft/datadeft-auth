@@ -612,16 +612,19 @@ best-effort. Per-solve lifetime counters do not restart.
 
 ## Optional cookie audience isolation
 
-At startup, a consuming app can scope its session and confirmation keyrings
-with `LoadedAuthSecrets::with_audience`. Direct keyring consumers can call
-`KeyRing::with_audience`. The validated audience is trusted configuration,
-not a request claim. Purpose/kid-derived keys receive a versioned,
-length-framed HKDF audience context, including verify-only slots.
+A consuming app can scope its session and confirmation keyrings by loading
+secrets with an audience (`LoadedAuthSecrets::from_json`,
+`AuthSecretDocuments::load`, `resolve_auth_secrets`). Direct keyring
+consumers can call `KeyRing::new_with_audience`. The scope is bound when the
+ring is constructed, so a bound ring never exists unscoped and there is no
+rebinding operation to misuse. The validated audience is trusted
+configuration, not a request claim. Purpose/kid-derived keys receive a
+versioned, length-framed HKDF audience context, including verify-only slots.
 
 Different audiences and scoped/unscoped rings never verify one another's
 cookies. Refusal is the existing constant-time AEAD tag check and generic
 public failure; there is no fallback parser or key. Mint, validation, refresh
-and logout must use the same scope on every node. Rebinding is a setup error.
+and logout must use the same scope on every node.
 Enabling/changing a scope requires reauthentication, not a server-side record
 migration; explicitly revoke records if invalidation must survive rollback.
 

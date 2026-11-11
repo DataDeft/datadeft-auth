@@ -1,15 +1,18 @@
 //! Development-only pages: the index and the outbox helper.
 
+use std::sync::LazyLock;
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use datadeft_magic_link_aws::FakeMagicLinkOutbox;
 
+use super::locales::UI_LOCALES;
 use super::state::AppState;
 use super::util::escape_html;
 
 pub(super) async fn index() -> Html<&'static str> {
-    Html(INDEX_HTML)
+    Html(INDEX_HTML.as_str())
 }
 
 pub(super) async fn dev_latest_magic_link(State(state): State<AppState>) -> Response {
@@ -29,11 +32,23 @@ pub(super) async fn dev_latest_magic_link(State(state): State<AppState>) -> Resp
 fn latest_magic_link(outbox: &FakeMagicLinkOutbox) -> Option<(String, String)> {
     let email = outbox.recorded().ok()?.pop()?;
     let token = email.token.as_secret_value();
-    let locale = email.locale.as_ref().map_or("en", |locale| locale.as_str());
+    let locale = email
+        .locale
+        .as_ref()
+        .map_or(UI_LOCALES[0].tag, |locale| locale.as_str());
     Some((format!("?token={}", token.as_str()), locale.to_owned()))
 }
 
-const INDEX_HTML: &str = r#"<!doctype html>
+/// The index page with its language selector built from the locale table.
+static INDEX_HTML: LazyLock<String> = LazyLock::new(|| {
+    let options: String = UI_LOCALES
+        .iter()
+        .map(|locale| format!("<option value=\"{}\">{}</option>", locale.tag, locale.name))
+        .collect();
+    INDEX_TEMPLATE.replace("<!-- locale options -->", &options)
+});
+
+const INDEX_TEMPLATE: &str = r#"<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -48,7 +63,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       <label>Email <input name="email" type="email" value="local@example.test" required></label>
       <label><input name="terms" type="checkbox" checked> Accept terms</label>
       <label><input name="privacy" type="checkbox" checked> Accept privacy policy</label>
-      <label>Confirmation language <select name="locale"><option value="en">English</option><option value="hu">Magyar</option></select></label>
+      <label>Confirmation language <select name="locale"><!-- locale options --></select></label>
       <button type="submit">Request magic link</button>
     </form>
     <pre id="status" aria-live="polite"></pre>

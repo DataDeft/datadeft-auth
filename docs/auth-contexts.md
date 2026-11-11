@@ -16,14 +16,14 @@ use datadeft_magic_link_service::Audience;
 
 let audience = Audience::parse("customer-web")?;
 let documents = fetch_auth_secret_documents(&secrets_client, &secret_config).await?;
-let secrets = documents.load()?.with_audience(&audience)?;
+let secrets = documents.load(Some(&audience))?;
 // Inject secrets.session_keyring and secrets.confirm_keyring into the service.
 ```
 
-`LoadedAuthSecrets::with_audience` consumes the loaded secrets and scopes both
-cookie rings, including previous verify-only slots, in one setup operation.
-Applications constructing rings directly can use `KeyRing::with_audience`.
-Rebinding an already scoped ring is an error, even for the same name.
+Loading with an audience scopes both cookie rings, including previous
+verify-only slots, while they are constructed: a bound ring never exists
+unscoped, and there is no rebinding operation to call twice. Applications
+constructing rings directly can use `KeyRing::new_with_audience`.
 
 An audience is an exact case-sensitive identifier, 1–128 ASCII bytes, using
 letters, digits or `-._:/`. No normalization is performed. Use stable names.

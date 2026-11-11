@@ -53,7 +53,7 @@ async fn session_rejection(error: Option<SessionValidationError>) -> Response {
     }
     let result = authenticate_session(
         &headers,
-        state.http_config.session_cookie(),
+        state.default_config().session_cookie(),
         move |_| async move {
             Err::<ValidatedSession, _>(error.unwrap_or(SessionValidationError::InvalidSession))
         },

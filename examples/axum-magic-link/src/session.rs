@@ -19,10 +19,10 @@ pub(super) async fn me(State(state): State<AppState>, headers: HeaderMap) -> Res
     let auth_state = state.clone();
     // Country pinning: pass the trusted-edge signal for this request. Sessions
     // issued without a country are unlocked and ignore it.
-    let country = viewer_country_from(&headers, state.http_config.country_header());
+    let country = viewer_country_from(&headers, state.default_config().country_header());
     match authenticate_session(
         &headers,
-        state.http_config.session_cookie(),
+        state.default_config().session_cookie(),
         move |cookie| async move {
             validate_session(
                 cookie.as_str(),
@@ -59,7 +59,7 @@ pub(super) async fn me(State(state): State<AppState>, headers: HeaderMap) -> Res
             ) {
                 Ok(Some(refreshed)) => {
                     match session_set_cookie_header(
-                        state.http_config.session_cookie(),
+                        state.default_config().session_cookie(),
                         refreshed.as_secret_value(),
                     ) {
                         Ok(header) => {
@@ -90,10 +90,10 @@ pub(super) async fn logout(State(state): State<AppState>, headers: HeaderMap) ->
     }
 
     let auth_state = state.clone();
-    let country = viewer_country_from(&headers, state.http_config.country_header());
+    let country = viewer_country_from(&headers, state.default_config().country_header());
     let session = match authenticate_session(
         &headers,
-        state.http_config.session_cookie(),
+        state.default_config().session_cookie(),
         move |cookie| async move {
             validate_session(
                 cookie.as_str(),
@@ -129,7 +129,7 @@ pub(super) async fn logout(State(state): State<AppState>, headers: HeaderMap) ->
         .insert(LOCATION, HeaderValue::from_static("/"));
     response.headers_mut().append(
         SET_COOKIE,
-        clear_session_cookie_header(state.http_config.session_cookie()),
+        clear_session_cookie_header(state.default_config().session_cookie()),
     );
     response
 }
