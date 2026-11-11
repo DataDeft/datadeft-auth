@@ -77,6 +77,11 @@ impl Port {
             // The supported credential chain reads these for DynamoDB Local.
             .env("AWS_ACCESS_KEY_ID", "local")
             .env("AWS_SECRET_ACCESS_KEY", "local")
+            .env_remove("AWS_SESSION_TOKEN")
+            .env_remove("AWS_PROFILE")
+            .env_remove("AWS_DEFAULT_PROFILE")
+            .env("AWS_CONFIG_FILE", "/dev/null")
+            .env("AWS_SHARED_CREDENTIALS_FILE", "/dev/null")
             .spawn()
             .expect("spawn port executable");
         let stdin = child.stdin.take().expect("stdin");

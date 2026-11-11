@@ -45,6 +45,11 @@ fn eof_cancels_a_stalled_secret_fetch_during_initialization() {
             .stderr(Stdio::null())
             .env("AWS_ACCESS_KEY_ID", "local")
             .env("AWS_SECRET_ACCESS_KEY", "local")
+            .env_remove("AWS_SESSION_TOKEN")
+            .env_remove("AWS_PROFILE")
+            .env_remove("AWS_DEFAULT_PROFILE")
+            .env("AWS_CONFIG_FILE", "/dev/null")
+            .env("AWS_SHARED_CREDENTIALS_FILE", "/dev/null")
             .env("AWS_EC2_METADATA_DISABLED", "true")
             .spawn()
             .expect("spawn child"),
