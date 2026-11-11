@@ -39,7 +39,7 @@ pub(super) async fn me(State(state): State<AppState>, headers: HeaderMap) -> Res
     {
         Ok(session) => {
             let mut response = Html(format!(
-                "<!doctype html><h1>Authenticated</h1><p>User: {}</p><p>Email: {}</p><form method=\"post\" action=\"/logout\"><button type=\"submit\">Logout</button></form>",
+                "<!doctype html><h1>Authenticated</h1><p>User: {}</p><p>Email: {}</p><form method=\"post\" action=\"/auth/logout\"><button type=\"submit\">Logout</button></form>",
                 escape_html(session.session().user_id.as_str()),
                 escape_html(session.session().email.as_str()),
             ))
