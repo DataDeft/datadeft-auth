@@ -11,7 +11,7 @@ use std::time::Duration;
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 
-use crate::app::{self, App};
+use crate::app::ReadyApp;
 use crate::framing::{self, FrameError};
 use crate::protocol::{self, Command, ErrorCode, ResultBody};
 
@@ -25,7 +25,7 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 enum Phase {
     AwaitHandshake,
     AwaitInit,
-    Ready(Arc<App>),
+    Ready(ReadyApp),
 }
 
 pub async fn serve<R, W>(reader: R, writer: W) -> Result<(), FrameError>
@@ -57,6 +57,16 @@ where
                 Some(Ok(frame)) => frame,
                 Some(Err(error)) => break Err(error),
                 None => break Ok(()),
+            },
+            // Reap jobs as they finish so completed handles never accumulate.
+            // A job that failed to run to completion left its request silently
+            // unanswered, which would strand the owner's caller: treat it as a
+            // process fault and let the owner restart a coherent process.
+            Some(finished) = jobs.join_next() => {
+                if finished.is_err() {
+                    break Err(FrameError::Io);
+                }
+                continue;
             },
             // A finished writer means the owner is gone or stdout failed;
             // stop instead of running jobs whose replies cannot land.
@@ -102,11 +112,12 @@ where
                     break Err(FrameError::Invalid);
                 }
                 // Initialization is the only configuration moment, before any
-                // other work exists; building it inline keeps the lifecycle
-                // strictly ordered.
-                match App::initialize(*payload) {
+                // other work exists; awaiting it inline keeps the lifecycle
+                // strictly ordered (the owner sends nothing else until ready,
+                // and the secret fetch carries the SDK's own timeouts).
+                match ReadyApp::initialize(*payload).await {
                     Ok(application) => {
-                        phase = Phase::Ready(Arc::new(application));
+                        phase = Phase::Ready(application);
                         Some(ResultBody::Init)
                     }
                     Err(code) => Some(ResultBody::Error { code }),
@@ -118,11 +129,11 @@ where
                 };
                 match limiter.clone().try_acquire_owned() {
                     Ok(permit) => {
-                        let application = Arc::clone(application);
+                        let application = application.clone();
                         let reply_tx = reply_tx.clone();
                         jobs.spawn(async move {
                             let _permit = permit;
-                            let result = app::handle(&application, command).await;
+                            let result = application.handle(command).await;
                             send_reply(&reply_tx, id, result).await;
                         });
                         None

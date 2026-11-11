@@ -3,13 +3,14 @@
 Framework-independent Elixir authentication backed by a **separate Rust process**.
 No Rust code loads into BEAM; no Phoenix, Plug, Rustler or HTTP server is required.
 
-**Current scope: transport plus the magic-link/session API against the fake
-backend.** The executable runs bounded concurrent jobs and serves request,
-landing, flow-state, confirm, validate-session and logout against the
-crate-shipped in-memory store (`mode: :fake`). AWS mode (DynamoDB, SES,
-Secrets Manager), PoW and durable ambiguous-commit recovery are staged and
-refused. This is not an authentication release and must not be deployed for
-login.
+**Current scope: transport plus the magic-link/session API.** The executable
+runs bounded concurrent jobs and serves request, landing, flow-state,
+confirm, validate-session and logout against either the crate-shipped
+in-memory store (`mode: :fake`) or DynamoDB/SES with Secrets Manager key
+loading (`mode: :aws`, deployment-role credential chain). PoW operations and
+durable ambiguous-commit recovery are still staged, and the AWS mode has not
+passed a production readiness review. This is not an authentication release
+and must not be deployed for login.
 
 ## Development
 
@@ -107,8 +108,10 @@ dependency floors and lints verbatim from the repository root.
   by the AWS SDK clients this process will own.
 - Rust rand_core (getrandom): OS-backed CSPRNG for the service entropy inputs.
 - The workspace `datadeft-*` service/adapter crates own all cryptography; the
-  port adds no cryptographic dependencies of its own. AWS SDKs are not wired
-  yet (`mode: :aws` is refused).
+  port adds no cryptographic dependencies of its own.
+- Rust aws-config + aws-sdk-dynamodb/sesv2/secretsmanager: the port owns the
+  AWS clients and the supported deployment-role credential chain; core and
+  service crates receive loaded material only.
 - Elixir Jason: reviewed maintained JSON codec; ordered-object decoding preserves
   duplicate keys for explicit rejection, never converts input to atoms.
 

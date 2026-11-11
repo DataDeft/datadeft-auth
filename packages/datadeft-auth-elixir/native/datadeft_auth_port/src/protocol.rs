@@ -4,8 +4,9 @@
 mod messages;
 
 pub(crate) use messages::{
-    AccountDisplayPayload, ConfirmPayload, EmailTemplatePayload, FlowStatePayload, LandingPayload,
-    OutboxPeekPayload, RequestLinkPayload, SessionPayload,
+    AccountDisplayPayload, AwsPayload, ConfirmPayload, EmailTemplatePayload, FlowStatePayload,
+    LandingPayload, OutboxPeekPayload, RequestLinkPayload, SecretRefPayload, SecretsPayload,
+    ServicePayload, SessionPayload,
 };
 pub use messages::{ErrorCode, InitPayload, Mode, ResultBody};
 

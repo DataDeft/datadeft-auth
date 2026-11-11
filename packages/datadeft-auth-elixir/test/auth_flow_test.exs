@@ -111,6 +111,7 @@ defmodule DatadeftAuthFlowTest do
   end
 
   test "a refused configuration keeps the owner alive and unready" do
+    # AWS mode without its aws section is a configuration error.
     config = %{fake_config() | mode: :aws}
     pid = start_supervised!({DatadeftAuth, [config: config, restart_delay: 5000]})
 

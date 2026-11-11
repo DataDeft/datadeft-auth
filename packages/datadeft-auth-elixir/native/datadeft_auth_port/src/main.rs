@@ -11,8 +11,10 @@ use std::io;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    // Timers drive the EOF drain; the IO driver carries the AWS SDK's HTTP
+    // connections (without it the first network call aborts its job).
     let runtime = match tokio::runtime::Builder::new_multi_thread()
-        .enable_time()
+        .enable_all()
         .build()
     {
         Ok(runtime) => runtime,

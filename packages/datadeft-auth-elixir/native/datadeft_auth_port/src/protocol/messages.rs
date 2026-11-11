@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 pub enum Mode {
     /// Crate-shipped in-memory store and outbox; tests and local development.
     Fake,
-    /// DynamoDB, SES and Secrets Manager. Staged: refused until the AWS
-    /// wiring lands.
+    /// DynamoDB, SES and Secrets Manager through the supported credential
+    /// chain; requires the `aws` section.
     Aws,
 }
 
@@ -21,6 +21,28 @@ pub struct InitPayload {
     pub service: ServicePayload,
     pub email: EmailTemplatePayload,
     pub secrets: SecretsPayload,
+    /// Required in AWS mode, refused in fake mode.
+    #[serde(default)]
+    pub aws: Option<AwsPayload>,
+}
+
+/// AWS deployment configuration. Credentials come from the supported chain
+/// (deployment roles), never from this payload.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwsPayload {
+    pub region: String,
+    pub table: String,
+    pub from_email: String,
+    #[serde(default)]
+    pub reply_to: Vec<String>,
+    /// Test/dev only (DynamoDB Local); production omits it.
+    #[serde(default)]
+    pub endpoint_url: Option<String>,
+    /// Test-only: record emails in-process instead of SES. Refused unless
+    /// endpoint_url marks this a local deployment.
+    #[serde(default)]
+    pub fake_outbox: bool,
 }
 
 /// Service policy; omitted lifetimes keep the library defaults.
@@ -68,14 +90,33 @@ pub struct EmailTemplatePayload {
     pub html: Option<String>,
 }
 
-/// Auth secret documents (docs/security.md "Auth secret document") as JSON
-/// strings. They transit the private stdin pipe once at initialization.
+/// Auth secret sources. Fake mode takes inline secret documents
+/// (docs/security.md "Auth secret document") that transit the private stdin
+/// pipe once; AWS mode takes Secrets Manager references so key material
+/// never enters BEAM. Mixing the two forms is a configuration error.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SecretsPayload {
-    pub active_document: String,
+    #[serde(default)]
+    pub active_document: Option<String>,
     #[serde(default)]
     pub previous_document: Option<String>,
+    #[serde(default)]
+    pub active_ref: Option<SecretRefPayload>,
+    #[serde(default)]
+    pub previous_ref: Option<SecretRefPayload>,
+}
+
+/// One Secrets Manager reference: a name or ARN plus exactly one of stage or
+/// version id (active defaults to the AWSCURRENT stage).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecretRefPayload {
+    pub name_or_arn: String,
+    #[serde(default)]
+    pub stage: Option<String>,
+    #[serde(default)]
+    pub version_id: Option<String>,
 }
 
 #[derive(Deserialize)]

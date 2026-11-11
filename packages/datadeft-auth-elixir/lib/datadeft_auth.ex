@@ -31,21 +31,29 @@ defmodule DatadeftAuth do
   configuration error. The executable validates the content fail-closed:
 
   - `mode: :fake` uses the crate-shipped in-memory store/outbox (tests and
-    local development); `:aws` is staged and currently refused.
+    local development); `mode: :aws` uses DynamoDB, SES and Secrets Manager
+    through the deployment-role credential chain and requires the `aws` key.
   - `service` carries `terms_version`/`privacy_version` plus optional
     lifetimes, `enforce_country`, `account_display`, `default_locale` and
     `locales`.
   - `email` carries `link_base_url` (the token is appended), `subject`,
     `text` and optional `html`; bodies must contain `{magic_link_url}`.
-  - `secrets` carries `active_document` (and optionally
-    `previous_document`): the auth secret document JSON strings, trusted
-    deployment configuration delivered once over the private pipe.
+  - `secrets`: fake mode takes `active_document` (and optionally
+    `previous_document`), the auth secret document JSON strings delivered
+    once over the private pipe. AWS mode takes `active_ref`/`previous_ref`
+    (`name_or_arn` with `stage` or `version_id`) so key material never
+    enters BEAM; inline documents are allowed only together with a local
+    `endpoint_url`.
+  - `aws` (AWS mode only) carries `region`, `table`, `from_email`, optional
+    `reply_to`, and the test-only `endpoint_url`/`fake_outbox` pair for
+    DynamoDB Local runs.
   """
   @type config :: %{
           required(:mode) => :fake | :aws,
           required(:service) => map(),
           required(:email) => map(),
-          required(:secrets) => map()
+          required(:secrets) => map(),
+          optional(:aws) => map()
         }
 
   @typedoc """
