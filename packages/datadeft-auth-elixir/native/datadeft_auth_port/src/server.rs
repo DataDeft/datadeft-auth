@@ -139,7 +139,12 @@ where
             // Best effort after a clean EOF: the owner may already be gone,
             // so late write failures are not fatal.
             let drain = async { while jobs.join_next().await.is_some() {} };
-            let _ = tokio::time::timeout(DRAIN_TIMEOUT, drain).await;
+            if tokio::time::timeout(DRAIN_TIMEOUT, drain).await.is_err() {
+                // A job stuck past the deadline still holds a reply sender,
+                // which would park the writer's blocking_recv and keep this
+                // process alive as an orphan; abort whatever remains.
+                jobs.shutdown().await;
+            }
             drop(reply_tx);
             let _ = writer_task.await;
             Ok(())

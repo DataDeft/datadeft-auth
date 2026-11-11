@@ -49,7 +49,9 @@ defmodule DatadeftAuth do
     lifetimes, `enforce_country`, `account_display`, `default_locale` and
     `locales`.
   - `email` carries `link_base_url` (the token is appended), `subject`,
-    `text` and optional `html`; bodies must contain `{magic_link_url}`.
+    `text` and optional `html`; bodies must contain `{magic_link_url}` and
+    the subject must not (Subject headers are routinely logged in transit,
+    and the URL carries the bearer token).
   - `secrets`: fake mode takes `active_document` (and optionally
     `previous_document`), the auth secret document JSON strings delivered
     once over the private pipe. AWS mode takes `active_ref`/`previous_ref`
@@ -238,7 +240,9 @@ defmodule DatadeftAuth do
   # The five client-echoed solution fields, from string or atom keys, with
   # anything extra or missing refused here instead of as a process fault.
   # A client-echoed `dif` is tolerated and dropped: the executable always
-  # verifies at its configured difficulty, never at client input.
+  # verifies at its configured difficulty, never at client input. A key
+  # present under both spellings is refused rather than silently collapsed
+  # to whichever value normalization visits last.
   defp solution_payload(solution) do
     normalized =
       Map.new(solution, fn
@@ -248,7 +252,8 @@ defmodule DatadeftAuth do
 
     fields = Map.take(normalized, ~w(chg sol non tim tag))
 
-    if map_size(fields) == 5 and map_size(Map.drop(normalized, ~w(chg sol non tim tag dif))) == 0 and
+    if map_size(normalized) == map_size(solution) and map_size(fields) == 5 and
+         map_size(Map.drop(normalized, ~w(chg sol non tim tag dif))) == 0 and
          Enum.all?(fields, fn {_, value} -> is_binary(value) end) do
       {:ok, fields}
     else

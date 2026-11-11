@@ -62,8 +62,8 @@ where
             outbox: &self.outbox,
             clock: &WallClock,
             rng: &mut rng,
-            lookup_hmac_key: &self.lookup_hmac_key,
-            config: self.config.clone(),
+            lookup_hmac_key: &self.shared.lookup_hmac_key,
+            config: self.shared.config.clone(),
         };
         match service.request_magic_link(command).await {
             Ok(outcome) => ResultBody::RequestLink {
@@ -158,10 +158,10 @@ where
         match validate_session(
             &payload.session_cookie,
             payload.country.as_deref(),
-            &self.session_keyring,
+            &self.shared.session_keyring,
             &self.store,
             &WallClock,
-            &self.config,
+            &self.shared.config,
         )
         .await
         {
@@ -169,10 +169,10 @@ where
                 let mut rng = OsRng;
                 match refresh_session_cookie(
                     &validated,
-                    &self.session_keyring,
+                    &self.shared.session_keyring,
                     &mut rng,
                     &WallClock,
-                    &self.config,
+                    &self.shared.config,
                 ) {
                     Ok(refreshed) => ResultBody::ValidateSession {
                         valid: true,
@@ -196,10 +196,10 @@ where
         match validate_session(
             &payload.session_cookie,
             payload.country.as_deref(),
-            &self.session_keyring,
+            &self.shared.session_keyring,
             &self.store,
             &WallClock,
-            &self.config,
+            &self.shared.config,
         )
         .await
         {
@@ -223,7 +223,7 @@ where
 
     /// Mint a fresh challenge for the application's `pow/create` route.
     fn pow_challenge(&self) -> ResultBody {
-        let Some(pow) = &self.pow else {
+        let Some(pow) = &self.shared.pow else {
             return error(ErrorCode::Configuration);
         };
         let mut entropy = [0_u8; 16];
@@ -250,7 +250,7 @@ where
     /// Every verification failure collapses into one `admitted: false` shape
     /// so the application can answer with one generic "solve again" response.
     fn pow_verify(&self, payload: PowVerifyPayload) -> ResultBody {
-        let Some(pow) = &self.pow else {
+        let Some(pow) = &self.shared.pow else {
             return error(ErrorCode::Configuration);
         };
         let Some(now) = now_unix_millis() else {
@@ -294,7 +294,7 @@ where
     /// solve's shared lifetime budget. A failing budget store refuses the
     /// request (fail closed) as `unavailable`, never as an admission.
     async fn pow_admit(&self, payload: PowAdmitPayload) -> ResultBody {
-        let Some(pow) = &self.pow else {
+        let Some(pow) = &self.shared.pow else {
             return error(ErrorCode::Configuration);
         };
         let Ok(now) = WallClock.now_unix() else {
@@ -351,7 +351,8 @@ where
                 Some(entry) => ResultBody::FakeLastMagicLink {
                     found: true,
                     magic_link_url: Some(
-                        self.email
+                        self.shared
+                            .email
                             .magic_link_url(entry.token.as_secret_value().as_str()),
                     ),
                     expires_at_unix: Some(entry.expires_at_unix),

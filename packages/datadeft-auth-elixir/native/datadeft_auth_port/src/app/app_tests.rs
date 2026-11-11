@@ -47,6 +47,19 @@ async fn initialized(pow: Option<serde_json::Value>) -> Result<ReadyApp, ErrorCo
     ReadyApp::initialize(payload).await
 }
 
+#[tokio::test]
+async fn a_subject_carrying_the_url_marker_is_refused_at_init() {
+    // The rendered URL is a bearer secret and Subject headers are logged in
+    // transit; the template validation must refuse the marker up front.
+    let mut payload = init_json(None);
+    payload["email"]["subject"] = serde_json::json!("Sign in: {magic_link_url}");
+    let payload: InitPayload = serde_json::from_value(payload).expect("payload shape");
+    assert!(matches!(
+        ReadyApp::initialize(payload).await,
+        Err(ErrorCode::Configuration)
+    ));
+}
+
 /// Solve the way the shipped browser client does: decimal nonces into
 /// `hex(SHA-256(chg + non))` until `dif` leading zero hex characters appear.
 fn solve(chg: &str, dif: u8) -> (String, String) {

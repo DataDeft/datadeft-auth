@@ -72,15 +72,15 @@ impl ReadyApp {
                 let (shared, storage_hmac_key, _) =
                     shared_state(config, email, payload.pow, secrets)?;
                 let outbox = FakeMagicLinkOutbox::default();
-                Ok(Self::Fake(Arc::new(App::assemble(
+                Ok(Self::Fake(Arc::new(App {
                     shared,
                     // The fake store keys records with the active key only;
                     // the storage-side previous-key fallback is a DynamoDB
                     // adapter behavior exercised by that crate's tests.
-                    FakeDynamoDbAuthStore::new(storage_hmac_key),
-                    outbox.clone(),
-                    Some(outbox),
-                ))))
+                    store: FakeDynamoDbAuthStore::new(storage_hmac_key),
+                    outbox: outbox.clone(),
+                    dev_outbox: Some(outbox),
+                })))
             }
             Mode::Aws => {
                 let aws = payload.aws.ok_or(ErrorCode::Configuration)?;
@@ -115,12 +115,12 @@ impl ReadyApp {
                 }
                 if aws.fake_outbox {
                     let outbox = FakeMagicLinkOutbox::default();
-                    return Ok(Self::AwsLocal(Arc::new(App::assemble(
+                    return Ok(Self::AwsLocal(Arc::new(App {
                         shared,
                         store,
-                        outbox.clone(),
-                        Some(outbox),
-                    ))));
+                        outbox: outbox.clone(),
+                        dev_outbox: Some(outbox),
+                    })));
                 }
                 let renderer = TemplateRenderer {
                     template: shared.email.clone(),
@@ -132,23 +132,28 @@ impl ReadyApp {
                 )
                 .with_reply_to(&aws.reply_to)
                 .map_err(|_| ErrorCode::Configuration)?;
-                Ok(Self::Aws(Arc::new(App::assemble(
-                    shared, store, outbox, None,
-                ))))
+                Ok(Self::Aws(Arc::new(App {
+                    shared,
+                    store,
+                    outbox,
+                    dev_outbox: None,
+                })))
             }
         }
     }
 }
 
-/// The store-independent half of an initialized `App`, so the per-backend
-/// construction sites stay in sync by construction instead of by hand.
+/// The store-independent half of an initialized `App`, built once and
+/// embedded whole so the per-backend construction sites cannot drift.
 struct Shared {
     config: MagicLinkServiceConfig,
     lookup_hmac_key: LookupHmacKey,
     previous_lookup_hmac_key: Option<LookupHmacKey>,
     confirm_keyring: KeyRing<MagicLinkConfirmCookie>,
     session_keyring: KeyRing<SessionCookie>,
+    /// Shared with the outbox renderer in SES mode, never duplicated.
     email: Arc<EmailTemplate>,
+    /// Present only when initialization configured the PoW admission gate.
     pow: Option<PowState>,
 }
 
@@ -191,46 +196,7 @@ pub struct App<Store, Outbox> {
     /// Present only where recorded emails may be read back (fake backends);
     /// `fake_last_magic_link` is refused when absent.
     dev_outbox: Option<FakeMagicLinkOutbox>,
-    config: MagicLinkServiceConfig,
-    lookup_hmac_key: LookupHmacKey,
-    previous_lookup_hmac_key: Option<LookupHmacKey>,
-    confirm_keyring: KeyRing<MagicLinkConfirmCookie>,
-    session_keyring: KeyRing<SessionCookie>,
-    /// Shared with the outbox renderer in SES mode, never duplicated.
-    email: Arc<EmailTemplate>,
-    /// Present only when initialization configured the PoW admission gate.
-    pow: Option<PowState>,
-}
-
-impl<Store, Outbox> App<Store, Outbox> {
-    fn assemble(
-        shared: Shared,
-        store: Store,
-        outbox: Outbox,
-        dev_outbox: Option<FakeMagicLinkOutbox>,
-    ) -> Self {
-        let Shared {
-            config,
-            lookup_hmac_key,
-            previous_lookup_hmac_key,
-            confirm_keyring,
-            session_keyring,
-            email,
-            pow,
-        } = shared;
-        Self {
-            store,
-            outbox,
-            dev_outbox,
-            config,
-            lookup_hmac_key,
-            previous_lookup_hmac_key,
-            confirm_keyring,
-            session_keyring,
-            email,
-            pow,
-        }
-    }
+    shared: Shared,
 }
 
 /// Validated proof-of-work policy plus the keys it runs on.
@@ -329,11 +295,11 @@ impl<Store, Outbox> App<Store, Outbox> {
             limiter: &self.store,
             clock: &WallClock,
             rng,
-            lookup_hmac_key: &self.lookup_hmac_key,
-            previous_lookup_hmac_key: self.previous_lookup_hmac_key.as_ref(),
-            confirm_keyring: &self.confirm_keyring,
-            session_keyring: &self.session_keyring,
-            config: self.config.clone(),
+            lookup_hmac_key: &self.shared.lookup_hmac_key,
+            previous_lookup_hmac_key: self.shared.previous_lookup_hmac_key.as_ref(),
+            confirm_keyring: &self.shared.confirm_keyring,
+            session_keyring: &self.shared.session_keyring,
+            config: self.shared.config.clone(),
         }
     }
 }
@@ -354,7 +320,11 @@ impl EmailTemplate {
                 .bytes()
                 .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
             && !payload.link_base_url.contains(['{', '}']);
+        // The URL carries the bearer token, and Subject headers are logged
+        // routinely by MTAs and delivery tooling: the marker is required in
+        // the bodies and refused in the subject.
         let bodies_ok = !payload.subject.trim().is_empty()
+            && !payload.subject.contains(URL_MARKER)
             && payload.text.contains(URL_MARKER)
             && payload
                 .html
@@ -390,7 +360,7 @@ impl MagicLinkEmailRenderer for TemplateRenderer {
             .magic_link_url(email.token.as_secret_value().as_str());
         Ok(RenderedMagicLinkEmail {
             to: email.email.as_str().to_owned(),
-            subject: self.template.subject.replace(URL_MARKER, &url),
+            subject: self.template.subject.clone(),
             text: self.template.text.replace(URL_MARKER, &url),
             html: self
                 .template

@@ -7,6 +7,14 @@ defmodule DatadeftAuth.Connection do
   # :executable are validated separately. The public bound types in
   # DatadeftAuth mirror these limits (typespecs cannot reference attributes).
   @restart_delay_limit 5000
+
+  # Initialization in AWS mode resolves the credential chain and fetches the
+  # Secrets Manager documents over the network; a cold start routinely needs
+  # more than the per-request deadline, and timing init out costs a full
+  # disconnect whose retry repeats the same cold fetch. The executable's SDK
+  # carries its own tighter timeouts; this bound only catches a hung process.
+  @init_timeout 30_000
+
   @int_options [
     request_timeout: {1000, 60_000},
     max_pending: {32, 1024},
@@ -233,11 +241,21 @@ defmodule DatadeftAuth.Connection do
           finish(pending, :ok)
 
           case result do
-            :init -> {:ok, %{state | ready: true, pending: rest}}
-            # A refused configuration cannot heal by itself; the bounded
-            # restart loop keeps the owner alive while the app is fixed.
-            {:error, _code} -> {:disconnect, :configuration}
-            _ -> {:disconnect, :protocol}
+            :init ->
+              {:ok, %{state | ready: true, pending: rest}}
+
+            # The executable's transient refusal (a dependency outage) heals
+            # by retrying; every other refusal is a configuration the app
+            # must fix. The bounded restart loop keeps the owner alive and
+            # retrying either way, with the honest diagnostic code.
+            {:error, :unavailable} ->
+              {:disconnect, :unavailable}
+
+            {:error, _code} ->
+              {:disconnect, :configuration}
+
+            _ ->
+              {:disconnect, :protocol}
           end
 
         {%{from: from, operation: operation} = pending, rest} when from != nil ->
@@ -299,7 +317,7 @@ defmodule DatadeftAuth.Connection do
       # pipe rejects only this request instead of dropping the connection.
       Port.command(state.port, frame, [:nosuspend]) ->
         monitor = if from, do: Process.monitor(elem(from, 0)), else: nil
-        timer = Process.send_after(self(), {:deadline, state.port, id}, state.timeout)
+        timer = Process.send_after(self(), {:deadline, state.port, id}, deadline(operation, state))
         pending = %{operation: operation, from: from, timer: timer, monitor: monitor}
         {:ok, %{state | pending: Map.put(state.pending, id, pending), next_id: id + 1}}
 
@@ -309,6 +327,10 @@ defmodule DatadeftAuth.Connection do
   rescue
     ArgumentError -> :error
   end
+
+  @spec deadline(Protocol.operation(), state()) :: pos_integer()
+  defp deadline(:init, _state), do: @init_timeout
+  defp deadline(_operation, state), do: state.timeout
 
   @spec disconnect(state(), Error.code()) :: state()
   defp disconnect(state, code) do

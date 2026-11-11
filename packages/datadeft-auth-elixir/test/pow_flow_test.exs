@@ -76,7 +76,10 @@ defmodule DatadeftAuthPowFlowTest do
     for malformed <- [
           Map.put(solution, :extra, "x"),
           Map.delete(solution, :sol),
-          %{solution | non: 7}
+          %{solution | non: 7},
+          # The same field under both spellings is ambiguous: refused, never
+          # collapsed to whichever value normalization visits last.
+          Map.put(solution, "sol", String.duplicate("f", 64))
         ] do
       assert {:error, %Error{code: :bad_request}} = DatadeftAuth.pow_verify(pid, malformed)
     end

@@ -21,7 +21,13 @@ fn main() -> ExitCode {
         Err(_) => return ExitCode::from(2),
     };
     // The unlocked handles are Send; each side is driven by one task only.
-    match runtime.block_on(server::serve(io::stdin(), io::stdout())) {
+    let outcome = runtime.block_on(server::serve(io::stdin(), io::stdout()));
+    // Dropping the runtime would wait for the spawn_blocking stdin read,
+    // which after a fatal protocol error may stay parked until the owner
+    // writes or closes the pipe; shut down without waiting so the exit is
+    // prompt and the owner's exit-driven reconnect fires immediately.
+    runtime.shutdown_background();
+    match outcome {
         Ok(()) => ExitCode::SUCCESS,
         Err(_) => ExitCode::from(2),
     }
