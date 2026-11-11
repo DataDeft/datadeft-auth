@@ -195,7 +195,7 @@ async fn sign_in_end_to_end_through_the_router() {
 
     let me = send(
         &app,
-        Request::get("/me")
+        Request::get("/dev/me")
             .header(COOKIE, &session)
             .body(Body::empty())
             .expect("req"),
@@ -375,7 +375,7 @@ async fn redirect_mode_end_to_end_through_the_router() {
     let session = cookie(&confirmed, "dd_session").expect("session cookie");
     let me = send(
         &app,
-        Request::get("/me")
+        Request::get("/dev/me")
             .header(COOKIE, &session)
             .body(Body::empty())
             .expect("req"),

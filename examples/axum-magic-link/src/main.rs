@@ -46,7 +46,7 @@ async fn main() -> AppResult<()> {
 /// The example's routes.
 fn app(state: AppState) -> Router {
     Router::new()
-        .route("/", get(index))
+        .route("/dev", get(index))
         .route("/auth/pow/create", post(pow_create))
         .route("/auth/pow/validate", post(pow_validate))
         .route("/auth/magic-link/request", post(request_magic_link))
@@ -58,7 +58,7 @@ fn app(state: AppState) -> Router {
         .route("/auth/confirm", get(confirm_page))
         .route("/auth/confirm.js", get(confirm_page_script))
         .route("/auth/complete", get(auth_complete))
-        .route("/me", get(me))
+        .route("/dev/me", get(me))
         .route("/auth/logout", post(logout))
         .route("/dev/latest-magic-link", get(dev_latest_magic_link))
         .with_state(state)

@@ -176,6 +176,6 @@ fn scanner_page(status: StatusCode, body: &'static str) -> Response {
 
 pub(super) async fn auth_complete() -> Html<&'static str> {
     Html(
-        "<!doctype html><h1>Signed in</h1><p>The scanner-safe POST completed. Try <a href=\"/me\">/me</a>.</p>",
+        "<!doctype html><h1>Signed in</h1><p>The scanner-safe POST completed. Try <a href=\"/dev/me\">/dev/me</a>.</p>",
     )
 }

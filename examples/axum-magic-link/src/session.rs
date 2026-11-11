@@ -126,7 +126,7 @@ pub(super) async fn logout(State(state): State<AppState>, headers: HeaderMap) ->
     *response.status_mut() = StatusCode::SEE_OTHER;
     response
         .headers_mut()
-        .insert(LOCATION, HeaderValue::from_static("/"));
+        .insert(LOCATION, HeaderValue::from_static("/dev"));
     response.headers_mut().append(
         SET_COOKIE,
         clear_session_cookie_header(state.http_config.session_cookie()),
