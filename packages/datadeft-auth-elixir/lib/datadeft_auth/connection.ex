@@ -209,6 +209,11 @@ defmodule DatadeftAuth.Connection do
           finish(pending, {:ok, :transport_ready})
           {:ok, %{state | pending: rest}}
 
+        # Per-request failure from the executable; the connection stays up.
+        {%{from: from} = pending, rest} when from != nil and elem(result, 0) == :error ->
+          finish(pending, result |> elem(1) |> error())
+          {:ok, %{state | pending: rest}}
+
         _ ->
           :error
       end

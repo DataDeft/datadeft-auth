@@ -10,8 +10,12 @@ defmodule DatadeftAuth.Protocol do
   @typedoc "Closed operation set; encoded as strings on the wire."
   @type operation :: :handshake | :ping
 
-  @typedoc "Reply result; the wire echoes the closed request operation set."
-  @type result :: operation()
+  # Per-request application failures the executable may reply instead of a
+  # success result; protocol faults never use this shape.
+  @error_codes %{"overloaded" => :overloaded}
+
+  @typedoc "Reply result: the echoed operation or a per-request failure code."
+  @type result :: operation() | {:error, :overloaded}
   @type failure :: {:error, :protocol}
 
   @typedoc "JSON body without its four-byte length prefix; validated at the boundary."
@@ -94,6 +98,15 @@ defmodule DatadeftAuth.Protocol do
       {"operation", "ping"} ->
         case object(value, ["operation"]) do
           {:ok, _} -> {:ok, :ping}
+          _ -> {:error, :protocol}
+        end
+
+      {"operation", "error"} ->
+        with {:ok, result} <- object(value, ["operation", "code"]),
+             %{"code" => code} <- result,
+             {:ok, code} <- Map.fetch(@error_codes, code) do
+          {:ok, {:error, code}}
+        else
           _ -> {:error, :protocol}
         end
 

@@ -29,6 +29,20 @@ defmodule DatadeftAuth.ProtocolTest do
     end
   end
 
+  test "per-request error replies parse only the closed code set" do
+    frame = ~s({"version":1,"id":2,"result":{"operation":"error","code":"overloaded"}})
+    assert {:ok, 2, {:error, :overloaded}} = Protocol.reply(frame)
+
+    for frame <- [
+          ~s({"version":1,"id":2,"result":{"operation":"error","code":"unknown"}}),
+          ~s({"version":1,"id":2,"result":{"operation":"error"}}),
+          ~s({"version":1,"id":2,"result":{"operation":"error","code":"overloaded","x":0}}),
+          ~s({"version":1,"id":2,"result":{"operation":"error","code":1}})
+        ] do
+      assert {:error, :protocol} = Protocol.reply(frame)
+    end
+  end
+
   test "strict response schema rejects duplicates, unknown fields and forged shapes" do
     valid = ~s({"version":1,"id":2,"result":{"operation":"ping"}})
     assert {:ok, 2, :ping} = Protocol.reply(valid)
