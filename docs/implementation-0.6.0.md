@@ -10,17 +10,7 @@ must not modify the concurrent Elixir authentication work.
 The implementation orchestrator records these proposals before changing the
 producer APIs. They remain subject to review in this draft implementation PR.
 
-### V06-002: excluded after requirements review
-
-Audience isolation is not part of this PR. No concrete consuming-application
-requirement justified an additional cookie-key scope. Existing AWS Secrets
-Manager loading, purpose-separated keys and active/previous rotation already
-meet the established key-management requirements.
-
-The project owner requested removal rather than retaining an unused mechanism.
-The existing secret-loader signatures and key derivation are unchanged: no
-new audience configuration, cryptographic step or migration is introduced.
-The remaining features must also pass the
+These features must pass the
 [feature-justification gate](feature-justification.md) before merge.
 
 ### V06-003: locale-specific confirmation routes
