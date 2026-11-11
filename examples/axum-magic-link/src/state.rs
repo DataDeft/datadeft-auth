@@ -12,7 +12,7 @@ use datadeft_magic_link_axum::{
     SessionCookieConfig,
 };
 use datadeft_magic_link_service::{
-    Clock, CountryPolicy, DependencyError, KeyRing, LocaleAllowlist, LookupHmacKey,
+    Audience, Clock, CountryPolicy, DependencyError, KeyRing, LocaleAllowlist, LookupHmacKey,
     MagicLinkConfirmCookie, MagicLinkFlowService, MagicLinkServiceConfig, SessionCookie,
 };
 use datadeft_pow_axum::{
@@ -43,6 +43,7 @@ pub(super) struct AppState {
     pub(super) outbox: FakeMagicLinkOutbox,
     pub(super) config: MagicLinkServiceConfig,
     pub(super) http_config: Arc<MagicLinkScannerFlowConfig>,
+    pub(super) http_config_hu: Arc<MagicLinkScannerFlowConfig>,
     pub(super) lookup_hmac_key: Arc<LookupHmacKey>,
     pub(super) confirm_keyring: Arc<KeyRing<MagicLinkConfirmCookie>>,
     pub(super) session_keyring: Arc<KeyRing<SessionCookie>>,
@@ -54,6 +55,24 @@ pub(super) struct AppState {
 }
 
 impl AppState {
+    /// Locale is presentation only. Resolve before link lookup, and never use
+    /// link validity or account data to choose a redirect.
+    pub(super) fn redirect_config(&self, hint: Option<&str>) -> Arc<MagicLinkScannerFlowConfig> {
+        let locale = self
+            .config
+            .locales
+            .as_ref()
+            .map(|locales| locales.resolve(hint));
+        if locale
+            .as_ref()
+            .is_some_and(|locale| locale.as_str() == "hu")
+        {
+            Arc::clone(&self.http_config_hu)
+        } else {
+            Arc::clone(&self.http_config)
+        }
+    }
+
     /// The flow service over this app's store, keys, and config.
     pub(super) fn flow_service<'a>(
         &'a self,
@@ -106,8 +125,10 @@ pub(super) fn build_state() -> AppResult<AppState> {
     // Production loads this document from AWS Secrets Manager
     // (`resolve_auth_secrets`); the example generates one with fresh keys so
     // every key takes the same path.
+    let audience = Audience::parse("example-web")?;
     let secrets = LoadedAuthSecrets::from_json(&development_secret_document(now_unix)?, None)
-        .map_err(|_| SetupError("invalid development secret document"))?;
+        .map_err(|_| SetupError("invalid development secret document"))?
+        .with_audience(&audience)?;
     // Built at startup so a `kid` too long for the proof cookie fails here.
     let pow_proof_keyring = secrets
         .pow_proof_keyring::<PowProofCookie>()
@@ -138,11 +159,19 @@ pub(super) fn build_state() -> AppResult<AppState> {
             .map_err(|_| SetupError("invalid flow-state route"))?,
     )?;
 
+    let http_config_hu = http_config.clone().with_redirect_landing(
+        SameOriginRedirect::parse("/hu/login/confirm")
+            .map_err(|_| SetupError("invalid Hungarian confirm page"))?,
+        SameOriginRedirect::parse("/auth/magic-link/flow-state")
+            .map_err(|_| SetupError("invalid flow-state route"))?,
+    )?;
+
     Ok(AppState {
         auth: FakeDynamoDbAuthStore::new(storage_hmac_key),
         outbox: FakeMagicLinkOutbox::default(),
         config,
         http_config: Arc::new(http_config),
+        http_config_hu: Arc::new(http_config_hu),
         lookup_hmac_key: Arc::new(lookup_hmac_key),
         confirm_keyring: Arc::new(confirm_keyring),
         session_keyring: Arc::new(session_keyring),

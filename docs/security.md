@@ -610,13 +610,34 @@ account.
 Keyed window rate-limit counters restart once at rotation. These limits are
 best-effort. Per-solve lifetime counters do not restart.
 
+## Optional cookie audience isolation
+
+At startup, a consuming app can scope its session and confirmation keyrings
+with `LoadedAuthSecrets::with_audience`. Direct keyring consumers can call
+`KeyRing::with_audience`. The validated audience is trusted configuration,
+not a request claim. Purpose/kid-derived keys receive a versioned,
+length-framed HKDF audience context, including verify-only slots.
+
+Different audiences and scoped/unscoped rings never verify one another's
+cookies. Refusal is the existing constant-time AEAD tag check and generic
+public failure; there is no fallback parser or key. Mint, validation, refresh
+and logout must use the same scope on every node. Rebinding is a setup error.
+Enabling/changing a scope requires reauthentication, not a server-side record
+migration; explicitly revoke records if invalidation must survive rollback.
+
+This separates cookie use, not authorization, raw email links, or compromise
+of a shared root secret. Independent PoW and HMAC storage keys are unchanged.
+See [authentication contexts](auth-contexts.md).
+
 ## Cookie security
 
 Cookie helpers use safe settings by default:
 
-- Lower `snake_case` names. v1 does not require `__Host-` and `__Secure-`.
-  Open for 0.6: the `__Host-` prefix for the session cookie. The confirm
-  cookie cannot use it because it needs a narrow path.
+- Lower `snake_case` names by default. Session policies can opt into the
+  exact `__Host-` prefix with a lower `snake_case` suffix. Configuration then
+  requires Secure, exactly Path=/ and host-only scope, for set and clear
+  headers. Local HTTP refuses prefixed names. Confirm cookies stay unprefixed
+  with narrow paths. No automatic rename or dual-name reads are added.
 - `HttpOnly` for auth cookies.
 - `Secure` outside local development.
 - Conservative `SameSite`.
@@ -785,6 +806,17 @@ follows the rules of the landing page:
 - No shared navigation or session scripts. The page shows the account and
   posts the confirmation. It does nothing else. On `{ "usable": false }`, it
   offers "request a new link". On `503`, it asks the user to try again later.
+
+### Locale-specific confirmation pages
+
+Email renderers already receive the resolved allowlisted locale and own URL
+construction. They can emit a fixed locale-specific landing path; each route
+uses its configured same-origin confirmation page. Choose the page before
+link lookup, so usable and unusable links on one route have the same status
+and Location. Language is presentation only; changing it never changes the
+account or authorization. Unknown hints use a fixed default. Do not infer the
+page from a successful lookup, reflect arbitrary paths or persist locale
+solely for display. See [authentication contexts](auth-contexts.md).
 
 ### Email language and Reply-To
 

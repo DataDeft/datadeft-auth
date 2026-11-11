@@ -17,6 +17,8 @@ producer APIs. They remain subject to review in this draft implementation PR.
   the existing service APIs.
 - Proposed API: validated `keyring::Audience`, and consuming
   `KeyRing::with_audience(&Audience)`.
+- Service API: re-export `Audience` alongside the existing keyring types so
+  sibling adapters keep their allowed dependency graph.
 - Adapter API: `LoadedAuthSecrets::with_audience(&Audience)` scopes both session
   and confirmation rings together, including verify-only slots.
 - Reason: isolate cookies between application contexts without adding an `aud`
@@ -84,12 +86,17 @@ producer APIs. They remain subject to review in this draft implementation PR.
 
 ## Implementation tracking
 
-- [ ] Audience-scoped core keyrings and vectors.
-- [ ] AWS startup binding for both session and confirmation rings.
-- [ ] Locale-route integration guide and regression tests.
-- [ ] Host-prefixed session cookie validation and tests.
-- [ ] Workspace verification and minimum-compiler checks.
+- [x] Audience-scoped core keyrings and vectors.
+- [x] AWS startup binding for both session and confirmation rings.
+- [x] Locale-route integration guide, translated example pages and regression tests.
+- [x] Host-prefixed session cookie validation and tests.
+- [x] Workspace verification and minimum-compiler checks.
 - [ ] Consuming-application integration and review of migration choices.
+
+Local validation: `mise run verify`, `mise run msrv` and
+`mise run dynamodb-local-test` pass (all 10 Docker-backed integration tests).
+No live AWS calls, production integration or long fuzz campaign was run.
+External security/API review and consuming-application migration remain gates.
 
 No publishing, version bump, live secret access or production configuration
 changes are authorized by this PR. The draft release plan remains in PR #6.

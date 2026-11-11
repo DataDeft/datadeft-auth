@@ -254,6 +254,32 @@ async fn sign_in_end_to_end_through_the_router() {
 /// burning nothing), posts the confirmation, and the user is signed in.
 #[tokio::test]
 async fn redirect_mode_end_to_end_through_the_router() {
+    for (hint, landing, page, locale) in [
+        (None, "/auth/magic-link/open", "/login/confirm", "en"),
+        (
+            Some("hu-HU"),
+            "/auth/magic-link/open/hu",
+            "/hu/login/confirm",
+            "hu",
+        ),
+        (
+            Some("en"),
+            "/auth/magic-link/open/en",
+            "/login/confirm",
+            "en",
+        ),
+        (
+            Some("unknown"),
+            "/auth/magic-link/open/unknown",
+            "/login/confirm",
+            "en",
+        ),
+    ] {
+        redirect_flow_case(hint, landing, page, locale).await;
+    }
+}
+
+async fn redirect_flow_case(hint: Option<&str>, landing_path: &str, page_path: &str, locale: &str) {
     use datadeft_magic_link_service::{
         MagicLinkRequestService, NormalizedEmail, RequestMagicLinkCommand,
     };
@@ -261,6 +287,14 @@ async fn redirect_mode_end_to_end_through_the_router() {
 
     let state = build_state().expect("state");
     let mut rng = OsRng;
+    let mut command = RequestMagicLinkCommand::new(
+        NormalizedEmail::from_normalized("static@example.test").expect("email"),
+        true,
+        true,
+    );
+    if let Some(hint) = hint {
+        command = command.with_locale_hint(hint);
+    }
     MagicLinkRequestService {
         magic_links: &state.auth,
         limiter: &state.auth,
@@ -270,26 +304,37 @@ async fn redirect_mode_end_to_end_through_the_router() {
         lookup_hmac_key: state.lookup_hmac_key.as_ref(),
         config: state.config.clone(),
     }
-    .request_magic_link(RequestMagicLinkCommand::new(
-        NormalizedEmail::from_normalized("static@example.test").expect("email"),
-        true,
-        true,
-    ))
+    .request_magic_link(command)
     .await
     .expect("request");
-    let token = state
+    let email = state
         .outbox
         .recorded()
         .expect("outbox")
         .pop()
-        .expect("email")
-        .token
-        .as_secret_value()
-        .to_string();
+        .expect("email");
+    assert_eq!(
+        email.locale.as_ref().map(|locale| locale.as_str()),
+        Some(locale)
+    );
+    let token = email.token.as_secret_value().to_string();
+    let store = state.auth.clone();
     let app = app(state);
+    let outbox = send(
+        &app,
+        Request::get("/dev/latest-magic-link")
+            .body(Body::empty())
+            .expect("req"),
+    )
+    .await;
+    assert!(
+        text(outbox)
+            .await
+            .contains(&format!("/auth/magic-link/open/{locale}?token="))
+    );
 
     // A scanner follows the link twice: each time a 303 to the same page.
-    let open = format!("/auth/magic-link/open?token={token}");
+    let open = format!("{landing_path}?token={token}");
     let mut confirm_cookie = String::new();
     for _ in 0..2 {
         let landed = send(&app, Request::get(&open).body(Body::empty()).expect("req")).await;
@@ -299,16 +344,37 @@ async fn redirect_mode_end_to_end_through_the_router() {
             .get(LOCATION)
             .and_then(|v| v.to_str().ok())
             .expect("location");
-        assert_eq!(location, "/login/confirm", "one target, no token");
+        assert_eq!(location, page_path, "one target, no token");
+        assert!(!location.contains(&token));
+        assert_eq!(
+            landed.headers().get("cache-control").expect("cache"),
+            "no-store"
+        );
         confirm_cookie = cookie(&landed, "dd_auth_confirm").expect("confirm cookie");
     }
+
+    // Invalid links on the same language route must not expose their validity
+    // via a different redirect, change the language or clear another flow.
+    let invalid = send(
+        &app,
+        Request::get(format!("{landing_path}?token=malformed"))
+            .body(Body::empty())
+            .expect("req"),
+    )
+    .await;
+    assert_eq!(invalid.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        invalid.headers().get(LOCATION).expect("location"),
+        page_path
+    );
+    assert!(invalid.headers().get(SET_COOKIE).is_none());
+    assert_eq!(store.session_count().expect("sessions"), 0);
+    assert_eq!(store.magic_link_count().expect("links"), 1);
 
     // The static page carries its own strict headers.
     let page = send(
         &app,
-        Request::get("/login/confirm")
-            .body(Body::empty())
-            .expect("req"),
+        Request::get(page_path).body(Body::empty()).expect("req"),
     )
     .await;
     assert_eq!(page.status(), StatusCode::OK);
@@ -319,7 +385,17 @@ async fn redirect_mode_end_to_end_through_the_router() {
         .expect("csp")
         .to_owned();
     assert!(csp.contains("script-src 'self'") && csp.contains("frame-ancestors 'none'"));
-    assert!(!text(page).await.contains(&token));
+    assert_eq!(
+        page.headers().get("referrer-policy").expect("referrer"),
+        "strict-origin"
+    );
+    assert_eq!(
+        page.headers().get("cache-control").expect("cache"),
+        "no-store"
+    );
+    let html = text(page).await;
+    assert!(html.contains(&format!("<html lang=\"{locale}\">")));
+    assert!(!html.contains(&token));
 
     // The page reads the flow state; reading again burns nothing.
     let flow_state = || {

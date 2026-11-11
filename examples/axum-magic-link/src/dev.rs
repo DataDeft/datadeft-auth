@@ -14,21 +14,23 @@ pub(super) async fn index() -> Html<&'static str> {
 
 pub(super) async fn dev_latest_magic_link(State(state): State<AppState>) -> Response {
     match latest_magic_link(&state.outbox) {
-        Some(query) => Html(format!(
-            "<!doctype html><h1>Development outbox</h1><p>This endpoint exposes a local-only bearer magic link for the example app.</p><p><a href=\"/auth/magic-link{query}\">Continue sign in (server-rendered page)</a></p><p><a href=\"/auth/magic-link/open{query}\">Continue sign in (redirect mode, static page)</a></p>",
+        Some((query, locale)) => Html(format!(
+            "<!doctype html><h1>Development outbox</h1><p>This endpoint exposes a local-only bearer magic link for the example app.</p><p><a href=\"/auth/magic-link{query}\">Continue sign in (server-rendered page)</a></p><p><a href=\"/auth/magic-link/open/{locale}{query}\">Continue sign in (redirect mode, static page)</a></p>",
             query = escape_html(&query),
+            locale = escape_html(&locale),
         ))
         .into_response(),
         None => (StatusCode::NOT_FOUND, "no development magic-link email queued\n").into_response(),
     }
 }
 
-/// Local-development helper: the newest outbox email's `?token=…` query, to
-/// render as clickable links instead of sending real mail.
-fn latest_magic_link(outbox: &FakeMagicLinkOutbox) -> Option<String> {
+/// Local-development helper: the newest email's query and resolved locale,
+/// to render a localized link instead of sending real mail.
+fn latest_magic_link(outbox: &FakeMagicLinkOutbox) -> Option<(String, String)> {
     let email = outbox.recorded().ok()?.pop()?;
     let token = email.token.as_secret_value();
-    Some(format!("?token={}", token.as_str()))
+    let locale = email.locale.as_ref().map_or("en", |locale| locale.as_str());
+    Some((format!("?token={}", token.as_str()), locale.to_owned()))
 }
 
 const INDEX_HTML: &str = r#"<!doctype html>
@@ -46,6 +48,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       <label>Email <input name="email" type="email" value="local@example.test" required></label>
       <label><input name="terms" type="checkbox" checked> Accept terms</label>
       <label><input name="privacy" type="checkbox" checked> Accept privacy policy</label>
+      <label>Confirmation language <select name="locale"><option value="en">English</option><option value="hu">Magyar</option></select></label>
       <button type="submit">Request magic link</button>
     </form>
     <pre id="status" aria-live="polite"></pre>
@@ -79,7 +82,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
           email: form.get('email'),
           terms_accepted: form.get('terms') === 'on',
           privacy_accepted: form.get('privacy') === 'on',
-          locale: document.documentElement.lang,
+          locale: form.get('locale'),
         }),
       });
       status.textContent = 'Requesting magic link...';

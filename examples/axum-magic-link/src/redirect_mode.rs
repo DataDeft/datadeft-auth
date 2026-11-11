@@ -4,7 +4,7 @@
 //! `/login/confirm`. That page reads `/auth/magic-link/flow-state` and posts
 //! the confirmation to the same route as the server-rendered mode.
 
-use axum::extract::{Request, State};
+use axum::extract::{Path, Request, State};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, REFERRER_POLICY, X_FRAME_OPTIONS};
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{Html, IntoResponse, Response};
@@ -19,7 +19,22 @@ pub(super) async fn redirect_landing_route(
     State(state): State<AppState>,
     request: Request,
 ) -> Response {
-    let config = state.http_config.clone();
+    landing_for_locale(state, request, None).await
+}
+
+/// The renderer uses the already resolved email locale in this route's path.
+/// Unknown hints select the default; language never authorizes a request.
+/// All link states on one route select the same configured static page.
+pub(super) async fn localized_redirect_landing_route(
+    Path(locale): Path<String>,
+    State(state): State<AppState>,
+    request: Request,
+) -> Response {
+    landing_for_locale(state, request, Some(&locale)).await
+}
+
+async fn landing_for_locale(state: AppState, request: Request, hint: Option<&str>) -> Response {
+    let config = state.redirect_config(hint);
     magic_link_landing_redirect(request, config.as_ref(), move |command| async move {
         let mut rng = OsRng;
         state
@@ -53,6 +68,13 @@ pub(super) async fn flow_state_route(
 /// third-party anything, no framing.
 pub(super) async fn confirm_page() -> Response {
     let mut response = Html(CONFIRM_PAGE_HTML).into_response();
+    static_page_headers(response.headers_mut());
+    response
+}
+
+/// Hungarian static page: same protocol and security headers, translated UI.
+pub(super) async fn confirm_page_hu() -> Response {
+    let mut response = Html(include_str!("confirm.hu.html")).into_response();
     static_page_headers(response.headers_mut());
     response
 }
@@ -104,7 +126,14 @@ const CONFIRM_PAGE_HTML: &str = r#"<!doctype html>
 
 const CONFIRM_PAGE_JS: &str = r#"const status = document.getElementById('status');
 const form = document.getElementById('confirm');
-const unusable = 'This link cannot be used. Request a new one.';
+const messages = document.documentElement.lang === 'hu' ? {
+  unusable: 'Ez a hivatkozás nem használható. Kérj újat.',
+  busy: 'A szolgáltatás jelenleg nem érhető el. Próbáld újra később.',
+} : {
+  unusable: 'This link cannot be used. Request a new one.',
+  busy: 'The service is busy. Try again in a moment.',
+};
+const unusable = messages.unusable;
 
 (async () => {
   const response = await fetch('/auth/magic-link/flow-state', {
@@ -112,7 +141,7 @@ const unusable = 'This link cannot be used. Request a new one.';
     cache: 'no-store',
   });
   if (!response.ok) {
-    status.textContent = 'The service is busy. Reload this page in a moment.';
+    status.textContent = messages.busy;
     return;
   }
   const state = await response.json();
@@ -135,8 +164,8 @@ const unusable = 'This link cannot be used. Request a new one.';
       form.hidden = true;
       window.location.assign('/auth/complete');
     } else if (confirmed.status === 503) {
-      // Nothing was consumed; the link still works. Keep the form.
-      status.textContent = 'The service is busy. Try again in a moment.';
+      // A dependency refusal is not proof of rollback. Do not auto-replay.
+      status.textContent = messages.busy;
     } else {
       form.hidden = true;
       status.textContent = unusable;

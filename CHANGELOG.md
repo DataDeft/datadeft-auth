@@ -6,8 +6,21 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Unreleased
 
+### Added
+
+- Optional audience-scoped session and confirmation keyrings, with one AWS
+  loaded-secrets startup binding, previous-key rotation support and no unscoped
+  verification fallback. Enabling/changing the audience requires reauthentication.
+- English/Hungarian confirmation routes and pages in the Axum example, using the
+  existing allowlisted email locale and fixed same-origin redirect APIs.
+- Opt-in `__Host-` session cookie names with Secure, Path=/, host-only set/clear
+  parity, total name-length validation and typed setup errors. Default cookie
+  names are unchanged; local plain HTTP rejects prefixed names.
+
 ### Changed
 
+- `CookieConfigError` adds `HostPrefixRequiresSecure` and
+  `HostPrefixRequiresRootPath`; downstream exhaustive matches must handle them.
 - Raise the minimum supported Rust version from 1.88 to 1.94.1 to use maintained
   AWS SDK/Smithy releases. All workspace crates inherit this requirement.
 
