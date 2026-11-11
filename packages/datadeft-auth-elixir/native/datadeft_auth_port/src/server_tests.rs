@@ -174,8 +174,32 @@ fn initialization_gates_the_auth_operations() {
 }
 
 #[test]
+fn pow_operations_are_gated_like_the_auth_operations() {
+    let challenge = r#"{"version":1,"id":3,"operation":"pow_challenge","payload":{}}"#;
+    // Before init a pow operation is a fatal protocol violation.
+    assert!(
+        run(
+            &[HELLO.to_string(), challenge.to_string()],
+            MAX_IN_FLIGHT_JOBS
+        )
+        .is_err()
+    );
+    // After an init without the pow section it is a per-request
+    // configuration error; the connection stays up.
+    let frames = run(
+        &[HELLO.to_string(), init(2, "fake"), challenge.to_string()],
+        MAX_IN_FLIGHT_JOBS,
+    )
+    .unwrap();
+    assert_eq!(
+        frames[2],
+        br#"{"version":1,"id":3,"result":{"operation":"error","code":"configuration"}}"#
+    );
+}
+
+#[test]
 fn staged_aws_mode_and_bad_configuration_fail_closed_per_request() {
-    // AWS mode is refused until its wiring lands; the connection stays up.
+    // AWS mode without its aws section is refused; the connection stays up.
     let frames = run(
         &[HELLO.to_string(), init(2, "aws"), ping(3)],
         MAX_IN_FLIGHT_JOBS,

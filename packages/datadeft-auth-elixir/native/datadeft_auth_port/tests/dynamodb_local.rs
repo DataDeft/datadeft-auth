@@ -150,26 +150,8 @@ async fn full_flow_against_real_storage_through_the_pipe() {
     let handshake = port.call("handshake", serde_json::json!({}));
     assert_eq!(handshake["operation"], "handshake");
 
-    let init = port.call(
-        "init",
-        serde_json::json!({
-            "mode": "aws",
-            "service": { "terms_version": "t1", "privacy_version": "p1" },
-            "email": {
-                "link_base_url": "https://auth.test/magic?token=",
-                "subject": "Sign in",
-                "text": "Open {magic_link_url}"
-            },
-            "secrets": { "active_document": secret_document() },
-            "aws": {
-                "region": "eu-central-1",
-                "table": table,
-                "from_email": "login@auth.test",
-                "endpoint_url": endpoint(),
-                "fake_outbox": true
-            }
-        }),
-    );
+    let document = secret_document();
+    let init = port.call("init", init_payload(&table, &document));
     assert_eq!(init["operation"], "init", "init failed: {init}");
 
     let email = "port-e2e@example.test";
@@ -234,5 +216,94 @@ async fn full_flow_against_real_storage_through_the_pipe() {
     );
     assert_eq!(invalid["valid"], false);
 
+    // PoW through real storage: one solve buys its lifetime budget shared
+    // across processes (nodes) counting in the same table.
+    let challenge = port.call("pow_challenge", serde_json::json!({}));
+    let chg = challenge["chg"].as_str().expect("e2e");
+    let dif = u8::try_from(challenge["dif"].as_u64().expect("e2e")).expect("e2e");
+    let (sol, non) = solve(chg, dif);
+    let verified = port.call(
+        "pow_verify",
+        serde_json::json!({
+            "chg": chg,
+            "sol": sol,
+            "non": non,
+            "tim": challenge["tim"],
+            "tag": challenge["tag"]
+        }),
+    );
+    assert_eq!(verified["admitted"], true, "verify failed: {verified}");
+    let proof_cookie = verified["proof_cookie"].as_str().expect("e2e").to_owned();
+
+    let mut second = Port::spawn();
+    second.call("handshake", serde_json::json!({}));
+    let init = second.call("init", init_payload(&table, &document));
+    assert_eq!(init["operation"], "init", "second init failed: {init}");
+
+    // Budget 3: two spends on the minting node, one on the other, then both
+    // nodes refuse the fourth — the counter lives in the table, not a node.
+    assert_eq!(
+        port.call("pow_admit", admit(&proof_cookie))["admitted"],
+        true
+    );
+    assert_eq!(
+        port.call("pow_admit", admit(&proof_cookie))["admitted"],
+        true
+    );
+    assert_eq!(
+        second.call("pow_admit", admit(&proof_cookie))["admitted"],
+        true,
+        "the proof cookie and budget must carry across processes"
+    );
+    assert_eq!(
+        second.call("pow_admit", admit(&proof_cookie))["admitted"],
+        false
+    );
+    assert_eq!(
+        port.call("pow_admit", admit(&proof_cookie))["admitted"],
+        false
+    );
+
+    second.shutdown();
     port.shutdown();
+}
+
+fn init_payload(table: &str, document: &str) -> serde_json::Value {
+    serde_json::json!({
+        "mode": "aws",
+        "service": { "terms_version": "t1", "privacy_version": "p1" },
+        "email": {
+            "link_base_url": "https://auth.test/magic?token=",
+            "subject": "Sign in",
+            "text": "Open {magic_link_url}"
+        },
+        "secrets": { "active_document": document },
+        "aws": {
+            "region": "eu-central-1",
+            "table": table,
+            "from_email": "login@auth.test",
+            "endpoint_url": endpoint(),
+            "fake_outbox": true
+        },
+        "pow": { "difficulty": 2, "proof_budget_per_solve": 3 }
+    })
+}
+
+fn admit(proof_cookie: &str) -> serde_json::Value {
+    serde_json::json!({ "proof_cookie": proof_cookie })
+}
+
+/// Solve the way the shipping browser client does.
+fn solve(chg: &str, dif: u8) -> (String, String) {
+    use sha2::{Digest, Sha256};
+    let target = "0".repeat(usize::from(dif));
+    let mut nonce: u64 = 0;
+    loop {
+        let non = nonce.to_string();
+        let sol = hex::encode(Sha256::digest(format!("{chg}{non}").as_bytes()));
+        if sol.starts_with(&target) {
+            return (sol, non);
+        }
+        nonce += 1;
+    }
 }

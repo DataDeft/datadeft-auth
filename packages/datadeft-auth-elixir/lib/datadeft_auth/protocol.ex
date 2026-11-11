@@ -1,6 +1,14 @@
 defmodule DatadeftAuth.Protocol do
   @moduledoc false
-  alias DatadeftAuth.{DevMagicLink, FlowState, Landing, Session, Validation}
+  alias DatadeftAuth.{
+    DevMagicLink,
+    FlowState,
+    Landing,
+    PowChallenge,
+    PowVerification,
+    Session,
+    Validation
+  }
 
   @max_frame 16384
   @max_request_id 0xFFFFFFFF
@@ -21,6 +29,9 @@ defmodule DatadeftAuth.Protocol do
           | :validate_session
           | :logout
           | :fake_last_magic_link
+          | :pow_challenge
+          | :pow_verify
+          | :pow_admit
 
   # Per-request application failures the executable may reply instead of a
   # success result; protocol faults never use this shape.
@@ -45,6 +56,9 @@ defmodule DatadeftAuth.Protocol do
           | {:validate_session, Validation.t()}
           | {:logout, boolean()}
           | {:fake_last_magic_link, DevMagicLink.t()}
+          | {:pow_challenge, PowChallenge.t()}
+          | {:pow_verify, PowVerification.t()}
+          | {:pow_admit, boolean()}
           | {:error,
              :overloaded | :configuration | :bad_request | :rejected | :unavailable | :internal}
 
@@ -294,6 +308,47 @@ defmodule DatadeftAuth.Protocol do
         _ ->
           {:error, :protocol}
       end
+    else
+      _ -> {:error, :protocol}
+    end
+  end
+
+  defp result("pow_challenge", value) do
+    with {:ok, result} <- object(value, ["operation", "chg", "dif", "tim", "tag"]),
+         %{"chg" => chg, "dif" => dif, "tim" => tim, "tag" => tag}
+         when is_binary(chg) and is_integer(dif) and dif in 1..64 and is_binary(tim) and
+                is_binary(tag) <- result do
+      {:ok, {:pow_challenge, %PowChallenge{chg: chg, dif: dif, tim: tim, tag: tag}}}
+    else
+      _ -> {:error, :protocol}
+    end
+  end
+
+  defp result("pow_verify", value) do
+    with {:ok, result} <-
+           object(value, ["operation", "admitted", "proof_cookie", "mint_to_verify_ms"]) do
+      case result do
+        %{"admitted" => true, "proof_cookie" => cookie, "mint_to_verify_ms" => delta}
+        when is_binary(cookie) and ((is_integer(delta) and delta >= 0) or is_nil(delta)) ->
+          {:ok,
+           {:pow_verify,
+            %PowVerification{admitted: true, proof_cookie: cookie, mint_to_verify_ms: delta}}}
+
+        %{"admitted" => false, "proof_cookie" => nil, "mint_to_verify_ms" => nil} ->
+          {:ok, {:pow_verify, %PowVerification{admitted: false}}}
+
+        _ ->
+          {:error, :protocol}
+      end
+    else
+      _ -> {:error, :protocol}
+    end
+  end
+
+  defp result("pow_admit", value) do
+    with {:ok, result} <- object(value, ["operation", "admitted"]),
+         %{"admitted" => admitted} when is_boolean(admitted) <- result do
+      {:ok, {:pow_admit, admitted}}
     else
       _ -> {:error, :protocol}
     end

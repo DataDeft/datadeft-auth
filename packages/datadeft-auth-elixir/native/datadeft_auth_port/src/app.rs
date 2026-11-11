@@ -17,15 +17,27 @@ use datadeft_magic_link_service::{
     MagicLinkConfirmCookie, MagicLinkEmail, MagicLinkFlowService, MagicLinkServiceConfig,
     SessionCookie,
 };
+use datadeft_pow_core::{
+    DEFAULT_POW_PROOF_TTL_SECS, MAX_DIFFICULTY, POW_PROOF_MAX_AGE_SECS, PowProofCookie, PowSecret,
+    Solution, UnixMillis, Verified, validate_challenge_max_age_secs, verify_solution,
+};
 use rand_core::OsRng;
 
 use crate::protocol::{
     AccountDisplayPayload, AwsPayload, Command, EmailTemplatePayload, ErrorCode, InitPayload, Mode,
-    ResultBody, SecretRefPayload, SecretsPayload, ServicePayload,
+    PowPayload, ResultBody, SecretRefPayload, SecretsPayload, ServicePayload,
 };
 
 /// Bodies carry this marker where the rendered magic-link URL belongs.
 const URL_MARKER: &str = "{magic_link_url}";
+
+/// Default challenge lifetime: the documented 2-minute TTL baseline, matching
+/// the shipped HTTP deployment.
+const DEFAULT_CHALLENGE_MAX_AGE_SECS: u64 = 120;
+
+/// Ceiling on the per-solve budget, mirroring the HTTP adapter's
+/// `MAX_PROOF_BUDGET_PER_SOLVE`: beyond this the gate stops gating.
+const MAX_PROOF_BUDGET_PER_SOLVE: u32 = 1_000;
 
 /// The initialized backend; one monomorphized `App` per supported pairing.
 #[derive(Clone)]
@@ -57,6 +69,7 @@ impl ReadyApp {
                     return Err(ErrorCode::Configuration);
                 }
                 let secrets = inline_secrets(payload.secrets)?;
+                let pow = pow_state(payload.pow, &secrets)?;
                 let LoadedAuthSecrets {
                     lookup_hmac_key,
                     storage_hmac_key,
@@ -79,6 +92,7 @@ impl ReadyApp {
                     confirm_keyring,
                     session_keyring,
                     email,
+                    pow,
                 })))
             }
             Mode::Aws => {
@@ -102,6 +116,7 @@ impl ReadyApp {
                         .await
                         .map_err(|_| ErrorCode::Unavailable)?
                 };
+                let pow = pow_state(payload.pow, &secrets)?;
                 let LoadedAuthSecrets {
                     lookup_hmac_key,
                     storage_hmac_key,
@@ -131,6 +146,7 @@ impl ReadyApp {
                         confirm_keyring,
                         session_keyring,
                         email,
+                        pow,
                     })));
                 }
                 let renderer = TemplateRenderer {
@@ -153,6 +169,7 @@ impl ReadyApp {
                     confirm_keyring,
                     session_keyring,
                     email,
+                    pow,
                 })))
             }
         }
@@ -171,6 +188,93 @@ pub struct App<Store, Outbox> {
     confirm_keyring: KeyRing<MagicLinkConfirmCookie>,
     session_keyring: KeyRing<SessionCookie>,
     email: EmailTemplate,
+    /// Present only when initialization configured the PoW admission gate.
+    pow: Option<PowState>,
+}
+
+/// Validated proof-of-work policy plus the keys it runs on.
+pub(crate) struct PowState {
+    secret: PowSecret,
+    /// The previous document's challenge secret, kept verify-only through a
+    /// rotation so in-flight challenges still land.
+    previous_secret: Option<PowSecret>,
+    proof_keyring: KeyRing<PowProofCookie>,
+    pub(crate) difficulty: u8,
+    pub(crate) challenge_max_age_secs: u64,
+    pub(crate) proof_ttl_secs: u64,
+    pub(crate) budget_per_solve: u32,
+}
+
+impl PowState {
+    pub(crate) fn proof_keyring(&self) -> &KeyRing<PowProofCookie> {
+        &self.proof_keyring
+    }
+
+    /// Mint a challenge at the configured difficulty.
+    pub(crate) fn mint(
+        &self,
+        now: UnixMillis,
+        entropy: [u8; 16],
+    ) -> Result<datadeft_pow_core::Challenge, datadeft_pow_core::PowError> {
+        datadeft_pow_core::mint_challenge(&self.secret, self.difficulty, now, entropy)
+    }
+
+    /// Verify a solution against the active challenge secret, then against
+    /// the rotation's previous one, collapsing every refusal into one.
+    pub(crate) fn verify(&self, solution: &Solution, now: UnixMillis) -> Option<Verified> {
+        let check = |secret: &PowSecret| {
+            verify_solution(
+                secret,
+                solution,
+                now,
+                self.challenge_max_age_secs,
+                self.difficulty,
+            )
+            .ok()
+        };
+        check(&self.secret).or_else(|| self.previous_secret.as_ref().and_then(check))
+    }
+}
+
+/// Build the PoW state when the application configured the gate. Keys come
+/// from the loaded secret documents; only the proof keyring is built here, so
+/// deployments without PoW keep no PoW key material in memory.
+fn pow_state(
+    payload: Option<PowPayload>,
+    secrets: &LoadedAuthSecrets,
+) -> Result<Option<PowState>, ErrorCode> {
+    let Some(pow) = payload else {
+        return Ok(None);
+    };
+    let challenge_max_age_secs = pow
+        .challenge_max_age_secs
+        .unwrap_or(DEFAULT_CHALLENGE_MAX_AGE_SECS);
+    let proof_ttl_secs = pow.proof_ttl_secs.unwrap_or(DEFAULT_POW_PROOF_TTL_SECS);
+    if pow.difficulty == 0
+        || pow.difficulty > MAX_DIFFICULTY
+        || validate_challenge_max_age_secs(challenge_max_age_secs).is_err()
+        || proof_ttl_secs == 0
+        || proof_ttl_secs > POW_PROOF_MAX_AGE_SECS
+        || pow.proof_budget_per_solve == 0
+        || pow.proof_budget_per_solve > MAX_PROOF_BUDGET_PER_SOLVE
+    {
+        return Err(ErrorCode::Configuration);
+    }
+    let proof_keyring = secrets
+        .pow_proof_keyring::<PowProofCookie>()
+        .map_err(|_| ErrorCode::Configuration)?;
+    Ok(Some(PowState {
+        secret: PowSecret::new(*secrets.pow_challenge_secret.as_bytes()),
+        previous_secret: secrets
+            .previous_pow_challenge_secret
+            .as_ref()
+            .map(|previous| PowSecret::new(*previous.as_bytes())),
+        proof_keyring,
+        difficulty: pow.difficulty,
+        challenge_max_age_secs,
+        proof_ttl_secs,
+        budget_per_solve: pow.proof_budget_per_solve,
+    }))
 }
 
 impl<Store, Outbox> App<Store, Outbox> {
@@ -346,6 +450,15 @@ impl Clock for WallClock {
             .map(|duration| duration.as_secs())
             .map_err(|_| DependencyError::Internal)
     }
+}
+
+/// Millisecond wall clock for the PoW freshness window and timing signal.
+pub(crate) fn now_unix_millis() -> Option<UnixMillis> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+        .map(UnixMillis::from_millis)
 }
 
 #[cfg(test)]

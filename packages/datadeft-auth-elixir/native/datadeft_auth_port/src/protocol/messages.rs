@@ -24,6 +24,30 @@ pub struct InitPayload {
     /// Required in AWS mode, refused in fake mode.
     #[serde(default)]
     pub aws: Option<AwsPayload>,
+    /// Optional proof-of-work admission gate; absent refuses the pow
+    /// operations.
+    #[serde(default)]
+    pub pow: Option<PowPayload>,
+}
+
+/// Proof-of-work admission configuration. Keys come from the same secret
+/// document as the auth keyrings (`pow_challenge_secret_b64`,
+/// `pow_proof_cookie_root_b64`); this payload only sets policy.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PowPayload {
+    /// Leading zero hex characters a solution hash must have, `1..=64`.
+    /// The deployment documents its own production floor.
+    pub difficulty: u8,
+    /// Admissions one solve buys over the proof's whole lifetime, shared
+    /// across nodes.
+    pub proof_budget_per_solve: u32,
+    /// Challenge lifetime; defaults to the documented 2 minutes.
+    #[serde(default)]
+    pub challenge_max_age_secs: Option<u64>,
+    /// Proof lifetime; defaults to the documented 3 hours.
+    #[serde(default)]
+    pub proof_ttl_secs: Option<u64>,
 }
 
 /// AWS deployment configuration. Credentials come from the supported chain
@@ -165,6 +189,25 @@ pub struct OutboxPeekPayload {
     pub email: String,
 }
 
+/// A posted solution, in the shipping browser client's wire shape. The
+/// difficulty is not client input: the port fills it from its configured
+/// policy, and the HMAC tag binds the minted value.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PowVerifyPayload {
+    pub chg: String,
+    pub sol: String,
+    pub non: String,
+    pub tim: String,
+    pub tag: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PowAdmitPayload {
+    pub proof_cookie: String,
+}
+
 /// Reply result. Optional fields serialize as null so each operation has one
 /// exact key set on the wire.
 #[derive(Serialize)]
@@ -213,6 +256,26 @@ pub enum ResultBody {
         magic_link_url: Option<String>,
         expires_at_unix: Option<u64>,
     },
+    /// Challenge in the shipping browser client's wire shape.
+    PowChallenge {
+        chg: String,
+        dif: u8,
+        tim: String,
+        tag: String,
+    },
+    /// Uniform refusal for every failed verification check; the application
+    /// answers it with one generic "solve again" response.
+    PowVerify {
+        admitted: bool,
+        proof_cookie: Option<String>,
+        mint_to_verify_ms: Option<u64>,
+    },
+    /// `admitted: false` covers both an unusable proof and an exhausted
+    /// budget; a failing budget store is the `unavailable` error instead
+    /// (fail closed).
+    PowAdmit {
+        admitted: bool,
+    },
     /// Per-request application failure; protocol faults never use this and
     /// end the process instead.
     Error {
@@ -221,8 +284,9 @@ pub enum ResultBody {
 }
 
 /// Closed failure set. `rejected` clears temporary client state,
-/// `unavailable` preserves it for an identical retry.
-#[derive(Clone, Copy, Serialize)]
+/// `unavailable` preserves it for an identical retry. The labels carry no
+/// request data, so `Debug` is the plain derive.
+#[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     Overloaded,

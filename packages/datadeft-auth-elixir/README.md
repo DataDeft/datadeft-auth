@@ -3,14 +3,17 @@
 Framework-independent Elixir authentication backed by a **separate Rust process**.
 No Rust code loads into BEAM; no Phoenix, Plug, Rustler or HTTP server is required.
 
-**Current scope: transport plus the magic-link/session API.** The executable
-runs bounded concurrent jobs and serves request, landing, flow-state,
-confirm, validate-session and logout against either the crate-shipped
-in-memory store (`mode: :fake`) or DynamoDB/SES with Secrets Manager key
-loading (`mode: :aws`, deployment-role credential chain). PoW operations and
-durable ambiguous-commit recovery are still staged, and the AWS mode has not
-passed a production readiness review. This is not an authentication release
-and must not be deployed for login.
+**Current scope: transport plus the magic-link/session and PoW APIs.** The
+executable runs bounded concurrent jobs and serves request, landing,
+flow-state, confirm, validate-session and logout against either the
+crate-shipped in-memory store (`mode: :fake`) or DynamoDB/SES with Secrets
+Manager key loading (`mode: :aws`, deployment-role credential chain). The
+optional `pow` configuration enables the proof-of-work admission gate
+(challenge mint, solution verify, budgeted admit) with the per-solve
+lifetime budget counted in the shared store, so admission holds across
+nodes. Durable ambiguous-commit recovery is still staged, and the AWS mode
+has not passed a production readiness review. This is not an authentication
+release and must not be deployed for login.
 
 ## Development
 
@@ -107,8 +110,9 @@ dependency floors and lints verbatim from the repository root.
 - Rust tokio: bounded concurrent job execution over the Port pipe, required
   by the AWS SDK clients this process will own.
 - Rust rand_core (getrandom): OS-backed CSPRNG for the service entropy inputs.
-- The workspace `datadeft-*` service/adapter crates own all cryptography; the
-  port adds no cryptographic dependencies of its own.
+- The workspace `datadeft-*` service/adapter crates (including
+  `datadeft-pow-core` for the admission gate) own all cryptography; the port
+  adds no cryptographic dependencies of its own.
 - Rust aws-config + aws-sdk-dynamodb/sesv2/secretsmanager: the port owns the
   AWS clients and the supported deployment-role credential chain; core and
   service crates receive loaded material only.

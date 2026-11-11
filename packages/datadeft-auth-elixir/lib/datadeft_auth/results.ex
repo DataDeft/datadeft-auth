@@ -73,6 +73,44 @@ defmodule DatadeftAuth.Validation do
         }
 end
 
+defmodule DatadeftAuth.PowChallenge do
+  @moduledoc """
+  Proof-of-work challenge in the shipping browser client's wire shape:
+  serialize it as JSON for the client verbatim. Every field is public data
+  the client already sees; the HMAC `tag` binds the tuple so none of it can
+  be altered.
+  """
+  @enforce_keys [:chg, :dif, :tim, :tag]
+  defstruct [:chg, :dif, :tim, :tag]
+
+  @type t :: %__MODULE__{
+          chg: String.t(),
+          dif: pos_integer(),
+          tim: String.t(),
+          tag: String.t()
+        }
+end
+
+defmodule DatadeftAuth.PowVerification do
+  @moduledoc """
+  Solution verification outcome. On `admitted: true`, `proof_cookie`
+  (redacted in `Inspect`) is the bearer value to set as the `dd_pow` cookie
+  (HttpOnly, Secure, the configured proof TTL). Every failed check collapses
+  into one `admitted: false` shape, so the application answers with a single
+  generic "solve again" response. `mint_to_verify_ms` is the server-derived
+  solve-timing signal for metrics and risk tagging, never for hard blocking.
+  """
+  @derive {Inspect, except: [:proof_cookie]}
+  @enforce_keys [:admitted]
+  defstruct [:admitted, :proof_cookie, :mint_to_verify_ms]
+
+  @type t :: %__MODULE__{
+          admitted: boolean(),
+          proof_cookie: String.t() | nil,
+          mint_to_verify_ms: non_neg_integer() | nil
+        }
+end
+
 defmodule DatadeftAuth.DevMagicLink do
   @moduledoc """
   Fake-mode test helper result: the newest outbox email's landing URL for an

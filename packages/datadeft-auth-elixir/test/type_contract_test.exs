@@ -17,6 +17,9 @@ defmodule DatadeftAuth.TypeContractTest do
        confirm: 4,
        validate_session: 3,
        logout: 3,
+       pow_challenge: 1,
+       pow_verify: 2,
+       pow_admit: 2,
        fake_last_magic_link: 2
      ],
      [
@@ -33,6 +36,8 @@ defmodule DatadeftAuth.TypeContractTest do
     {DatadeftAuth.FlowState, [], [t: 0]},
     {DatadeftAuth.Session, [], [t: 0]},
     {DatadeftAuth.Validation, [], [t: 0]},
+    {DatadeftAuth.PowChallenge, [], [t: 0]},
+    {DatadeftAuth.PowVerification, [], [t: 0]},
     {DatadeftAuth.DevMagicLink, [], [t: 0]},
     {DatadeftAuth.Protocol,
      [max_frame: 0, max_request_id: 0, build_version: 0, request: 3, feed: 2, reply: 1],

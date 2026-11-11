@@ -3,18 +3,21 @@
 //! payloads through the service crates and return one exact result shape per
 //! outcome class.
 use datadeft_magic_link_service::{
-    BeginMagicLinkLandingCommand, ConfirmMagicLinkFlowCommand, MagicLinkAuthenticationRepository,
-    MagicLinkFlowError, MagicLinkOutbox, MagicLinkRepository, MagicLinkRequestService,
-    MagicLinkServiceError, NormalizedEmail, RateLimiter, ReadMagicLinkFlowStateCommand,
-    RequestMagicLinkCommand, SessionRepository, SessionValidationError, refresh_session_cookie,
-    validate_session,
+    BeginMagicLinkLandingCommand, Clock, ConfirmMagicLinkFlowCommand,
+    MagicLinkAuthenticationRepository, MagicLinkFlowError, MagicLinkOutbox, MagicLinkRepository,
+    MagicLinkRequestService, MagicLinkServiceError, NormalizedEmail, RateLimitDecision,
+    RateLimitKey, RateLimiter, ReadMagicLinkFlowStateCommand, RequestMagicLinkCommand,
+    SessionRepository, SessionValidationError, refresh_session_cookie, validate_session,
 };
-use rand_core::OsRng;
+use datadeft_pow_core::{
+    MAX_FUTURE_SKEW_SECS, Solution, mint_pow_proof_cookie, verify_pow_proof_cookie,
+};
+use rand_core::{OsRng, RngCore};
 
-use super::{App, WallClock};
+use super::{App, WallClock, now_unix_millis};
 use crate::protocol::{
     Command, ConfirmPayload, ErrorCode, FlowStatePayload, LandingPayload, OutboxPeekPayload,
-    RequestLinkPayload, ResultBody, SessionPayload,
+    PowAdmitPayload, PowVerifyPayload, RequestLinkPayload, ResultBody, SessionPayload,
 };
 
 impl<Store, Outbox> App<Store, Outbox>
@@ -37,6 +40,9 @@ where
             Command::ValidateSession(payload) => self.validate(payload).await,
             Command::Logout(payload) => self.logout(payload).await,
             Command::FakeLastMagicLink(payload) => self.fake_last_magic_link(payload),
+            Command::PowChallenge => self.pow_challenge(),
+            Command::PowVerify(payload) => self.pow_verify(payload),
+            Command::PowAdmit(payload) => self.pow_admit(payload).await,
             Command::Handshake | Command::Ping | Command::Init(_) => error(ErrorCode::Internal),
         }
     }
@@ -217,6 +223,118 @@ where
             }
             Err(SessionValidationError::InvalidSession) => ResultBody::Logout { revoked: false },
             Err(failure) => session_error(failure),
+        }
+    }
+
+    /// Mint a fresh challenge for the application's `pow/create` route.
+    fn pow_challenge(&self) -> ResultBody {
+        let Some(pow) = &self.pow else {
+            return error(ErrorCode::Configuration);
+        };
+        let mut entropy = [0_u8; 16];
+        if OsRng.try_fill_bytes(&mut entropy).is_err() {
+            return error(ErrorCode::Internal);
+        }
+        let Some(now) = now_unix_millis() else {
+            return error(ErrorCode::Internal);
+        };
+        // The policy was validated at initialization; only an insane clock
+        // can fail the mint.
+        match pow.mint(now, entropy) {
+            Ok(challenge) => ResultBody::PowChallenge {
+                chg: challenge.chg,
+                dif: challenge.dif,
+                tim: challenge.tim,
+                tag: challenge.tag,
+            },
+            Err(_) => error(ErrorCode::Internal),
+        }
+    }
+
+    /// Verify a posted solution and mint the proof-cookie value on success.
+    /// Every verification failure collapses into one `admitted: false` shape
+    /// so the application can answer with one generic "solve again" response.
+    fn pow_verify(&self, payload: PowVerifyPayload) -> ResultBody {
+        let Some(pow) = &self.pow else {
+            return error(ErrorCode::Configuration);
+        };
+        let Some(now) = now_unix_millis() else {
+            return error(ErrorCode::Internal);
+        };
+        // The difficulty is the configured policy, never client input; the
+        // HMAC tag binds the minted value.
+        let solution = Solution {
+            chg: payload.chg,
+            sol: payload.sol,
+            non: payload.non,
+            dif: pow.difficulty,
+            tim: payload.tim,
+            tag: payload.tag,
+        };
+        let Some(verified) = pow.verify(&solution, now) else {
+            return ResultBody::PowVerify {
+                admitted: false,
+                proof_cookie: None,
+                mint_to_verify_ms: None,
+            };
+        };
+        let mut rng = OsRng;
+        match mint_pow_proof_cookie(
+            &verified.tid,
+            None,
+            pow.proof_keyring(),
+            &mut rng,
+            now.as_secs(),
+        ) {
+            Ok(cookie) => ResultBody::PowVerify {
+                admitted: true,
+                proof_cookie: Some(cookie.as_secret_value().to_owned()),
+                mint_to_verify_ms: verified.mint_to_verify_ms,
+            },
+            Err(_) => error(ErrorCode::Internal),
+        }
+    }
+
+    /// Admit a gated request by its proof cookie, spending one unit of its
+    /// solve's shared lifetime budget. A failing budget store refuses the
+    /// request (fail closed) as `unavailable`, never as an admission.
+    async fn pow_admit(&self, payload: PowAdmitPayload) -> ResultBody {
+        let Some(pow) = &self.pow else {
+            return error(ErrorCode::Configuration);
+        };
+        let Ok(now) = WallClock.now_unix() else {
+            return error(ErrorCode::Internal);
+        };
+        // Every cookie failure collapses into the uniform refusal; the bounds
+        // were validated at initialization.
+        let Ok(verified) = verify_pow_proof_cookie(
+            &payload.proof_cookie,
+            pow.proof_keyring(),
+            now,
+            pow.proof_ttl_secs,
+        ) else {
+            return ResultBody::PowAdmit { admitted: false };
+        };
+        // The budget's expiry is fixed at the first spend, far enough out to
+        // cover every proof cookie the solve can produce: solutions can be
+        // re-posted while the challenge is valid, each cookie lives the full
+        // TTL, within the clock-skew tolerance either way.
+        let expires_at_unix = now
+            .saturating_add(pow.proof_ttl_secs)
+            .saturating_add(pow.challenge_max_age_secs)
+            .saturating_add(MAX_FUTURE_SKEW_SECS.saturating_mul(2));
+        // `tid` is 64 lowercase hex characters: no personal data or secrets.
+        let Ok(key) = RateLimitKey::parse(&format!("pow:budget:{}", verified.tid())) else {
+            return error(ErrorCode::Unavailable);
+        };
+        match self
+            .store
+            .check_lifetime_limit(&key, pow.budget_per_solve, expires_at_unix, now)
+            .await
+        {
+            Ok(RateLimitDecision::Allowed) => ResultBody::PowAdmit { admitted: true },
+            Ok(RateLimitDecision::Denied) => ResultBody::PowAdmit { admitted: false },
+            Err(_) => error(ErrorCode::Unavailable),
         }
     }
 

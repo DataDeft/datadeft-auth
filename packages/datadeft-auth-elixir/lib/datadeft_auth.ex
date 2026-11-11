@@ -14,7 +14,17 @@ defmodule DatadeftAuth do
   a timeout or worker failure.
   """
 
-  alias DatadeftAuth.{Connection, DevMagicLink, Error, FlowState, Landing, Session, Validation}
+  alias DatadeftAuth.{
+    Connection,
+    DevMagicLink,
+    Error,
+    FlowState,
+    Landing,
+    PowChallenge,
+    PowVerification,
+    Session,
+    Validation
+  }
 
   # Typespecs cannot reference module attributes; these literals mirror the
   # limits in Connection's @int_options validation table.
@@ -47,13 +57,20 @@ defmodule DatadeftAuth do
   - `aws` (AWS mode only) carries `region`, `table`, `from_email`, optional
     `reply_to`, and the test-only `endpoint_url`/`fake_outbox` pair for
     DynamoDB Local runs.
+  - `pow` (optional) enables the proof-of-work admission gate: `difficulty`
+    (leading zero hex characters, 1..64; document your production floor) and
+    `proof_budget_per_solve` (admissions one solve buys over the proof's
+    lifetime, shared across nodes), plus optional `challenge_max_age_secs`
+    (default 120) and `proof_ttl_secs` (default 10800). Without this key the
+    pow operations return a configuration error.
   """
   @type config :: %{
           required(:mode) => :fake | :aws,
           required(:service) => map(),
           required(:email) => map(),
           required(:secrets) => map(),
-          optional(:aws) => map()
+          optional(:aws) => map(),
+          optional(:pow) => map()
         }
 
   @typedoc """
@@ -182,6 +199,66 @@ defmodule DatadeftAuth do
     case call(server, {:auth, :logout, payload}) do
       {:ok, revoked} when is_boolean(revoked) -> {:ok, %{revoked: revoked}}
       other -> other
+    end
+  end
+
+  @doc """
+  Mints a proof-of-work challenge for the application's `pow/create` route.
+  Serialize the struct as JSON for the shipping browser client verbatim.
+  Requires the `pow` configuration key.
+  """
+  @spec pow_challenge(GenServer.server()) :: {:ok, PowChallenge.t()} | {:error, Error.t()}
+  def pow_challenge(server), do: call(server, {:auth, :pow_challenge, %{}})
+
+  @doc """
+  Verifies a posted solution (the client's `{chg, sol, non, tim, tag}` JSON
+  as a map). On `admitted: true` set the returned `proof_cookie` as the
+  `dd_pow` cookie (HttpOnly, Secure, the configured proof TTL). On
+  `admitted: false` answer with one generic "solve a new challenge" response
+  whatever check failed.
+  """
+  @spec pow_verify(GenServer.server(), map()) ::
+          {:ok, PowVerification.t()} | {:error, Error.t()}
+  def pow_verify(server, solution) when is_map(solution) do
+    with {:ok, payload} <- solution_payload(solution) do
+      call(server, {:auth, :pow_verify, payload})
+    end
+  end
+
+  @doc """
+  Admits one gated request by its proof cookie, spending one unit of the
+  solve's shared lifetime budget. `admitted: false` (an unusable proof or an
+  exhausted budget) means answer "solve a new challenge"; a failing budget
+  store is `{:error, %Error{code: :unavailable}}` and must refuse the
+  request — never admit on failure.
+  """
+  @spec pow_admit(GenServer.server(), String.t()) ::
+          {:ok, %{admitted: boolean()}} | {:error, Error.t()}
+  def pow_admit(server, proof_cookie) when is_binary(proof_cookie) do
+    case call(server, {:auth, :pow_admit, %{proof_cookie: proof_cookie}}) do
+      {:ok, admitted} when is_boolean(admitted) -> {:ok, %{admitted: admitted}}
+      other -> other
+    end
+  end
+
+  # The five client-echoed solution fields, from string or atom keys, with
+  # anything extra or missing refused here instead of as a process fault.
+  # A client-echoed `dif` is tolerated and dropped: the executable always
+  # verifies at its configured difficulty, never at client input.
+  defp solution_payload(solution) do
+    normalized =
+      Map.new(solution, fn
+        {key, value} when is_atom(key) -> {Atom.to_string(key), value}
+        {key, value} -> {key, value}
+      end)
+
+    fields = Map.take(normalized, ~w(chg sol non tim tag))
+
+    if map_size(fields) == 5 and map_size(Map.drop(normalized, ~w(chg sol non tim tag dif))) == 0 and
+         Enum.all?(fields, fn {_, value} -> is_binary(value) end) do
+      {:ok, fields}
+    else
+      {:error, %Error{code: :bad_request}}
     end
   end
 

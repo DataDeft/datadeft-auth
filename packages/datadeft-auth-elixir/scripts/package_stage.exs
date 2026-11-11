@@ -10,7 +10,8 @@ defmodule PackageStage do
     "datadeft-auth-token-core",
     "datadeft-magic-link-core",
     "datadeft-magic-link-service",
-    "datadeft-magic-link-aws"
+    "datadeft-magic-link-aws",
+    "datadeft-pow-core"
   ]
 
   def stage!(root, stage) do

@@ -5,8 +5,8 @@ mod messages;
 
 pub(crate) use messages::{
     AccountDisplayPayload, AwsPayload, ConfirmPayload, EmailTemplatePayload, FlowStatePayload,
-    LandingPayload, OutboxPeekPayload, RequestLinkPayload, SecretRefPayload, SecretsPayload,
-    ServicePayload, SessionPayload,
+    LandingPayload, OutboxPeekPayload, PowAdmitPayload, PowPayload, PowVerifyPayload,
+    RequestLinkPayload, SecretRefPayload, SecretsPayload, ServicePayload, SessionPayload,
 };
 pub use messages::{ErrorCode, InitPayload, Mode, ResultBody};
 
@@ -40,6 +40,9 @@ enum Operation {
     ValidateSession,
     Logout,
     FakeLastMagicLink,
+    PowChallenge,
+    PowVerify,
+    PowAdmit,
 }
 
 /// A validated request: the strictly increasing wire ID and the typed command.
@@ -59,6 +62,9 @@ pub enum Command {
     ValidateSession(SessionPayload),
     Logout(SessionPayload),
     FakeLastMagicLink(OutboxPeekPayload),
+    PowChallenge,
+    PowVerify(PowVerifyPayload),
+    PowAdmit(PowAdmitPayload),
 }
 
 /// Fail-closed envelope parse: exact fields, exact version, and a payload
@@ -87,6 +93,12 @@ pub fn parse_request(frame: &[u8]) -> Result<ParsedRequest, FrameError> {
         Operation::ValidateSession => Command::ValidateSession(parse_payload(payload)?),
         Operation::Logout => Command::Logout(parse_payload(payload)?),
         Operation::FakeLastMagicLink => Command::FakeLastMagicLink(parse_payload(payload)?),
+        Operation::PowChallenge => {
+            let Empty {} = parse_payload(payload)?;
+            Command::PowChallenge
+        }
+        Operation::PowVerify => Command::PowVerify(parse_payload(payload)?),
+        Operation::PowAdmit => Command::PowAdmit(parse_payload(payload)?),
     };
     Ok(ParsedRequest {
         id: envelope.id,
