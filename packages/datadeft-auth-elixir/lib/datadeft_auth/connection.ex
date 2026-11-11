@@ -86,6 +86,7 @@ defmodule DatadeftAuth.Connection do
       true ->
         case send_request(state, :ping, from) do
           {:ok, state} -> {:noreply, state}
+          :busy -> {:reply, error(:overloaded), state}
           :error -> {:reply, error(:unavailable), disconnect(state, :unavailable)}
         end
     end
@@ -100,7 +101,8 @@ defmodule DatadeftAuth.Connection do
 
         case send_request(state, :handshake, nil) do
           {:ok, state} -> {:noreply, state}
-          :error -> {:noreply, disconnect(state, :unavailable)}
+          # A fresh pipe should never be busy; treat it like any send failure.
+          _ -> {:noreply, disconnect(state, :unavailable)}
         end
 
       :error ->
@@ -216,20 +218,26 @@ defmodule DatadeftAuth.Connection do
   end
 
   # The exhausted-ID sentinel is never sent; this fails closed if a caller
-  # skips the handle_call guard.
+  # skips the handle_call guard. A busy pipe consumes no ID.
   @spec send_request(state(), Protocol.operation(), GenServer.from() | nil) ::
-          {:ok, state()} | :error
+          {:ok, state()} | :busy | :error
   defp send_request(state, operation, from) do
     id = state.next_id
-    # nosuspend avoids blocking the GenServer on a busy OS pipe.
-    if id <= Protocol.max_request_id() and
-         Port.command(state.port, Protocol.request(id, operation), [:nosuspend]) do
-      monitor = if from, do: Process.monitor(elem(from, 0)), else: nil
-      timer = Process.send_after(self(), {:deadline, state.port, id}, state.timeout)
-      pending = %{from: from, timer: timer, monitor: monitor}
-      {:ok, %{state | pending: Map.put(state.pending, id, pending), next_id: id + 1}}
-    else
-      :error
+
+    cond do
+      id > Protocol.max_request_id() ->
+        :error
+
+      # nosuspend avoids blocking the GenServer on a busy OS pipe; a full
+      # pipe rejects only this request instead of dropping the connection.
+      Port.command(state.port, Protocol.request(id, operation), [:nosuspend]) ->
+        monitor = if from, do: Process.monitor(elem(from, 0)), else: nil
+        timer = Process.send_after(self(), {:deadline, state.port, id}, state.timeout)
+        pending = %{from: from, timer: timer, monitor: monitor}
+        {:ok, %{state | pending: Map.put(state.pending, id, pending), next_id: id + 1}}
+
+      true ->
+        :busy
     end
   rescue
     ArgumentError -> :error

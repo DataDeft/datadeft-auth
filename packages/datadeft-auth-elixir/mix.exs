@@ -50,6 +50,14 @@ end
 
 defmodule DatadeftAuth.MixProject do
   use Mix.Project
+
+  # The transport's Port busy_limits options need OTP 26+; on older OTP the
+  # owner would silently retry the failing Port.open forever, so fail the
+  # build loudly instead.
+  if List.to_integer(:erlang.system_info(:otp_release)) < 26 do
+    Mix.raise("datadeft_auth requires Erlang/OTP 26 or newer")
+  end
+
   # x-release-please-start-version
   @version "0.5.0"
   # x-release-please-end

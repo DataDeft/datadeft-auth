@@ -44,10 +44,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04-arm]
-        beam:
-          - { otp: '26.2', elixir: '1.16.3' }
-          - { otp: '28', elixir: '1.19' }
+        # Minimal spanning set: the verify job already runs elixir-verify on
+        # x64 ubuntu-latest with the floor BEAM; these legs add the glibc
+        # floor (22.04) and AArch64 with the newest BEAM.
+        include:
+          - os: ubuntu-22.04
+            beam: { otp: '26.2', elixir: '1.16.3' }
+          - os: ubuntu-24.04-arm
+            beam: { otp: '28', elixir: '1.19' }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

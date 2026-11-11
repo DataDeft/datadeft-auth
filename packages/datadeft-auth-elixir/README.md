@@ -80,6 +80,12 @@ Hex archive, unpacks it outside the repository, runs its tests and builds/execut
 a clean consumer Mix release. It uploads nothing. Package sources include tests
 and the Rust source/lockfile, not a compiled binary or build caches.
 
+Publishing uses the same staging: `mise run package-stage` materializes the
+standalone manifest and lockfile under `_build/publish_stage` and builds the
+Hex archive there; `mix hex.publish` is then run manually from that directory.
+`mix hex.publish` from the checkout itself fails by design, because the
+workspace-inherited Cargo manifest and lockfile only exist in a stage.
+
 The packaging script currently covers the transport crate's serde dependencies.
 Future local workspace dependencies must be replaced with exact released registry
 versions and tested before an authentication artifact can ship. It must not rely

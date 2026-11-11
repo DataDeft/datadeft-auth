@@ -25,6 +25,10 @@ run = "mix test --warnings-as-errors"
 description = "Build and test an isolated source Hex archive and Mix release"
 run = "mix run --no-start scripts/package_check.exs"
 
+[tasks.package-stage]
+description = "Stage the publishable standalone package under _build; publish manually from the printed directory"
+run = "mix run --no-start scripts/stage_publish.exs"
+
 [tasks.verify]
 depends = ["fmt-check", "check", "test"]
 run = "mise run package-check"

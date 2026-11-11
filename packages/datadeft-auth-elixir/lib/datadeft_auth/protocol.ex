@@ -30,6 +30,13 @@ defmodule DatadeftAuth.Protocol do
 
   @spec build_version() :: String.t()
   def build_version do
+    # Releases and scripts may call before the application is loaded; without
+    # this the version would read as "" and every handshake would fail closed.
+    case Application.load(:datadeft_auth) do
+      :ok -> :ok
+      {:error, {:already_loaded, :datadeft_auth}} -> :ok
+    end
+
     Application.spec(:datadeft_auth, :vsn) |> to_string()
   end
 
