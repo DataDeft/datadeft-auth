@@ -16,6 +16,9 @@ run = "mix format --check-formatted"
 run = "mix compile --warnings-as-errors"
 
 [tasks.test]
+# The dev and test compiles share one cargo target dir; when both are
+# scheduled (verify), run them in sequence instead of racing the native build.
+wait_for = ["check"]
 run = "mix test --warnings-as-errors"
 
 [tasks.package-check]

@@ -33,8 +33,8 @@ defmodule Mix.Tasks.Compile.DatadeftPort do
     end
   rescue
     error ->
-      # Usually a missing toolchain, but surface the real exception: parallel
-      # dev/test compiles can also race on the shared target binary.
+      # Usually a missing toolchain; include the exception so any other
+      # failure stays diagnosable.
       Mix.shell().error(
         "datadeft_auth native build failed (requires Cargo and a supported " <>
           "Rust toolchain): #{Exception.message(error)}"

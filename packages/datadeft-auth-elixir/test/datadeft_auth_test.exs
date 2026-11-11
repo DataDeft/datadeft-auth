@@ -1,7 +1,7 @@
 defmodule DatadeftAuthTest do
   use ExUnit.Case, async: false
   import DatadeftAuth.TestSupport
-  alias DatadeftAuth.Error
+  alias DatadeftAuth.{Error, Protocol}
 
   test "real child handshakes and responds to concurrent health checks" do
     # Explicit nil name and executable select the defaults, not a crash loop.
@@ -65,18 +65,22 @@ defmodule DatadeftAuthTest do
   end
 
   test "the last uint32 ID succeeds and the exhausted sentinel is never sent" do
-    # The maximum delay keeps the post-disconnect reconnect timer from firing
-    # and resetting next_id/port before the assertions below run.
-    pid = start_supervised!({DatadeftAuth, [restart_delay: 5000]})
+    pid = start_supervised!({DatadeftAuth, []})
     ready(pid)
-    :sys.replace_state(pid, &%{&1 | next_id: 0xFFFFFFFF})
+
+    # The unopenable executable keeps any post-disconnect reconnect from
+    # resetting the sentinel state, so the assertions cannot race the timer.
+    :sys.replace_state(
+      pid,
+      &%{&1 | next_id: Protocol.max_request_id(), executable: "/nonexistent/datadeft-auth-port"}
+    )
 
     assert {:ok, :transport_ready} = DatadeftAuth.status(pid)
-    assert :sys.get_state(pid).next_id == 0x100000000
+    assert :sys.get_state(pid).next_id == Protocol.max_request_id() + 1
     assert {:error, %Error{code: :unavailable}} = DatadeftAuth.status(pid)
 
     state = :sys.get_state(pid)
-    assert state.next_id == 0x100000000
+    assert state.next_id == Protocol.max_request_id() + 1
     assert state.port == nil
     assert state.pending == %{}
   end

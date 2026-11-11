@@ -4,14 +4,12 @@ defmodule DatadeftAuth.Connection do
   alias DatadeftAuth.{Error, Protocol}
 
   # Default and inclusive upper limit per integer option; :name and
-  # :executable are validated separately. These limits are the single source
-  # for validation, the state type and the public option bound types.
-  @request_timeout_limit 60_000
-  @max_pending_limit 1024
+  # :executable are validated separately. The public bound types in
+  # DatadeftAuth mirror these limits (typespecs cannot reference attributes).
   @restart_delay_limit 5000
   @int_options [
-    request_timeout: {1000, @request_timeout_limit},
-    max_pending: {32, @max_pending_limit},
+    request_timeout: {1000, 60_000},
+    max_pending: {32, 1024},
     restart_delay: {100, @restart_delay_limit}
   ]
   @defaults Enum.map(@int_options, fn {key, {default, _limit}} -> {key, default} end)
