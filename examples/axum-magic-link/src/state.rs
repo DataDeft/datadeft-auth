@@ -58,15 +58,14 @@ impl AppState {
     /// Locale is presentation only. Resolve before link lookup, and never use
     /// link validity or account data to choose a redirect.
     pub(super) fn redirect_config(&self, hint: Option<&str>) -> Arc<MagicLinkScannerFlowConfig> {
-        let locale = self
-            .config
-            .locales
-            .as_ref()
-            .map(|locales| locales.resolve(hint));
-        if locale
-            .as_ref()
-            .is_some_and(|locale| locale.as_str() == "hu")
-        {
+        // No hint means the default page; skip resolution entirely.
+        let hungarian = hint.is_some()
+            && self
+                .config
+                .locales
+                .as_ref()
+                .is_some_and(|locales| locales.resolve(hint).as_str() == "hu");
+        if hungarian {
             Arc::clone(&self.http_config_hu)
         } else {
             Arc::clone(&self.http_config)
@@ -143,6 +142,9 @@ pub(super) fn build_state() -> AppResult<AppState> {
     } = secrets;
 
     let session_cookie = SessionCookieConfig::insecure_local(&config)?;
+    // Both locale configs share the one flow-state route.
+    let flow_state_route = SameOriginRedirect::parse("/auth/magic-link/flow-state")
+        .map_err(|_| SetupError("invalid flow-state route"))?;
     let http_config = MagicLinkScannerFlowConfig::new(
         SameOriginRedirect::parse("/auth/magic-link/consume")
             .map_err(|_| SetupError("invalid magic-link POST action"))?,
@@ -155,15 +157,13 @@ pub(super) fn build_state() -> AppResult<AppState> {
     .with_redirect_landing(
         SameOriginRedirect::parse("/login/confirm")
             .map_err(|_| SetupError("invalid confirm page"))?,
-        SameOriginRedirect::parse("/auth/magic-link/flow-state")
-            .map_err(|_| SetupError("invalid flow-state route"))?,
+        flow_state_route.clone(),
     )?;
 
     let http_config_hu = http_config.clone().with_redirect_landing(
         SameOriginRedirect::parse("/hu/login/confirm")
             .map_err(|_| SetupError("invalid Hungarian confirm page"))?,
-        SameOriginRedirect::parse("/auth/magic-link/flow-state")
-            .map_err(|_| SetupError("invalid flow-state route"))?,
+        flow_state_route,
     )?;
 
     Ok(AppState {

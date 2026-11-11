@@ -67,14 +67,16 @@ pub(super) async fn flow_state_route(
 /// account and the confirmation value, so: scripts only from this origin, no
 /// third-party anything, no framing.
 pub(super) async fn confirm_page() -> Response {
-    let mut response = Html(CONFIRM_PAGE_HTML).into_response();
-    static_page_headers(response.headers_mut());
-    response
+    static_page(include_str!("confirm.en.html"))
 }
 
 /// Hungarian static page: same protocol and security headers, translated UI.
 pub(super) async fn confirm_page_hu() -> Response {
-    let mut response = Html(include_str!("confirm.hu.html")).into_response();
+    static_page(include_str!("confirm.hu.html"))
+}
+
+fn static_page(html: &'static str) -> Response {
+    let mut response = Html(html).into_response();
     static_page_headers(response.headers_mut());
     response
 }
@@ -103,27 +105,6 @@ fn static_page_headers(headers: &mut HeaderMap) {
     headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
 }
 
-const CONFIRM_PAGE_HTML: &str = r#"<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Confirm sign in</title>
-  <script src="/login/confirm.js" defer></script>
-</head>
-<body>
-  <main>
-    <h1>Confirm sign in</h1>
-    <p id="status" aria-live="polite">Checking your link…</p>
-    <form id="confirm" hidden>
-      <p>Sign in as <strong id="account"></strong>.</p>
-      <button type="submit">Continue sign in</button>
-    </form>
-  </main>
-</body>
-</html>
-"#;
-
 const CONFIRM_PAGE_JS: &str = r#"const status = document.getElementById('status');
 const form = document.getElementById('confirm');
 const messages = document.documentElement.lang === 'hu' ? {
@@ -133,7 +114,6 @@ const messages = document.documentElement.lang === 'hu' ? {
   unusable: 'This link cannot be used. Request a new one.',
   busy: 'The service is busy. Try again in a moment.',
 };
-const unusable = messages.unusable;
 
 (async () => {
   const response = await fetch('/auth/magic-link/flow-state', {
@@ -146,7 +126,7 @@ const unusable = messages.unusable;
   }
   const state = await response.json();
   if (!state.usable) {
-    status.textContent = unusable;
+    status.textContent = messages.unusable;
     return;
   }
   document.getElementById('account').textContent = state.account;
@@ -168,7 +148,7 @@ const unusable = messages.unusable;
       status.textContent = messages.busy;
     } else {
       form.hidden = true;
-      status.textContent = unusable;
+      status.textContent = messages.unusable;
     }
   });
 })();

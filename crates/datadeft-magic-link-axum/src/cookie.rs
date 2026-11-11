@@ -12,7 +12,7 @@ use crate::cookie_parse::{MAX_SELECTED_COOKIE_VALUE_BYTES, is_cookie_octet};
 use crate::error::MagicLinkHttpError;
 
 mod policy;
-use policy::{validate_cookie_name, validate_cookie_path, validate_session_cookie_policy};
+use policy::validate_cookie_policy;
 
 /// Conservative default primary session cookie name.
 pub const DEFAULT_SESSION_COOKIE_NAME: &str = "dd_session";
@@ -57,9 +57,9 @@ pub enum CookieConfigError {
     InvalidName,
     InvalidPath,
     SameSiteNoneRequiresSecure,
-    /// A `__Host-` session name cannot be used over local plain HTTP.
+    /// A `__Host-` name cannot be used over local plain HTTP.
     HostPrefixRequiresSecure,
-    /// A `__Host-` session name requires exactly `Path=/`.
+    /// A `__Host-` name requires exactly `Path=/`.
     HostPrefixRequiresRootPath,
 }
 
@@ -105,9 +105,8 @@ impl ConfirmCookieConfig {
     }
 
     fn build(name: String, path: String, secure: bool) -> Result<Self, CookieConfigError> {
-        validate_cookie_name(&name)?;
-        validate_cookie_path(&path)?;
         let same_site = SameSite::Lax;
+        validate_cookie_policy(&name, &path, secure, same_site)?;
         let clear_header = build_clear_cookie_header(&name, &path, secure, same_site)?;
         Ok(Self {
             name,
@@ -206,24 +205,21 @@ impl SessionCookieConfig {
     }
 
     pub fn with_path(mut self, path: impl Into<String>) -> Result<Self, CookieConfigError> {
-        let path = path.into();
-        validate_cookie_path(&path)?;
-        self.path = path;
+        self.path = path.into();
         self.rebuild_clear_header()?;
         Ok(self)
     }
 
     pub fn with_same_site(mut self, same_site: SameSite) -> Result<Self, CookieConfigError> {
-        if same_site == SameSite::None && !self.secure {
-            return Err(CookieConfigError::SameSiteNoneRequiresSecure);
-        }
         self.same_site = same_site;
         self.rebuild_clear_header()?;
         Ok(self)
     }
 
+    // The one revalidation point: every setter funnels the complete
+    // (name, path, secure, same_site) tuple back through the policy.
     fn rebuild_clear_header(&mut self) -> Result<(), CookieConfigError> {
-        validate_session_cookie_policy(&self.name, &self.path, self.secure)?;
+        validate_cookie_policy(&self.name, &self.path, self.secure, self.same_site)?;
         self.clear_header =
             build_clear_cookie_header(&self.name, &self.path, self.secure, self.same_site)?;
         Ok(())

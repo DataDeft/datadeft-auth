@@ -1,29 +1,7 @@
 //! Key material tests.
 
 use super::*;
-
-/// Local purposes so machinery tests do not depend on any product key policy.
-#[derive(Debug)]
-enum TestCookieA {}
-
-impl KeyPurpose for TestCookieA {
-    const HKDF_INFO: &'static [u8] = b"auth/test-a-v1";
-    const TOKEN_TYPE: &'static str = "test-a-v1";
-    const MAX_BODY_BYTES: usize = 128;
-    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
-    const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
-}
-
-#[derive(Debug)]
-enum TestCookieB {}
-
-impl KeyPurpose for TestCookieB {
-    const HKDF_INFO: &'static [u8] = b"auth/test-b-v1";
-    const TOKEN_TYPE: &'static str = "test-b-v1";
-    const MAX_BODY_BYTES: usize = 128;
-    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
-    const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
-}
+use crate::test_support::{TestCookieA, TestCookieB};
 
 fn kid(value: &str) -> KeyId {
     KeyId::parse(value).expect("kid parses")

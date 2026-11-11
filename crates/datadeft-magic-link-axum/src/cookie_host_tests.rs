@@ -149,8 +149,16 @@ fn default_and_confirm_policies_do_not_silently_change_names() {
         ConfirmCookieConfig::secure_defaults().name(),
         "dd_auth_confirm"
     );
+    // The prefix is policy-gated, not kind-gated: a confirm cookie may opt
+    // in only when it satisfies the full __Host- invariants. The default
+    // narrow /auth path therefore keeps confirm cookies unprefixed.
+    assert!(ConfirmCookieConfig::secure("__Host-dd_auth_confirm", "/").is_ok());
     assert_eq!(
-        ConfirmCookieConfig::secure("__Host-dd_auth_confirm", "/").unwrap_err(),
-        CookieConfigError::InvalidName
+        ConfirmCookieConfig::secure("__Host-dd_auth_confirm", "/auth").unwrap_err(),
+        CookieConfigError::HostPrefixRequiresRootPath
+    );
+    assert_eq!(
+        ConfirmCookieConfig::insecure_local("__Host-dd_auth_confirm", "/").unwrap_err(),
+        CookieConfigError::HostPrefixRequiresSecure
     );
 }

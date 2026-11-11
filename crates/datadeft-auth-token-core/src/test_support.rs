@@ -223,3 +223,28 @@ pub fn test_keyring<P: KeyPurpose>(seed: u8, kid: &str) -> KeyRing<P> {
         .expect("test key derives");
     KeyRing::new(vec![KeySlot::active(kid, key)]).expect("test keyring builds")
 }
+
+/// Local test purposes so machinery tests do not depend on any product key
+/// policy. Shared by the keyring and audience suites: the audience HKDF
+/// vectors build on the same purpose/kid constants.
+#[derive(Debug)]
+pub enum TestCookieA {}
+
+impl KeyPurpose for TestCookieA {
+    const HKDF_INFO: &'static [u8] = b"auth/test-a-v1";
+    const TOKEN_TYPE: &'static str = "test-a-v1";
+    const MAX_BODY_BYTES: usize = 128;
+    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
+    const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
+}
+
+#[derive(Debug)]
+pub enum TestCookieB {}
+
+impl KeyPurpose for TestCookieB {
+    const HKDF_INFO: &'static [u8] = b"auth/test-b-v1";
+    const TOKEN_TYPE: &'static str = "test-b-v1";
+    const MAX_BODY_BYTES: usize = 128;
+    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
+    const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
+}

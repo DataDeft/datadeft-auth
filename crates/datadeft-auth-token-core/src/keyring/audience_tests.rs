@@ -1,27 +1,7 @@
 use super::*;
 use crate::cookie::{MaxAge, mint_bound_cookie, parse_bound_cookie};
 use crate::keyring::{KeyId, KeyStatus, RootSecret};
-use crate::test_support::{CountingRng, test_keyring_with_windows};
-
-#[derive(Debug)]
-enum CookieA {}
-impl KeyPurpose for CookieA {
-    const HKDF_INFO: &'static [u8] = b"auth/test-a-v1";
-    const TOKEN_TYPE: &'static str = "test-a-v1";
-    const MAX_BODY_BYTES: usize = 128;
-    const LARGEST_BODY_BYTES: usize = 0;
-    const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
-}
-
-#[derive(Debug)]
-enum CookieB {}
-impl KeyPurpose for CookieB {
-    const HKDF_INFO: &'static [u8] = b"auth/test-b-v1";
-    const TOKEN_TYPE: &'static str = "test-b-v1";
-    const MAX_BODY_BYTES: usize = 128;
-    const LARGEST_BODY_BYTES: usize = 0;
-    const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
-}
+use crate::test_support::{CountingRng, TestCookieA, TestCookieB, test_keyring_with_windows};
 
 fn ring<P: KeyPurpose>() -> KeyRing<P> {
     test_keyring_with_windows(0x11, "test-active", 1000, 10000)
@@ -54,7 +34,7 @@ fn audience_validation_is_bounded_exact_and_redacted() {
 
 #[test]
 fn audience_hkdf_vector_and_separation_are_pinned() {
-    let api = scoped::<CookieA>("api");
+    let api = scoped::<TestCookieA>("api");
     // Independently calculated with Python stdlib HMAC/HKDF: input key is the
     // existing purpose/kid vector 4776cd..., and each info field has a u64 BE length.
     assert_eq!(
@@ -63,13 +43,13 @@ fn audience_hkdf_vector_and_separation_are_pinned() {
     );
     assert_eq!(
         api.active().key().as_bytes(),
-        scoped::<CookieA>("api").active().key().as_bytes()
+        scoped::<TestCookieA>("api").active().key().as_bytes()
     );
     for other in [
-        ring::<CookieA>(),
-        scoped::<CookieA>("admin"),
-        scoped::<CookieA>("API"),
-        test_keyring_with_windows::<CookieA>(0x11, "different-kid", 1000, 10000)
+        ring::<TestCookieA>(),
+        scoped::<TestCookieA>("admin"),
+        scoped::<TestCookieA>("API"),
+        test_keyring_with_windows::<TestCookieA>(0x11, "different-kid", 1000, 10000)
             .with_audience(&Audience::parse("api").expect("audience"))
             .expect("scope"),
     ] {
@@ -80,16 +60,16 @@ fn audience_hkdf_vector_and_separation_are_pinned() {
     }
     assert_ne!(
         api.active().key().as_bytes(),
-        scoped::<CookieB>("api").active().key().as_bytes()
+        scoped::<TestCookieB>("api").active().key().as_bytes()
     );
 }
 
 #[test]
 fn scoped_unscoped_and_cross_audience_cookies_have_no_verification_fallback() {
     let rings = [
-        ring::<CookieA>(),
-        scoped::<CookieA>("api"),
-        scoped::<CookieA>("admin"),
+        ring::<TestCookieA>(),
+        scoped::<TestCookieA>("api"),
+        scoped::<TestCookieA>("admin"),
     ];
     for (issuer, mint_ring) in rings.iter().enumerate() {
         let token = mint_bound_cookie(
@@ -118,7 +98,7 @@ fn scoping_preserves_previous_slot_windows_and_mint_status() {
     let old_id = KeyId::parse("old").expect("kid");
     let new_id = KeyId::parse("new").expect("kid");
     let old_root = RootSecret::new([0x22; 32]);
-    let old = test_keyring_with_windows::<CookieA>(0x22, "old", 1000, 10000)
+    let old = test_keyring_with_windows::<TestCookieA>(0x22, "old", 1000, 10000)
         .with_audience(&audience)
         .expect("old scope");
     let token = mint_bound_cookie(
@@ -134,14 +114,16 @@ fn scoping_preserves_previous_slot_windows_and_mint_status() {
         KeySlot::active_with_windows(
             new_id.clone(),
             RootSecret::new([0x33; 32])
-                .derive_key::<CookieA>(&new_id)
+                .derive_key::<TestCookieA>(&new_id)
                 .expect("new key"),
             1000,
             10000,
         ),
         KeySlot::verify_only(
             old_id.clone(),
-            old_root.derive_key::<CookieA>(&old_id).expect("old key"),
+            old_root
+                .derive_key::<TestCookieA>(&old_id)
+                .expect("old key"),
             500,
         ),
     ])
@@ -178,7 +160,7 @@ fn scoping_preserves_previous_slot_windows_and_mint_status() {
 
 #[test]
 fn scoped_cookies_still_reject_tamper_and_expiry() {
-    let ring = scoped::<CookieA>("api");
+    let ring = scoped::<TestCookieA>("api");
     let token = mint_bound_cookie(
         b"fixture",
         &ring,

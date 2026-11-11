@@ -633,11 +633,13 @@ See [authentication contexts](auth-contexts.md).
 
 Cookie helpers use safe settings by default:
 
-- Lower `snake_case` names by default. Session policies can opt into the
-  exact `__Host-` prefix with a lower `snake_case` suffix. Configuration then
-  requires Secure, exactly Path=/ and host-only scope, for set and clear
-  headers. Local HTTP refuses prefixed names. Confirm cookies stay unprefixed
-  with narrow paths. No automatic rename or dual-name reads are added.
+- Lower `snake_case` names by default. Cookie policies can opt into the
+  exact `__Host-` prefix with a lower `snake_case` suffix. One shared policy
+  validator then requires Secure, exactly Path=/ and host-only scope, for set
+  and clear headers. Local HTTP refuses prefixed names. The default confirm
+  cookie keeps its narrow path and therefore cannot take the prefix; the
+  invariant, not the cookie kind, carries that rule. No automatic rename or
+  dual-name reads are added.
 - `HttpOnly` for auth cookies.
 - `Secure` outside local development.
 - Conservative `SameSite`.

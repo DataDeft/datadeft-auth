@@ -1,8 +1,41 @@
-//! Cookie name/path validation; prefix invariants apply to the complete policy.
+//! One validation chokepoint for the complete cookie policy tuple: name
+//! (including the opt-in `__Host-` prefix), path shape and the attribute
+//! invariants. Both cookie configs validate through here, so the prefix
+//! rules are carried by the invariants, not by which type is being built:
+//! the default narrow-path confirm cookie fails `__Host-` naturally with
+//! `HostPrefixRequiresRootPath`.
 
-use super::CookieConfigError;
+use super::{CookieConfigError, SameSite};
 
-pub(super) fn validate_cookie_name(value: &str) -> Result<(), CookieConfigError> {
+pub(super) fn validate_cookie_policy(
+    name: &str,
+    path: &str,
+    secure: bool,
+    same_site: SameSite,
+) -> Result<(), CookieConfigError> {
+    validate_cookie_path(path)?;
+    if same_site == SameSite::None && !secure {
+        return Err(CookieConfigError::SameSiteNoneRequiresSecure);
+    }
+    match name.strip_prefix("__Host-") {
+        None => validate_cookie_name(name),
+        Some(suffix) => {
+            if name.len() > 64 {
+                return Err(CookieConfigError::InvalidName);
+            }
+            validate_cookie_name(suffix)?;
+            if !secure {
+                return Err(CookieConfigError::HostPrefixRequiresSecure);
+            }
+            if path != "/" {
+                return Err(CookieConfigError::HostPrefixRequiresRootPath);
+            }
+            Ok(())
+        }
+    }
+}
+
+fn validate_cookie_name(value: &str) -> Result<(), CookieConfigError> {
     if !value.is_empty()
         && value.len() <= 64
         && value
@@ -19,7 +52,7 @@ pub(super) fn validate_cookie_name(value: &str) -> Result<(), CookieConfigError>
     }
 }
 
-pub(super) fn validate_cookie_path(value: &str) -> Result<(), CookieConfigError> {
+fn validate_cookie_path(value: &str) -> Result<(), CookieConfigError> {
     if value.starts_with('/')
         && value.len() <= 128
         && !value.contains(['?', '#', '%', '\\', ',', ';'])
@@ -31,25 +64,4 @@ pub(super) fn validate_cookie_path(value: &str) -> Result<(), CookieConfigError>
     } else {
         Err(CookieConfigError::InvalidPath)
     }
-}
-
-pub(super) fn validate_session_cookie_policy(
-    name: &str,
-    path: &str,
-    secure: bool,
-) -> Result<(), CookieConfigError> {
-    let Some(suffix) = name.strip_prefix("__Host-") else {
-        return validate_cookie_name(name);
-    };
-    if name.len() > 64 {
-        return Err(CookieConfigError::InvalidName);
-    }
-    validate_cookie_name(suffix)?;
-    if !secure {
-        return Err(CookieConfigError::HostPrefixRequiresSecure);
-    }
-    if path != "/" {
-        return Err(CookieConfigError::HostPrefixRequiresRootPath);
-    }
-    Ok(())
 }
