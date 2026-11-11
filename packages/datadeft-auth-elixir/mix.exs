@@ -32,8 +32,14 @@ defmodule Mix.Tasks.Compile.DatadeftPort do
         {:error, []}
     end
   rescue
-    _ ->
-      Mix.shell().error("datadeft_auth requires Cargo and a supported Rust toolchain")
+    error ->
+      # Usually a missing toolchain, but surface the real exception: parallel
+      # dev/test compiles can also race on the shared target binary.
+      Mix.shell().error(
+        "datadeft_auth native build failed (requires Cargo and a supported " <>
+          "Rust toolchain): #{Exception.message(error)}"
+      )
+
       {:error, []}
   end
 end

@@ -22,7 +22,10 @@ defmodule DatadeftAuth do
   @typedoc "Validated bound of the :restart_delay option, in milliseconds."
   @type restart_delay :: 1..5000
 
-  @typedoc "Transport options. Executable paths are trusted deployment configuration."
+  @typedoc """
+  Transport options. A nil name or executable selects the default, same as
+  omitting the key. Executable paths are trusted deployment configuration.
+  """
   @type option ::
           {:name, atom()}
           | {:executable, String.t() | nil}
@@ -43,7 +46,7 @@ defmodule DatadeftAuth do
   @doc false
   @spec child_spec(options()) :: Supervisor.child_spec()
   def child_spec(opts) do
-    %{id: Keyword.get(opts, :name, __MODULE__), start: {__MODULE__, :start_link, [opts]}}
+    %{id: Keyword.get(opts, :name) || __MODULE__, start: {__MODULE__, :start_link, [opts]}}
   end
 
   @doc "Checks transport health only; returns a fixed diagnostic error when unavailable."

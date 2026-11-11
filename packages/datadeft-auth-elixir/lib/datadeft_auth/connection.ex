@@ -29,7 +29,7 @@ defmodule DatadeftAuth.Connection do
            buffer: Protocol.buffer(),
            pending: %{optional(Protocol.request_id()) => pending_request()},
            next_id: next_id(),
-           executable: String.t() | nil,
+           executable: String.t(),
            timeout: DatadeftAuth.request_timeout(),
            max_pending: DatadeftAuth.max_pending(),
            restart_delay: DatadeftAuth.restart_delay(),
@@ -59,7 +59,8 @@ defmodule DatadeftAuth.Connection do
       buffer: <<>>,
       pending: %{},
       next_id: 1,
-      executable: Keyword.get(opts, :executable, default_executable()),
+      # An explicit nil selects the bundled default, same as omitting the key.
+      executable: Keyword.get(opts, :executable) || default_executable(),
       timeout: Keyword.fetch!(opts, :request_timeout),
       max_pending: Keyword.fetch!(opts, :max_pending),
       restart_delay: restart_delay,
@@ -256,7 +257,7 @@ defmodule DatadeftAuth.Connection do
     if pending.from, do: GenServer.reply(pending.from, result)
   end
 
-  @spec open(String.t() | nil) :: {:ok, port()} | :error
+  @spec open(String.t()) :: {:ok, port()} | :error
   defp open(path) do
     {:ok,
      Port.open(
@@ -301,10 +302,11 @@ defmodule DatadeftAuth.Connection do
 
   defp valid_keys?(keys), do: Enum.all?(keys, &(&1 in @allowed)) and keys == Enum.uniq(keys)
 
+  # A nil name is any-atom-valid and GenServer treats it as unregistered.
   defp valid_name?(opts) do
     case Keyword.fetch(opts, :name) do
       :error -> true
-      {:ok, name} -> is_atom(name) and name != nil
+      {:ok, name} -> is_atom(name)
     end
   end
 

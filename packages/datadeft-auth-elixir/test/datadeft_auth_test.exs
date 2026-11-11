@@ -4,7 +4,8 @@ defmodule DatadeftAuthTest do
   alias DatadeftAuth.Error
 
   test "real child handshakes and responds to concurrent health checks" do
-    pid = start_supervised!({DatadeftAuth, []})
+    # Explicit nil name and executable select the defaults, not a crash loop.
+    pid = start_supervised!({DatadeftAuth, [name: nil, executable: nil]})
     ready(pid)
     results = 1..20 |> Task.async_stream(fn _ -> DatadeftAuth.status(pid) end) |> Enum.to_list()
     assert Enum.all?(results, &(&1 == {:ok, {:ok, :transport_ready}}))
@@ -64,7 +65,9 @@ defmodule DatadeftAuthTest do
   end
 
   test "the last uint32 ID succeeds and the exhausted sentinel is never sent" do
-    pid = start_supervised!({DatadeftAuth, [restart_delay: 1000]})
+    # The maximum delay keeps the post-disconnect reconnect timer from firing
+    # and resetting next_id/port before the assertions below run.
+    pid = start_supervised!({DatadeftAuth, [restart_delay: 5000]})
     ready(pid)
     :sys.replace_state(pid, &%{&1 | next_id: 0xFFFFFFFF})
 
