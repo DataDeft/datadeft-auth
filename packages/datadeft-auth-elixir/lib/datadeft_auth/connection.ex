@@ -11,8 +11,8 @@ defmodule DatadeftAuth.Connection do
   # Initialization in AWS mode resolves the credential chain and fetches the
   # Secrets Manager documents over the network; a cold start routinely needs
   # more than the per-request deadline, and timing init out costs a full
-  # disconnect whose retry repeats the same cold fetch. The executable's SDK
-  # carries its own tighter timeouts; this bound only catches a hung process.
+  # disconnect whose retry repeats the same cold fetch. This deadline bounds
+  # the whole initialization; closing the pipe cancels a stalled native init.
   @init_timeout 30_000
 
   @int_options [

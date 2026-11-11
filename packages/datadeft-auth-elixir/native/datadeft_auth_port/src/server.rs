@@ -9,7 +9,7 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::{Semaphore, mpsc, oneshot};
 use tokio::task::JoinSet;
 
 use crate::app::ReadyApp;
@@ -43,7 +43,11 @@ where
     W: Write + Send + 'static,
 {
     let (frame_tx, mut frame_rx) = mpsc::channel::<Result<Vec<u8>, FrameError>>(1);
-    tokio::task::spawn_blocking(move || read_loop(reader, &frame_tx));
+    let (input_done_tx, mut input_done_rx) = oneshot::channel();
+    tokio::task::spawn_blocking(move || {
+        let outcome = read_loop(reader, &frame_tx);
+        let _ = input_done_tx.send(outcome);
+    });
     let (reply_tx, reply_rx) = mpsc::channel::<Vec<u8>>(MAX_IN_FLIGHT_JOBS);
     let mut writer_task = tokio::task::spawn_blocking(move || write_loop(writer, reply_rx));
 
@@ -106,9 +110,18 @@ where
                 }
                 // Initialization is the only configuration moment, before any
                 // other work exists; awaiting it inline keeps the lifecycle
-                // strictly ordered (the owner sends nothing else until ready,
-                // and the secret fetch carries the SDK's own timeouts).
-                match ReadyApp::initialize(*payload).await {
+                // strictly ordered. The owner's initialization deadline closes
+                // the pipe on expiry; observe EOF even while an SDK future is
+                // stalled so owner death cannot leave an initializing orphan.
+                let initialized = tokio::select! {
+                    biased;
+                    result = ReadyApp::initialize(*payload) => result,
+                    ended = &mut input_done_rx => {
+                        break ended.unwrap_or(Err(FrameError::Io));
+                    }
+                    _ = &mut writer_task => break Err(FrameError::Io),
+                };
+                match initialized {
                     Ok(application) => {
                         phase = Phase::Ready(application);
                         Some(ResultBody::Init)
@@ -192,19 +205,22 @@ async fn send_reply(replies: &mpsc::Sender<Vec<u8>>, id: u32, result: ResultBody
     }
 }
 
-fn read_loop(mut reader: impl Read, frames: &mpsc::Sender<Result<Vec<u8>, FrameError>>) {
+fn read_loop(
+    mut reader: impl Read,
+    frames: &mpsc::Sender<Result<Vec<u8>, FrameError>>,
+) -> Result<(), FrameError> {
     loop {
         match framing::read_frame(&mut reader) {
             Ok(Some(frame)) => {
                 if frames.blocking_send(Ok(frame)).is_err() {
-                    return;
+                    return Err(FrameError::Io);
                 }
             }
             // Dropping the sender signals the clean EOF.
-            Ok(None) => return,
+            Ok(None) => return Ok(()),
             Err(error) => {
                 let _ = frames.blocking_send(Err(error));
-                return;
+                return Err(error);
             }
         }
     }

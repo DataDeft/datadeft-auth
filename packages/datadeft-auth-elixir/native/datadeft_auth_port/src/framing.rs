@@ -6,7 +6,7 @@ use std::io::{self, Read, Write};
 // sides check the prefix before allocating a body.
 pub const MAX_FRAME_BYTES: usize = 16384;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum FrameError {
     Io,
     Invalid,

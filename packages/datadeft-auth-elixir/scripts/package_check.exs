@@ -8,8 +8,9 @@ defmodule PackageCheck do
   def run do
     root = File.cwd!()
 
-    temporary =
-      Path.join(System.tmp_dir!(), "datadeft-package-#{System.unique_integer([:positive])}")
+    suffix = Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
+    temporary = Path.join(System.tmp_dir!(), "datadeft-package-#{suffix}")
+    File.mkdir!(temporary)
 
     stage = Path.join(temporary, "stage")
     unpacked = Path.join(temporary, "unpacked")
