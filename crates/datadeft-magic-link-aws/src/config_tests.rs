@@ -3,6 +3,9 @@ use base64::engine::general_purpose::STANDARD;
 use datadeft_auth_token_core::keyring::KeyStatus;
 use datadeft_magic_link_service::{KeyId, KeyPurpose};
 
+#[path = "config/audience_tests.rs"]
+mod audience_tests;
+
 use crate::{
     AuthSecretDocuments, AuthSecretsConfig, AwsAdapterError, AwsAuthConfig,
     DynamoDbAuthStoreConfig, LoadedAuthSecrets, SecretRef, SecretVersionRef, SesAuthEmailConfig,

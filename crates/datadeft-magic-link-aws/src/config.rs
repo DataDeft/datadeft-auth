@@ -19,6 +19,8 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::error::AwsAdapterError;
 use crate::hmac_key::StorageHmacKey;
 
+mod audience;
+
 const MAX_TABLE_NAME_BYTES: usize = 1024;
 const MAX_EMAIL_BYTES: usize = 320;
 const MAX_SECRET_REF_BYTES: usize = 2048;
