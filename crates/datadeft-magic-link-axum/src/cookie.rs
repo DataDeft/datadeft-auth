@@ -11,6 +11,9 @@ use datadeft_magic_link_service::{
 use crate::cookie_parse::{MAX_SELECTED_COOKIE_VALUE_BYTES, is_cookie_octet};
 use crate::error::MagicLinkHttpError;
 
+mod policy;
+use policy::{validate_cookie_name, validate_cookie_path, validate_session_cookie_policy};
+
 /// Conservative default primary session cookie name.
 pub const DEFAULT_SESSION_COOKIE_NAME: &str = "dd_session";
 /// Primary session cookies are app-wide by default.
@@ -54,6 +57,10 @@ pub enum CookieConfigError {
     InvalidName,
     InvalidPath,
     SameSiteNoneRequiresSecure,
+    /// A `__Host-` session name cannot be used over local plain HTTP.
+    HostPrefixRequiresSecure,
+    /// A `__Host-` session name requires exactly `Path=/`.
+    HostPrefixRequiresRootPath,
 }
 
 impl fmt::Display for CookieConfigError {
@@ -62,6 +69,8 @@ impl fmt::Display for CookieConfigError {
             Self::InvalidName => "invalid cookie name",
             Self::InvalidPath => "invalid cookie path",
             Self::SameSiteNoneRequiresSecure => "SameSite=None requires Secure",
+            Self::HostPrefixRequiresSecure => "__Host- requires Secure",
+            Self::HostPrefixRequiresRootPath => "__Host- requires Path=/",
         })
     }
 }
@@ -185,10 +194,13 @@ impl SessionCookieConfig {
         Ok(config)
     }
 
+    /// Choose a lower snake_case name, optionally prefixed with `__Host-`.
+    ///
+    /// The prefix is opt-in and requires Secure, exactly Path=/ and host-only
+    /// scope (all policies are host-only). Local HTTP rejects prefixed names.
+    /// Changing the name requires reauthentication; no old-name reads are added.
     pub fn with_name(mut self, name: impl Into<String>) -> Result<Self, CookieConfigError> {
-        let name = name.into();
-        validate_cookie_name(&name)?;
-        self.name = name;
+        self.name = name.into();
         self.rebuild_clear_header()?;
         Ok(self)
     }
@@ -211,6 +223,7 @@ impl SessionCookieConfig {
     }
 
     fn rebuild_clear_header(&mut self) -> Result<(), CookieConfigError> {
+        validate_session_cookie_policy(&self.name, &self.path, self.secure)?;
         self.clear_header =
             build_clear_cookie_header(&self.name, &self.path, self.secure, self.same_site)?;
         Ok(())
@@ -305,43 +318,6 @@ pub fn clear_confirm_cookie_header(config: &ConfirmCookieConfig) -> HeaderValue 
     config.clear_header.clone()
 }
 
-fn validate_cookie_name(value: &str) -> Result<(), CookieConfigError> {
-    if is_lower_snake_cookie_name(value) {
-        Ok(())
-    } else {
-        Err(CookieConfigError::InvalidName)
-    }
-}
-
-fn validate_cookie_path(value: &str) -> Result<(), CookieConfigError> {
-    if is_valid_cookie_path(value) {
-        Ok(())
-    } else {
-        Err(CookieConfigError::InvalidPath)
-    }
-}
-
-fn is_lower_snake_cookie_name(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-        && value
-            .bytes()
-            .next()
-            .is_some_and(|byte| byte.is_ascii_lowercase())
-}
-
-fn is_valid_cookie_path(value: &str) -> bool {
-    value.starts_with('/')
-        && value.len() <= 128
-        && !value.contains(['?', '#', '%', '\\', ',', ';'])
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii() && !byte.is_ascii_control() && !byte.is_ascii_whitespace())
-}
-
 fn is_valid_cookie_value(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= MAX_SELECTED_COOKIE_VALUE_BYTES
@@ -399,3 +375,7 @@ pub(crate) fn cookie_path_covers(cookie_path: &str, request_path: &str) -> bool 
 #[cfg(test)]
 #[path = "cookie_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "cookie_host_tests.rs"]
+mod host_tests;
