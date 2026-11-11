@@ -299,14 +299,14 @@ async fn redirect_mode_end_to_end_through_the_router() {
             .get(LOCATION)
             .and_then(|v| v.to_str().ok())
             .expect("location");
-        assert_eq!(location, "/auth/confirm", "one target, no token");
+        assert_eq!(location, "/auth/magic-link/confirm", "one target, no token");
         confirm_cookie = cookie(&landed, "dd_auth_confirm").expect("confirm cookie");
     }
 
     // The static page carries its own strict headers.
     let page = send(
         &app,
-        Request::get("/auth/confirm")
+        Request::get("/auth/magic-link/confirm")
             .body(Body::empty())
             .expect("req"),
     )

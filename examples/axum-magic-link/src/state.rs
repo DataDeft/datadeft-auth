@@ -132,7 +132,7 @@ pub(super) fn build_state() -> AppResult<AppState> {
     // Redirect landing mode: the confirm cookie (`Path=/auth`) covers the
     // flow-state route and the POST action.
     .with_redirect_landing(
-        SameOriginRedirect::parse("/auth/confirm")
+        SameOriginRedirect::parse("/auth/magic-link/confirm")
             .map_err(|_| SetupError("invalid confirm page"))?,
         SameOriginRedirect::parse("/auth/magic-link/flow-state")
             .map_err(|_| SetupError("invalid flow-state route"))?,

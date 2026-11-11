@@ -55,9 +55,9 @@ fn app(state: AppState) -> Router {
         // Redirect landing mode, for static UIs.
         .route("/auth/magic-link/open", get(redirect_landing_route))
         .route("/auth/magic-link/flow-state", get(flow_state_route))
-        .route("/auth/confirm", get(confirm_page))
-        .route("/auth/confirm.js", get(confirm_page_script))
-        .route("/auth/complete", get(auth_complete))
+        .route("/auth/magic-link/confirm", get(confirm_page))
+        .route("/auth/magic-link/confirm.js", get(confirm_page_script))
+        .route("/auth/magic-link/complete", get(auth_complete))
         .route("/dev/me", get(me))
         .route("/auth/logout", post(logout))
         .route("/dev/latest-magic-link", get(dev_latest_magic_link))

@@ -123,7 +123,7 @@ pub(super) async fn landing_route(State(state): State<AppState>, request: Reques
 }
 
 // The confirmation POST is the only step that consumes the link and mints the
-// session. On success this app 303-redirects to /auth/complete with the session
+// session. On success this app 303-redirects to /auth/magic-link/complete with the session
 // cookie. An SPA would return JSON instead.
 pub(super) async fn confirm_route(State(state): State<AppState>, request: Request) -> Response {
     let config = state.http_config.clone();
@@ -138,9 +138,10 @@ pub(super) async fn confirm_route(State(state): State<AppState>, request: Reques
         Ok(confirmed) => {
             let mut response = Response::new(Body::empty());
             *response.status_mut() = StatusCode::SEE_OTHER;
-            response
-                .headers_mut()
-                .insert(LOCATION, HeaderValue::from_static("/auth/complete"));
+            response.headers_mut().insert(
+                LOCATION,
+                HeaderValue::from_static("/auth/magic-link/complete"),
+            );
             response
                 .headers_mut()
                 .append(SET_COOKIE, confirmed.session_cookie);
