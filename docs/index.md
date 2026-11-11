@@ -16,6 +16,7 @@ its purpose.
 
 ## Contributor documents
 
+- [Feature justification](feature-justification.md): required before implementing any feature.
 - [Rust standards](rust-standards.md)
 - [Operating model](operating.md)
 - [Authentication audiences, localized confirmation and host cookies](auth-contexts.md)
