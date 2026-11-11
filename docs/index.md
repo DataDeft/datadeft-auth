@@ -17,6 +17,7 @@ its purpose.
 ## Contributor documents
 
 - [Feature justification](feature-justification.md): required before implementing any feature.
+- [Feature assessments](feature-assessments.md): six-question reviews of the current PRs and release proposals.
 - [Rust standards](rust-standards.md)
 - [Operating model](operating.md)
 - [Registry release runbook](releasing.md)
