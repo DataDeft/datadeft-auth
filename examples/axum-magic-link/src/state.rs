@@ -12,7 +12,7 @@ use datadeft_magic_link_axum::{
     SessionCookieConfig,
 };
 use datadeft_magic_link_service::{
-    Audience, Clock, CountryPolicy, DependencyError, KeyRing, LocaleAllowlist, LookupHmacKey,
+    Clock, CountryPolicy, DependencyError, KeyRing, LocaleAllowlist, LookupHmacKey,
     MagicLinkConfirmCookie, MagicLinkFlowService, MagicLinkServiceConfig, SessionCookie,
 };
 use datadeft_pow_axum::{
@@ -130,13 +130,8 @@ pub(super) fn build_state() -> AppResult<AppState> {
     // Production loads this document from AWS Secrets Manager
     // (`resolve_auth_secrets`); the example generates one with fresh keys so
     // every key takes the same path.
-    let audience = Audience::parse("example-web")?;
-    let secrets = LoadedAuthSecrets::from_json(
-        &development_secret_document(now_unix)?,
-        None,
-        Some(&audience),
-    )
-    .map_err(|_| SetupError("invalid development secret document"))?;
+    let secrets = LoadedAuthSecrets::from_json(&development_secret_document(now_unix)?, None)
+        .map_err(|_| SetupError("invalid development secret document"))?;
     // Built at startup so a `kid` too long for the proof cookie fails here.
     let pow_proof_keyring = secrets
         .pow_proof_keyring::<PowProofCookie>()
@@ -237,7 +232,7 @@ mod tests {
             serde_json::from_str(&development_secret_document(1_000).expect("document"))
                 .expect("json");
         document["kid"] = serde_json::Value::from(kid);
-        LoadedAuthSecrets::from_json(&document.to_string(), None, None).expect("loaded")
+        LoadedAuthSecrets::from_json(&document.to_string(), None).expect("loaded")
     }
 
     /// Pins the aws crate's documented 12-byte `kid` limit against the real

@@ -610,28 +610,6 @@ account.
 Keyed window rate-limit counters restart once at rotation. These limits are
 best-effort. Per-solve lifetime counters do not restart.
 
-## Optional cookie audience isolation
-
-A consuming app can scope its session and confirmation keyrings by loading
-secrets with an audience (`LoadedAuthSecrets::from_json`,
-`AuthSecretDocuments::load`, `resolve_auth_secrets`). Direct keyring
-consumers can call `KeyRing::new_with_audience`. The scope is bound when the
-ring is constructed, so a bound ring never exists unscoped and there is no
-rebinding operation to misuse. The validated audience is trusted
-configuration, not a request claim. Purpose/kid-derived keys receive a
-versioned, length-framed HKDF audience context, including verify-only slots.
-
-Different audiences and scoped/unscoped rings never verify one another's
-cookies. Refusal is the existing constant-time AEAD tag check and generic
-public failure; there is no fallback parser or key. Mint, validation, refresh
-and logout must use the same scope on every node.
-Enabling/changing a scope requires reauthentication, not a server-side record
-migration; explicitly revoke records if invalidation must survive rollback.
-
-This separates cookie use, not authorization, raw email links, or compromise
-of a shared root secret. Independent PoW and HMAC storage keys are unchanged.
-See [authentication contexts](auth-contexts.md).
-
 ## Cookie security
 
 Cookie helpers use safe settings by default:

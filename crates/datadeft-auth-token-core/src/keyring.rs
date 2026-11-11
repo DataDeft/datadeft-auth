@@ -65,9 +65,6 @@ use zeroize::Zeroize;
 
 use crate::error::TokenError;
 
-mod audience;
-pub use audience::Audience;
-
 /// Required length of all root and Branca key material in this crate.
 pub const KEY_BYTES: usize = 32;
 
@@ -336,9 +333,8 @@ impl<P: KeyPurpose> KeySlot<P> {
 #[derive(Debug)]
 pub struct KeyRing<P: KeyPurpose> {
     keys: Vec<KeySlot<P>>,
-    /// Index of the unique `Active` slot, established by the constructor.
-    /// Slots are never added, removed, or reordered after construction, so
-    /// the index stays valid.
+    /// Index of the unique `Active` slot, established by the constructor. The
+    /// slots are never mutated after construction, so the index stays valid.
     active_index: usize,
 }
 

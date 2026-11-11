@@ -8,9 +8,6 @@ All notable changes to this workspace are recorded here. The format follows
 
 ### Added
 
-- Optional audience-scoped session and confirmation keyrings, with one AWS
-  loaded-secrets startup binding, previous-key rotation support and no unscoped
-  verification fallback. Enabling/changing the audience requires reauthentication.
 - English/Hungarian confirmation routes and pages in the Axum example, using the
   existing allowlisted email locale and fixed same-origin redirect APIs.
 - Opt-in `__Host-` session cookie names with Secure, Path=/, host-only set/clear
@@ -25,11 +22,6 @@ All notable changes to this workspace are recorded here. The format follows
 - The `__Host-` rules are one shared cookie-policy validation for session and
   confirm configs; a root-path Secure confirm cookie may opt in, the default
   narrow-path one fails typed.
-- `LoadedAuthSecrets::from_json`, `AuthSecretDocuments::load` and
-  `resolve_auth_secrets` now require an optional `&Audience` argument. Existing
-  consumers must pass `None` explicitly to retain unscoped behavior. Both cookie
-  keyrings are bound at construction, with no post-construction rebinding API.
-  The token-core `TokenError` is re-exported from `datadeft-magic-link-service`.
 - The Axum example derives its locale allowlist, per-locale redirect configs,
   confirm-page routes and dev-form language options from one locale table, and
   each confirm page carries its own status messages, so adding an allowlisted

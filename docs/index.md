@@ -19,6 +19,6 @@ its purpose.
 - [Feature justification](feature-justification.md): required before implementing any feature.
 - [Rust standards](rust-standards.md)
 - [Operating model](operating.md)
-- [Authentication audiences, localized confirmation and host cookies](auth-contexts.md)
+- [Localized confirmation and host cookies](auth-contexts.md)
 - [0.6.0 implementation scope](implementation-0.6.0.md)
 - [Registry release runbook](releasing.md)

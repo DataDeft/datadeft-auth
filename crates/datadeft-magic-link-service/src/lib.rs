@@ -49,11 +49,8 @@ pub use country::{
     CountryGroup, CountryPolicy, CountryPolicyError, EU27_COUNTRIES, EU27_GROUP_TAG,
 };
 /// Strict incoming-cookie selection, shared by the Axum adapters.
-pub use datadeft_auth_token_core::TokenError;
 pub use datadeft_auth_token_core::cookie_header;
-pub use datadeft_auth_token_core::keyring::{
-    Audience, KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret,
-};
+pub use datadeft_auth_token_core::keyring::{KeyId, KeyPurpose, KeyRing, KeySlot, RootSecret};
 pub use datadeft_magic_link_core::{
     LookupHmac, LookupHmacKey, MagicLinkConfirmCookie, NormalizedEmail, VerifierHash,
     contains_magic_link_token_marker, domain_separated_lookup_hmac,

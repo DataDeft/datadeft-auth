@@ -191,25 +191,9 @@ impl RngCore for FailOnCallRng {
 
 impl CryptoRng for FailOnCallRng {}
 
-/// Active slot for tests: root `[seed; 32]`, derived for purpose `P` under
-/// `kid`, minting until `mint_until_unix` and verifying until
-/// `verify_until_unix`. For rings that need extra slots or an audience
-/// constructor.
-#[must_use]
-pub fn test_active_slot_with_windows<P: KeyPurpose>(
-    seed: u8,
-    kid: &str,
-    mint_until_unix: u64,
-    verify_until_unix: u64,
-) -> KeySlot<P> {
-    let kid = KeyId::parse(kid).expect("test kid parses");
-    let key = RootSecret::new([seed; KEY_BYTES])
-        .derive_key::<P>(&kid)
-        .expect("test key derives");
-    KeySlot::active_with_windows(kid, key, mint_until_unix, verify_until_unix)
-}
-
-/// Single-active-slot keyring from [`test_active_slot_with_windows`].
+/// Single-active-slot keyring for tests: root `[seed; 32]`, derived for
+/// purpose `P` under `kid`, minting until `mint_until_unix` and verifying
+/// until `verify_until_unix`.
 #[must_use]
 pub fn test_keyring_with_windows<P: KeyPurpose>(
     seed: u8,
@@ -217,9 +201,13 @@ pub fn test_keyring_with_windows<P: KeyPurpose>(
     mint_until_unix: u64,
     verify_until_unix: u64,
 ) -> KeyRing<P> {
-    KeyRing::new(vec![test_active_slot_with_windows(
-        seed,
+    let kid = KeyId::parse(kid).expect("test kid parses");
+    let key = RootSecret::new([seed; KEY_BYTES])
+        .derive_key::<P>(&kid)
+        .expect("test key derives");
+    KeyRing::new(vec![KeySlot::active_with_windows(
         kid,
+        key,
         mint_until_unix,
         verify_until_unix,
     )])
@@ -234,29 +222,4 @@ pub fn test_keyring<P: KeyPurpose>(seed: u8, kid: &str) -> KeyRing<P> {
         .derive_key::<P>(&kid)
         .expect("test key derives");
     KeyRing::new(vec![KeySlot::active(kid, key)]).expect("test keyring builds")
-}
-
-/// Local test purposes so machinery tests do not depend on any product key
-/// policy. Shared by the keyring and audience suites: the audience HKDF
-/// vectors build on the same purpose/kid constants.
-#[derive(Debug)]
-pub enum TestCookieA {}
-
-impl KeyPurpose for TestCookieA {
-    const HKDF_INFO: &'static [u8] = b"auth/test-a-v1";
-    const TOKEN_TYPE: &'static str = "test-a-v1";
-    const MAX_BODY_BYTES: usize = 128;
-    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
-    const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
-}
-
-#[derive(Debug)]
-pub enum TestCookieB {}
-
-impl KeyPurpose for TestCookieB {
-    const HKDF_INFO: &'static [u8] = b"auth/test-b-v1";
-    const TOKEN_TYPE: &'static str = "test-b-v1";
-    const MAX_BODY_BYTES: usize = 128;
-    const LARGEST_BODY_BYTES: usize = 0; // test purpose: no kid budget check
-    const MAX_ABSOLUTE_AGE_SECS: u64 = 600;
 }

@@ -1,6 +1,6 @@
 # 0.6.0 authentication improvements (implementation)
 
-This implementation PR covers V06-002, V06-003 and V06-010 from draft PR #6.
+This implementation PR covers V06-003 and V06-010 from draft PR #6.
 It does not implement account erasure or promise a complete 0.6.0 release.
 The user authorized a separate implementation PR/branch; the isolated worktree
 must not modify the concurrent Elixir authentication work.
@@ -10,42 +10,18 @@ must not modify the concurrent Elixir authentication work.
 The implementation orchestrator records these proposals before changing the
 producer APIs. They remain subject to review in this draft implementation PR.
 
-### V06-002: audience-scoped keyrings
+### V06-002: excluded after requirements review
 
-- Producer: `datadeft-auth-token-core`.
-- Consumers: `datadeft-magic-link-aws`, and applications injecting keyrings into
-  the existing service APIs.
-- Proposed API: validated `keyring::Audience`, and the constructor
-  `KeyRing::new_with_audience(keys, &Audience)` — binding happens at
-  construction, so a second binding is unrepresentable rather than a runtime
-  error.
-- Service API: re-export `Audience` alongside the existing keyring types so
-  sibling adapters keep their allowed dependency graph.
-- Adapter API: the secret loaders (`LoadedAuthSecrets::from_json`,
-  `AuthSecretDocuments::load`, `resolve_auth_secrets`) take an optional
-  `&Audience` and scope both session and confirmation rings together,
-  including verify-only slots. These loader signatures change: existing consumers
-  must pass `None` explicitly to retain unscoped behavior.
-- Reason: isolate cookies between application contexts without adding an `aud`
-  field, a second token parser, or per-request configuration reads.
-- Construction: derive each slot's audience key using HKDF-SHA256 over its
-  existing purpose/kid-derived key. Pin a new versioned domain plus explicit
-  length framing for purpose, kid and audience. Keep mint/verify windows and
-  slot status unchanged. Scopes cannot stack: a ring is bound once, when it is
-  built. Replaced key bytes and temporary output retain best-effort zeroization.
-- Security: no unscoped or alternate-audience verification fallback. Different
-  audiences fail the existing constant-time AEAD authentication. Audience is
-  trusted startup configuration, never a claim accepted from a request. This
-  does not isolate a compromised application that holds the shared root secret,
-  replace authorization, or isolate use of a stolen raw email-link token.
-- Migration: unconfigured rings keep their existing keys and wire format.
-  Enabling/changing an audience invalidates existing session and confirm cookies;
-  apply the same configuration on every node, including refresh and logout.
-  Do not retain unscoped verification as a migration shortcut.
-- Tests: input validation, deterministic independent HKDF vector, scope/purpose/
-  kid separation, scoped/unscoped and cross-audience refusal in both directions,
-  tamper refusal, active/previous rotation, expiry and invalid-ring refusal. Exercise
-  both real session and confirmation purposes through the AWS loaded-secrets API.
+Audience isolation is not part of this PR. No concrete consuming-application
+requirement justified an additional cookie-key scope. Existing AWS Secrets
+Manager loading, purpose-separated keys and active/previous rotation already
+meet the established key-management requirements.
+
+The project owner requested removal rather than retaining an unused mechanism.
+The existing secret-loader signatures and key derivation are unchanged: no
+new audience configuration, cryptographic step or migration is introduced.
+The remaining features must also pass the
+[feature-justification gate](feature-justification.md) before merge.
 
 ### V06-003: locale-specific confirmation routes
 
@@ -92,12 +68,11 @@ producer APIs. They remain subject to review in this draft implementation PR.
 
 ## Implementation tracking
 
-- [x] Audience-scoped core keyrings and vectors.
-- [x] AWS startup binding for both session and confirmation rings.
 - [x] Locale-route integration guide, translated example pages and regression tests.
 - [x] Host-prefixed session cookie validation and tests.
 - [x] Workspace verification and minimum-compiler checks.
-- [ ] Consuming-application integration and review of migration choices.
+- [ ] Feature justification for the remaining features, consuming-application
+  integration and review of migration choices.
 
 Local validation: `mise run verify`, `mise run msrv` and
 `mise run dynamodb-local-test` pass (all 10 Docker-backed integration tests).

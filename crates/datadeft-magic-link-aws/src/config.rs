@@ -9,8 +9,8 @@ use core::fmt;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use datadeft_magic_link_service::{
-    Audience, KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey, MagicLinkConfirmCookie,
-    RootSecret, SessionCookie,
+    KeyId, KeyPurpose, KeyRing, KeySlot, LookupHmacKey, MagicLinkConfirmCookie, RootSecret,
+    SessionCookie,
 };
 use serde::Deserialize;
 use subtle::ConstantTimeEq;
@@ -303,14 +303,10 @@ impl KeyringRoots {
         })
     }
 
-    /// The active root mints; the previous one only verifies. With an
-    /// audience, every slot is bound at construction
-    /// ([`KeyRing::new_with_audience`]). Fails when a `kid` is too long for
-    /// the purpose's largest body (`KeyPurpose::LARGEST_BODY_BYTES`).
-    fn keyring<P: KeyPurpose>(
-        &self,
-        audience: Option<&Audience>,
-    ) -> Result<KeyRing<P>, AwsAdapterError> {
+    /// The active root mints; the previous one only verifies. Fails when a
+    /// `kid` is too long for the purpose's largest body
+    /// (`KeyPurpose::LARGEST_BODY_BYTES`).
+    fn keyring<P: KeyPurpose>(&self) -> Result<KeyRing<P>, AwsAdapterError> {
         let derive = |material: &RootMaterial| {
             RootSecret::new(*material.root)
                 .derive_key::<P>(&material.kid)
@@ -329,11 +325,7 @@ impl KeyringRoots {
                 previous.verify_until_unix,
             ));
         }
-        match audience {
-            None => KeyRing::new(slots),
-            Some(audience) => KeyRing::new_with_audience(slots, audience),
-        }
-        .map_err(|_| AwsAdapterError::Internal)
+        KeyRing::new(slots).map_err(|_| AwsAdapterError::Internal)
     }
 }
 
@@ -362,24 +354,10 @@ impl LoadedAuthSecrets {
     /// roots become verify-only keyring slots. Previous HMAC keys are kept only
     /// for read fallback during rotation; new values always use the active
     /// keys.
-    ///
-    /// With an audience, the session and confirmation keyrings are bound to
-    /// that one trusted scope at construction — a bound ring never exists
-    /// unscoped, so there is nothing to rebind later. Active and previous
-    /// slots are scoped together; HMAC lookup/storage keys and independent
-    /// PoW secrets are unchanged. All nodes and the mint/validation/refresh/
-    /// logout paths must load with the same audience. Enabling or changing it
-    /// invalidates existing session and flow cookies; unscoped verification
-    /// is never attempted. Shared root-secret holders are still trusted, and
-    /// this does not replace authorization.
-    pub fn from_json(
-        active: &str,
-        previous: Option<&str>,
-        audience: Option<&Audience>,
-    ) -> Result<Self, AwsAdapterError> {
+    pub fn from_json(active: &str, previous: Option<&str>) -> Result<Self, AwsAdapterError> {
         let active = AuthSecretDocument::parse(active)?;
         let previous = previous.map(AuthSecretDocument::parse).transpose()?;
-        Self::from_documents(&active, previous.as_ref(), audience)
+        Self::from_documents(&active, previous.as_ref())
     }
 
     /// The PoW proof-cookie keyring (`pow_proof_cookie_root_b64`), with the
@@ -388,22 +366,19 @@ impl LoadedAuthSecrets {
     /// does not depend on the PoW crates. Build it at startup: it fails there
     /// when the document's `kid` is too long for the proof cookie. Naming a
     /// purpose this crate already keys from its own root (session or confirm
-    /// cookie) fails, so the PoW root never mints those cookies. Independent
-    /// PoW middleware stays audience-free: a configured audience scopes only
-    /// the session and confirmation keyrings.
+    /// cookie) fails, so the PoW root never mints those cookies.
     pub fn pow_proof_keyring<P: KeyPurpose>(&self) -> Result<KeyRing<P>, AwsAdapterError> {
         if P::HKDF_INFO == SessionCookie::HKDF_INFO
             || P::HKDF_INFO == MagicLinkConfirmCookie::HKDF_INFO
         {
             return Err(AwsAdapterError::Internal);
         }
-        self.pow_proof_roots.keyring(None)
+        self.pow_proof_roots.keyring()
     }
 
     fn from_documents(
         active: &AuthSecretDocument,
         previous: Option<&AuthSecretDocument>,
-        audience: Option<&Audience>,
     ) -> Result<Self, AwsAdapterError> {
         let lookup_bytes = Zeroizing::new(decode_key(&active.magic_link_lookup_hmac_b64)?);
         let storage_bytes = Zeroizing::new(decode_key(&active.storage_hmac_b64)?);
@@ -416,11 +391,11 @@ impl LoadedAuthSecrets {
         let confirm_keyring = KeyringRoots::from_documents(active, previous, |document| {
             &document.magic_link_confirm_cookie_root_b64
         })?
-        .keyring::<MagicLinkConfirmCookie>(audience)?;
+        .keyring::<MagicLinkConfirmCookie>()?;
         let session_keyring = KeyringRoots::from_documents(active, previous, |document| {
             &document.session_cookie_root_b64
         })?
-        .keyring::<SessionCookie>(audience)?;
+        .keyring::<SessionCookie>()?;
         let pow_challenge = Zeroizing::new(decode_key(&active.pow_challenge_secret_b64)?);
         let previous_pow_challenge = previous_if_rotated(&pow_challenge, previous, |document| {
             &document.pow_challenge_secret_b64
@@ -480,9 +455,8 @@ impl AuthSecretDocuments {
     }
 
     /// Parse the library's fields; unknown (app-owned) fields are ignored.
-    /// See [`LoadedAuthSecrets::from_json`] for what an audience binds.
-    pub fn load(&self, audience: Option<&Audience>) -> Result<LoadedAuthSecrets, AwsAdapterError> {
-        LoadedAuthSecrets::from_json(self.active(), self.previous(), audience)
+    pub fn load(&self) -> Result<LoadedAuthSecrets, AwsAdapterError> {
+        LoadedAuthSecrets::from_json(self.active(), self.previous())
     }
 }
 
@@ -495,17 +469,13 @@ impl fmt::Debug for AuthSecretDocuments {
 /// Resolve configured AWS Secrets Manager references into loaded auth secret
 /// material. Callers provide the AWS client. This function does not read global
 /// config or environment variables. See [`fetch_auth_secret_documents`] for
-/// how a missing `AWSPREVIOUS` is handled and
-/// [`LoadedAuthSecrets::from_json`] for what an audience binds.
+/// how a missing `AWSPREVIOUS` is handled.
 #[cfg(feature = "aws")]
 pub async fn resolve_auth_secrets(
     client: &aws_sdk_secretsmanager::Client,
     config: &AuthSecretsConfig,
-    audience: Option<&Audience>,
 ) -> Result<LoadedAuthSecrets, AwsAdapterError> {
-    fetch_auth_secret_documents(client, config)
-        .await?
-        .load(audience)
+    fetch_auth_secret_documents(client, config).await?.load()
 }
 
 /// Fetch the active and previous auth secret documents once.
