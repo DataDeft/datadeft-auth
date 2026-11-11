@@ -65,6 +65,9 @@ use zeroize::Zeroize;
 
 use crate::error::TokenError;
 
+mod audience;
+pub use audience::Audience;
+
 /// Required length of all root and Branca key material in this crate.
 pub const KEY_BYTES: usize = 32;
 
@@ -336,6 +339,8 @@ pub struct KeyRing<P: KeyPurpose> {
     /// Index of the unique `Active` slot, established by the constructor. The
     /// slots are never mutated after construction, so the index stays valid.
     active_index: usize,
+    /// Prevent accidental double derivation or an attempted audience change.
+    audience_bound: bool,
 }
 
 impl<P: KeyPurpose> KeyRing<P> {
@@ -365,7 +370,11 @@ impl<P: KeyPurpose> KeyRing<P> {
             return Err(TokenError::KeyringMisconfigured);
         };
 
-        Ok(Self { keys, active_index })
+        Ok(Self {
+            keys,
+            active_index,
+            audience_bound: false,
+        })
     }
 
     /// The unique active slot, guaranteed by construction.
