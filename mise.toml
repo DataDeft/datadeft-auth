@@ -102,7 +102,10 @@ mise -C packages/dd-protect-client run verify
 
 [tasks.package-crates]
 description = "Package and build all seven crates, staging unpublished workspace dependencies"
-run = "cargo package --workspace --exclude axum-magic-link --all-features --locked"
+# datadeft-auth-port is publish = false (it ships inside the Hex package via
+# the vendored stage), but `cargo package --workspace` still tries to verify
+# its path-only manifest, so exclude it like the example binary.
+run = "cargo package --workspace --exclude axum-magic-link --exclude datadeft-auth-port --all-features --locked"
 
 [tasks.crates-dry-run]
 description = "Try every crate against crates.io in dependency order; never uploads"
