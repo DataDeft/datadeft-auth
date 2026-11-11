@@ -24,7 +24,8 @@ producer APIs. They remain subject to review in this draft implementation PR.
 - Adapter API: the secret loaders (`LoadedAuthSecrets::from_json`,
   `AuthSecretDocuments::load`, `resolve_auth_secrets`) take an optional
   `&Audience` and scope both session and confirmation rings together,
-  including verify-only slots.
+  including verify-only slots. These loader signatures change: existing consumers
+  must pass `None` explicitly to retain unscoped behavior.
 - Reason: isolate cookies between application contexts without adding an `aud`
   field, a second token parser, or per-request configuration reads.
 - Construction: derive each slot's audience key using HKDF-SHA256 over its
@@ -43,7 +44,7 @@ producer APIs. They remain subject to review in this draft implementation PR.
   Do not retain unscoped verification as a migration shortcut.
 - Tests: input validation, deterministic independent HKDF vector, scope/purpose/
   kid separation, scoped/unscoped and cross-audience refusal in both directions,
-  tamper refusal, active/previous rotation, expiry and rebinding refusal. Exercise
+  tamper refusal, active/previous rotation, expiry and invalid-ring refusal. Exercise
   both real session and confirmation purposes through the AWS loaded-secrets API.
 
 ### V06-003: locale-specific confirmation routes
@@ -79,7 +80,8 @@ producer APIs. They remain subject to review in this draft implementation PR.
 - Reason: browser-enforced protection against sibling-subdomain cookie planting.
 - Security: require Secure, explicit Path=/ and host-only scope. Check every
   name/path builder order; set and clear headers must retain identical policy.
-  Confirm-cookie names remain unprefixed with their narrow auth paths.
+  Default confirm-cookie names remain unprefixed with their narrow auth paths;
+  explicit root-path Secure confirm cookies may opt in under the same policy.
 - Migration: opt-in, not a silent default rename. Existing default `dd_session`
   and explicit local HTTP behavior stay unchanged. Insecure local configuration
   must reject host-prefixed names. A deployment enabling the new name requires
