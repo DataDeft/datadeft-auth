@@ -2,6 +2,7 @@
 //! No input or parser/IO error is printed to stderr.
 #![forbid(unsafe_code)]
 
+mod app;
 mod framing;
 mod protocol;
 mod server;

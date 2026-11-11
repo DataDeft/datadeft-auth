@@ -83,9 +83,11 @@ defmodule DatadeftAuth.MixProject do
           "mix.lock",
           "README.md",
           "LICENSE",
+          "native/Cargo.toml",
+          "native/Cargo.lock",
           "native/datadeft_auth_port/Cargo.toml",
-          "native/datadeft_auth_port/Cargo.lock",
-          "native/datadeft_auth_port/src"
+          "native/datadeft_auth_port/src",
+          "native/vendor"
         ]
       ]
     ]

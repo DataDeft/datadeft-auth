@@ -799,6 +799,10 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 name = "datadeft-auth-port"
 version = "0.5.0"
 dependencies = [
+ "base64",
+ "datadeft-magic-link-aws",
+ "datadeft-magic-link-service",
+ "rand_core 0.6.4",
  "serde",
  "serde_json",
  "tokio",

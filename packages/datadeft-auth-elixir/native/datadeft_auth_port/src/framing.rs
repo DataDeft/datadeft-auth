@@ -1,7 +1,10 @@
 //! Bounds the length prefix before allocating a frame.
 use std::io::{self, Read, Write};
 
-pub const MAX_FRAME_BYTES: usize = 4096;
+// Sized for the configuration frame (service policy, email templates and the
+// inline secret documents); every other operation stays far below it. Both
+// sides check the prefix before allocating a body.
+pub const MAX_FRAME_BYTES: usize = 16384;
 
 #[derive(Debug)]
 pub enum FrameError {
@@ -63,9 +66,11 @@ mod tests {
 
     #[test]
     fn reject_empty_oversized_and_truncated_frames() {
+        let mut oversized = Vec::new();
+        oversized.extend(u32::try_from(MAX_FRAME_BYTES + 1).unwrap().to_be_bytes());
         for bytes in [
             vec![0, 0, 0, 0],
-            vec![0, 0, 16, 1],
+            oversized,
             vec![255, 255, 255, 255],
             vec![0],
             vec![0, 0, 0, 2, b'a'],

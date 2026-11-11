@@ -3,10 +3,13 @@
 Framework-independent Elixir authentication backed by a **separate Rust process**.
 No Rust code loads into BEAM; no Phoenix, Plug, Rustler or HTTP server is required.
 
-**Current scope: P1 transport foundation only.** It starts the executable, checks
-protocol/build compatibility and exercises health/lifecycle behavior. Magic-link,
-session, PoW, DynamoDB/SES and secret initialization are not implemented yet.
-This is not an authentication release and must not be deployed for login.
+**Current scope: transport plus the magic-link/session API against the fake
+backend.** The executable runs bounded concurrent jobs and serves request,
+landing, flow-state, confirm, validate-session and logout against the
+crate-shipped in-memory store (`mode: :fake`). AWS mode (DynamoDB, SES,
+Secrets Manager), PoW and durable ambiguous-commit recovery are staged and
+refused. This is not an authentication release and must not be deployed for
+login.
 
 ## Development
 
@@ -46,9 +49,14 @@ This checks **transport only**, not AWS or authentication readiness.
 ## Transport contract (private)
 
 - A trusted absolute executable path, stdin/stdout only, no shell/network socket.
-- Four-byte big-endian length prefix, 1–4096 byte UTF-8 JSON body, v1 envelope.
-  Only handshake and ping exist in P1. Strict fields, duplicate-key rejection,
-  monotonic non-reused uint32 IDs, exact build-version handshake.
+- Four-byte big-endian length prefix, 1–16384 byte UTF-8 JSON body, v1
+  envelope (sized for the one-time configuration frame). Strict fields,
+  duplicate-key rejection, monotonic non-reused uint32 IDs, exact
+  build-version handshake, then exactly one init before auth operations.
+  Requests run as bounded concurrent jobs; replies may arrive out of order
+  and are routed by ID with the echoed operation checked against the pending
+  one. Per-request application failures use one closed error result;
+  protocol faults stay fatal.
 - Rust checks lengths before allocation. Elixir parses the raw Port stream
   itself rather than using `packet: 4`, which would allow the VM driver to
   allocate an advertised body before validation.
@@ -74,11 +82,13 @@ across both Rust and BEAM crashes. P1 restart tests do not prove those future ga
 
 ## Packaging
 
-`mise run package-check` stages sources without changing the checkout, materializes
-workspace metadata into a standalone manifest, generates its lockfile, builds a
-Hex archive, unpacks it outside the repository, runs its tests and builds/executes
-a clean consumer Mix release. It uploads nothing. Package sources include tests
-and the Rust source/lockfile, not a compiled binary or build caches.
+`mise run package-check` stages sources without changing the checkout,
+materializes a self-contained Rust workspace (the port executable plus the
+vendored `datadeft-*` crates it builds from), generates its lockfile, builds a
+Hex archive, unpacks it outside the repository, runs its tests and
+builds/executes a clean consumer Mix release. It uploads nothing. Package
+sources include tests and the Rust sources/lockfile, not a compiled binary or
+build caches.
 
 Publishing uses the same staging: `mise run package-stage` materializes the
 standalone manifest and lockfile under `_build/publish_stage` and builds the
@@ -86,17 +96,21 @@ Hex archive there; `mix hex.publish` is then run manually from that directory.
 `mix hex.publish` from the checkout itself fails by design, because the
 workspace-inherited Cargo manifest and lockfile only exist in a stage.
 
-The packaging script currently covers the transport crate's serde dependencies.
-Future local workspace dependencies must be replaced with exact released registry
-versions and tested before an authentication artifact can ship. It must not rely
-on this checkout being available.
+Vendoring keeps the published package independent of both this checkout and
+unpublished registry versions; the staged workspace inherits the tested
+dependency floors and lints verbatim from the repository root.
 
 ## Dependency rationale
 
-- Rust serde/serde_json: strict, typed, bounded bootstrap protocol parsing.
+- Rust serde/serde_json: strict, typed, bounded protocol parsing.
+- Rust tokio: bounded concurrent job execution over the Port pipe, required
+  by the AWS SDK clients this process will own.
+- Rust rand_core (getrandom): OS-backed CSPRNG for the service entropy inputs.
+- The workspace `datadeft-*` service/adapter crates own all cryptography; the
+  port adds no cryptographic dependencies of its own. AWS SDKs are not wired
+  yet (`mode: :aws` is refused).
 - Elixir Jason: reviewed maintained JSON codec; ordered-object decoding preserves
   duplicate keys for explicit rejection, never converts input to atoms.
-- No cryptographic dependencies or AWS SDKs are added to the transport yet.
 
 MIT. The public package name is `datadeft_auth`, owned by Hex user `l1x`.
 No publishing or version bump is authorized by this infrastructure change.

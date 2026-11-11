@@ -2,8 +2,8 @@
 //! bounded jobs, out-of-order replies through one writer. Protocol faults
 //! stay fatal (no error reply); only per-request application failures reply
 //! with the error result. Aborted in-flight work on a fatal exit is safe for
-//! the bootstrap operations; mutating operations must gain durable
-//! reconciliation before they land here.
+//! the read-only operations; the mutating confirm path relies on the durable
+//! reconciliation design tracked on the PR before production release.
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,14 +11,22 @@ use std::time::Duration;
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 
+use crate::app::{self, App};
 use crate::framing::{self, FrameError};
-use crate::protocol::{self, ErrorCode, Operation, ResultBody};
+use crate::protocol::{self, Command, ErrorCode, ResultBody};
 
 /// Upper bound on concurrently executing jobs. The Elixir owner enforces a
 /// stricter per-connection pending cap at or below this value.
 const MAX_IN_FLIGHT_JOBS: usize = 1024;
 /// Bound on how long outstanding jobs may finish after stdin closes.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Connection lifecycle: handshake, then one initialization, then work.
+enum Phase {
+    AwaitHandshake,
+    AwaitInit,
+    Ready(Arc<App>),
+}
 
 pub async fn serve<R, W>(reader: R, writer: W) -> Result<(), FrameError>
 where
@@ -38,7 +46,7 @@ where
     let (reply_tx, reply_rx) = mpsc::channel::<Vec<u8>>(MAX_IN_FLIGHT_JOBS);
     let mut writer_task = tokio::task::spawn_blocking(move || write_loop(writer, reply_rx));
 
-    let mut handshaken = false;
+    let mut phase = Phase::AwaitHandshake;
     let mut last_id = 0_u32;
     let limiter = Arc::new(Semaphore::new(job_limit));
     let mut jobs = JoinSet::new();
@@ -62,29 +70,69 @@ where
             break Err(FrameError::Invalid);
         }
         last_id = request.id;
-        let result = match (handshaken, request.operation) {
-            (false, Operation::Handshake) => {
-                handshaken = true;
+        let id = request.id;
+        // Inline replies (handshake, init) sequence the lifecycle; everything
+        // else runs as a bounded job with an out-of-order reply.
+        let inline = match request.command {
+            Command::Handshake => {
+                if !matches!(phase, Phase::AwaitHandshake) {
+                    break Err(FrameError::Invalid);
+                }
+                phase = Phase::AwaitInit;
                 Some(protocol::handshake_result())
             }
-            (true, Operation::Ping) => match limiter.clone().try_acquire_owned() {
-                Ok(permit) => {
-                    let reply_tx = reply_tx.clone();
-                    let id = request.id;
-                    jobs.spawn(async move {
-                        let _permit = permit;
-                        send_reply(&reply_tx, id, ResultBody::Ping).await;
-                    });
-                    None
+            Command::Ping => {
+                if matches!(phase, Phase::AwaitHandshake) {
+                    break Err(FrameError::Invalid);
                 }
-                Err(_) => Some(ResultBody::Error {
-                    code: ErrorCode::Overloaded,
-                }),
-            },
-            _ => break Err(FrameError::Invalid),
+                match limiter.clone().try_acquire_owned() {
+                    Ok(permit) => {
+                        let reply_tx = reply_tx.clone();
+                        jobs.spawn(async move {
+                            let _permit = permit;
+                            send_reply(&reply_tx, id, ResultBody::Ping).await;
+                        });
+                        None
+                    }
+                    Err(_) => Some(overloaded()),
+                }
+            }
+            Command::Init(payload) => {
+                if !matches!(phase, Phase::AwaitInit) {
+                    break Err(FrameError::Invalid);
+                }
+                // Initialization is the only configuration moment, before any
+                // other work exists; building it inline keeps the lifecycle
+                // strictly ordered.
+                match App::initialize(*payload) {
+                    Ok(application) => {
+                        phase = Phase::Ready(Arc::new(application));
+                        Some(ResultBody::Init)
+                    }
+                    Err(code) => Some(ResultBody::Error { code }),
+                }
+            }
+            command => {
+                let Phase::Ready(application) = &phase else {
+                    break Err(FrameError::Invalid);
+                };
+                match limiter.clone().try_acquire_owned() {
+                    Ok(permit) => {
+                        let application = Arc::clone(application);
+                        let reply_tx = reply_tx.clone();
+                        jobs.spawn(async move {
+                            let _permit = permit;
+                            let result = app::handle(&application, command).await;
+                            send_reply(&reply_tx, id, result).await;
+                        });
+                        None
+                    }
+                    Err(_) => Some(overloaded()),
+                }
+            }
         };
-        if let Some(result) = result {
-            let encoded = protocol::encode_response(request.id, result)?;
+        if let Some(result) = inline {
+            let encoded = protocol::encode_response(id, result)?;
             if reply_tx.send(encoded).await.is_err() {
                 break Err(FrameError::Io);
             }
@@ -102,6 +150,12 @@ where
             Ok(())
         }
         Err(error) => Err(error),
+    }
+}
+
+fn overloaded() -> ResultBody {
+    ResultBody::Error {
+        code: ErrorCode::Overloaded,
     }
 }
 

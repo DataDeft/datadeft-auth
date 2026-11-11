@@ -1,5 +1,14 @@
-//! Private v1 protocol types and strict envelope parsing. No authentication
-//! operations yet; the execution engine in `server` dispatches these.
+//! Private v1 protocol: strict envelope parsing into typed commands and
+//! canonical reply encoding. The execution engine in `server` dispatches the
+//! commands; `messages` holds the payload and result shapes.
+mod messages;
+
+pub(crate) use messages::{
+    AccountDisplayPayload, ConfirmPayload, EmailTemplatePayload, FlowStatePayload, LandingPayload,
+    OutboxPeekPayload, RequestLinkPayload, SessionPayload,
+};
+pub use messages::{ErrorCode, InitPayload, Mode, ResultBody};
+
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
@@ -19,18 +28,36 @@ struct Envelope<'a> {
 
 #[derive(Clone, Copy, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub enum Operation {
+enum Operation {
     Handshake,
     Ping,
+    Init,
+    RequestLink,
+    Landing,
+    FlowState,
+    Confirm,
+    ValidateSession,
+    Logout,
+    FakeLastMagicLink,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Empty {}
-
+/// A validated request: the strictly increasing wire ID and the typed command.
 pub struct ParsedRequest {
     pub id: u32,
-    pub operation: Operation,
+    pub command: Command,
+}
+
+pub enum Command {
+    Handshake,
+    Ping,
+    Init(Box<InitPayload>),
+    RequestLink(RequestLinkPayload),
+    Landing(LandingPayload),
+    FlowState(FlowStatePayload),
+    Confirm(ConfirmPayload),
+    ValidateSession(SessionPayload),
+    Logout(SessionPayload),
+    FakeLastMagicLink(OutboxPeekPayload),
 }
 
 /// Fail-closed envelope parse: exact fields, exact version, and a payload
@@ -41,44 +68,44 @@ pub fn parse_request(frame: &[u8]) -> Result<ParsedRequest, FrameError> {
     if envelope.version != PROTOCOL_VERSION {
         return Err(FrameError::Invalid);
     }
-    match envelope.operation {
-        Operation::Handshake | Operation::Ping => {
-            let Empty {} =
-                serde_json::from_str(envelope.payload.get()).map_err(|_| FrameError::Invalid)?;
+    let payload = envelope.payload.get();
+    let command = match envelope.operation {
+        Operation::Handshake => {
+            let Empty {} = parse_payload(payload)?;
+            Command::Handshake
         }
-    }
+        Operation::Ping => {
+            let Empty {} = parse_payload(payload)?;
+            Command::Ping
+        }
+        Operation::Init => Command::Init(Box::new(parse_payload(payload)?)),
+        Operation::RequestLink => Command::RequestLink(parse_payload(payload)?),
+        Operation::Landing => Command::Landing(parse_payload(payload)?),
+        Operation::FlowState => Command::FlowState(parse_payload(payload)?),
+        Operation::Confirm => Command::Confirm(parse_payload(payload)?),
+        Operation::ValidateSession => Command::ValidateSession(parse_payload(payload)?),
+        Operation::Logout => Command::Logout(parse_payload(payload)?),
+        Operation::FakeLastMagicLink => Command::FakeLastMagicLink(parse_payload(payload)?),
+    };
     Ok(ParsedRequest {
         id: envelope.id,
-        operation: envelope.operation,
+        command,
     })
 }
+
+fn parse_payload<'a, P: Deserialize<'a>>(payload: &'a str) -> Result<P, FrameError> {
+    serde_json::from_str(payload).map_err(|_| FrameError::Invalid)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Empty {}
 
 #[derive(Serialize)]
 struct Response {
     version: u8,
     id: u32,
     result: ResultBody,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "operation", rename_all = "snake_case")]
-pub enum ResultBody {
-    Handshake {
-        build_version: &'static str,
-        max_frame_bytes: usize,
-    },
-    Ping,
-    /// Per-request application failure; protocol faults never use this and
-    /// end the process instead.
-    Error {
-        code: ErrorCode,
-    },
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ErrorCode {
-    Overloaded,
 }
 
 pub fn handshake_result() -> ResultBody {
