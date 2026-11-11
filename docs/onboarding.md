@@ -67,7 +67,6 @@ country-aware difficulty (MVP-013) is open.
 | MVP-013 | PoW | Not ready | Define the trusted country source and difficulty policy. |
 | MVP-021 | Assurance | Future | Add simulation and bounded checks. Fuzz targets exist (`mise run fuzz`). |
 | V06-001 | 0.6 | Planned | GDPR erasure (`erase_user`). The model is ready: `spec/tla/Erasure.tla`. |
-| V06-002 | 0.6 | Planned | Optional `aud` claim in session and confirm cookies. |
 | V06-003 | 0.6 | Planned | Locale-keyed confirm pages in redirect landing mode. |
 | V06-004 | 0.6 | Planned | Finer internal reasons for landing and confirm failures (expired, consumed, throttled, wrong verifier). |
 | V06-005 | 0.6 | Done | Docs: `Referrer-Policy` `strict-origin` compared with `no-referrer` ([security.md](security.md#magic-link-url-handling)). |
