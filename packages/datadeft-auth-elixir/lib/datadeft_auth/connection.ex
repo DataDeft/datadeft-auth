@@ -317,7 +317,10 @@ defmodule DatadeftAuth.Connection do
       # pipe rejects only this request instead of dropping the connection.
       Port.command(state.port, frame, [:nosuspend]) ->
         monitor = if from, do: Process.monitor(elem(from, 0)), else: nil
-        timer = Process.send_after(self(), {:deadline, state.port, id}, deadline(operation, state))
+
+        timer =
+          Process.send_after(self(), {:deadline, state.port, id}, deadline(operation, state))
+
         pending = %{operation: operation, from: from, timer: timer, monitor: monitor}
         {:ok, %{state | pending: Map.put(state.pending, id, pending), next_id: id + 1}}
 
