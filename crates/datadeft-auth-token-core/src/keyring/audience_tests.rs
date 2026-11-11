@@ -178,21 +178,62 @@ fn scoping_preserves_previous_slot_windows_and_mint_status() {
 #[test]
 fn audience_construction_enforces_the_same_ring_invariants() {
     let audience = Audience::parse("api").expect("audience");
-    assert_eq!(
-        KeyRing::<TestCookieA>::new_with_audience(Vec::new(), &audience).unwrap_err(),
-        TokenError::KeyringMisconfigured
-    );
-    assert_eq!(
-        KeyRing::new_with_audience(
+    let previous_kid = KeyId::parse("twin").expect("kid");
+    let previous_key = RootSecret::new([0x22; 32])
+        .derive_key::<TestCookieA>(&previous_kid)
+        .expect("previous key");
+    let previous_only_kid = KeyId::parse("previous").expect("kid");
+    let previous_only_key = RootSecret::new([0x22; 32])
+        .derive_key::<TestCookieA>(&previous_only_kid)
+        .expect("previous-only key");
+    for (case, keys) in [
+        ("empty", Vec::new()),
+        (
+            "duplicate kid with exactly one active slot",
             vec![
-                test_active_slot_with_windows::<TestCookieA>(0x11, "twin", 1000, 10000),
-                test_active_slot_with_windows::<TestCookieA>(0x22, "twin", 1000, 10000),
+                test_active_slot_with_windows(0x11, "twin", 1000, 10000),
+                KeySlot::verify_only(previous_kid, previous_key, 10000),
             ],
-            &audience,
-        )
-        .unwrap_err(),
-        TokenError::KeyringMisconfigured
-    );
+        ),
+        (
+            "two distinct active slots",
+            vec![
+                test_active_slot_with_windows(0x11, "first", 1000, 10000),
+                test_active_slot_with_windows(0x22, "second", 1000, 10000),
+            ],
+        ),
+        (
+            "no active slot",
+            vec![KeySlot::verify_only(
+                previous_only_kid,
+                previous_only_key,
+                10000,
+            )],
+        ),
+        (
+            "verification shorter than absolute lifetime",
+            vec![test_active_slot_with_windows(0x11, "active", 1000, 1599)],
+        ),
+        (
+            "minting after verification expires",
+            vec![test_active_slot_with_windows(0x11, "active", 1000, 999)],
+        ),
+        (
+            "absolute lifetime arithmetic overflow",
+            vec![test_active_slot_with_windows(
+                0x11,
+                "active",
+                u64::MAX,
+                u64::MAX,
+            )],
+        ),
+    ] {
+        assert_eq!(
+            KeyRing::new_with_audience(keys, &audience).unwrap_err(),
+            TokenError::KeyringMisconfigured,
+            "{case}"
+        );
+    }
 }
 
 #[test]

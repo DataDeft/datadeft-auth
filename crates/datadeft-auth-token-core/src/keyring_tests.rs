@@ -235,39 +235,59 @@ impl KeyPurpose for TightPurpose {
     const LARGEST_BODY_BYTES: usize = 17;
 }
 
-fn tight_ring(kid: &str) -> Result<KeyRing<TightPurpose>, TokenError> {
-    let kid = KeyId::parse(kid).expect("kid");
-    let key = RootSecret::new([7; 32])
-        .derive_key::<TightPurpose>(&kid)
-        .expect("key");
-    KeyRing::new(vec![KeySlot::active(kid, key)])
+fn tight_ring(
+    keys: Vec<KeySlot<TightPurpose>>,
+    audience: Option<&Audience>,
+) -> Result<KeyRing<TightPurpose>, TokenError> {
+    match audience {
+        Some(audience) => KeyRing::new_with_audience(keys, audience),
+        None => KeyRing::new(keys),
+    }
 }
 
 #[test]
 fn keyring_refuses_a_kid_that_leaves_no_room_for_the_largest_body() {
-    assert!(tight_ring("abcdefghijkl").is_ok(), "12 bytes fit");
-    assert_eq!(
-        tight_ring("abcdefghijklm").unwrap_err(),
-        TokenError::KeyringMisconfigured,
-        "13 bytes do not"
-    );
+    let audience = Audience::parse("api").expect("audience");
+    let root = RootSecret::new([7; 32]);
+    for scope in [None, Some(&audience)] {
+        for (kid, fits) in [("abcdefghijkl", true), ("abcdefghijklm", false)] {
+            let kid = KeyId::parse(kid).expect("kid");
+            let key = root.derive_key::<TightPurpose>(&kid).expect("key");
+            let ring = tight_ring(vec![KeySlot::active(kid, key)], scope);
+            if fits {
+                assert!(ring.is_ok(), "12 bytes fit");
+            } else {
+                assert_eq!(
+                    ring.unwrap_err(),
+                    TokenError::KeyringMisconfigured,
+                    "13 bytes do not"
+                );
+            }
+        }
+    }
 }
 
 #[test]
 fn a_verify_only_slot_with_an_over_long_kid_is_refused_too() {
+    let audience = Audience::parse("api").expect("audience");
     let active_kid = KeyId::parse("short").expect("kid");
     let old_kid = KeyId::parse("much-too-long-kid").expect("kid");
     let root = RootSecret::new([7; 32]);
-    let ring = KeyRing::new(vec![
-        KeySlot::active(
-            active_kid.clone(),
-            root.derive_key::<TightPurpose>(&active_kid).expect("key"),
-        ),
-        KeySlot::verify_only(
-            old_kid.clone(),
-            root.derive_key::<TightPurpose>(&old_kid).expect("key"),
-            u64::MAX,
-        ),
-    ]);
-    assert_eq!(ring.unwrap_err(), TokenError::KeyringMisconfigured);
+    for scope in [None, Some(&audience)] {
+        let ring = tight_ring(
+            vec![
+                KeySlot::active(
+                    active_kid.clone(),
+                    root.derive_key::<TightPurpose>(&active_kid).expect("key"),
+                ),
+                KeySlot::verify_only(
+                    old_kid.clone(),
+                    root.derive_key::<TightPurpose>(&old_kid).expect("key"),
+                    u64::MAX,
+                ),
+            ],
+            scope,
+        );
+        assert_eq!(ring.unwrap_err(), TokenError::KeyringMisconfigured);
+    }
 }
