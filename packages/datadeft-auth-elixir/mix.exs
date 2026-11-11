@@ -32,14 +32,18 @@ defmodule Mix.Tasks.Compile.DatadeftPort do
         {:error, []}
     end
   rescue
-    error ->
-      # Usually a missing toolchain; include the exception so any other
-      # failure stays diagnosable.
+    # System.cmd raises ErlangError (:enoent) when cargo is not on the PATH;
+    # only that path earns the toolchain hint.
+    error in ErlangError ->
       Mix.shell().error(
         "datadeft_auth native build failed (requires Cargo and a supported " <>
           "Rust toolchain): #{Exception.message(error)}"
       )
 
+      {:error, []}
+
+    error ->
+      Mix.shell().error("datadeft_auth native build failed: #{Exception.message(error)}")
       {:error, []}
   end
 end

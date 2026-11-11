@@ -10,7 +10,8 @@ defmodule DatadeftAuth.Protocol do
   @typedoc "Closed operation set; encoded as strings on the wire."
   @type operation :: :handshake | :ping
 
-  @type result :: :handshake | :ping
+  @typedoc "Reply result; the wire echoes the closed request operation set."
+  @type result :: operation()
   @type failure :: {:error, :protocol}
 
   @typedoc "JSON body without its four-byte length prefix; validated at the boundary."

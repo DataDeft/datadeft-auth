@@ -12,17 +12,33 @@ defmodule DatadeftAuthTest do
     assert DatadeftAuth.status(:nonexistent_datadeft_auth) == {:error, %Error{code: :unavailable}}
   end
 
-  test "invalid configuration is redacted" do
+  test "invalid configuration is redacted and the published bounds are enforced" do
     for opts <- [
           [unknown: 1],
           [executable: "relative"],
           [request_timeout: 0],
+          [request_timeout: 60_001],
           [max_pending: 1025],
+          [restart_delay: 5001],
           [name: nil, name: nil],
           :invalid
         ] do
       assert {:error, %Error{code: :configuration}} = DatadeftAuth.start_link(opts)
     end
+
+    # The public bound types mirror the validation limits; the maxima are
+    # inclusive, so acceptance here keeps the types and the table in sync.
+    {:ok, pid} =
+      DatadeftAuth.start_link(request_timeout: 60_000, max_pending: 1024, restart_delay: 5000)
+
+    GenServer.stop(pid)
+  end
+
+  test "only a nil name selects the default child id" do
+    assert DatadeftAuth.child_spec([]).id == DatadeftAuth
+    assert DatadeftAuth.child_spec(name: nil).id == DatadeftAuth
+    assert DatadeftAuth.child_spec(name: MyAuth).id == MyAuth
+    assert DatadeftAuth.child_spec(name: false).id == false
   end
 
   test "native crash leaves owner alive and restarts with a new OS process" do

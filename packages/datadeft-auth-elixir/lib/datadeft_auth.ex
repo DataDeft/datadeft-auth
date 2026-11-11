@@ -7,6 +7,9 @@ defmodule DatadeftAuth do
   A healthy transport does not mean authentication is configured or available.
 
   Add `{DatadeftAuth, name: MyAuth}` to your application's supervision tree.
+  The name doubles as the child id, so give each supervised instance a
+  distinct name; unregistered (nil-name) instances share the default id and
+  need hand-written child specs to coexist under one supervisor.
   Native work never runs inside BEAM. No request is automatically replayed after
   a timeout or worker failure.
   """
@@ -46,7 +49,14 @@ defmodule DatadeftAuth do
   @doc false
   @spec child_spec(options()) :: Supervisor.child_spec()
   def child_spec(opts) do
-    %{id: Keyword.get(opts, :name) || __MODULE__, start: {__MODULE__, :start_link, [opts]}}
+    # Only nil selects the default id: false is a valid registered name.
+    id =
+      case Keyword.get(opts, :name) do
+        nil -> __MODULE__
+        name -> name
+      end
+
+    %{id: id, start: {__MODULE__, :start_link, [opts]}}
   end
 
   @doc "Checks transport health only; returns a fixed diagnostic error when unavailable."
