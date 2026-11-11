@@ -336,8 +336,10 @@ impl<P: KeyPurpose> KeySlot<P> {
 #[derive(Debug)]
 pub struct KeyRing<P: KeyPurpose> {
     keys: Vec<KeySlot<P>>,
-    /// Index of the unique `Active` slot, established by the constructor. The
-    /// slots are never mutated after construction, so the index stays valid.
+    /// Index of the unique `Active` slot, established by the constructor.
+    /// After construction only `with_audience` touches the slots, and it
+    /// replaces key bytes in place — never slot order or count — so the
+    /// index stays valid.
     active_index: usize,
     /// Prevent accidental double derivation or an attempted audience change.
     audience_bound: bool,

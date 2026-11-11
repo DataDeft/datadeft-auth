@@ -103,7 +103,11 @@ same attributes. Incoming selection uses the exact configured name, rejects
 duplicates and never falls back to `dd_session`.
 
 `dd_session` remains the default. `insecure_local` rejects prefixed names;
-local HTTP uses the existing unprefixed cookie. Confirm cookies stay unprefixed
-with their narrow auth paths. Enabling the name requires reauthentication;
+local HTTP uses the existing unprefixed cookie. The prefix is policy-gated,
+not kind-gated: the default confirm cookie cannot take it because of its
+narrow `/auth` path, and opting a confirm cookie in requires widening it to
+`Path=/`, trading the narrow-scope recommendation for the prefix's host
+binding — keep confirm cookies unprefixed unless that trade is deliberate.
+Enabling the name requires reauthentication;
 applications should separately expire the old cookie under its old attributes
 as a deployment migration. Renaming a cookie is not server-side revocation.

@@ -51,8 +51,10 @@ impl SameSite {
     }
 }
 
-/// Typed cookie setup failures.
+/// Typed cookie setup failures. Non-exhaustive: this release already had
+/// to grow it, so downstream matches keep a wildcard arm.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum CookieConfigError {
     InvalidName,
     InvalidPath,
@@ -198,31 +200,39 @@ impl SessionCookieConfig {
     /// The prefix is opt-in and requires Secure, exactly Path=/ and host-only
     /// scope (all policies are host-only). Local HTTP rejects prefixed names.
     /// Changing the name requires reauthentication; no old-name reads are added.
-    pub fn with_name(mut self, name: impl Into<String>) -> Result<Self, CookieConfigError> {
-        self.name = name.into();
-        self.rebuild_clear_header()?;
-        Ok(self)
+    pub fn with_name(self, name: impl Into<String>) -> Result<Self, CookieConfigError> {
+        let path = self.path.clone();
+        let same_site = self.same_site;
+        self.updated(name.into(), path, same_site)
     }
 
-    pub fn with_path(mut self, path: impl Into<String>) -> Result<Self, CookieConfigError> {
-        self.path = path.into();
-        self.rebuild_clear_header()?;
-        Ok(self)
+    pub fn with_path(self, path: impl Into<String>) -> Result<Self, CookieConfigError> {
+        let name = self.name.clone();
+        let same_site = self.same_site;
+        self.updated(name, path.into(), same_site)
     }
 
-    pub fn with_same_site(mut self, same_site: SameSite) -> Result<Self, CookieConfigError> {
+    pub fn with_same_site(self, same_site: SameSite) -> Result<Self, CookieConfigError> {
+        let name = self.name.clone();
+        let path = self.path.clone();
+        self.updated(name, path, same_site)
+    }
+
+    // The one revalidation point: every setter validates the complete
+    // candidate tuple before assigning, so the struct never holds a field
+    // that failed the policy, whatever a caller does with the error.
+    fn updated(
+        mut self,
+        name: String,
+        path: String,
+        same_site: SameSite,
+    ) -> Result<Self, CookieConfigError> {
+        validate_cookie_policy(&name, &path, self.secure, same_site)?;
+        self.clear_header = build_clear_cookie_header(&name, &path, self.secure, same_site)?;
+        self.name = name;
+        self.path = path;
         self.same_site = same_site;
-        self.rebuild_clear_header()?;
         Ok(self)
-    }
-
-    // The one revalidation point: every setter funnels the complete
-    // (name, path, secure, same_site) tuple back through the policy.
-    fn rebuild_clear_header(&mut self) -> Result<(), CookieConfigError> {
-        validate_cookie_policy(&self.name, &self.path, self.secure, self.same_site)?;
-        self.clear_header =
-            build_clear_cookie_header(&self.name, &self.path, self.secure, self.same_site)?;
-        Ok(())
     }
 
     #[must_use]

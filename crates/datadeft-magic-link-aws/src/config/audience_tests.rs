@@ -1,6 +1,8 @@
 use datadeft_auth_token_core::cookie::{MaxAge, mint_bound_cookie, parse_bound_cookie};
 use datadeft_auth_token_core::test_support::CountingRng;
-use datadeft_magic_link_service::{Audience, KeyRing, MagicLinkConfirmCookie, SessionCookie};
+use datadeft_magic_link_service::{
+    Audience, KeyRing, MagicLinkConfirmCookie, SessionCookie, TokenError,
+};
 
 use super::*;
 
@@ -128,10 +130,12 @@ fn startup_binding_rejects_rebinding_without_changing_independent_pow_material()
     );
     assert!(bound.previous_lookup_hmac_key.is_some());
     assert!(bound.previous_storage_hmac_key.is_some());
+    // Rebinding keeps its typed core signal instead of collapsing to an
+    // opaque adapter-internal failure.
     assert_eq!(
         bound
             .with_audience(&Audience::parse("admin").expect("audience"))
             .unwrap_err(),
-        AwsAdapterError::Internal
+        TokenError::KeyringMisconfigured
     );
 }

@@ -20,7 +20,14 @@ All notable changes to this workspace are recorded here. The format follows
 ### Changed
 
 - `CookieConfigError` adds `HostPrefixRequiresSecure` and
-  `HostPrefixRequiresRootPath`; downstream exhaustive matches must handle them.
+  `HostPrefixRequiresRootPath` and is now `#[non_exhaustive]`, so downstream
+  matches keep a wildcard arm and future variants stop being breaking.
+- The `__Host-` rules are one shared cookie-policy validation for session and
+  confirm configs; a root-path Secure confirm cookie may opt in, the default
+  narrow-path one fails typed.
+- `LoadedAuthSecrets::with_audience` returns the token-core `TokenError`
+  (re-exported from `datadeft-magic-link-service`) instead of collapsing
+  setup mistakes into `AwsAdapterError::Internal`.
 - Raise the minimum supported Rust version from 1.88 to 1.94.1 to use maintained
   AWS SDK/Smithy releases. All workspace crates inherit this requirement.
 
