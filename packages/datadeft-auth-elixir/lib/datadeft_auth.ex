@@ -223,6 +223,11 @@ defmodule DatadeftAuth do
   Revokes the session server-side. Clear the session cookie only after
   `{:ok, %{revoked: true}}` or `revoked: false` (already invalid); on
   `:unavailable` keep it and retry. Protect the calling route against CSRF.
+
+  Pass the same `country` trusted-edge signal you pass to
+  `validate_session/3`: logout validates the session before revoking it, so
+  a missing or mismatched signal on a country-pinned session answers
+  `revoked: false` while the server-side session stays live.
   """
   @spec logout(GenServer.server(), String.t(), keyword()) ::
           {:ok, %{revoked: boolean()}} | {:error, Error.t()}

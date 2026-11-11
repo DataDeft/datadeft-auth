@@ -118,6 +118,7 @@ defmodule DatadeftAuth.Connection do
           {:ok, state} -> {:noreply, state}
           :busy -> {:reply, error(:overloaded), state}
           :too_large -> {:reply, error(:bad_request), state}
+          :invalid -> {:reply, error(:bad_request), state}
           :error -> {:reply, error(:unavailable), disconnect(state, :unavailable)}
         end
     end
@@ -284,7 +285,7 @@ defmodule DatadeftAuth.Connection do
   defp handshaken(state) do
     case send_request(state, :init, state.config, nil) do
       {:ok, state} -> {:ok, state}
-      :too_large -> {:disconnect, :configuration}
+      refused when refused in [:too_large, :invalid] -> {:disconnect, :configuration}
       _ -> {:disconnect, :unavailable}
     end
   end
@@ -299,9 +300,10 @@ defmodule DatadeftAuth.Connection do
   defp deliver(_, _), do: :error
 
   # The exhausted-ID sentinel is never sent; this fails closed if a caller
-  # skips the admit guard. A busy pipe or oversized payload consumes no ID.
+  # skips the admit guard. A busy pipe, an oversized payload or a payload
+  # JSON cannot carry consumes no ID.
   @spec send_request(state(), Protocol.operation(), map(), GenServer.from() | nil) ::
-          {:ok, state()} | :busy | :too_large | :error
+          {:ok, state()} | :busy | :too_large | :invalid | :error
   defp send_request(state, operation, payload, from) do
     id = state.next_id
     frame = Protocol.request(id, operation, payload)
@@ -328,7 +330,11 @@ defmodule DatadeftAuth.Connection do
         :busy
     end
   rescue
+    # A closed or dead port raises ArgumentError. Invalid UTF-8 in caller
+    # input (reachable through percent-decoded URL parameters) raises at
+    # JSON encoding and is this request's problem, not the connection's.
     ArgumentError -> :error
+    Jason.EncodeError -> :invalid
   end
 
   @spec deadline(Protocol.operation(), state()) :: pos_integer()
