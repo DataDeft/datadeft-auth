@@ -1,0 +1,34 @@
+[tasks.deps-update]
+description = "Resolve dependencies and update mix.lock intentionally"
+run = "mix deps.get"
+
+[tasks.deps]
+description = "Fetch the locked Mix dependencies"
+run = "mix deps.get --check-locked"
+
+[tasks.fmt]
+run = "mix format"
+
+[tasks.fmt-check]
+run = "mix format --check-formatted"
+
+[tasks.check]
+run = "mix compile --warnings-as-errors"
+
+[tasks.test]
+# The dev and test compiles share one cargo target dir; when both are
+# scheduled (verify), run them in sequence instead of racing the native build.
+wait_for = ["check"]
+run = "mix test --warnings-as-errors"
+
+[tasks.package-check]
+description = "Build and test an isolated source Hex archive and Mix release"
+run = "mix run --no-start scripts/package_check.exs"
+
+[tasks.package-stage]
+description = "Stage the publishable standalone package under _build; publish manually from the printed directory"
+run = "mix run --no-start scripts/stage_publish.exs"
+
+[tasks.verify]
+depends = ["fmt-check", "check", "test"]
+run = "mise run package-check"

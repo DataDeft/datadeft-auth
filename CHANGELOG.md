@@ -4,6 +4,19 @@ All notable changes to this workspace are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crates follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+
+- Raise the minimum supported Rust version from 1.88 to 1.94.1 to use maintained
+  AWS SDK/Smithy releases. All workspace crates inherit this requirement.
+
+### Security
+
+- Upgrade rustls to 0.23.46, rustls-webpki to 0.103.16 and Tokio to 1.53.3.
+- Upgrade the DynamoDB, SES and Secrets Manager SDK dependency chain to remove
+  the unmaintained `pin-utils` crate. No advisory exceptions are added.
+
 ## [0.5.0](https://github.com/DataDeft/datadeft-auth/compare/v0.4.1...v0.5.0) (2026-10-11)
 
 ### Upgrade summary

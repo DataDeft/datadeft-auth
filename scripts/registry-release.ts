@@ -24,8 +24,16 @@ async function run(args: string[]): Promise<number> {
 async function check(): Promise<string> {
   const root = TOML.parse(await Bun.file("Cargo.toml").text()) as any;
   const version = root.workspace.package.version;
+  const mise = TOML.parse(await Bun.file("mise.toml").text()) as any;
+  requireCondition(mise.vars.msrv === root.workspace.package["rust-version"], "mise msrv var and workspace rust-version must match");
   const pkg = await Bun.file("packages/dd-protect-client/package.json").json();
   requireCondition(pkg.version === version, "Rust and npm versions must match");
+  const elixir = await Bun.file("packages/datadeft-auth-elixir/mix.exs").text();
+  // Match the release-please marker semantically, not its exact byte layout.
+  const elixirVersion = elixir.match(/x-release-please-start-version[\s\S]*?@version "([^"]+)"[\s\S]*?x-release-please-end/)?.[1];
+  requireCondition(elixirVersion === version, "Rust and Elixir versions must match");
+  const port = TOML.parse(await Bun.file("packages/datadeft-auth-elixir/native/datadeft_auth_port/Cargo.toml").text()) as any;
+  requireCondition(port.package.publish === false && port.package.version.workspace, "Port executable must remain unpublished and inherit the release version");
   const bunLock = await Bun.file("bun.lock").json();
   requireCondition(bunLock.workspaces["packages/dd-protect-client"].version === version, "Bun lock version differs; run mise run js-lock");
   requireCondition((await Bun.file("version.txt").text()).trim() === version, "version.txt must match");
@@ -36,7 +44,7 @@ async function check(): Promise<string> {
     requireCondition(!pkg.scripts?.[script], `Unexpected npm lifecycle hook: ${script}`);
   }
   const lock = TOML.parse(await Bun.file("Cargo.lock").text()) as any;
-  for (const name of [...crates, "axum-magic-link"]) {
+  for (const name of [...crates, "axum-magic-link", "datadeft-auth-port"]) {
     requireCondition(lock.package.some((p: any) => p.name === name && !p.source && p.version === version), `${name}: stale Cargo.lock version`);
   }
   const seen = new Set<string>();

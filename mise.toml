@@ -1,5 +1,9 @@
 # Workspace task runner. Run `mise tasks` to list tasks.
 
+[vars]
+# Keep in sync with workspace.package.rust-version in Cargo.toml.
+msrv = "1.94.1"
+
 [tools]
 bun = "latest"
 node = "24"
@@ -40,6 +44,10 @@ run = "cargo test --workspace --all-features"
 description = "Build documentation"
 run = "cargo doc --workspace --all-features --no-deps"
 env = { RUSTDOCFLAGS = "-D warnings" }
+
+[tasks.deps-update]
+description = "Update Cargo.lock; pass targeted cargo update flags after --"
+run = "cargo update"
 
 [tasks.audit]
 description = "Dependency advisory and license check (cargo-deny, mise-managed prebuilt)"
@@ -108,21 +116,40 @@ run = "bun scripts/registry-release.ts check"
 description = "Publish approved release from GitHub Actions using its temporary OIDC credential"
 run = "bun scripts/registry-release.ts publish"
 
+[tasks.msrv-install]
+description = "Install the declared minimum Rust toolchain"
+run = "rustup toolchain install {{vars.msrv}} --profile minimal"
+
 [tasks.msrv]
-description = "Check the declared minimum Rust version (install rustup toolchain 1.88.0 first)"
-run = "cargo +1.88.0 check --workspace --all-targets --all-features --locked"
+description = "Check the declared minimum Rust version (mise run msrv-install first)"
+run = "cargo +{{vars.msrv}} check --workspace --all-targets --all-features --locked"
 
 [tasks.test-default-features]
 description = "Build every crate's tests with default features, one crate at a time (workspace feature unification hides gaps)"
 run = """
-for crate in datadeft-auth-token-core datadeft-magic-link-core datadeft-magic-link-service datadeft-magic-link-axum datadeft-magic-link-aws datadeft-pow-core datadeft-pow-axum; do
+for crate in datadeft-auth-token-core datadeft-magic-link-core datadeft-magic-link-service datadeft-magic-link-axum datadeft-magic-link-aws datadeft-pow-core datadeft-pow-axum datadeft-auth-port; do
   cargo test -q -p "$crate" --no-run || exit 1
 done
 """
 
+[tasks.elixir-verify]
+description = "Verify the Elixir Port package and isolated Hex source/release builds (requires Elixir/OTP)"
+run = """
+mise -C packages/datadeft-auth-elixir run deps
+mise -C packages/datadeft-auth-elixir run verify
+"""
+
+[tasks.port-test]
+description = "Test the private Rust Port executable"
+run = "cargo test -p datadeft-auth-port"
+
+[tasks.port-clippy]
+description = "Lint the private Rust Port executable"
+run = "cargo clippy -p datadeft-auth-port --all-targets -- -D warnings"
+
 [tasks.verify]
-description = "Full verification: fmt-check + clippy + test + test-default-features + docs + audit + token-core-guard + ts-verify + spec + spec-mutants + release-check + workflow-check"
-depends = ["fmt-check", "clippy", "test", "test-default-features", "docs", "audit", "token-core-guard", "ts-verify", "spec", "spec-mutants", "release-check", "workflow-check"]
+description = "Full verification: Rust + browser + Elixir + formal models + release/workflow checks"
+depends = ["fmt-check", "clippy", "test", "test-default-features", "docs", "audit", "token-core-guard", "ts-verify", "elixir-verify", "spec", "spec-mutants", "release-check", "workflow-check"]
 
 [tasks.js-lock]
 description = "Update Bun dependencies and normalize the lockfile for release-please"

@@ -47,9 +47,17 @@ and a same-origin `POST` confirms it. There is no raw consume alternative. See
 The adapters are siblings. Neither adapter depends on the other. See
 [architecture.md](docs/architecture.md) for the dependency graph.
 
+## Elixir bindings (in development)
+
+[`packages/datadeft-auth-elixir`](packages/datadeft-auth-elixir/README.md) contains
+the framework-independent Elixir package foundation. It launches a separate Rust
+process through an Erlang Port—not a NIF. Only transport startup/health is
+implemented; authentication and DynamoDB/SES integration are not available yet.
+It is not published to Hex. See the [approved plan](docs/elixir-bindings-plan.md).
+
 ## Install
 
-This is the single install block for the libraries. You need Rust 1.88 or
+This is the single install block for the libraries. You need Rust 1.94.1 or
 newer. The common case is Axum plus DynamoDB. The service crate re-exports
 the keyring and lookup-key types.
 

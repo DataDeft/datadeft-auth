@@ -32,7 +32,7 @@ rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 time = { version = "0.3.47", default-features = false, features = ["formatting", "std"] }
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
 # Reasons are logged as tracing events, so a log probe can see every line.
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }

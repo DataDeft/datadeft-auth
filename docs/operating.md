@@ -23,8 +23,10 @@ mise run verify
 ```
 
 `verify` runs fmt-check, clippy, test, test-default-features, docs, audit,
-token-core-guard, ts-verify, spec, spec-mutants, release-check, and
-workflow-check.
+token-core-guard, ts-verify, elixir-verify, spec, spec-mutants, release-check, and
+workflow-check. The Elixir gate requires an installed Elixir >= 1.16 / OTP >= 26
+and Rust toolchain; CI provisions the tested runtime pairs. See
+[`packages/datadeft-auth-elixir`](../packages/datadeft-auth-elixir/README.md).
 
 Other tasks:
 
@@ -51,6 +53,7 @@ branches or worktrees.
 | Axum adapter | `crates/datadeft-magic-link-axum` | HTTP integration |
 | AWS adapter | `crates/datadeft-magic-link-aws` | DynamoDB and SES adapters |
 | Browser client | `@datadeft/protect-client` (`packages/dd-protect-client`) | Browser PoW client |
+| Elixir bindings | `packages/datadeft-auth-elixir` (including unpublished Rust executable) | Separate-process transport; auth integration in progress |
 | Example | `examples/axum-magic-link` | Integration proof |
 
 ## Work packet

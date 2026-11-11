@@ -28,4 +28,4 @@ datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.
 datadeft-magic-link-aws = { path = "../datadeft-magic-link-aws", version = "0.5.0" } # x-release-please-version
 datadeft-magic-link-core = { path = "../datadeft-magic-link-core", version = "0.5.0" } # x-release-please-version
 rand_core = { version = "0.6", features = ["getrandom"] }
-tokio = { version = "1", features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt"] }

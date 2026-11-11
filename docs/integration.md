@@ -22,7 +22,7 @@ Do not invent an approach. Follow the example and the trait contracts.
 ## Install
 
 Use the dependency block and the git-ref testing note in
-[README.md](../README.md#install). You need Rust 1.88 or newer.
+[README.md](../README.md#install). You need Rust 1.94.1 or newer.
 
 Cargo adds the other core crates as transitive dependencies. The service and
 Axum crates re-export the types that you need. Commit your lockfiles. 0.5.0 is

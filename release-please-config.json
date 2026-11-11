@@ -51,6 +51,10 @@
         },
         "packages/dd-protect-client/package.json",
         {
+          "type": "generic",
+          "path": "packages/datadeft-auth-elixir/mix.exs"
+        },
+        {
           "type": "json",
           "path": "bun.lock",
           "jsonpath": "$.workspaces[\"packages/dd-protect-client\"].version"
