@@ -54,11 +54,11 @@ defmodule DatadeftAuth.Protocol do
           | {:flow_state, FlowState.t()}
           | {:confirm, Session.t()}
           | {:validate_session, Validation.t()}
-          | {:logout, boolean()}
+          | {:logout, %{revoked: boolean()}}
           | {:fake_last_magic_link, DevMagicLink.t()}
           | {:pow_challenge, PowChallenge.t()}
           | {:pow_verify, PowVerification.t()}
-          | {:pow_admit, boolean()}
+          | {:pow_admit, %{admitted: boolean()}}
           | {:error,
              :overloaded | :configuration | :bad_request | :rejected | :unavailable | :internal}
 
@@ -286,7 +286,7 @@ defmodule DatadeftAuth.Protocol do
   defp result("logout", value) do
     with {:ok, result} <- object(value, ["operation", "revoked"]),
          %{"revoked" => revoked} when is_boolean(revoked) <- result do
-      {:ok, {:logout, revoked}}
+      {:ok, {:logout, %{revoked: revoked}}}
     else
       _ -> {:error, :protocol}
     end
@@ -348,7 +348,7 @@ defmodule DatadeftAuth.Protocol do
   defp result("pow_admit", value) do
     with {:ok, result} <- object(value, ["operation", "admitted"]),
          %{"admitted" => admitted} when is_boolean(admitted) <- result do
-      {:ok, {:pow_admit, admitted}}
+      {:ok, {:pow_admit, %{admitted: admitted}}}
     else
       _ -> {:error, :protocol}
     end

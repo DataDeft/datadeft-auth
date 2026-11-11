@@ -119,12 +119,13 @@ fn exhausted_job_capacity_fails_the_request_not_the_process() {
 
 #[test]
 fn strict_requests_and_handshake_order_stay_fatal() {
+    // One representative parse failure proves parse errors kill the
+    // connection; protocol_tests owns the exhaustive forged shapes. The
+    // other cases here are the server's own ordering rules.
     for request in [
         r#"{"version":2,"id":1,"operation":"handshake","payload":{}}"#,
         r#"{"version":1,"id":1,"operation":"ping","payload":{}}"#,
         r#"{"version":1,"id":0,"operation":"handshake","payload":{}}"#,
-        r#"{"version":1,"id":1,"operation":"handshake","payload":{"extra":1}}"#,
-        r#"{"version":1,"id":1,"operation":"other","payload":{}}"#,
     ] {
         assert!(run(&[request.to_string()], MAX_IN_FLIGHT_JOBS).is_err());
     }

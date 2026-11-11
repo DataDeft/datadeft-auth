@@ -51,10 +51,18 @@ pub struct ParsedRequest {
     pub command: Command,
 }
 
+/// Lifecycle commands the dispatcher owns, separated at parse time so the
+/// initialized application is total over `AppCommand` and a misrouted
+/// lifecycle command is unrepresentable rather than silently answered.
 pub enum Command {
     Handshake,
     Ping,
     Init(Box<InitPayload>),
+    App(AppCommand),
+}
+
+/// Operations served by the initialized application state.
+pub enum AppCommand {
     RequestLink(RequestLinkPayload),
     Landing(LandingPayload),
     FlowState(FlowStatePayload),
@@ -86,19 +94,23 @@ pub fn parse_request(frame: &[u8]) -> Result<ParsedRequest, FrameError> {
             Command::Ping
         }
         Operation::Init => Command::Init(Box::new(parse_payload(payload)?)),
-        Operation::RequestLink => Command::RequestLink(parse_payload(payload)?),
-        Operation::Landing => Command::Landing(parse_payload(payload)?),
-        Operation::FlowState => Command::FlowState(parse_payload(payload)?),
-        Operation::Confirm => Command::Confirm(parse_payload(payload)?),
-        Operation::ValidateSession => Command::ValidateSession(parse_payload(payload)?),
-        Operation::Logout => Command::Logout(parse_payload(payload)?),
-        Operation::FakeLastMagicLink => Command::FakeLastMagicLink(parse_payload(payload)?),
+        Operation::RequestLink => Command::App(AppCommand::RequestLink(parse_payload(payload)?)),
+        Operation::Landing => Command::App(AppCommand::Landing(parse_payload(payload)?)),
+        Operation::FlowState => Command::App(AppCommand::FlowState(parse_payload(payload)?)),
+        Operation::Confirm => Command::App(AppCommand::Confirm(parse_payload(payload)?)),
+        Operation::ValidateSession => {
+            Command::App(AppCommand::ValidateSession(parse_payload(payload)?))
+        }
+        Operation::Logout => Command::App(AppCommand::Logout(parse_payload(payload)?)),
+        Operation::FakeLastMagicLink => {
+            Command::App(AppCommand::FakeLastMagicLink(parse_payload(payload)?))
+        }
         Operation::PowChallenge => {
             let Empty {} = parse_payload(payload)?;
-            Command::PowChallenge
+            Command::App(AppCommand::PowChallenge)
         }
-        Operation::PowVerify => Command::PowVerify(parse_payload(payload)?),
-        Operation::PowAdmit => Command::PowAdmit(parse_payload(payload)?),
+        Operation::PowVerify => Command::App(AppCommand::PowVerify(parse_payload(payload)?)),
+        Operation::PowAdmit => Command::App(AppCommand::PowAdmit(parse_payload(payload)?)),
     };
     Ok(ParsedRequest {
         id: envelope.id,

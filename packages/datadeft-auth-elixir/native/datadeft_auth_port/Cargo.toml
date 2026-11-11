@@ -28,7 +28,7 @@ rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 # Owner: this crate. Reason: bounded concurrent job execution over the Port
-# pipe; required by the AWS SDK clients this process will own.
+# pipe; required by the AWS SDK clients this process owns.
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
 
 [dev-dependencies]

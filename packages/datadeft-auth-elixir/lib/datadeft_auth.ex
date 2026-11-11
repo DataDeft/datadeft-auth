@@ -2,8 +2,10 @@ defmodule DatadeftAuth do
   @moduledoc """
   Framework-independent authentication using a supervised, separate Rust process.
 
-  This first infrastructure packet implements process startup and health only.
-  Authentication, AWS configuration and key initialization are not implemented yet.
+  The transport plus the magic-link/session and PoW APIs are implemented,
+  backed by either the crate-shipped in-memory store (`mode: :fake`) or
+  DynamoDB/SES with Secrets Manager key loading (`mode: :aws`). This is not a
+  production authentication release; see the README for the open gates.
   A healthy transport does not mean authentication is configured or available.
 
   Add `{DatadeftAuth, name: MyAuth}` to your application's supervision tree.
@@ -195,11 +197,7 @@ defmodule DatadeftAuth do
   def logout(server, session_cookie, opts \\ [])
       when is_binary(session_cookie) and is_list(opts) do
     payload = %{session_cookie: session_cookie, country: Keyword.get(opts, :country)}
-
-    case call(server, {:auth, :logout, payload}) do
-      {:ok, revoked} when is_boolean(revoked) -> {:ok, %{revoked: revoked}}
-      other -> other
-    end
+    call(server, {:auth, :logout, payload})
   end
 
   @doc """
@@ -234,12 +232,8 @@ defmodule DatadeftAuth do
   """
   @spec pow_admit(GenServer.server(), String.t()) ::
           {:ok, %{admitted: boolean()}} | {:error, Error.t()}
-  def pow_admit(server, proof_cookie) when is_binary(proof_cookie) do
-    case call(server, {:auth, :pow_admit, %{proof_cookie: proof_cookie}}) do
-      {:ok, admitted} when is_boolean(admitted) -> {:ok, %{admitted: admitted}}
-      other -> other
-    end
-  end
+  def pow_admit(server, proof_cookie) when is_binary(proof_cookie),
+    do: call(server, {:auth, :pow_admit, %{proof_cookie: proof_cookie}})
 
   # The five client-echoed solution fields, from string or atom keys, with
   # anything extra or missing refused here instead of as a process fault.

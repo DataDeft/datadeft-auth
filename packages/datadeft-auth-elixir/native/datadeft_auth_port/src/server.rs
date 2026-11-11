@@ -4,6 +4,7 @@
 //! with the error result. Aborted in-flight work on a fatal exit is safe for
 //! the read-only operations; the mutating confirm path relies on the durable
 //! reconciliation design tracked on the PR before production release.
+use std::future::Future;
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::time::Duration;
@@ -95,17 +96,9 @@ where
                 if matches!(phase, Phase::AwaitHandshake) {
                     break Err(FrameError::Invalid);
                 }
-                match limiter.clone().try_acquire_owned() {
-                    Ok(permit) => {
-                        let reply_tx = reply_tx.clone();
-                        jobs.spawn(async move {
-                            let _permit = permit;
-                            send_reply(&reply_tx, id, ResultBody::Ping).await;
-                        });
-                        None
-                    }
-                    Err(_) => Some(overloaded()),
-                }
+                spawn_job(&mut jobs, &limiter, &reply_tx, id, async {
+                    ResultBody::Ping
+                })
             }
             Command::Init(payload) => {
                 if !matches!(phase, Phase::AwaitInit) {
@@ -123,23 +116,14 @@ where
                     Err(code) => Some(ResultBody::Error { code }),
                 }
             }
-            command => {
+            Command::App(command) => {
                 let Phase::Ready(application) = &phase else {
                     break Err(FrameError::Invalid);
                 };
-                match limiter.clone().try_acquire_owned() {
-                    Ok(permit) => {
-                        let application = application.clone();
-                        let reply_tx = reply_tx.clone();
-                        jobs.spawn(async move {
-                            let _permit = permit;
-                            let result = application.handle(command).await;
-                            send_reply(&reply_tx, id, result).await;
-                        });
-                        None
-                    }
-                    Err(_) => Some(overloaded()),
-                }
+                let application = application.clone();
+                spawn_job(&mut jobs, &limiter, &reply_tx, id, async move {
+                    application.handle(command).await
+                })
             }
         };
         if let Some(result) = inline {
@@ -167,6 +151,31 @@ where
 fn overloaded() -> ResultBody {
     ResultBody::Error {
         code: ErrorCode::Overloaded,
+    }
+}
+
+/// Admit one bounded job, or answer `overloaded` inline when the limit is
+/// reached. The permit lives exactly as long as the job; the reply path has
+/// nowhere to report, so its failures surface through the dispatcher
+/// noticing the finished writer.
+fn spawn_job(
+    jobs: &mut JoinSet<()>,
+    limiter: &Arc<Semaphore>,
+    reply_tx: &mpsc::Sender<Vec<u8>>,
+    id: u32,
+    work: impl Future<Output = ResultBody> + Send + 'static,
+) -> Option<ResultBody> {
+    match limiter.clone().try_acquire_owned() {
+        Ok(permit) => {
+            let reply_tx = reply_tx.clone();
+            jobs.spawn(async move {
+                let _permit = permit;
+                let result = work.await;
+                send_reply(&reply_tx, id, result).await;
+            });
+            None
+        }
+        Err(_) => Some(overloaded()),
     }
 }
 
@@ -202,6 +211,13 @@ fn write_loop(
 ) -> Result<(), FrameError> {
     while let Some(reply) = replies.blocking_recv() {
         framing::write_frame(&mut writer, &reply)?;
+        // Drain whatever already queued behind it before flushing: one
+        // syscall per batch under load, while a lone reply still flushes
+        // immediately.
+        while let Ok(reply) = replies.try_recv() {
+            framing::write_frame(&mut writer, &reply)?;
+        }
+        writer.flush()?;
     }
     Ok(())
 }

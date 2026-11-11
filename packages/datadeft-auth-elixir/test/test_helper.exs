@@ -30,7 +30,7 @@ defmodule DatadeftAuth.TestSupport do
   end
 
   @doc "An auth config for the executable's fake mode with fresh random keys."
-  def fake_config(service_overrides \\ %{}) do
+  def fake_config do
     key = fn -> :crypto.strong_rand_bytes(32) |> Base.encode64() end
     now = System.os_time(:second)
 
@@ -49,11 +49,7 @@ defmodule DatadeftAuth.TestSupport do
 
     %{
       mode: :fake,
-      service:
-        Map.merge(
-          %{terms_version: "test-terms-v1", privacy_version: "test-privacy-v1"},
-          service_overrides
-        ),
+      service: %{terms_version: "test-terms-v1", privacy_version: "test-privacy-v1"},
       email: %{
         link_base_url: "https://auth.example.test/magic?token=",
         subject: "Sign in",

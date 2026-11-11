@@ -6,8 +6,8 @@ defmodule DatadeftAuthFlowTest do
   @email "flow-user@example.test"
   @consent [terms_accepted: true, privacy_accepted: true]
 
-  defp start_configured(overrides \\ %{}) do
-    pid = start_supervised!({DatadeftAuth, [config: fake_config(overrides)]})
+  defp start_configured do
+    pid = start_supervised!({DatadeftAuth, [config: fake_config()]})
     ready(pid)
     pid
   end

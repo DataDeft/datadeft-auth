@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use datadeft_magic_link_aws::{
     AuthSecretsConfig, DynamoDbAuthStore, FakeDynamoDbAuthStore, FakeMagicLinkOutbox,
     LoadedAuthSecrets, MagicLinkEmailRenderer, RenderedMagicLinkEmail, SecretRef, SecretVersionRef,
-    SesMagicLinkOutbox, resolve_auth_secrets,
+    SesMagicLinkOutbox, StorageHmacKey, resolve_auth_secrets,
 };
 use datadeft_magic_link_service::{
     AccountDisplay, Clock, DependencyError, KeyRing, LocaleAllowlist, LookupHmacKey,
@@ -24,8 +24,8 @@ use datadeft_pow_core::{
 use rand_core::OsRng;
 
 use crate::protocol::{
-    AccountDisplayPayload, AwsPayload, Command, EmailTemplatePayload, ErrorCode, InitPayload, Mode,
-    PowPayload, ResultBody, SecretRefPayload, SecretsPayload, ServicePayload,
+    AccountDisplayPayload, AppCommand, AwsPayload, EmailTemplatePayload, ErrorCode, InitPayload,
+    Mode, PowPayload, ResultBody, SecretRefPayload, SecretsPayload, ServicePayload,
 };
 
 /// Bodies carry this marker where the rendered magic-link URL belongs.
@@ -49,7 +49,7 @@ pub enum ReadyApp {
 }
 
 impl ReadyApp {
-    pub async fn handle(&self, command: Command) -> ResultBody {
+    pub async fn handle(&self, command: AppCommand) -> ResultBody {
         match self {
             Self::Fake(app) => app.run(command).await,
             Self::Aws(app) => app.run(command).await,
@@ -62,38 +62,25 @@ impl ReadyApp {
     /// covers transient dependency failures, healed by the restart loop.
     pub async fn initialize(payload: InitPayload) -> Result<Self, ErrorCode> {
         let config = service_config(payload.service)?;
-        let email = EmailTemplate::validate(payload.email)?;
+        let email = Arc::new(EmailTemplate::validate(payload.email)?);
         match payload.mode {
             Mode::Fake => {
                 if payload.aws.is_some() {
                     return Err(ErrorCode::Configuration);
                 }
                 let secrets = inline_secrets(payload.secrets)?;
-                let pow = pow_state(payload.pow, &secrets)?;
-                let LoadedAuthSecrets {
-                    lookup_hmac_key,
-                    storage_hmac_key,
-                    previous_lookup_hmac_key,
-                    confirm_keyring,
-                    session_keyring,
-                    ..
-                } = secrets;
+                let (shared, storage_hmac_key, _) =
+                    shared_state(config, email, payload.pow, secrets)?;
                 let outbox = FakeMagicLinkOutbox::default();
-                Ok(Self::Fake(Arc::new(App {
+                Ok(Self::Fake(Arc::new(App::assemble(
+                    shared,
                     // The fake store keys records with the active key only;
                     // the storage-side previous-key fallback is a DynamoDB
                     // adapter behavior exercised by that crate's tests.
-                    store: FakeDynamoDbAuthStore::new(storage_hmac_key),
-                    outbox: outbox.clone(),
-                    dev_outbox: Some(outbox),
-                    config,
-                    lookup_hmac_key,
-                    previous_lookup_hmac_key,
-                    confirm_keyring,
-                    session_keyring,
-                    email,
-                    pow,
-                })))
+                    FakeDynamoDbAuthStore::new(storage_hmac_key),
+                    outbox.clone(),
+                    Some(outbox),
+                ))))
             }
             Mode::Aws => {
                 let aws = payload.aws.ok_or(ErrorCode::Configuration)?;
@@ -116,16 +103,8 @@ impl ReadyApp {
                         .await
                         .map_err(|_| ErrorCode::Unavailable)?
                 };
-                let pow = pow_state(payload.pow, &secrets)?;
-                let LoadedAuthSecrets {
-                    lookup_hmac_key,
-                    storage_hmac_key,
-                    previous_lookup_hmac_key,
-                    previous_storage_hmac_key,
-                    confirm_keyring,
-                    session_keyring,
-                    ..
-                } = secrets;
+                let (shared, storage_hmac_key, previous_storage_hmac_key) =
+                    shared_state(config, email, payload.pow, secrets)?;
                 let mut store = DynamoDbAuthStore::new(
                     aws_sdk_dynamodb::Client::new(&sdk),
                     aws.table.clone(),
@@ -136,21 +115,15 @@ impl ReadyApp {
                 }
                 if aws.fake_outbox {
                     let outbox = FakeMagicLinkOutbox::default();
-                    return Ok(Self::AwsLocal(Arc::new(App {
+                    return Ok(Self::AwsLocal(Arc::new(App::assemble(
+                        shared,
                         store,
-                        outbox: outbox.clone(),
-                        dev_outbox: Some(outbox),
-                        config,
-                        lookup_hmac_key,
-                        previous_lookup_hmac_key,
-                        confirm_keyring,
-                        session_keyring,
-                        email,
-                        pow,
-                    })));
+                        outbox.clone(),
+                        Some(outbox),
+                    ))));
                 }
                 let renderer = TemplateRenderer {
-                    template: email.clone(),
+                    template: shared.email.clone(),
                 };
                 let outbox = SesMagicLinkOutbox::new(
                     aws_sdk_sesv2::Client::new(&sdk),
@@ -159,21 +132,57 @@ impl ReadyApp {
                 )
                 .with_reply_to(&aws.reply_to)
                 .map_err(|_| ErrorCode::Configuration)?;
-                Ok(Self::Aws(Arc::new(App {
-                    store,
-                    outbox,
-                    dev_outbox: None,
-                    config,
-                    lookup_hmac_key,
-                    previous_lookup_hmac_key,
-                    confirm_keyring,
-                    session_keyring,
-                    email,
-                    pow,
-                })))
+                Ok(Self::Aws(Arc::new(App::assemble(
+                    shared, store, outbox, None,
+                ))))
             }
         }
     }
+}
+
+/// The store-independent half of an initialized `App`, so the per-backend
+/// construction sites stay in sync by construction instead of by hand.
+struct Shared {
+    config: MagicLinkServiceConfig,
+    lookup_hmac_key: LookupHmacKey,
+    previous_lookup_hmac_key: Option<LookupHmacKey>,
+    confirm_keyring: KeyRing<MagicLinkConfirmCookie>,
+    session_keyring: KeyRing<SessionCookie>,
+    email: Arc<EmailTemplate>,
+    pow: Option<PowState>,
+}
+
+/// Builds the shared state from the loaded secrets (the one destructuring
+/// site) and hands back the storage keys the store constructors consume.
+fn shared_state(
+    config: MagicLinkServiceConfig,
+    email: Arc<EmailTemplate>,
+    pow: Option<PowPayload>,
+    secrets: LoadedAuthSecrets,
+) -> Result<(Shared, StorageHmacKey, Option<StorageHmacKey>), ErrorCode> {
+    let pow = pow_state(pow, &secrets)?;
+    let LoadedAuthSecrets {
+        lookup_hmac_key,
+        storage_hmac_key,
+        previous_lookup_hmac_key,
+        previous_storage_hmac_key,
+        confirm_keyring,
+        session_keyring,
+        ..
+    } = secrets;
+    Ok((
+        Shared {
+            config,
+            lookup_hmac_key,
+            previous_lookup_hmac_key,
+            confirm_keyring,
+            session_keyring,
+            email,
+            pow,
+        },
+        storage_hmac_key,
+        previous_storage_hmac_key,
+    ))
 }
 
 pub struct App<Store, Outbox> {
@@ -187,9 +196,41 @@ pub struct App<Store, Outbox> {
     previous_lookup_hmac_key: Option<LookupHmacKey>,
     confirm_keyring: KeyRing<MagicLinkConfirmCookie>,
     session_keyring: KeyRing<SessionCookie>,
-    email: EmailTemplate,
+    /// Shared with the outbox renderer in SES mode, never duplicated.
+    email: Arc<EmailTemplate>,
     /// Present only when initialization configured the PoW admission gate.
     pow: Option<PowState>,
+}
+
+impl<Store, Outbox> App<Store, Outbox> {
+    fn assemble(
+        shared: Shared,
+        store: Store,
+        outbox: Outbox,
+        dev_outbox: Option<FakeMagicLinkOutbox>,
+    ) -> Self {
+        let Shared {
+            config,
+            lookup_hmac_key,
+            previous_lookup_hmac_key,
+            confirm_keyring,
+            session_keyring,
+            email,
+            pow,
+        } = shared;
+        Self {
+            store,
+            outbox,
+            dev_outbox,
+            config,
+            lookup_hmac_key,
+            previous_lookup_hmac_key,
+            confirm_keyring,
+            session_keyring,
+            email,
+            pow,
+        }
+    }
 }
 
 /// Validated proof-of-work policy plus the keys it runs on.
@@ -298,7 +339,6 @@ impl<Store, Outbox> App<Store, Outbox> {
 }
 
 /// Application-supplied email content, validated at initialization.
-#[derive(Clone)]
 pub(crate) struct EmailTemplate {
     link_base_url: String,
     subject: String,
@@ -340,7 +380,7 @@ impl EmailTemplate {
 /// Renders the application's template with the bearer landing URL. One
 /// template for every locale in v1; the resolved locale is not yet used.
 pub struct TemplateRenderer {
-    template: EmailTemplate,
+    template: Arc<EmailTemplate>,
 }
 
 impl MagicLinkEmailRenderer for TemplateRenderer {

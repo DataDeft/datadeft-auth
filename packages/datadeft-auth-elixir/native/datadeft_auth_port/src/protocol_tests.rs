@@ -17,7 +17,7 @@ fn parses_operation_payloads_strictly() {
     )
     .unwrap();
     match request.command {
-        Command::RequestLink(payload) => {
+        Command::App(AppCommand::RequestLink(payload)) => {
             assert_eq!(payload.email, "a@b.test");
             assert!(payload.terms_accepted && payload.privacy_accepted);
             assert!(payload.locale.is_none());

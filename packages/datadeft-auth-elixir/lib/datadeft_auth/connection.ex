@@ -380,14 +380,19 @@ defmodule DatadeftAuth.Connection do
   defp valid_config?(nil), do: true
 
   defp valid_config?(config) when is_map(config) do
-    match?(%{mode: mode} when mode in [:fake, :aws], config) and
-      case Jason.encode(config) do
-        {:ok, encoded} -> byte_size(encoded) <= Protocol.max_frame() - 128
-        _ -> false
-      end
+    match?(%{mode: mode} when mode in [:fake, :aws], config) and init_frame_fits?(config)
   end
 
   defp valid_config?(_), do: false
+
+  # Measures the frame the connection will actually send (init always goes
+  # as wire ID 2: the handshake takes 1 on every connect) against the same
+  # bound send_request enforces, so one authority decides the size.
+  defp init_frame_fits?(config) do
+    byte_size(Protocol.request(2, :init, config)) <= Protocol.max_frame() + 4
+  rescue
+    _ -> false
+  end
 
   defp valid_keys?(keys), do: Enum.all?(keys, &(&1 in @allowed)) and keys == Enum.uniq(keys)
 

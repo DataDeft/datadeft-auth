@@ -108,7 +108,7 @@ dependency floors and lints verbatim from the repository root.
 
 - Rust serde/serde_json: strict, typed, bounded protocol parsing.
 - Rust tokio: bounded concurrent job execution over the Port pipe, required
-  by the AWS SDK clients this process will own.
+  by the AWS SDK clients this process owns.
 - Rust rand_core (getrandom): OS-backed CSPRNG for the service entropy inputs.
 - The workspace `datadeft-*` service/adapter crates (including
   `datadeft-pow-core` for the admission gate) own all cryptography; the port

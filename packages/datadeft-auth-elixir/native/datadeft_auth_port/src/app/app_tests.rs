@@ -64,7 +64,7 @@ fn solve(chg: &str, dif: u8) -> (String, String) {
 }
 
 async fn admit(app: &ReadyApp, proof_cookie: &str) -> ResultBody {
-    app.handle(Command::PowAdmit(crate::protocol::PowAdmitPayload {
+    app.handle(AppCommand::PowAdmit(crate::protocol::PowAdmitPayload {
         proof_cookie: proof_cookie.to_owned(),
     }))
     .await
@@ -79,7 +79,8 @@ async fn pow_flow_mints_verifies_and_admits_within_the_shared_lifetime_budget() 
     .await
     .expect("initialized with pow");
 
-    let ResultBody::PowChallenge { chg, dif, tim, tag } = app.handle(Command::PowChallenge).await
+    let ResultBody::PowChallenge { chg, dif, tim, tag } =
+        app.handle(AppCommand::PowChallenge).await
     else {
         panic!("challenge expected");
     };
@@ -98,7 +99,7 @@ async fn pow_flow_mints_verifies_and_admits_within_the_shared_lifetime_budget() 
         admitted: false,
         proof_cookie: None,
         mint_to_verify_ms: None,
-    } = app.handle(Command::PowVerify(tampered)).await
+    } = app.handle(AppCommand::PowVerify(tampered)).await
     else {
         panic!("tampered solution must be refused uniformly");
     };
@@ -108,7 +109,7 @@ async fn pow_flow_mints_verifies_and_admits_within_the_shared_lifetime_budget() 
         proof_cookie: Some(cookie),
         ..
     } = app
-        .handle(Command::PowVerify(crate::protocol::PowVerifyPayload {
+        .handle(AppCommand::PowVerify(crate::protocol::PowVerifyPayload {
             chg,
             sol,
             non,
@@ -141,7 +142,7 @@ async fn pow_policy_is_validated_at_init_and_required_for_the_operations() {
     let app = initialized(None).await.expect("initialized without pow");
     let ResultBody::Error {
         code: ErrorCode::Configuration,
-    } = app.handle(Command::PowChallenge).await
+    } = app.handle(AppCommand::PowChallenge).await
     else {
         panic!("pow_challenge without the gate must be a configuration error");
     };

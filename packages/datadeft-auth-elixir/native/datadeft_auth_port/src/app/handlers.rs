@@ -16,7 +16,7 @@ use rand_core::{OsRng, RngCore};
 
 use super::{App, WallClock, now_unix_millis};
 use crate::protocol::{
-    Command, ConfirmPayload, ErrorCode, FlowStatePayload, LandingPayload, OutboxPeekPayload,
+    AppCommand, ConfirmPayload, ErrorCode, FlowStatePayload, LandingPayload, OutboxPeekPayload,
     PowAdmitPayload, PowVerifyPayload, RequestLinkPayload, ResultBody, SessionPayload,
 };
 
@@ -29,21 +29,20 @@ where
         + Sync,
     Outbox: MagicLinkOutbox + Sync,
 {
-    /// Dispatch one authenticated-state command. Handshake, ping and init
-    /// never reach this; the dispatcher owns them.
-    pub(crate) async fn run(&self, command: Command) -> ResultBody {
+    /// Dispatch one authenticated-state command; the lifecycle commands are
+    /// a separate type the dispatcher owns, so this match is total.
+    pub(crate) async fn run(&self, command: AppCommand) -> ResultBody {
         match command {
-            Command::RequestLink(payload) => self.request_link(payload).await,
-            Command::Landing(payload) => self.landing(payload).await,
-            Command::FlowState(payload) => self.flow_state(payload).await,
-            Command::Confirm(payload) => self.confirm(payload).await,
-            Command::ValidateSession(payload) => self.validate(payload).await,
-            Command::Logout(payload) => self.logout(payload).await,
-            Command::FakeLastMagicLink(payload) => self.fake_last_magic_link(payload),
-            Command::PowChallenge => self.pow_challenge(),
-            Command::PowVerify(payload) => self.pow_verify(payload),
-            Command::PowAdmit(payload) => self.pow_admit(payload).await,
-            Command::Handshake | Command::Ping | Command::Init(_) => error(ErrorCode::Internal),
+            AppCommand::RequestLink(payload) => self.request_link(payload).await,
+            AppCommand::Landing(payload) => self.landing(payload).await,
+            AppCommand::FlowState(payload) => self.flow_state(payload).await,
+            AppCommand::Confirm(payload) => self.confirm(payload).await,
+            AppCommand::ValidateSession(payload) => self.validate(payload).await,
+            AppCommand::Logout(payload) => self.logout(payload).await,
+            AppCommand::FakeLastMagicLink(payload) => self.fake_last_magic_link(payload),
+            AppCommand::PowChallenge => self.pow_challenge(),
+            AppCommand::PowVerify(payload) => self.pow_verify(payload),
+            AppCommand::PowAdmit(payload) => self.pow_admit(payload).await,
         }
     }
 
@@ -90,18 +89,16 @@ where
                 cookie_max_age_secs: Some(outcome.cookie_max_age_secs()),
             },
             // The landing answer is uniform for every unusable link state.
-            Err(failure) => match failure.public_error() {
-                MagicLinkServiceError::BadRequest | MagicLinkServiceError::MagicLinkUnavailable => {
-                    ResultBody::Landing {
-                        usable: false,
-                        confirm_cookie: None,
-                        confirmation: None,
-                        account: None,
-                        cookie_max_age_secs: None,
-                    }
-                }
-                other => service_error(other),
-            },
+            Err(failure) => unusable_or_error(
+                failure,
+                ResultBody::Landing {
+                    usable: false,
+                    confirm_cookie: None,
+                    confirmation: None,
+                    account: None,
+                    cookie_max_age_secs: None,
+                },
+            ),
         }
     }
 
@@ -118,16 +115,14 @@ where
                 account: Some(state.account_identity().as_str().to_owned()),
                 confirmation: Some(state.confirmation_value().to_owned()),
             },
-            Err(failure) => match failure.public_error() {
-                MagicLinkServiceError::BadRequest | MagicLinkServiceError::MagicLinkUnavailable => {
-                    ResultBody::FlowState {
-                        usable: false,
-                        account: None,
-                        confirmation: None,
-                    }
-                }
-                other => service_error(other),
-            },
+            Err(failure) => unusable_or_error(
+                failure,
+                ResultBody::FlowState {
+                    usable: false,
+                    account: None,
+                    confirmation: None,
+                },
+            ),
         }
     }
 
@@ -374,6 +369,16 @@ where
 
 fn flow_error(failure: MagicLinkFlowError) -> ResultBody {
     service_error(failure.public_error())
+}
+
+/// The one rule for the scanner-facing reads: the two public refusals
+/// collapse into the operation's uniform unusable shape, and only
+/// infrastructure failures surface as error codes.
+fn unusable_or_error(failure: MagicLinkFlowError, unusable: ResultBody) -> ResultBody {
+    match failure.public_error() {
+        MagicLinkServiceError::BadRequest | MagicLinkServiceError::MagicLinkUnavailable => unusable,
+        other => service_error(other),
+    }
 }
 
 fn service_error(failure: MagicLinkServiceError) -> ResultBody {

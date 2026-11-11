@@ -39,6 +39,8 @@ pub fn read_frame(reader: &mut impl Read) -> Result<Option<Vec<u8>>, FrameError>
     Ok(Some(frame))
 }
 
+/// Writes one length-prefixed frame. Flushing stays with the caller, which
+/// knows whether more frames are queued behind this one.
 pub fn write_frame(writer: &mut impl Write, frame: &[u8]) -> Result<(), FrameError> {
     if frame.is_empty() || frame.len() > MAX_FRAME_BYTES {
         return Err(FrameError::Invalid);
@@ -46,7 +48,6 @@ pub fn write_frame(writer: &mut impl Write, frame: &[u8]) -> Result<(), FrameErr
     let length = u32::try_from(frame.len()).map_err(|_| FrameError::Invalid)?;
     writer.write_all(&length.to_be_bytes())?;
     writer.write_all(frame)?;
-    writer.flush()?;
     Ok(())
 }
 
