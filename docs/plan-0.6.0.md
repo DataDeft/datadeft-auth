@@ -2,14 +2,14 @@
 
 Status: draft. This plan lists the work for 0.6.0. 0.6.0 is a breaking
 pre-1.0 release, like 0.5.0. Consumers test it through a git ref. The project
-publishes no release candidates.
+publishes no release candidates. Scope entries are proposals, not implementation
+approval; each requires the six-question feature review and owner-approved scope.
 
 ## 1. Scope
 
 | Id | Item | Priority | Source |
 | --- | --- | --- | --- |
 | V06-001 | GDPR erasure (`erase_user`) | Must | CeleraTax #11, deferred from 0.5.0 |
-| V06-002 | Optional `aud` claim in session and confirm cookies | Should | CeleraTax |
 | V06-003 | Locale-keyed confirm pages in redirect landing mode | Should | CeleraTax |
 | V06-004 | Finer internal reasons for landing and confirm failures | Should | CeleraTax |
 | V06-005 | Docs: `Referrer-Policy` `strict-origin` compared with `no-referrer` | Should | CeleraTax |
@@ -49,33 +49,22 @@ Acceptance:
 - `docs/security.md` "Retention" and `docs/formal-methods.md` (ERASE-INV-001
   to 005) say "implemented".
 
-### V06-002 Optional `aud` claim
-
-An app with more than one audience (for example an API and an admin site) can
-bind a cookie to one audience. A cookie for one audience then fails on the
-other.
-
-- Add an optional audience to the session and confirm cookie bodies.
-- Without a configured audience, the behavior stays as in 0.5.0.
-- A configured audience is checked in constant time and fails closed.
-- Tests: match, mismatch, missing, and a tamper test.
-
-Open question: per-cookie audience string, or a keyring-level audience in the
-HKDF info. The keyring-level form needs no new body field.
-
 ### V06-003 Locale-keyed confirm pages
 
 In redirect landing mode, one configured page serves every link. Apps with
 per-locale static pages (for example `/hu/login/confirm`) need one page per
 locale.
 
-- Map an allowlisted locale to a validated same-origin page.
-- The landing chooses the page from the locale that the link was sent in, or
-  from a fixed default.
+Existing `LocaleAllowlist`, email locale and per-route redirect APIs already
+support this integration. Use fixed localized landing routes, each selecting its
+configured page before token lookup. Unknown hints use the fixed default.
+
+- Keep this to example wiring, translations and integration guidance.
+- Do not add locale storage, signed-query machinery or authentication claims.
+- Valid and invalid links on the same route have identical status and Location.
 - `Location` still carries no token material.
 
-Open question: the landing has no locale today. The locale must come from the
-link record (stored at request time) or from a query value that the app signs.
+Confirm the consuming application's language and UX requirements before merge.
 
 ### V06-004 Finer internal reasons
 
@@ -127,10 +116,12 @@ exist. The "one supported way" rule says to remove compatibility paths.
 The `__Host-` prefix makes the browser refuse the cookie unless it is
 `Secure`, has `Path=/` and has no `Domain`. A sibling subdomain then cannot
 set or overwrite it. The session cookie meets these conditions. The confirm
-cookie cannot use the prefix, because it needs a narrow path.
+cookie's default narrow path does not meet these prefix constraints.
 
-Open question: rename the session cookie to `__Host-dd_session` by default,
-or offer the prefix as an option. A rename ends every live session once.
+Keep existing names and narrow confirmation-cookie paths by default. Confirm
+whether sibling-domain cookie planting is relevant to the consuming deployment
+and whether an opt-in library policy justifies its API and migration cost.
+Changing the name requires reauthentication; it does not revoke server records.
 `insecure_local(..)` cannot use the prefix, because it is not `Secure`.
 
 ## 3. Candidates (take only when they fix a real problem)
