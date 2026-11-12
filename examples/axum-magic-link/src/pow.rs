@@ -11,7 +11,7 @@ use datadeft_magic_link_axum::{APPLICATION_JSON, MagicLinkHttpError, guarded_bod
 use datadeft_magic_link_service::{RateLimitDecision, RateLimitKey, RateLimiter};
 use datadeft_pow_axum::{
     PowFlowError, PowSolutionRequest, ProofBudget, ProofBudgetDecision, ProofBudgetUnavailable,
-    mint_pow_challenge, verify_pow_solution,
+    mint_pow_challenge, proof_budget_key, verify_pow_solution,
 };
 use rand_core::{OsRng, RngCore};
 
@@ -76,8 +76,8 @@ impl ProofBudget for SharedProofBudget<'_> {
         expires_at_unix: u64,
         now_unix: u64,
     ) -> Result<ProofBudgetDecision, ProofBudgetUnavailable> {
-        let key = RateLimitKey::parse(&format!("pow:budget:{tid}"))
-            .map_err(|_| ProofBudgetUnavailable)?;
+        let key =
+            RateLimitKey::parse(&proof_budget_key(tid)).map_err(|_| ProofBudgetUnavailable)?;
         match self
             .0
             .check_lifetime_limit(&key, per_solve, expires_at_unix, now_unix)
