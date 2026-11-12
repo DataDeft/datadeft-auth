@@ -87,6 +87,8 @@ mod error;
 mod ops;
 mod proof_cookie;
 mod secret;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 
 pub use budget::{
     MAX_PROOF_BUDGET_PER_SOLVE, ProofBudget, ProofBudgetDecision, ProofBudgetPolicy,
@@ -113,7 +115,5 @@ mod freshness_tests;
 mod property_tests;
 #[cfg(test)]
 mod rejection_tests;
-#[cfg(test)]
-mod test_support;
 #[cfg(test)]
 mod vector_tests;

@@ -47,11 +47,11 @@ proptest! {
     ) {
         let s = PowSecret::new(secret_bytes);
         let challenge = mint_challenge(&s, dif, at(TIM_UNIX), entropy).unwrap();
-        let (nonce, hash) = solve_like_worker(&challenge.chg, dif);
+        let (non, sol) = solve(&challenge.chg, dif);
         let sol = Solution {
             chg: challenge.chg,
-            sol: hash,
-            non: nonce.to_string(),
+            sol,
+            non,
             dif,
             tim: challenge.tim,
             tag: challenge.tag,
@@ -83,11 +83,11 @@ proptest! {
     ) {
         let s = secret();
         let challenge = mint_challenge(&s, dif, at(TIM_UNIX), entropy).unwrap();
-        let (nonce, hash) = solve_like_worker(&challenge.chg, dif);
+        let (non, sol) = solve(&challenge.chg, dif);
         let mut sol = Solution {
             chg: challenge.chg,
-            sol: hash,
-            non: nonce.to_string(),
+            sol,
+            non,
             dif,
             tim: challenge.tim,
             tag: challenge.tag,
@@ -116,7 +116,10 @@ proptest! {
                 sol.non = match variant {
                     0 => format!("{}0", sol.non),
                     1 => format!("1{}", sol.non),
-                    _ => nonce.wrapping_add(1).to_string(),
+                    _ => {
+                        let nonce: u64 = sol.non.parse().unwrap();
+                        nonce.wrapping_add(1).to_string()
+                    }
                 };
                 PowError::InvalidSolution
             }
