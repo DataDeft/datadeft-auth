@@ -19,7 +19,8 @@ use datadeft_magic_link_service::{
 };
 use datadeft_pow_core::{
     DEFAULT_POW_PROOF_TTL_SECS, MAX_DIFFICULTY, POW_PROOF_MAX_AGE_SECS, PowProofCookie, PowSecret,
-    Solution, UnixMillis, Verified, validate_challenge_max_age_secs, verify_solution,
+    ProofBudgetPolicy, Solution, UnixMillis, Verified, validate_challenge_max_age_secs,
+    verify_solution,
 };
 use rand_core::OsRng;
 
@@ -34,10 +35,6 @@ const URL_MARKER: &str = "{magic_link_url}";
 /// Default challenge lifetime: the documented 2-minute TTL baseline, matching
 /// the shipped HTTP deployment.
 const DEFAULT_CHALLENGE_MAX_AGE_SECS: u64 = 120;
-
-/// Ceiling on the per-solve budget, mirroring the HTTP adapter's
-/// `MAX_PROOF_BUDGET_PER_SOLVE`: beyond this the gate stops gating.
-const MAX_PROOF_BUDGET_PER_SOLVE: u32 = 1_000;
 
 /// The initialized backend; one monomorphized `App` per supported pairing.
 #[derive(Clone)]
@@ -262,8 +259,7 @@ fn pow_state(
         || validate_challenge_max_age_secs(challenge_max_age_secs).is_err()
         || proof_ttl_secs == 0
         || proof_ttl_secs > POW_PROOF_MAX_AGE_SECS
-        || pow.proof_budget_per_solve == 0
-        || pow.proof_budget_per_solve > MAX_PROOF_BUDGET_PER_SOLVE
+        || ProofBudgetPolicy::new(pow.proof_budget_per_solve).is_err()
     {
         return Err(ErrorCode::Configuration);
     }

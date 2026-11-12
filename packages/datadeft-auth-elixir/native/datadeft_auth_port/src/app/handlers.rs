@@ -10,7 +10,8 @@ use datadeft_magic_link_service::{
     SessionRepository, SessionValidationError, refresh_session_cookie, validate_session,
 };
 use datadeft_pow_core::{
-    MAX_FUTURE_SKEW_SECS, Solution, mint_pow_proof_cookie, verify_pow_proof_cookie,
+    MAX_FUTURE_SKEW_SECS, Solution, mint_pow_proof_cookie, proof_budget_expiry, proof_budget_key,
+    verify_pow_proof_cookie,
 };
 use rand_core::{OsRng, RngCore};
 
@@ -310,16 +311,14 @@ where
         ) else {
             return ResultBody::PowAdmit { admitted: false };
         };
-        // The budget's expiry is fixed at the first spend, far enough out to
-        // cover every proof cookie the solve can produce: solutions can be
-        // re-posted while the challenge is valid, each cookie lives the full
-        // TTL, within the clock-skew tolerance either way.
-        let expires_at_unix = now
-            .saturating_add(pow.proof_ttl_secs)
-            .saturating_add(pow.challenge_max_age_secs)
-            .saturating_add(MAX_FUTURE_SKEW_SECS.saturating_mul(2));
+        let expires_at_unix = proof_budget_expiry(
+            now,
+            pow.proof_ttl_secs,
+            pow.challenge_max_age_secs,
+            MAX_FUTURE_SKEW_SECS,
+        );
         // `tid` is 64 lowercase hex characters: no personal data or secrets.
-        let Ok(key) = RateLimitKey::parse(&format!("pow:budget:{}", verified.tid())) else {
+        let Ok(key) = RateLimitKey::parse(&proof_budget_key(verified.tid())) else {
             return error(ErrorCode::Unavailable);
         };
         match self
