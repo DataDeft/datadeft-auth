@@ -74,19 +74,30 @@ a route's prefix names its owner, and production never mounts `/dev/*`. The
 paths are deployment contract, not just code: edge allowlists (WAF, ALB,
 gateway or CDN path rules) must change in the same rollout as the router.
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | `/auth/magic-link/request` | Request the magic-link email |
-| GET | `/auth/magic-link/landing` | Scanner-safe landing (never consumes); the emailed URL via `link_base_url` |
-| GET | `/auth/magic-link/open` | Redirect-landing variant |
-| GET | `/auth/magic-link/flow-state` | Flow state bound to the confirm cookie |
-| POST | `/auth/magic-link/consume` | Consume the link and create the session atomically |
-| GET | `/auth/magic-link/confirm` (+ `.js`) | Static confirmation page (redirect mode) |
-| GET | `/auth/magic-link/complete` | Signed-in landing page |
-| POST | `/auth/pow/create` | Mint a proof-of-work challenge |
-| POST | `/auth/pow/validate` | Verify a solve, set the `dd_pow` proof cookie |
-| POST | `/auth/logout` | CSRF-protected session revocation |
-| GET | `/dev`, `/dev/me`, `/dev/latest-magic-link` | Development tooling only; never mounted in production |
+| Method | Path | Purpose | Returns on success |
+|--------|------|---------|--------------------|
+| POST | `/auth/magic-link/request` | Request the magic-link email | `200` JSON `{"status":"ok"}` — generic whether or not an email was sent (non-enumerable) |
+| GET | `/auth/magic-link/landing` | Scanner-safe landing (never consumes); the emailed URL via `link_base_url` | `200` HTML confirm page + confirm-cookie `Set-Cookie`; an unusable link gets the **same `200`** with a generic page and no cookie |
+| GET | `/auth/magic-link/open` | Redirect-landing variant | `303` to the configured static page; confirm-cookie `Set-Cookie` only when the link is usable (never a clearing header) |
+| GET | `/auth/magic-link/flow-state` | Flow state bound to the confirm cookie | `200` JSON `{"usable":true,"account":…,"confirmation":…}`; any unusable state is `200` `{"usable":false}` (+ a clearing cookie, same-origin only) |
+| POST | `/auth/magic-link/consume` | Consume the link and create the session atomically | `303` to `/auth/magic-link/complete` + session `Set-Cookie` + confirm-cookie clear (an SPA returns `200`/`204` JSON instead) |
+| GET | `/auth/magic-link/confirm` (+ `.js`) | Static confirmation page (redirect mode) | `200` `text/html` / `text/javascript`, static |
+| GET | `/auth/magic-link/complete` | Signed-in landing page | `200` HTML, static |
+| POST | `/auth/pow/create` | Mint a proof-of-work challenge | `200` JSON challenge in the client wire shape (`chg`, `dif`, `tim`, `tag`) |
+| POST | `/auth/pow/validate` | Verify a solve, set the `dd_pow` proof cookie | `204` + `dd_pow` `Set-Cookie`; a failed solve is `401` + `WWW-Authenticate: DD-PoW` |
+| POST | `/auth/logout` | CSRF-protected session revocation | `303` + clearing session `Set-Cookie`; a cross-site POST gets the app's own `403` (never the library's) |
+| GET | `/dev`, `/dev/me`, `/dev/latest-magic-link` | Development tooling only; never mounted in production | `200` HTML; `/dev/latest-magic-link` is `404` when no email is queued |
+
+Refusals shared by every route follow the HTTP response contract
+(`docs/security.md`): `400` with the constant JSON body
+`{"error":…,"message":…}` for shape errors (bad content type, oversized or
+unparsable body), `401` with `WWW-Authenticate: DD-PoW` or `DD-Session` for
+failed proof or session checks, and one constant no-store `503` for every
+dependency failure or internal fault — the library never sends `403`, `500`,
+or `429`. Every security-sensitive response carries `Cache-Control: no-store`,
+`Referrer-Policy: strict-origin`, `X-Frame-Options: DENY`, and the locked-down
+CSP from `apply_magic_link_security_headers`. On a rejected `consume` (`400`)
+the confirm cookie is cleared; on `503` it is preserved so the user can retry.
 
 A deployment mounts one landing mode: server-rendered (`landing` + `consume`)
 or redirect mode (`open` + `flow-state` + `confirm` + `consume`). There is no
