@@ -17,9 +17,7 @@ use datadeft_magic_link_service::{
     RateLimitKey, SessionId, UserId,
 };
 
-use crate::error::{
-    AwsAdapterError, map_get_item_error, map_put_item_error, map_scan_error, map_update_item_error,
-};
+use crate::error::{AwsAdapterError, map_get_item_error, map_put_item_error, map_scan_error};
 use crate::hmac_key::{
     EMAIL_LOOKUP_HMAC_PREFIX, RATE_LOOKUP_HMAC_PREFIX, SESSION_LOOKUP_HMAC_PREFIX, StorageHmacKey,
     StorageHmacKeys,

@@ -613,9 +613,13 @@ best-effort. Per-solve lifetime counters do not restart.
 
 Cookie helpers use safe settings by default:
 
-- Lower `snake_case` names. v1 does not require `__Host-` and `__Secure-`.
-  Open for 0.6: the `__Host-` prefix for the session cookie. The confirm
-  cookie cannot use it because it needs a narrow path.
+- Lower `snake_case` names by default. The magic-link Axum cookie configs
+  optionally accept an exact `__Host-` prefix with a lower `snake_case`
+  suffix, requiring Secure, `Path=/` and host-only scope. Local plain HTTP
+  rejects it. The default narrow-path confirm cookie stays unprefixed;
+  opting it in requires explicitly widening its path to `/`. `__Secure-`
+  is not supported. See [cookie-name adoption](integration.md#adopting-__host--cookie-names)
+  for the application-owned migration and its temporary security trade-off.
 - `HttpOnly` for auth cookies.
 - `Secure` outside local development.
 - Conservative `SameSite`.
