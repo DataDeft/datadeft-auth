@@ -2,6 +2,11 @@
 
 ## Required reading
 
+Before implementing any feature, read `docs/feature-justification.md`, answer
+its six questions, and obtain project-owner or explicitly delegated approval
+of the justification and scope. This applies to all features, including those
+already in progress before merge; a roadmap entry is not sufficient approval.
+
 Before editing Rust code, read:
 
 - `docs/rust-standards.md`

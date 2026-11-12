@@ -13,50 +13,13 @@ use axum::response::{IntoResponse, Response};
 use datadeft_auth_token_core::cookie_header::select_cookie;
 use datadeft_auth_token_core::keyring::KeyRing;
 use datadeft_pow_core::{
-    PowProofCookie, ProofBudget, ProofBudgetDecision, verify_pow_proof_cookie_with_clock_skew,
+    PowProofCookie, ProofBudget, ProofBudgetDecision, ProofBudgetPolicy, proof_budget_expiry,
+    verify_pow_proof_cookie_with_clock_skew,
 };
 
 use crate::cookie::PowProofCookieConfig;
 use crate::handlers::PowPolicy;
 use crate::response::{pow_required_response, unavailable_response};
-
-/// Largest accepted per-solve budget.
-pub const MAX_PROOF_BUDGET_PER_SOLVE: u32 = 1_000;
-
-/// How many admissions one solve buys.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct ProofBudgetPolicy {
-    per_solve: u32,
-}
-
-impl ProofBudgetPolicy {
-    /// `per_solve` must be in `1..=MAX_PROOF_BUDGET_PER_SOLVE`.
-    pub fn new(per_solve: u32) -> Result<Self, ProofBudgetPolicyError> {
-        if (1..=MAX_PROOF_BUDGET_PER_SOLVE).contains(&per_solve) {
-            Ok(Self { per_solve })
-        } else {
-            Err(ProofBudgetPolicyError)
-        }
-    }
-
-    /// Admissions per solve.
-    #[must_use]
-    pub fn per_solve(&self) -> u32 {
-        self.per_solve
-    }
-}
-
-/// The per-solve budget is outside `1..=MAX_PROOF_BUDGET_PER_SOLVE`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct ProofBudgetPolicyError;
-
-impl fmt::Display for ProofBudgetPolicyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("per-solve budget must be in 1..=MAX_PROOF_BUDGET_PER_SOLVE")
-    }
-}
-
-impl std::error::Error for ProofBudgetPolicyError {}
 
 /// A request admitted by its proof: one unit of the solve's budget spent.
 #[derive(Clone, Eq, PartialEq)]
@@ -183,10 +146,12 @@ where
 }
 
 fn budget_expiry(cookie_config: &PowProofCookieConfig, policy: PowPolicy, now_unix: u64) -> u64 {
-    now_unix
-        .saturating_add(cookie_config.ttl_secs())
-        .saturating_add(policy.challenge_max_age_secs())
-        .saturating_add(policy.clock_skew_secs().saturating_mul(2))
+    proof_budget_expiry(
+        now_unix,
+        cookie_config.ttl_secs(),
+        policy.challenge_max_age_secs(),
+        policy.clock_skew_secs(),
+    )
 }
 
 #[cfg(test)]

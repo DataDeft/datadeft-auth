@@ -88,7 +88,10 @@ mod ops;
 mod proof_cookie;
 mod secret;
 
-pub use budget::{ProofBudget, ProofBudgetDecision, ProofBudgetUnavailable};
+pub use budget::{
+    MAX_PROOF_BUDGET_PER_SOLVE, ProofBudget, ProofBudgetDecision, ProofBudgetPolicy,
+    ProofBudgetPolicyError, ProofBudgetUnavailable, proof_budget_expiry, proof_budget_key,
+};
 pub use challenge::{Challenge, Solution, Verified};
 pub use clock::UnixMillis;
 pub use error::PowError;

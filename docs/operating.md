@@ -1,5 +1,14 @@
 # Operating model
 
+## Feature justification
+
+Every feature must pass the [feature-justification gate](feature-justification.md)
+before implementation: establish the problem, inspect existing capabilities,
+identify the gap, choose the smallest solution, account for costs, and define
+acceptance criteria. Obtain project-owner or explicitly delegated approval of
+the justification and scope before coding. Apply the same review to in-progress
+features before merge; release-plan inclusion is not sufficient approval.
+
 ## Local development
 
 1. Work in this repository.
@@ -62,6 +71,7 @@ Each agent receives this packet:
 
 ```text
 Goal:
+Approved feature justification and scope (reference, when implementing a feature):
 Owned paths:
 Read-only context:
 Allowed dependencies:
@@ -87,7 +97,9 @@ Follow-up work:
 
 ## Cross-crate changes
 
-Before you change the public API of another crate, write a proposal:
+Cross-crate API review is additional to the feature-justification gate, not a
+substitute for it. Before you change the public API of another crate, write a
+proposal:
 
 ```text
 Producer crate:
