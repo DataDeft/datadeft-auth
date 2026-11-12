@@ -30,7 +30,7 @@ fn init_json(pow: Option<serde_json::Value>) -> serde_json::Value {
         "mode": "fake",
         "service": { "terms_version": "t1", "privacy_version": "p1" },
         "email": {
-            "link_base_url": "https://auth.test/magic?token=",
+            "link_base_url": "https://auth.test/auth/magic-link/landing?token=",
             "subject": "Sign in",
             "text": "Open {magic_link_url}"
         },

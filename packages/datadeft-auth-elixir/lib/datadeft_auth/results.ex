@@ -1,4 +1,4 @@
-# Public result structs. Every field holding bearer or secret material is
+# Public result structs. Bearer material, account identities and user IDs are
 # excluded from Inspect so values cannot leak through logs or crash reports.
 
 defmodule DatadeftAuth.Landing do
@@ -6,9 +6,10 @@ defmodule DatadeftAuth.Landing do
   Scanner-safe landing outcome. `confirm_cookie` is the temporary flow
   state the application stores client-side (HttpOnly cookie); `confirmation`
   is the value the confirmation page submits. Both are secrets and are
-  redacted in `Inspect`. The answer shape is uniform for every unusable link.
+  redacted in `Inspect`, as is the account identity. The answer shape is uniform
+  for every unusable link.
   """
-  @derive {Inspect, except: [:confirm_cookie, :confirmation]}
+  @derive {Inspect, except: [:confirm_cookie, :confirmation, :account]}
   @enforce_keys [:usable]
   defstruct [:usable, :confirm_cookie, :confirmation, :account, :cookie_max_age_secs]
 
@@ -25,9 +26,10 @@ end
 defmodule DatadeftAuth.FlowState do
   @moduledoc """
   Read-only flow state for redirect-landing pages. On `usable: false` the
-  application clears its confirm cookie. `confirmation` is redacted.
+  application clears its confirm cookie. Confirmation and account identity are
+  redacted in `Inspect`.
   """
-  @derive {Inspect, except: [:confirmation]}
+  @derive {Inspect, except: [:confirmation, :account]}
   @enforce_keys [:usable]
   defstruct [:usable, :account, :confirmation]
 
@@ -42,9 +44,9 @@ defmodule DatadeftAuth.Session do
   @moduledoc """
   Successful confirmation outcome. `session_cookie` is the bearer session
   value (set it HttpOnly, Secure, with the configured lifetimes) and is
-  redacted in `Inspect`.
+  redacted in `Inspect`, as is the user identifier.
   """
-  @derive {Inspect, except: [:session_cookie]}
+  @derive {Inspect, except: [:session_cookie, :user_id]}
   @enforce_keys [:session_cookie, :user_id, :user_created]
   defstruct [:session_cookie, :user_id, :user_created, :country]
 
@@ -60,9 +62,10 @@ defmodule DatadeftAuth.Validation do
   @moduledoc """
   Session validation outcome. A `refreshed_cookie` (redacted in `Inspect`)
   re-issues the session cookie with the same `Set-Cookie` settings on a
-  `no-store` response; nil means the presented cookie stays.
+  `no-store` response; nil means the presented cookie stays. The user identifier
+  is also redacted in `Inspect`.
   """
-  @derive {Inspect, except: [:refreshed_cookie]}
+  @derive {Inspect, except: [:refreshed_cookie, :user_id]}
   @enforce_keys [:valid]
   defstruct [:valid, :user_id, :refreshed_cookie]
 

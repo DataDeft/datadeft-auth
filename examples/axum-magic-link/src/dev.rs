@@ -15,7 +15,7 @@ pub(super) async fn index() -> Html<&'static str> {
 pub(super) async fn dev_latest_magic_link(State(state): State<AppState>) -> Response {
     match latest_magic_link(&state.outbox) {
         Some(query) => Html(format!(
-            "<!doctype html><h1>Development outbox</h1><p>This endpoint exposes a local-only bearer magic link for the example app.</p><p><a href=\"/auth/magic-link{query}\">Continue sign in (server-rendered page)</a></p><p><a href=\"/auth/magic-link/open{query}\">Continue sign in (redirect mode, static page)</a></p>",
+            "<!doctype html><h1>Development outbox</h1><p>This endpoint exposes a local-only bearer magic link for the example app.</p><p><a href=\"/auth/magic-link/landing{query}\">Continue sign in (server-rendered page)</a></p><p><a href=\"/auth/magic-link/open{query}\">Continue sign in (redirect mode, static page)</a></p>",
             query = escape_html(&query),
         ))
         .into_response(),

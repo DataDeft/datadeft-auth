@@ -14,6 +14,12 @@ defmodule DatadeftAuth do
   need hand-written child specs to coexist under one supervisor.
   Native work never runs inside BEAM. No request is automatically replayed after
   a timeout or worker failure.
+
+  HTTP routes belong to the consuming application. The reference layout uses
+  `/auth/magic-link/*`, `/auth/pow/*` and `POST /auth/logout`; `/dev/*` is local
+  tooling only. In particular, `GET /auth/magic-link/confirm` serves a page,
+  while `POST /auth/magic-link/consume` calls `confirm/4`. See the README for
+  the full mapping; this module neither mounts routes nor sets HTTP cookies.
   """
 
   alias DatadeftAuth.{
@@ -51,7 +57,9 @@ defmodule DatadeftAuth do
   - `email` carries `link_base_url` (the token is appended), `subject`,
     `text` and optional `html`; bodies must contain `{magic_link_url}` and
     the subject must not (Subject headers are routinely logged in transit,
-    and the URL carries the bearer token).
+    and the URL carries the bearer token). The reference landing URL ends in
+    `/auth/magic-link/landing?token=`; redirect mode uses
+    `/auth/magic-link/open?token=`. The destination stays application-configured.
   - `secrets`: fake mode takes `active_document` (and optionally
     `previous_document`), the auth secret document JSON strings delivered
     once over the private pipe. AWS mode takes `active_ref`/`previous_ref`
@@ -129,16 +137,24 @@ defmodule DatadeftAuth do
   """
   @spec request_link(GenServer.server(), String.t(), keyword()) ::
           {:ok, String.t()} | {:error, Error.t()}
-  def request_link(server, email, opts \\ []) when is_binary(email) and is_list(opts) do
-    payload = %{
-      email: email,
-      terms_accepted: Keyword.get(opts, :terms_accepted, false),
-      privacy_accepted: Keyword.get(opts, :privacy_accepted, false),
-      locale: Keyword.get(opts, :locale)
-    }
+  def request_link(server, email, opts \\ [])
 
-    call(server, {:auth, :request_link, payload})
+  def request_link(server, email, opts) when is_binary(email) and is_list(opts) do
+    if valid_options?(opts, [:terms_accepted, :privacy_accepted, :locale]) do
+      payload = %{
+        email: email,
+        terms_accepted: Keyword.get(opts, :terms_accepted, false),
+        privacy_accepted: Keyword.get(opts, :privacy_accepted, false),
+        locale: Keyword.get(opts, :locale)
+      }
+
+      call(server, {:auth, :request_link, payload})
+    else
+      bad_request()
+    end
   end
+
+  def request_link(_, _, _), do: bad_request()
 
   @doc """
   Scanner-safe landing for an emailed token: validates without consuming and
@@ -149,6 +165,8 @@ defmodule DatadeftAuth do
   def landing(server, token) when is_binary(token),
     do: call(server, {:auth, :landing, %{token: token}})
 
+  def landing(_, _), do: bad_request()
+
   @doc """
   Reads the flow state bound to a confirm cookie (redirect-landing mode).
   On `usable: false` clear the confirm cookie.
@@ -157,24 +175,38 @@ defmodule DatadeftAuth do
   def flow_state(server, confirm_cookie) when is_binary(confirm_cookie),
     do: call(server, {:auth, :flow_state, %{confirm_cookie: confirm_cookie}})
 
+  def flow_state(_, _), do: bad_request()
+
   @doc """
   Confirms a landing: consumes the link and creates the session atomically.
+  In the reference HTTP layout this is `POST /auth/magic-link/consume`, never
+  the GET-only `/auth/magic-link/confirm` page.
   `country` is the trusted-edge signal, never client input. On `:rejected`
-  or `:bad_request` clear the confirm cookie; on `:unavailable` preserve it
-  for an identical retry after backoff.
+  or `:bad_request` clear the confirm cookie. On `:unavailable`, `:timeout`
+  or transport failure, preserve it but do not assume rollback or blindly call
+  confirm again: a fresh public call is not an identical commit retry. Durable
+  reconciliation is an unresolved production gate.
   """
   @spec confirm(GenServer.server(), String.t(), String.t(), keyword()) ::
           {:ok, Session.t()} | {:error, Error.t()}
   def confirm(server, confirm_cookie, confirmation, opts \\ [])
-      when is_binary(confirm_cookie) and is_binary(confirmation) and is_list(opts) do
-    payload = %{
-      confirm_cookie: confirm_cookie,
-      confirmation: confirmation,
-      country: Keyword.get(opts, :country)
-    }
 
-    call(server, {:auth, :confirm, payload})
+  def confirm(server, confirm_cookie, confirmation, opts)
+      when is_binary(confirm_cookie) and is_binary(confirmation) and is_list(opts) do
+    if valid_options?(opts, [:country]) do
+      payload = %{
+        confirm_cookie: confirm_cookie,
+        confirmation: confirmation,
+        country: Keyword.get(opts, :country)
+      }
+
+      call(server, {:auth, :confirm, payload})
+    else
+      bad_request()
+    end
   end
+
+  def confirm(_, _, _, _), do: bad_request()
 
   @doc """
   Validates a session cookie (read-only) and re-issues it when due. Send a
@@ -184,10 +216,18 @@ defmodule DatadeftAuth do
   @spec validate_session(GenServer.server(), String.t(), keyword()) ::
           {:ok, Validation.t()} | {:error, Error.t()}
   def validate_session(server, session_cookie, opts \\ [])
+
+  def validate_session(server, session_cookie, opts)
       when is_binary(session_cookie) and is_list(opts) do
-    payload = %{session_cookie: session_cookie, country: Keyword.get(opts, :country)}
-    call(server, {:auth, :validate_session, payload})
+    if valid_options?(opts, [:country]) do
+      payload = %{session_cookie: session_cookie, country: Keyword.get(opts, :country)}
+      call(server, {:auth, :validate_session, payload})
+    else
+      bad_request()
+    end
   end
+
+  def validate_session(_, _, _), do: bad_request()
 
   @doc """
   Revokes the session server-side. Clear the session cookie only after
@@ -202,13 +242,21 @@ defmodule DatadeftAuth do
   @spec logout(GenServer.server(), String.t(), keyword()) ::
           {:ok, %{revoked: boolean()}} | {:error, Error.t()}
   def logout(server, session_cookie, opts \\ [])
+
+  def logout(server, session_cookie, opts)
       when is_binary(session_cookie) and is_list(opts) do
-    payload = %{session_cookie: session_cookie, country: Keyword.get(opts, :country)}
-    call(server, {:auth, :logout, payload})
+    if valid_options?(opts, [:country]) do
+      payload = %{session_cookie: session_cookie, country: Keyword.get(opts, :country)}
+      call(server, {:auth, :logout, payload})
+    else
+      bad_request()
+    end
   end
 
+  def logout(_, _, _), do: bad_request()
+
   @doc """
-  Mints a proof-of-work challenge for the application's `pow/create` route.
+  Mints a proof-of-work challenge for the application's `POST /auth/pow/create` route.
   Serialize the struct as JSON for the shipping browser client verbatim.
   Requires the `pow` configuration key.
   """
@@ -230,6 +278,8 @@ defmodule DatadeftAuth do
     end
   end
 
+  def pow_verify(_, _), do: bad_request()
+
   @doc """
   Admits one gated request by its proof cookie, spending one unit of the
   solve's shared lifetime budget. `admitted: false` (an unusable proof or an
@@ -241,6 +291,8 @@ defmodule DatadeftAuth do
           {:ok, %{admitted: boolean()}} | {:error, Error.t()}
   def pow_admit(server, proof_cookie) when is_binary(proof_cookie),
     do: call(server, {:auth, :pow_admit, %{proof_cookie: proof_cookie}})
+
+  def pow_admit(_, _), do: bad_request()
 
   # The five client-echoed solution fields, from string or atom keys, with
   # anything extra or missing refused here instead of as a process fault.
@@ -275,7 +327,41 @@ defmodule DatadeftAuth do
   def fake_last_magic_link(server, email) when is_binary(email),
     do: call(server, {:auth, :fake_last_magic_link, %{email: email}})
 
-  defp call(server, request) do
+  def fake_last_magic_link(_, _), do: bad_request()
+
+  # Validate before encoding: malformed caller data must neither raise in the
+  # owner nor become a fatal protocol fault in the child.
+  defp call(server, {:auth, _operation, payload} = request) do
+    if valid_payload?(payload), do: server_call(server, request), else: bad_request()
+  end
+
+  defp call(server, request), do: server_call(server, request)
+
+  defp valid_options?(opts, allowed) do
+    Keyword.keyword?(opts) and length(opts) <= length(allowed) and
+      Enum.all?(Keyword.keys(opts), &(&1 in allowed)) and
+      length(opts) == length(Enum.uniq_by(opts, &elem(&1, 0)))
+  end
+
+  defp valid_payload?(payload) do
+    Enum.all?(payload, fn
+      {key, value} when key in [:terms_accepted, :privacy_accepted] ->
+        is_boolean(value)
+
+      {key, nil} when key in [:locale, :country] ->
+        true
+
+      {_key, value} when is_binary(value) ->
+        byte_size(value) <= DatadeftAuth.Protocol.max_frame() and String.valid?(value)
+
+      _ ->
+        false
+    end)
+  end
+
+  defp bad_request, do: {:error, %Error{code: :bad_request}}
+
+  defp server_call(server, request) do
     GenServer.call(server, request, :infinity)
   catch
     :exit, _ -> {:error, %Error{code: :unavailable}}

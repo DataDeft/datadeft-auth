@@ -77,6 +77,11 @@ impl Port {
             // The supported credential chain reads these for DynamoDB Local.
             .env("AWS_ACCESS_KEY_ID", "local")
             .env("AWS_SECRET_ACCESS_KEY", "local")
+            .env_remove("AWS_SESSION_TOKEN")
+            .env_remove("AWS_PROFILE")
+            .env_remove("AWS_DEFAULT_PROFILE")
+            .env("AWS_CONFIG_FILE", "/dev/null")
+            .env("AWS_SHARED_CREDENTIALS_FILE", "/dev/null")
             .spawn()
             .expect("spawn port executable");
         let stdin = child.stdin.take().expect("stdin");
@@ -120,14 +125,14 @@ impl Port {
     }
 }
 
-fn secret_document() -> String {
-    let key = |byte: u8| base64::engine::general_purpose::STANDARD.encode([byte; 32]);
+fn secret_document(seed: u8, kid: &str) -> String {
+    let key = |byte: u8| base64::engine::general_purpose::STANDARD.encode([seed + byte; 32]);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("e2e")
         .as_secs();
     serde_json::json!({
-        "kid": "test-active",
+        "kid": kid,
         "mint_until_unix": now + 90 * 24 * 60 * 60,
         "verify_until_unix": now + 121 * 24 * 60 * 60,
         "magic_link_lookup_hmac_b64": key(1),
@@ -150,7 +155,7 @@ async fn full_flow_against_real_storage_through_the_pipe() {
     let handshake = port.call("handshake", serde_json::json!({}));
     assert_eq!(handshake["operation"], "handshake");
 
-    let document = secret_document();
+    let document = secret_document(0, "test-active");
     let init = port.call("init", init_payload(&table, &document));
     assert_eq!(init["operation"], "init", "init failed: {init}");
 
@@ -167,21 +172,46 @@ async fn full_flow_against_real_storage_through_the_pipe() {
     );
     assert_eq!(last["found"], true);
     let url = last["magic_link_url"].as_str().expect("e2e");
-    let token = url.split("?token=").nth(1).expect("e2e");
+    let (destination, token) = url.split_once("?token=").expect("e2e");
+    assert!(
+        destination == "https://auth.test/auth/magic-link/landing",
+        "email must target the reference landing route"
+    );
 
     let landing = port.call("landing", serde_json::json!({ "token": token }));
-    assert_eq!(landing["usable"], true, "landing failed: {landing}");
+    assert_eq!(landing["usable"], true);
     let confirm_cookie = landing["confirm_cookie"].as_str().expect("e2e").to_owned();
     let confirmation = landing["confirmation"].as_str().expect("e2e").to_owned();
 
-    let confirmed = port.call(
-        "confirm",
-        serde_json::json!({ "confirm_cookie": confirm_cookie, "confirmation": confirmation }),
-    );
-    assert_eq!(
-        confirmed["operation"], "confirm",
-        "confirm failed: {confirmed}"
-    );
+    let mut second = Port::spawn();
+    second.call("handshake", serde_json::json!({}));
+    let mut rotated = init_payload(&table, &secret_document(10, "test-next"));
+    rotated["secrets"]["previous_document"] = serde_json::json!(document);
+    let init = second.call("init", rotated);
+    assert_eq!(init["operation"], "init");
+
+    // Two independent processes race the same flow against the same table.
+    // Only one conditional authentication transaction may succeed.
+    let command =
+        serde_json::json!({ "confirm_cookie": confirm_cookie, "confirmation": confirmation });
+    let barrier = std::sync::Barrier::new(2);
+    let (first, other) = std::thread::scope(|scope| {
+        let job = scope.spawn(|| {
+            barrier.wait();
+            port.call("confirm", command.clone())
+        });
+        barrier.wait();
+        let other = second.call("confirm", command.clone());
+        (job.join().expect("confirmation thread"), other)
+    });
+    let (confirmed, refused) = if first["operation"] == "confirm" {
+        (first, other)
+    } else {
+        (other, first)
+    };
+    assert_eq!(confirmed["operation"], "confirm");
+    assert_eq!(refused["operation"], "error");
+    assert_eq!(refused["code"], "rejected");
     assert_eq!(confirmed["user_created"], true);
     let session_cookie = confirmed["session_cookie"]
         .as_str()
@@ -193,24 +223,24 @@ async fn full_flow_against_real_storage_through_the_pipe() {
         "confirm",
         serde_json::json!({ "confirm_cookie": confirm_cookie, "confirmation": confirmation }),
     );
-    assert_eq!(
-        replay,
-        serde_json::json!({ "operation": "error", "code": "rejected" })
-    );
+    assert_eq!(replay["operation"], "error");
+    assert_eq!(replay["code"], "rejected");
 
-    let validated = port.call(
+    // The rotated node accepts cookies from either the active or previous
+    // issuer and performs the storage-HMAC fallback when needed.
+    let validated = second.call(
         "validate_session",
         serde_json::json!({ "session_cookie": session_cookie }),
     );
     assert_eq!(validated["valid"], true);
 
-    let logout = port.call(
+    let logout = second.call(
         "logout",
         serde_json::json!({ "session_cookie": session_cookie }),
     );
     assert_eq!(logout["revoked"], true);
 
-    let invalid = port.call(
+    let invalid = second.call(
         "validate_session",
         serde_json::json!({ "session_cookie": session_cookie }),
     );
@@ -232,13 +262,19 @@ async fn full_flow_against_real_storage_through_the_pipe() {
             "tag": challenge["tag"]
         }),
     );
-    assert_eq!(verified["admitted"], true, "verify failed: {verified}");
+    assert_eq!(verified["admitted"], true);
     let proof_cookie = verified["proof_cookie"].as_str().expect("e2e").to_owned();
-
-    let mut second = Port::spawn();
-    second.call("handshake", serde_json::json!({}));
-    let init = second.call("init", init_payload(&table, &document));
-    assert_eq!(init["operation"], "init", "second init failed: {init}");
+    // The previous challenge key also verifies on the rotated node. Minting
+    // another proof for the same solve must not create another budget.
+    let rotated_proof = second.call(
+        "pow_verify",
+        serde_json::json!({
+            "chg": chg, "sol": sol, "non": non,
+            "tim": challenge["tim"], "tag": challenge["tag"]
+        }),
+    );
+    assert_eq!(rotated_proof["admitted"], true);
+    let rotated_cookie = rotated_proof["proof_cookie"].as_str().expect("proof");
 
     // Budget 3: two spends on the minting node, one on the other, then both
     // nodes refuse the fourth — the counter lives in the table, not a node.
@@ -264,6 +300,30 @@ async fn full_flow_against_real_storage_through_the_pipe() {
         false
     );
 
+    assert_eq!(
+        second.call("pow_admit", admit(rotated_cookie))["admitted"],
+        false,
+        "rotation and re-verification must not refill a solve budget"
+    );
+
+    // Dependency loss must not become either an admission or an ordinary
+    // invalid-session result. Only the local fixture table is removed.
+    client
+        .delete_table()
+        .table_name(&table)
+        .send()
+        .await
+        .expect("delete local table");
+    let unavailable = second.call("pow_admit", admit(&proof_cookie));
+    assert_eq!(unavailable["operation"], "error");
+    assert_eq!(unavailable["code"], "unavailable");
+    let unavailable = second.call(
+        "validate_session",
+        serde_json::json!({ "session_cookie": session_cookie }),
+    );
+    assert_eq!(unavailable["operation"], "error");
+    assert_eq!(unavailable["code"], "unavailable");
+
     second.shutdown();
     port.shutdown();
 }
@@ -273,7 +333,7 @@ fn init_payload(table: &str, document: &str) -> serde_json::Value {
         "mode": "aws",
         "service": { "terms_version": "t1", "privacy_version": "p1" },
         "email": {
-            "link_base_url": "https://auth.test/magic?token=",
+            "link_base_url": "https://auth.test/auth/magic-link/landing?token=",
             "subject": "Sign in",
             "text": "Open {magic_link_url}"
         },

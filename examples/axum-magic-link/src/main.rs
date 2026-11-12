@@ -46,20 +46,20 @@ async fn main() -> AppResult<()> {
 /// The example's routes.
 fn app(state: AppState) -> Router {
     Router::new()
-        .route("/", get(index))
+        .route("/dev", get(index))
         .route("/auth/pow/create", post(pow_create))
         .route("/auth/pow/validate", post(pow_validate))
         .route("/auth/magic-link/request", post(request_magic_link))
-        .route("/auth/magic-link", get(landing_route))
+        .route("/auth/magic-link/landing", get(landing_route))
         .route("/auth/magic-link/consume", post(confirm_route))
         // Redirect landing mode, for static UIs.
         .route("/auth/magic-link/open", get(redirect_landing_route))
         .route("/auth/magic-link/flow-state", get(flow_state_route))
-        .route("/login/confirm", get(confirm_page))
-        .route("/login/confirm.js", get(confirm_page_script))
-        .route("/auth/complete", get(auth_complete))
-        .route("/me", get(me))
-        .route("/logout", post(logout))
+        .route("/auth/magic-link/confirm", get(confirm_page))
+        .route("/auth/magic-link/confirm.js", get(confirm_page_script))
+        .route("/auth/magic-link/complete", get(auth_complete))
+        .route("/dev/me", get(me))
+        .route("/auth/logout", post(logout))
         .route("/dev/latest-magic-link", get(dev_latest_magic_link))
         .with_state(state)
 }

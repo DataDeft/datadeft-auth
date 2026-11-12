@@ -51,7 +51,7 @@ defmodule DatadeftAuth.TestSupport do
       mode: :fake,
       service: %{terms_version: "test-terms-v1", privacy_version: "test-privacy-v1"},
       email: %{
-        link_base_url: "https://auth.example.test/magic?token=",
+        link_base_url: "https://auth.example.test/auth/magic-link/landing?token=",
         subject: "Sign in",
         text: "Open {magic_link_url} to sign in."
       },
@@ -60,8 +60,9 @@ defmodule DatadeftAuth.TestSupport do
   end
 
   def fake(mode) do
-    dir = Path.join(System.tmp_dir!(), "datadeft-fixture-#{System.unique_integer([:positive])}")
-    File.mkdir_p!(dir)
+    suffix = Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
+    dir = Path.join(System.tmp_dir!(), "datadeft-fixture-#{suffix}")
+    File.mkdir!(dir)
     path = Path.join(dir, "worker")
 
     handshake =

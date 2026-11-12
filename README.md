@@ -50,10 +50,12 @@ The adapters are siblings. Neither adapter depends on the other. See
 ## Elixir bindings (in development)
 
 [`packages/datadeft-auth-elixir`](packages/datadeft-auth-elixir/README.md) contains
-the framework-independent Elixir package foundation. It launches a separate Rust
-process through an Erlang Port—not a NIF. Only transport startup/health is
-implemented; authentication and DynamoDB/SES integration are not available yet.
-It is not published to Hex. See the [approved plan](docs/elixir-bindings-plan.md).
+the framework-independent Elixir binding. It launches a separate Rust process
+through an Erlang Port—not a NIF—and delegates high-level magic-link/session and
+PoW operations to the existing Rust services and AWS adapters. It is not published
+to Hex or production-ready: restart-durable ambiguous-commit recovery and release
+review remain open. See the [plan/status](docs/elixir-bindings-plan.md) and package
+README before evaluating it.
 
 ## Install
 

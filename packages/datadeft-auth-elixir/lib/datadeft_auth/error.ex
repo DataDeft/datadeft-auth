@@ -5,8 +5,10 @@ defmodule DatadeftAuth.Error do
 
   @typedoc """
   Closed diagnostic codes; never map these directly to public HTTP responses.
-  :rejected and :bad_request clear temporary client state; :unavailable
-  preserves it for an identical retry after backoff.
+  For confirmation, :rejected and :bad_request clear temporary client state;
+  :unavailable preserves it. Timeout or transport failure does not imply
+  rollback. Do not blindly replay a mutation: a new public call does not
+  preserve the original commit attempt.
   """
   @type code ::
           :configuration

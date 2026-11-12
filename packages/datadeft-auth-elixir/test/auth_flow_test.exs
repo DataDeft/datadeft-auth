@@ -25,6 +25,7 @@ defmodule DatadeftAuthFlowTest do
     assert {:ok, %DevMagicLink{found: true, magic_link_url: url, expires_at_unix: expires}} =
              DatadeftAuth.fake_last_magic_link(pid, @email)
 
+    assert URI.parse(url).path == "/auth/magic-link/landing"
     assert expires > System.os_time(:second)
 
     assert {:ok, %Landing{usable: true} = landing} =
@@ -51,6 +52,30 @@ defmodule DatadeftAuthFlowTest do
     assert {:ok, %{revoked: true}} = DatadeftAuth.logout(pid, cookie)
     assert {:ok, %Validation{valid: false}} = DatadeftAuth.validate_session(pid, cookie)
     assert {:ok, %{revoked: false}} = DatadeftAuth.logout(pid, cookie)
+  end
+
+  test "redirect landing destination remains application configured" do
+    config =
+      put_in(
+        fake_config(),
+        [:email, :link_base_url],
+        "https://auth.example.test/auth/magic-link/open?token="
+      )
+
+    pid = start_supervised!({DatadeftAuth, [config: config]})
+    ready(pid)
+    assert {:ok, _} = DatadeftAuth.request_link(pid, @email, @consent)
+    {:ok, %DevMagicLink{magic_link_url: url}} = DatadeftAuth.fake_last_magic_link(pid, @email)
+
+    assert URI.parse(url).path == "/auth/magic-link/open"
+
+    # The application chooses the page/303 response; the binding returns the
+    # same scanner-safe state without owning a router or consuming on GET.
+    assert {:ok, %Landing{usable: true} = landing} =
+             DatadeftAuth.landing(pid, token_from(url))
+
+    assert {:ok, %FlowState{usable: true}} =
+             DatadeftAuth.flow_state(pid, landing.confirm_cookie)
   end
 
   test "consumption is one-time and unusable states stay uniform" do

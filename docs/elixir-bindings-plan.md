@@ -1,10 +1,19 @@
 # Proposal: Elixir bindings for datadeft-auth
 
-**Status:** design approved and implementation authorized. P1 transport foundation
-is in progress in `packages/datadeft-auth-elixir`; authentication/AWS integration
-and remaining release gates are not implemented yet.
+**Status:** design approved and implementation authorized. P1 transport and the
+P2–P4 execution/auth/session/PoW operations are implemented in
+`packages/datadeft-auth-elixir`. Source archive/consumer/release checks and native
+Linux CI are wired. P2 restart-durable ambiguous-commit recovery is not implemented;
+production security/API review, consumer validation and explicit release approval
+remain gates. Implemented operations are not a completed production release.
 **Release alignment:** target the settled Rust 0.6.0 API and use the repository's
 shared release version; reconcile the current 0.5.0 baseline before implementation.
+**HTTP baseline:** use PR #13's assumed 0.6.0 reference layout:
+`/auth/magic-link/*`, `/auth/pow/*`, `POST /auth/logout`, and development-only
+`/dev/*`. The Elixir README maps each route to the existing binding operations.
+Applications own routing/cookie policy; `email.link_base_url` remains explicit
+configuration. This alignment neither releases 0.6.0 nor changes protocol/token
+versions or the unresolved outcome contract.
 **Approval boundary:** PR #7 approved this design; implementation was subsequently
 authorized. Publication and publishing credentials still require separate approval.
 
@@ -147,10 +156,11 @@ of magic-link operations and requires shared DynamoDB-backed lifetime counters,
 not a local counter. Reuse core verification/minting; keep any new admission glue adapter-owned
 and test against the existing contract.
 
-Inject a clock dependency in client config, not timestamps on every public call;
-Rust remains deterministic. Protocol time fields use explicit units: PoW
-`now_unix_ms`, token/key windows `now_unix` seconds. Entropy is OS-backed inside
-the adapter; callers do not supply nonces.
+The current process adapter supplies a wall clock and OS-backed entropy to the
+Rust services. Public operations accept neither timestamps nor nonces; there is
+no configurable Elixir clock callback yet. Any need for that additional API must
+be justified rather than inferred from test convenience. Internal time units stay
+explicit: PoW milliseconds and token/key-window seconds.
 
 ## 4. Process boundary and security invariants
 
@@ -162,7 +172,8 @@ the adapter; callers do not supply nonces.
   path}, ...)`, not a shell. Elixir supervision owns startup, exit monitoring,
   restart backoff, shutdown and OS-child cleanup. Prove no orphan remains after
   owner/VM death. Use stdin/stdout only; never merge stderr into protocol output.
-- Propose length-prefixed frames (`{:packet, 4}`) with versioned JSON envelopes:
+- Use four-byte length-prefixed raw Port streams, not VM `packet: 4`, with
+  versioned JSON envelopes:
   protocol version, request ID, fixed operation and typed payload/result. Encode
   arbitrary bytes as canonical base64; validate integer ranges exactly. Reject
   unsupported versions, duplicate/unknown fields and malformed frames. No
@@ -176,13 +187,14 @@ the adapter; callers do not supply nonces.
   call a deadline and unique ID; route at most one reply. Drop late replies and
   distinguish application errors from transport failure. Never auto-replay a
   failed call, especially a mutation. A caller timeout does not cancel execution.
-- Rust owns typed key/parsed/verified objects in a capped handle table. Handles
-  are opaque, unguessable and scoped to a worker generation; reject stale,
-  wrong-type or cross-worker handles. Define expiry/explicit release and caller
-  cleanup; BEAM GC cannot free remote objects. Restart invalidates all handles.
-- On worker exit, fail pending calls once. Reload keys through an explicit
-  application-supplied initialization callback before marking the replacement
-  ready; never persist secret handles or use environment/argv for key transport.
+- Rust owns initialized keys and per-operation parsed/verified state. The current
+  high-level protocol exposes no generic crypto handles or remote handle table;
+  such a mechanism is not needed for these operations and is not part of this PR.
+  Restart discards process-local state and does not recover transaction plans.
+- On worker exit, fail pending calls once. Resend the explicit application config
+  and reload keys before marking the replacement ready. The implementation uses
+  a configuration map, not a caller callback. Never use argv for key transport;
+  AWS credentials follow the supported deployment-role credential chain.
 - Validate operation types/ranges before copying. Reuse Rust caps: Branca payload
   <= 1024 bytes, token <= 1437 bytes; audit magic-link/PoW parser caps. No PoW
   solving or unrelated IO in the core worker; no production unwrap/expect/panic,
