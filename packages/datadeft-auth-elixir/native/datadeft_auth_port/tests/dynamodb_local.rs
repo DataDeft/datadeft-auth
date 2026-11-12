@@ -10,7 +10,6 @@ use aws_sdk_dynamodb::config::{Credentials, Region};
 use aws_sdk_dynamodb::types::{
     AttributeDefinition, BillingMode, KeySchemaElement, KeyType, ScalarAttributeType,
 };
-use base64::Engine;
 
 fn endpoint() -> String {
     std::env::var("DYNAMODB_LOCAL_ENDPOINT").unwrap_or_else(|_| "http://localhost:18000".to_owned())
@@ -126,23 +125,16 @@ impl Port {
 }
 
 fn secret_document(seed: u8, kid: &str) -> String {
-    let key = |byte: u8| base64::engine::general_purpose::STANDARD.encode([seed + byte; 32]);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("e2e")
         .as_secs();
-    serde_json::json!({
-        "kid": kid,
-        "mint_until_unix": now + 90 * 24 * 60 * 60,
-        "verify_until_unix": now + 121 * 24 * 60 * 60,
-        "magic_link_lookup_hmac_b64": key(1),
-        "storage_hmac_b64": key(2),
-        "session_cookie_root_b64": key(3),
-        "magic_link_confirm_cookie_root_b64": key(4),
-        "pow_challenge_secret_b64": key(5),
-        "pow_proof_cookie_root_b64": key(6),
-    })
-    .to_string()
+    datadeft_magic_link_aws::test_support::auth_secret_document(
+        kid,
+        seed + 1,
+        now + 90 * 24 * 60 * 60,
+        now + 121 * 24 * 60 * 60,
+    )
 }
 
 #[tokio::test]
@@ -251,7 +243,7 @@ async fn full_flow_against_real_storage_through_the_pipe() {
     let challenge = port.call("pow_challenge", serde_json::json!({}));
     let chg = challenge["chg"].as_str().expect("e2e");
     let dif = u8::try_from(challenge["dif"].as_u64().expect("e2e")).expect("e2e");
-    let (sol, non) = solve(chg, dif);
+    let (non, sol) = solve(chg, dif);
     let verified = port.call(
         "pow_verify",
         serde_json::json!({
@@ -353,17 +345,4 @@ fn admit(proof_cookie: &str) -> serde_json::Value {
     serde_json::json!({ "proof_cookie": proof_cookie })
 }
 
-/// Solve the way the shipping browser client does.
-fn solve(chg: &str, dif: u8) -> (String, String) {
-    use sha2::{Digest, Sha256};
-    let target = "0".repeat(usize::from(dif));
-    let mut nonce: u64 = 0;
-    loop {
-        let non = nonce.to_string();
-        let sol = hex::encode(Sha256::digest(format!("{chg}{non}").as_bytes()));
-        if sol.starts_with(&target) {
-            return (sol, non);
-        }
-        nonce += 1;
-    }
-}
+use datadeft_pow_core::test_support::solve;

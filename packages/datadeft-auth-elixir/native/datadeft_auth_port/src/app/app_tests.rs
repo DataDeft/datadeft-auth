@@ -1,20 +1,12 @@
 use super::*;
 
 pub(crate) fn secret_document(verify_until_unix: u64) -> String {
-    use base64::Engine;
-    let key = |byte: u8| base64::engine::general_purpose::STANDARD.encode([byte; 32]);
-    serde_json::json!({
-        "kid": "test-active",
-        "mint_until_unix": 4_102_444_800_u64,
-        "verify_until_unix": verify_until_unix,
-        "magic_link_lookup_hmac_b64": key(1),
-        "storage_hmac_b64": key(2),
-        "session_cookie_root_b64": key(3),
-        "magic_link_confirm_cookie_root_b64": key(4),
-        "pow_challenge_secret_b64": key(5),
-        "pow_proof_cookie_root_b64": key(6),
-    })
-    .to_string()
+    datadeft_magic_link_aws::test_support::auth_secret_document(
+        "test-active",
+        1,
+        4_102_444_800,
+        verify_until_unix,
+    )
 }
 
 #[test]
@@ -60,21 +52,7 @@ async fn a_subject_carrying_the_url_marker_is_refused_at_init() {
     ));
 }
 
-/// Solve the way the shipped browser client does: decimal nonces into
-/// `hex(SHA-256(chg + non))` until `dif` leading zero hex characters appear.
-fn solve(chg: &str, dif: u8) -> (String, String) {
-    use sha2::{Digest, Sha256};
-    let target = "0".repeat(usize::from(dif));
-    let mut nonce: u64 = 0;
-    loop {
-        let non = nonce.to_string();
-        let sol = hex::encode(Sha256::digest(format!("{chg}{non}").as_bytes()));
-        if sol.starts_with(&target) {
-            return (sol, non);
-        }
-        nonce += 1;
-    }
-}
+use datadeft_pow_core::test_support::solve;
 
 async fn admit(app: &ReadyApp, proof_cookie: &str) -> ResultBody {
     app.handle(AppCommand::PowAdmit(crate::protocol::PowAdmitPayload {
@@ -98,7 +76,7 @@ async fn pow_flow_mints_verifies_and_admits_within_the_shared_lifetime_budget() 
         panic!("challenge expected");
     };
     assert_eq!(dif, 1);
-    let (sol, non) = solve(&chg, dif);
+    let (non, sol) = solve(&chg, dif);
 
     // A tampered solution collapses into the uniform refusal.
     let tampered = crate::protocol::PowVerifyPayload {

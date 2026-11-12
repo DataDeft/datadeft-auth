@@ -879,15 +879,12 @@ dependencies = [
  "aws-sdk-dynamodb",
  "aws-sdk-secretsmanager",
  "aws-sdk-sesv2",
- "base64",
  "datadeft-magic-link-aws",
  "datadeft-magic-link-service",
  "datadeft-pow-core",
- "hex",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "tokio",
 ]
 
