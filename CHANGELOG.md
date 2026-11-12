@@ -79,6 +79,29 @@ documents carry over unchanged. Actions, in order:
 - Upgrade the DynamoDB, SES and Secrets Manager SDK dependency chain to remove
   the unmaintained `pin-utils` crate. No advisory exceptions are added.
 
+## [0.6.0](https://github.com/DataDeft/datadeft-auth/compare/v0.5.0...v0.6.0) (2026-11-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **magic-link-service:** borrow the service config instead of owning a per-request copy
+* remove the one-time session-TTL migration helper (V06-009)
+
+### Features
+
+* opt-in __Host- session cookie names and the 0.6.0 upgrade summary ([2b0296f](https://github.com/DataDeft/datadeft-auth/commit/2b0296ff93f45dbb0d794f5aa0309b94090d370b))
+* remove the one-time session-TTL migration helper (V06-009) ([31eb94b](https://github.com/DataDeft/datadeft-auth/commit/31eb94b391203838b690e925742aaa80dee68022))
+
+
+### Bug Fixes
+
+* drop the orphaned update-item import and pid-scope the test fixture dirs ([ba68cd5](https://github.com/DataDeft/datadeft-auth/commit/ba68cd54754ef37007b9248284c65dbea4659ac5))
+
+
+### Performance Improvements
+
+* **magic-link-service:** borrow the service config instead of owning a per-request copy ([bb6ea61](https://github.com/DataDeft/datadeft-auth/commit/bb6ea619b35507e22a738167a9231511fc203b94))
+
 ## [0.5.0](https://github.com/DataDeft/datadeft-auth/compare/v0.4.1...v0.5.0) (2026-10-11)
 
 ### Upgrade summary

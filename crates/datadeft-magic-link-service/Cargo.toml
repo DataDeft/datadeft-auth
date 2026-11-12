@@ -15,8 +15,8 @@ include = ["src/**", "tests/**", "benches/**", "README.md", "LICENSE"]
 workspace = true
 
 [dependencies]
-datadeft-magic-link-core = { path = "../datadeft-magic-link-core", version = "0.5.0" } # x-release-please-version
-datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.5.0" } # x-release-please-version
+datadeft-magic-link-core = { path = "../datadeft-magic-link-core", version = "0.6.0" } # x-release-please-version
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.6.0" } # x-release-please-version
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 hex = "0.4"
 rand_core = "0.6"
@@ -24,7 +24,7 @@ zeroize = { version = "1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
-datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.5.0", features = ["test-support"] } # x-release-please-version
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.6.0", features = ["test-support"] } # x-release-please-version
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [[bench]]
