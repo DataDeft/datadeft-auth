@@ -12,6 +12,7 @@ use datadeft_pow_core::{ProofBudgetUnavailable, mint_pow_proof_cookie};
 
 use super::*;
 use crate::handlers::{DEFAULT_POW_CHALLENGE_MAX_AGE_SECS, PowFlowError};
+use datadeft_pow_core::MAX_PROOF_BUDGET_PER_SOLVE;
 
 const NOW: u64 = 1_783_598_400;
 const TID: &str = "0f0e0d0c0b0a09080706050403020100f0e0d0c0b0a090807060504030201000";
