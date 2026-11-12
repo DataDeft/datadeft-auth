@@ -4,7 +4,6 @@
 use axum::body::{Body, to_bytes};
 use axum::http::header::{CONTENT_TYPE, COOKIE, LOCATION, ORIGIN, SET_COOKIE};
 use axum::http::{Request, Response, StatusCode};
-use sha2::{Digest, Sha256};
 use tower::ServiceExt;
 
 use super::*;
@@ -29,21 +28,13 @@ fn cookie(response: &Response<Body>, name: &str) -> Option<String> {
         .find(|pair| pair.starts_with(&format!("{name}=")) && pair.len() > name.len() + 1)
 }
 
-/// Solve the PoW challenge the way the browser worker does.
+/// Solve the PoW challenge with the shared worker-mirror solver.
 fn solve(challenge: &serde_json::Value) -> serde_json::Value {
     let chg = challenge["chg"].as_str().expect("chg");
-    let dif = challenge["dif"].as_u64().expect("dif") as usize;
-    let prefix = "0".repeat(dif);
-    let (non, sol) = (0u64..)
-        .map(|nonce| {
-            let digest = Sha256::digest(format!("{chg}{nonce}").as_bytes());
-            let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-            (nonce, hex)
-        })
-        .find(|(_, hex)| hex.starts_with(&prefix))
-        .expect("solution");
+    let dif = u8::try_from(challenge["dif"].as_u64().expect("dif")).expect("dif fits in u8");
+    let (non, sol) = datadeft_pow_core::test_support::solve(chg, dif);
     serde_json::json!({
-        "chg": chg, "sol": sol, "non": non.to_string(),
+        "chg": chg, "sol": sol, "non": non,
         "tim": challenge["tim"], "tag": challenge["tag"],
     })
 }

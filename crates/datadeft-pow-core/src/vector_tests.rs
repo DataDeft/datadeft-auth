@@ -175,9 +175,9 @@ fn accepts_real_worker_style_vector() {
     let chg = "c92da1677dc682632c77af723ed48d6ccd288ac1d99f68fcef2ff430433fd6f8";
     let expected_hash = "007060c2f73f6b7ce87ad3eccac9692a27449d0f012b607359cac1fd8a96d716";
 
-    // Guard: our in-test worker mirror reproduces the external vector.
-    let (nonce, hash) = solve_like_worker(chg, 2);
-    assert_eq!(nonce, 89);
+    // Guard: the shared worker-mirror solver reproduces the external vector.
+    let (non, hash) = solve(chg, 2);
+    assert_eq!(non, "89");
     assert_eq!(hash, expected_hash);
 
     // verify_solution accepts it (tag minted over the same chg:dif:tim).
@@ -185,7 +185,7 @@ fn accepts_real_worker_style_vector() {
     let sol = Solution {
         chg: chg.to_string(),
         sol: expected_hash.to_string(),
-        non: nonce.to_string(),
+        non,
         dif: 2,
         tim: TIM.to_string(),
         tag: hmac_tag_hex(&s, &tag_message(chg, 2, TIM)).expect("tag"),

@@ -12,6 +12,8 @@ mod error;
 mod fake;
 mod hmac_key;
 mod ses;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 mod window;
 
 #[cfg(feature = "aws")]

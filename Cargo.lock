@@ -477,7 +477,6 @@ dependencies = [
  "rand_core 0.6.4",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "time",
  "tokio",
  "tower",
@@ -894,11 +893,9 @@ dependencies = [
  "blake3",
  "datadeft-auth-token-core",
  "datadeft-pow-core",
- "hex",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "tokio",
 ]
 

@@ -16,6 +16,8 @@ workspace = true
 
 [features]
 default = []
+# Deterministic test fixtures (`test_support`), shared with dependents' tests.
+test-support = []
 aws = [
   "dep:aws-sdk-dynamodb",
   "dep:aws-sdk-secretsmanager",
