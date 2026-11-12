@@ -200,6 +200,7 @@ dependencies = [
  "datadeft-magic-link-core",
  "datadeft-magic-link-service",
  "datadeft-pow-core",
+ "hex",
  "libfuzzer-sys",
 ]
 

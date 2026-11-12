@@ -1,7 +1,7 @@
 #![no_main]
 
-use libfuzzer_sys::fuzz_target;
 use datadeft_magic_link_service::{decode_session_cookie_body, encode_session_cookie_body};
+use libfuzzer_sys::fuzz_target;
 fuzz_target!(|input: &[u8]| {
     // Canonical framing: an accepted body re-encodes to the same bytes.
     if let Ok(body) = decode_session_cookie_body(input) {
