@@ -1,7 +1,7 @@
 #![no_main]
 
-use libfuzzer_sys::fuzz_target;
 use datadeft_magic_link_core::NormalizedEmail;
+use libfuzzer_sys::fuzz_target;
 fuzz_target!(|input: &str| {
     // from_normalized only validates: an accepted address is unchanged.
     if let Ok(email) = NormalizedEmail::from_normalized(input) {

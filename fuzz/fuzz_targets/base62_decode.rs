@@ -1,7 +1,7 @@
 #![no_main]
 
-use libfuzzer_sys::fuzz_target;
 use datadeft_auth_token_core::base62;
+use libfuzzer_sys::fuzz_target;
 fuzz_target!(|input: &str| {
     // Never panics; an accepted string round-trips through the decoded bytes.
     if let Ok(bytes) = base62::decode(input) {
