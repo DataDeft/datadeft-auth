@@ -27,7 +27,7 @@ async fn read_state(
         previous_lookup_hmac_key: None,
         confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
-        config: config(),
+        config: &config(),
     }
     .read_magic_link_flow_state(ReadMagicLinkFlowStateCommand::new(
         confirm_cookie.to_owned(),

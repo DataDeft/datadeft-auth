@@ -33,7 +33,7 @@ fn service_call_futures_are_send() {
         previous_lookup_hmac_key: None,
         confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
-        config: config(),
+        config: &config(),
     };
     assert_send(
         &service.begin_magic_link_landing(BeginMagicLinkLandingCommand::new(
@@ -61,7 +61,7 @@ async fn revoke_session_still_delegates_to_the_session_repository() {
         previous_lookup_hmac_key: None,
         confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
-        config: config(),
+        config: &config(),
     };
     let session_id =
         SessionId::parse("sid-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")

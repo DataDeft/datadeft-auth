@@ -268,7 +268,7 @@ async fn redirect_mode_end_to_end_through_the_router() {
         clock: &LocalClock,
         rng: &mut rng,
         lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-        config: state.config.clone(),
+        config: &state.config,
     }
     .request_magic_link(RequestMagicLinkCommand::new(
         NormalizedEmail::from_normalized("static@example.test").expect("email"),

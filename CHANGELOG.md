@@ -8,6 +8,10 @@ All notable changes to this workspace are recorded here. The format follows
 
 ### Changed
 
+- **Breaking:** `MagicLinkRequestService` and `MagicLinkFlowService` borrow
+  their configuration (`config: &MagicLinkServiceConfig`) instead of owning a
+  per-request copy. Consumers change `config: config.clone()` to
+  `config: &config` when constructing the service values.
 - Raise the minimum supported Rust version from 1.88 to 1.94.1 to use maintained
   AWS SDK/Smithy releases. All workspace crates inherit this requirement.
 

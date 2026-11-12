@@ -32,7 +32,7 @@ async fn fake_store_round_trips_request_and_scanner_flow_without_raw_session_sto
             clock: &clock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
-            config: config.clone(),
+            config: &config,
         };
         request
             .request_magic_link(command())
@@ -112,7 +112,7 @@ async fn fake_scanner_confirmation_rejects_second_use() {
             clock: &clock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
-            config: config.clone(),
+            config: &config,
         };
         request
             .request_magic_link(command())
@@ -175,7 +175,7 @@ async fn shared_fake_end_to_end_confirmation_race_has_one_session_and_generic_lo
             clock: &clock,
             rng: &mut request_rng,
             lookup_hmac_key: &lookup_key,
-            config: config.clone(),
+            config: &config,
         };
         request
             .request_magic_link(command())
@@ -268,7 +268,7 @@ async fn disable_between_landing_read_and_confirmation_commit_does_not_burn_link
             clock: &clock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
-            config: config.clone(),
+            config: &config,
         };
         request
             .request_magic_link(command())

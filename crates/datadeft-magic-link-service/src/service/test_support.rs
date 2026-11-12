@@ -428,7 +428,7 @@ pub(super) async fn begin_flow(
         previous_lookup_hmac_key: None,
         confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
-        config,
+        config: &config,
     };
     service
         .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(raw_token))
@@ -459,7 +459,7 @@ pub(super) async fn confirm_flow(
         previous_lookup_hmac_key: None,
         confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
-        config,
+        config: &config,
     };
     let command = ConfirmMagicLinkFlowCommand::new(confirm_cookie, confirmation, country)?;
     service.confirm_magic_link_flow(command).await
@@ -481,7 +481,7 @@ pub(super) async fn request(
         clock: &clock,
         rng,
         lookup_hmac_key: &key,
-        config,
+        config: &config,
     };
     service
         .request_magic_link(RequestMagicLinkCommand::new(

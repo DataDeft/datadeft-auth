@@ -25,7 +25,7 @@ async fn request_side_repository_remains_put_only_and_stores_no_user_id() {
         clock: &clock,
         rng: &mut rng,
         lookup_hmac_key: &key,
-        config: config(),
+        config: &config(),
     };
     let outcome = service
         .request_magic_link(RequestMagicLinkCommand::new(
@@ -147,7 +147,7 @@ async fn locale_hint_reaches_the_outbox_resolved_and_is_never_stored() {
             clock: &FixedClock::at(NOW),
             rng: &mut rng,
             lookup_hmac_key: &key,
-            config,
+            config: &config,
         }
         .request_magic_link(command)
         .await

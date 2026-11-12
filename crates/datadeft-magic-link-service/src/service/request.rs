@@ -25,7 +25,7 @@ pub struct MagicLinkRequestService<'a, MagicLinks, Limiter, Outbox, ServiceClock
     pub clock: &'a ServiceClock,
     pub rng: &'a mut Rng,
     pub lookup_hmac_key: &'a LookupHmacKey,
-    pub config: MagicLinkServiceConfig,
+    pub config: &'a MagicLinkServiceConfig,
 }
 
 impl<MagicLinks, Limiter, Outbox, ServiceClock, Rng>
@@ -45,7 +45,7 @@ where
         &mut self,
         command: RequestMagicLinkCommand,
     ) -> Result<RequestMagicLinkOutcome, MagicLinkServiceError> {
-        validate_config(&self.config)?;
+        validate_config(self.config)?;
         if !command.terms_accepted() || !command.privacy_accepted() {
             return Err(MagicLinkServiceError::BadRequest);
         }
@@ -58,7 +58,7 @@ where
 
         if let Some(throttle) = request_and_outbox_limits_deny(
             self.limiter,
-            &self.config,
+            self.config,
             email_lookup.as_storage_value(),
             now_unix,
         )

@@ -76,7 +76,7 @@ impl AppState {
             previous_lookup_hmac_key: None,
             confirm_keyring: self.confirm_keyring.as_ref(),
             session_keyring: self.session_keyring.as_ref(),
-            config: self.config.clone(),
+            config: &self.config,
         }
     }
 }
