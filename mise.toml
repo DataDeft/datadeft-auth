@@ -113,8 +113,13 @@ description = "Check release versions, registry metadata, licenses and package b
 run = "bun scripts/registry-release.ts check"
 
 [tasks.publish-crates]
-description = "Publish approved release from GitHub Actions using its temporary OIDC credential"
+description = "Publish the crates from a clean tagged checkout in dependency order (cargo login first)"
 run = "bun scripts/registry-release.ts publish"
+
+[tasks.publish-npm]
+description = "Publish the npm client from the tagged checkout (npm login first; no provenance locally)"
+dir = "packages/dd-protect-client"
+run = "npm publish --access public --ignore-scripts"
 
 [tasks.msrv-install]
 description = "Install the declared minimum Rust toolchain"

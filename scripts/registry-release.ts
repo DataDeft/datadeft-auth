@@ -82,10 +82,10 @@ const command = process.argv[2];
 requireCondition(["check", "dry-run", "publish"].includes(command ?? ""), "Use check, dry-run, or publish");
 const version = await check();
 if (command === "publish") {
-  requireCondition(process.env.GITHUB_ACTIONS === "true", "Automated publishing is only supported in GitHub Actions");
-  requireCondition(process.env.GITHUB_REPOSITORY === "DataDeft/datadeft-auth", "Unexpected release repository");
-  requireCondition(process.env.GITHUB_REF === `refs/tags/v${version}`, "Release tag must match every package version");
-  requireCondition(process.env.CARGO_REGISTRY_TOKEN, "Missing temporary crates.io OIDC credential");
+  const git = (...args: string[]) => Bun.spawnSync(["git", ...args]);
+  requireCondition(git("status", "--porcelain").stdout.toString() === "", "Publish from a clean checkout");
+  requireCondition(git("describe", "--tags", "--exact-match").stdout.toString().trim() === `v${version}`, "Release tag must match every package version");
+  requireCondition(git("merge-base", "--is-ancestor", "HEAD", "origin/main").exitCode === 0, "Release tag must point at reviewed origin/main history");
 }
 if (command !== "check") {
   const failed: string[] = [];

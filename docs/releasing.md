@@ -5,113 +5,55 @@ For the published versions, see crates.io and npm. The project publishes no
 release-candidate or other pre-release versions. Consumers test an unpublished
 version through a git ref. Never move a release tag.
 
-CI publishing is not enabled yet. The repository variable
-`REGISTRY_PUBLISH_ENABLED` is unset. The `registry-release` environment does
-not exist. The release workflow therefore runs `verify` and skips both upload
-jobs. Until a maintainer completes the setup below, publish by hand
-([Manual publish](#manual-publish)).
+Releases publish from a maintainer's machine. On a `vX.Y.Z` tag, the
+`release.yml` workflow validates the tag, checks the ancestry on main, and
+runs the full verification and archive builds. It never uploads. There are no
+registry credentials in CI.
 
-## Manual publish
+## Account requirements
 
-Run these steps after the release PR is merged and release-please has created
-the `vX.Y.Z` tag. Paste each block separately and check it before the next.
+- Two maintainers approve every release PR before the merge.
+- The publishing maintainer keeps 2FA enabled on npm (account and the
+  `datadeft` organization) and on crates.io.
+- Do not put a PAT, an npm token, or a crates.io token in repository secrets.
+- A local npm publish carries no provenance.
+
+## Publishing
+
+Run these steps after the release PR is merged, release-please has created the
+`vX.Y.Z` tag, and the `release.yml` verification run on that tag is green.
+Paste each block separately and check it before the next.
 
 ```fish
 # 1. Prepare and check the tagged release.
-git fetch --tags
+git fetch --tags origin
 git checkout vX.Y.Z
 rm -rf target/package
 mise run verify; and mise run package-crates
+mise run crates-dry-run
 ```
 
 ```fish
-# 2. Publish the crates in dependency order. The loop stops at a failure.
+# 2. Publish the crates in dependency order. The task checks the release
+# metadata, the clean checkout, and the exact tag, then stops at a failure.
 cargo login
-for c in datadeft-auth-token-core datadeft-pow-core datadeft-pow-axum datadeft-magic-link-core datadeft-magic-link-service datadeft-magic-link-aws datadeft-magic-link-axum
-    cargo publish --locked -p $c; or break
-    sleep 2
-end
+mise run publish-crates
 ```
 
 ```fish
 # 3. Publish the npm client, then clean up.
 npm login
 mise run ts-verify
-cd packages/dd-protect-client
-npm publish --access public --ignore-scripts
-cd ../..
+mise run publish-npm
 git checkout main
 cargo logout
+npm logout
 ```
 
 If a crate fails, do not publish the earlier crates again. Fix the cause and
-continue from the crate that failed. Revoke the crates.io token afterwards. A
-manual npm publish carries no provenance.
-
-## Approval and one-time setup (maintainers)
-
-The package names, the MIT license, and the npm `datadeft` organization exist
-since `0.4.0`. The remaining steps enable CI publishing. Before you set
-`REGISTRY_PUBLISH_ENABLED`, do these steps:
-
-1. Get **approval from two maintainers** on the implementation PR and on every
-   release PR. Configure branch protection for two approvals. Verify the
-   identities before you merge. CODEOWNERS does not replace this rule. A
-   two-reviewer environment also does not replace it, because an environment
-   accepts any one of its reviewers.
-2. Keep 2FA enabled for the npm account and for the `datadeft` organization.
-   Give the maintainers publishing rights for the scope. On GitHub and
-   crates.io, use maintainer accounts with 2FA where the service supports it.
-3. Keep the source repository public. **npm provenance requires public
-   source**, even for a public package. To publish from a different public
-   repository, update the package and workflow identity to match. A crate
-   publication already makes its bundled source public.
-4. In the repository Actions settings, let Actions create PRs. Keep the
-   built-in `GITHUB_TOKEN`. Do not put a PAT, an npm token, or a crates.io
-   token in repository secrets. For PRs that a bot creates, a maintainer may
-   have to select **Approve workflows to run** before CI starts.
-5. Create the GitHub environment **`registry-release`**. Require maintainer
-   review. Where GitHub supports it, prevent self-review. Restrict deployment
-   to protected `v*` tags. Protect release tags against unauthorized creation,
-   deletion, and replacement. Leave the repository variable
-   **`REGISTRY_PUBLISH_ENABLED` unset** until the sign-offs are complete.
-
-## First-publish bootstrap
-
-Do a bootstrap only for a new package name. Both registries need the package
-to exist before you can configure OIDC trusted publishing. A maintainer
-publishes the reviewed package locally from the release tag. Use the order in
-`scripts/registry-release.ts` and the steps in
-[Manual publish](#manual-publish). Do not create placeholder packages. Do not
-put bootstrap credentials in CI. Do not remove `--provenance` from CI.
-
-## Registry trusted-publisher configuration
-
-Configure each of the seven crates in crates.io **Settings → Trusted
-Publishing**. Configure the npm package in **Settings → Trusted publishing**:
-
-| Field | Exact value |
-| --- | --- |
-| Provider | GitHub Actions |
-| Repository owner / organization | `DataDeft` |
-| Repository | `datadeft-auth` |
-| Workflow filename | `release.yml` |
-| GitHub environment | `registry-release` |
-
-Enter the filename only, without `.github/workflows/`. The case and the
-spelling must match. Use GitHub-hosted runners. On npm, enable the **direct
-`npm publish`** permission of the publisher. The stage-only permission cannot
-run this workflow. Then select **Require two-factor authentication and
-disallow tokens**.
-
-npm expires a new publisher configuration if its first successful publish does
-not occur within two days. Create the configurations close to the next
-approved release. If they expire, create them again. See
-[npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
-
-Set the repository variable `REGISTRY_PUBLISH_ENABLED=true` only after you
-verify the setup. This variable is a non-secret opt-in switch, not a
-credential. The environment stays the human approval gate for uploads.
+continue from the crate that failed with `cargo publish --locked -p <crate>`,
+following the order in `scripts/registry-release.ts`. Revoke the crates.io
+token afterwards.
 
 ## Verification and release flow
 
@@ -123,6 +65,7 @@ Before you publish, make sure that these conditions are true:
 4. The dependency and license audits (`cargo deny check`) passed.
 5. The archive verification (`package-crates`) passed for every crate.
 6. Two maintainers approved the release PR.
+7. The `release.yml` verification run on the tag is green.
 
 On a clean, committed checkout, run these tasks:
 
@@ -165,19 +108,12 @@ Release steps:
    `GITHUB_TOKEN` creates does not trigger a push workflow. Release tags that a
    human creates also trigger it. See
    [GitHub's event behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
-5. The release workflow checks the tag, the version, and the ancestry on main.
-   It runs verification and archive builds, then waits for environment
-   approval. The crates.io authentication occurs after compilation. Then the
-   crates publish in dependency order, and Cargo waits for index availability.
-   The npm job follows with `npm publish --provenance --access public
-   --ignore-scripts`.
-6. Before you tell consumers to update, confirm all registry versions and the
-   npm provenance. The release tooling changes no consumer repository.
-
-The workflow uses Node 24, because OIDC needs npm 11.5.1 or newer. It pins
-actions to commit IDs. Only the publishing jobs get OIDC permission. These jobs
-do not persist checkout credentials. The post-step of the auth action revokes
-the temporary crates.io token.
+5. The verification workflow checks the tag, the version, and the ancestry on
+   main, then runs verification and archive builds. When it is green, a
+   maintainer publishes from the tag ([Publishing](#publishing)). Cargo waits
+   for index availability between dependent crates.
+6. Before you tell consumers to update, confirm all registry versions. The
+   release tooling changes no consumer repository.
 
 If a publication is partial, do these steps:
 
@@ -187,8 +123,7 @@ If a publication is partial, do these steps:
 4. Get an approved recovery plan for the remaining packages.
 
 Do not overwrite an existing version. Do not skip an existing version
-automatically. A manual workflow dispatch must select the exact release tag.
-Branch dispatches do not publish.
+automatically.
 
 ## Public-source review
 
