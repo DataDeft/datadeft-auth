@@ -291,19 +291,43 @@ reauthentication:
 
 1. **Configure** the session cookie name as `__Host-dd_session` through the
    secure cookie config. Validation enforces the three browser rules at
-   startup; plain-HTTP local development keeps the unprefixed names.
-2. **Migrate** with a temporary middleware in your application: when
-   `__Host-dd_session` is absent but legacy `dd_session` is present, copy
-   the value into `Set-Cookie: __Host-dd_session=<value>; Secure; Path=/;
-   HttpOnly; SameSite=Lax`, clear the old name, and continue. The library
-   reads one name only; the dual-name logic lives in your app alone.
-3. **Sunset** after one session-absolute lifetime (default 30 days): every
-   live session has rotated, so delete the middleware and the old-name
-   clear config.
+   startup; plain-HTTP local development keeps the unprefixed names. Stop
+   every application instance from issuing the old name before starting
+   the sunset clock.
+2. **Migrate** with temporary middleware in your application, not the
+   library. Only if the new name is absent and exactly one unambiguous old
+   `dd_session` value is present, present that value under the new name in
+   the current request before normal session validation. A response-only
+   `Set-Cookie` does not authenticate the current request. Never fall back
+   when the new name is present but invalid or duplicated.
+
+   After normal cryptographic, expiry, country and server-side session/user
+   checks succeed, copy the validated value to the new cookie and clear
+   the old name using its original Path/Domain scope. Use the configured
+   Secure, HttpOnly and SameSite attributes and `Path=/`, without Domain.
+   Set an explicit Max-Age no longer than the validated cookie's remaining
+   idle and absolute lifetimes; copying must not refresh authentication or
+   extend expiry. Normal session refresh remains the library's job.
+   Preserve response set/clear headers: never overwrite a newer session
+   cookie or reissue one after logout, revocation or failed validation.
+   The library still reads one name only; do not add library aliases.
+3. **Sunset** at a fixed cutoff after the longest session-absolute lifetime
+   configured for old-name sessions (default 30 days), measured from the
+   last old-name issuer stopping, with the configured clock-skew allowance.
+   Every old session has then migrated or expired, including inactive
+   clients. Delete the middleware and old-name clear config. Keep this
+   cutoff independent of sliding idle refresh.
 
 The prefix's guarantee starts at step 3 - while the middleware accepts the
 legacy name, a planted cookie is still honored. Keep the window short, or
 skip step 2 and accept a one-time logout to get protection on day one.
+The prefix does not isolate applications sharing the same host.
+
+Before deploying application migration middleware, test old-only and
+new-only requests, both names present, duplicate/invalid values, expired
+and revoked sessions, country mismatch, logout and session-refresh header
+precedence, and the fixed cutoff. None of this middleware ships in the
+library.
 
 ## Clock-skew policy
 

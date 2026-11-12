@@ -135,6 +135,50 @@ fn incoming_host_name_is_exact_and_has_no_old_name_fallback() {
 }
 
 #[test]
+fn changing_host_policy_rebuilds_clear_headers_without_stale_attributes() {
+    let config = SessionCookieConfig::secure(&policy())
+        .expect("secure")
+        .with_name("__Host-dd_session")
+        .expect("host name")
+        .with_same_site(SameSite::None)
+        .expect("secure SameSite=None");
+    assert_eq!(
+        clear_session_cookie_header(&config)
+            .to_str()
+            .expect("ascii"),
+        "__Host-dd_session=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+    );
+    let config = config
+        .with_name("app_session")
+        .expect("ordinary name")
+        .with_path("/app")
+        .expect("ordinary path");
+    assert_eq!(
+        clear_session_cookie_header(&config)
+            .to_str()
+            .expect("ascii"),
+        "app_session=; Path=/app; HttpOnly; Secure; SameSite=None; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+    );
+}
+
+#[test]
+fn root_path_host_confirm_headers_preserve_set_clear_attributes() {
+    let config = ConfirmCookieConfig::secure("__Host-dd_auth_confirm", "/")
+        .expect("explicit root-path confirm policy");
+    let set = set_confirm_cookie_header(&config, "fixture-value", 300).expect("set");
+    assert_eq!(
+        set.to_str().expect("ascii"),
+        "__Host-dd_auth_confirm=fixture-value; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=300"
+    );
+    assert_eq!(
+        clear_confirm_cookie_header(&config)
+            .to_str()
+            .expect("ascii"),
+        "__Host-dd_auth_confirm=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+    );
+}
+
+#[test]
 fn default_and_confirm_policies_do_not_silently_change_names() {
     assert_eq!(
         SessionCookieConfig::secure(&policy())

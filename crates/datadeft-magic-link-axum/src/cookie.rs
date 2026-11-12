@@ -51,8 +51,7 @@ impl SameSite {
     }
 }
 
-/// Typed cookie setup failures. Non-exhaustive: this release already had
-/// to grow it, so downstream matches keep a wildcard arm.
+/// Typed cookie setup failures. Additional validation failures may be added.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum CookieConfigError {
@@ -199,39 +198,30 @@ impl SessionCookieConfig {
     ///
     /// The prefix is opt-in and requires Secure, exactly Path=/ and host-only
     /// scope (all policies are host-only). Local HTTP rejects prefixed names.
-    /// Changing the name requires reauthentication; no old-name reads are added.
-    pub fn with_name(self, name: impl Into<String>) -> Result<Self, CookieConfigError> {
-        let path = self.path.clone();
-        let same_site = self.same_site;
-        self.updated(name.into(), path, same_site)
+    /// No old-name reads are added. Changing the name logs users out unless
+    /// the application explicitly migrates their existing cookies; see the
+    /// integration guide's "Adopting `__Host-` cookie names" section.
+    pub fn with_name(mut self, name: impl Into<String>) -> Result<Self, CookieConfigError> {
+        self.name = name.into();
+        self.validated()
     }
 
-    pub fn with_path(self, path: impl Into<String>) -> Result<Self, CookieConfigError> {
-        let name = self.name.clone();
-        let same_site = self.same_site;
-        self.updated(name, path.into(), same_site)
+    pub fn with_path(mut self, path: impl Into<String>) -> Result<Self, CookieConfigError> {
+        self.path = path.into();
+        self.validated()
     }
 
-    pub fn with_same_site(self, same_site: SameSite) -> Result<Self, CookieConfigError> {
-        let name = self.name.clone();
-        let path = self.path.clone();
-        self.updated(name, path, same_site)
-    }
-
-    // The one revalidation point: every setter validates the complete
-    // candidate tuple before assigning, so the struct never holds a field
-    // that failed the policy, whatever a caller does with the error.
-    fn updated(
-        mut self,
-        name: String,
-        path: String,
-        same_site: SameSite,
-    ) -> Result<Self, CookieConfigError> {
-        validate_cookie_policy(&name, &path, self.secure, same_site)?;
-        self.clear_header = build_clear_cookie_header(&name, &path, self.secure, same_site)?;
-        self.name = name;
-        self.path = path;
+    pub fn with_same_site(mut self, same_site: SameSite) -> Result<Self, CookieConfigError> {
         self.same_site = same_site;
+        self.validated()
+    }
+
+    // Consuming setters return only fully validated policies and matching
+    // clear headers. An invalid candidate is dropped, never exposed.
+    fn validated(mut self) -> Result<Self, CookieConfigError> {
+        validate_cookie_policy(&self.name, &self.path, self.secure, self.same_site)?;
+        self.clear_header =
+            build_clear_cookie_header(&self.name, &self.path, self.secure, self.same_site)?;
         Ok(self)
     }
 
