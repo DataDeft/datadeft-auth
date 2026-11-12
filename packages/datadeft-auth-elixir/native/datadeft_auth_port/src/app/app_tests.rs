@@ -52,6 +52,23 @@ async fn a_subject_carrying_the_url_marker_is_refused_at_init() {
     ));
 }
 
+#[tokio::test]
+async fn invalid_aws_metadata_fails_initialization_before_credential_or_secret_io() {
+    for field in ["table", "from_email", "region"] {
+        let mut payload = init_json(None);
+        payload["mode"] = serde_json::json!("aws");
+        payload["aws"] = serde_json::json!({
+            "region": "eu-central-1", "table": "test-auth",
+            "from_email": "login@example.test"
+        });
+        payload["aws"][field] = serde_json::json!("");
+        assert!(matches!(
+            ReadyApp::initialize(serde_json::from_value(payload).expect("payload")).await,
+            Err(ErrorCode::Configuration)
+        ));
+    }
+}
+
 use datadeft_pow_core::test_support::solve;
 
 async fn admit(app: &ReadyApp, proof_cookie: &str) -> ResultBody {

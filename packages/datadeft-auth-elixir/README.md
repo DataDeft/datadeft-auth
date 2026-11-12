@@ -105,6 +105,12 @@ the existing Rust rotation policy. Configuration and keys reload on reconnect;
 there is no background key-rotation polling. Deployments must deliberately reload
 workers when rotating keys and retain previous keys for the required windows.
 
+AWS SDK calls have explicit bounds: 3s connect, 5s read/attempt and 10s total
+per SDK operation (including SDK retries). Multi-step service workflows may
+span several calls; these bounds are not a transaction deadline or rollback.
+The application's request timeout may expire first, with the indeterminate
+outcome contract below. Initialization remains separately bounded at 30s.
+
 Use deployment roles/the supported AWS credential chain, least-privilege IAM,
 HTTPS, configured DynamoDB encryption/TTL/backups and an approved SES identity.
 Credentials never belong in this config, source, arguments or logs. `endpoint_url`,
@@ -124,6 +130,9 @@ DatadeftAuth.status(MyAuth)
 ```
 
 With config, requests become available only after initialization is accepted.
+A refused initialization returns `:configuration` from status/auth calls and
+stops automatic reconnects; fix the config and restart the supervised child.
+Transient dependency failures still reconnect with bounded backoff.
 Status is a transport ping, not a live DynamoDB/SES health probe. Without config,
 `{DatadeftAuth, name: MyAuth}` is health-only and auth operations return a
 configuration error. Give supervised instances distinct names/child IDs.
@@ -160,7 +169,8 @@ aliases or automatic fallback redirects are supplied.
 
 For real protected application routes, call `validate_session` server-side, then
 enforce application authorization. Set any returned refreshed cookie; clear an
-invalid session cookie. There is no required `/auth/session/validate` endpoint.
+invalid session cookie. Refresh is best-effort: a mint/entropy failure returns
+an otherwise valid session without a new cookie, never extending its lifetime. There is no required `/auth/session/validate` endpoint.
 For each action protected by PoW, call `pow_admit(server, proof_cookie)` before
 performing the action and fail closed on errors/exhaustion. Admission is independent
 of magic-link operations; there is no new public admission endpoint.
@@ -268,6 +278,8 @@ changes are authorized by this work.
 archive outside the repository, and builds/executes a clean consumer Mix release.
 Sources vendor the workspace crates and stage a self-contained Cargo workspace;
 no repository-relative dependencies, compiled binaries or build caches ship.
+The staged Cargo lockfile retains the verified root dependency versions instead
+of selecting new registry versions at packaging time.
 It uploads nothing. Fixtures and packaging stages use independent random temporary
 names so concurrent BEAM instances do not reuse VM-local directory identifiers.
 

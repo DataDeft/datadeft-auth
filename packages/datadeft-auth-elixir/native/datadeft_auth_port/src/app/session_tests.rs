@@ -17,7 +17,21 @@ impl Clock for FixedClock {
 }
 
 async fn session_aged(age_secs: u64) -> (ReadyApp, String) {
+    session_with_mint_window(age_secs, None).await
+}
+
+async fn session_with_mint_window(age_secs: u64, mint_until: Option<u64>) -> (ReadyApp, String) {
     let mut payload = tests::init_json(None);
+    if let Some(mint_until) = mint_until {
+        let mut document: serde_json::Value = serde_json::from_str(
+            payload["secrets"]["active_document"]
+                .as_str()
+                .expect("document"),
+        )
+        .expect("JSON");
+        document["mint_until_unix"] = serde_json::json!(mint_until);
+        payload["secrets"]["active_document"] = serde_json::json!(document.to_string());
+    }
     payload["service"]["session_idle_secs"] = serde_json::json!(100);
     payload["service"]["session_absolute_secs"] = serde_json::json!(300);
     payload["service"]["enforce_country"] = serde_json::json!(true);
@@ -144,6 +158,39 @@ async fn handler_forwards_refresh_only_when_due_and_preserves_country_and_revoca
             }
         ));
     }
+}
+
+#[tokio::test]
+async fn an_expired_mint_window_does_not_invalidate_a_verified_session() {
+    let now = WallClock.now_unix().expect("clock");
+    // Minting at now-60 succeeds; refreshing at now must fail. Verification
+    // remains allowed by the document's independent verify window.
+    let (app, cookie) = session_with_mint_window(60, Some(now - 30)).await;
+    assert!(matches!(
+        validate(&app, &cookie, "HU").await,
+        ResultBody::ValidateSession {
+            valid: true,
+            user_id: Some(_),
+            refreshed_cookie: None
+        }
+    ));
+}
+
+#[tokio::test]
+async fn mismatched_country_logout_does_not_revoke_the_live_session() {
+    let (app, cookie) = session_aged(0).await;
+    assert!(matches!(
+        app.handle(AppCommand::Logout(SessionPayload {
+            session_cookie: cookie.clone(),
+            country: Some("DE".to_owned()),
+        }))
+        .await,
+        ResultBody::Logout { revoked: false }
+    ));
+    assert!(matches!(
+        validate(&app, &cookie, "HU").await,
+        ResultBody::ValidateSession { valid: true, .. }
+    ));
 }
 
 #[tokio::test]

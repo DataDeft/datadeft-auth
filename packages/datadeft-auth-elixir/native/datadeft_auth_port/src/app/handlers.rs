@@ -181,7 +181,14 @@ where
                         refreshed_cookie: refreshed
                             .map(|cookie| cookie.as_secret_value().to_owned()),
                     },
-                    Err(failure) => session_error(failure),
+                    // Validation already checked expiry, country, owner and
+                    // revocation. A failed best-effort refresh (for example an
+                    // expired mint window) must not invalidate that session.
+                    Err(_) => ResultBody::ValidateSession {
+                        valid: true,
+                        user_id: Some(validated.session().user_id.as_str().to_owned()),
+                        refreshed_cookie: None,
+                    },
                 }
             }
             Err(SessionValidationError::InvalidSession) => ResultBody::ValidateSession {

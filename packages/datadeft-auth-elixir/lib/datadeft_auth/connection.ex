@@ -37,6 +37,7 @@ defmodule DatadeftAuth.Connection do
   @typep state :: %{
            port: port() | nil,
            ready: boolean(),
+           unready_error: :configuration | :unavailable,
            buffer: Protocol.buffer(),
            pending: %{optional(Protocol.request_id()) => pending_request()},
            next_id: next_id(),
@@ -68,6 +69,7 @@ defmodule DatadeftAuth.Connection do
     state = %{
       port: nil,
       ready: false,
+      unready_error: :unavailable,
       buffer: <<>>,
       pending: %{},
       next_id: 1,
@@ -88,7 +90,7 @@ defmodule DatadeftAuth.Connection do
   @spec handle_call(:status, GenServer.from(), state()) ::
           {:reply, DatadeftAuth.status_result(), state()} | {:noreply, state()}
   def handle_call(:status, _from, %{ready: false} = state),
-    do: {:reply, error(:unavailable), state}
+    do: {:reply, error(state.unready_error), state}
 
   def handle_call(:status, from, state), do: admit(state, :ping, %{}, from)
 
@@ -98,7 +100,7 @@ defmodule DatadeftAuth.Connection do
     do: {:reply, error(:configuration), state}
 
   def handle_call({:auth, _operation, _payload}, _from, %{ready: false} = state),
-    do: {:reply, error(:unavailable), state}
+    do: {:reply, error(state.unready_error), state}
 
   def handle_call({:auth, operation, payload}, from, state),
     do: admit(state, operation, payload, from)
@@ -246,10 +248,9 @@ defmodule DatadeftAuth.Connection do
             :init ->
               {:ok, %{state | ready: true, pending: rest}}
 
-            # The executable's transient refusal (a dependency outage) heals
-            # by retrying; every other refusal is a configuration the app
-            # must fix. The bounded restart loop keeps the owner alive and
-            # retrying either way, with the honest diagnostic code.
+            # Retry transient dependency failures. A configuration refusal
+            # remains observable and stops retries until the application
+            # fixes its config and restarts this supervised child.
             {:error, :unavailable} ->
               {:disconnect, :unavailable}
 
@@ -346,7 +347,13 @@ defmodule DatadeftAuth.Connection do
   defp disconnect(state, code) do
     close(state.port)
     Enum.each(state.pending, fn {_, pending} -> finish(pending, error(code)) end)
-    schedule_restart(%{state | port: nil, ready: false, pending: %{}, buffer: <<>>})
+    state = %{state | port: nil, ready: false, pending: %{}, buffer: <<>>}
+
+    if code == :configuration do
+      %{state | unready_error: :configuration}
+    else
+      schedule_restart(%{state | unready_error: :unavailable})
+    end
   end
 
   @spec schedule_restart(state()) :: state()

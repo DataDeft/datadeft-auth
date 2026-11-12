@@ -2,7 +2,10 @@
 //! keyrings and the backing store/outbox pair. Built once per connection by
 //! the init operation; jobs share it immutably. The port owns the AWS
 //! clients and executor; core and service crates receive loaded material.
+mod aws;
 mod handlers;
+
+use aws::{sdk_config, validate_aws};
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -25,8 +28,8 @@ use datadeft_pow_core::{
 use rand_core::OsRng;
 
 use crate::protocol::{
-    AccountDisplayPayload, AppCommand, AwsPayload, EmailTemplatePayload, ErrorCode, InitPayload,
-    Mode, PowPayload, ResultBody, SecretRefPayload, SecretsPayload, ServicePayload,
+    AccountDisplayPayload, AppCommand, EmailTemplatePayload, ErrorCode, InitPayload, Mode,
+    PowPayload, ResultBody, SecretRefPayload, SecretsPayload, ServicePayload,
 };
 
 /// Bodies carry this marker where the rendered magic-link URL belongs.
@@ -81,6 +84,7 @@ impl ReadyApp {
             }
             Mode::Aws => {
                 let aws = payload.aws.ok_or(ErrorCode::Configuration)?;
+                validate_aws(&aws)?;
                 if aws.fake_outbox && aws.endpoint_url.is_none() {
                     return Err(ErrorCode::Configuration);
                 }
@@ -424,7 +428,11 @@ fn referenced_secrets(secrets: SecretsPayload) -> Result<AuthSecretsConfig, Erro
         .previous_ref
         .map(|reference| secret_ref(reference, "AWSPREVIOUS"))
         .transpose()?;
-    Ok(AuthSecretsConfig::new(active, previous))
+    let references = AuthSecretsConfig::new(active, previous);
+    references
+        .validate()
+        .map_err(|_| ErrorCode::Configuration)?;
+    Ok(references)
 }
 
 fn secret_ref(payload: SecretRefPayload, default_stage: &str) -> Result<SecretRef, ErrorCode> {
@@ -435,15 +443,6 @@ fn secret_ref(payload: SecretRefPayload, default_stage: &str) -> Result<SecretRe
         (Some(_), Some(_)) => return Err(ErrorCode::Configuration),
     };
     Ok(SecretRef::aws_secrets_manager(payload.name_or_arn, version))
-}
-
-async fn sdk_config(aws: &AwsPayload) -> aws_config::SdkConfig {
-    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
-        .region(aws_config::Region::new(aws.region.clone()));
-    if let Some(endpoint) = &aws.endpoint_url {
-        loader = loader.endpoint_url(endpoint);
-    }
-    loader.load().await
 }
 
 /// Wall clock supplied by this adapter; the library never reads one itself.

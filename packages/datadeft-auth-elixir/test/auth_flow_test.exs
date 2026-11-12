@@ -138,11 +138,13 @@ defmodule DatadeftAuthFlowTest do
   test "a refused configuration keeps the owner alive and unready" do
     # AWS mode without its aws section is a configuration error.
     config = %{fake_config() | mode: :aws}
-    pid = start_supervised!({DatadeftAuth, [config: config, restart_delay: 5000]})
+    pid = start_supervised!({DatadeftAuth, [config: config, restart_delay: 30]})
 
-    Process.sleep(300)
+    eventually(fn -> DatadeftAuth.status(pid) == {:error, %Error{code: :configuration}} end)
     assert Process.alive?(pid)
-    assert {:error, %Error{code: :unavailable}} = DatadeftAuth.status(pid)
+    Process.sleep(100)
+    assert :sys.get_state(pid).port == nil
+    assert {:error, %Error{code: :configuration}} = DatadeftAuth.status(pid)
   end
 
   test "oversized payloads are refused locally without consuming an ID" do
@@ -199,9 +201,9 @@ defmodule DatadeftAuthFlowTest do
       | email: %{link_base_url: "https://x.test/?t=", subject: "s", text: "no marker"}
     }
 
-    pid = start_supervised!({DatadeftAuth, [config: config, restart_delay: 5000]})
-    Process.sleep(300)
+    pid = start_supervised!({DatadeftAuth, [config: config, restart_delay: 30]})
+    eventually(fn -> DatadeftAuth.status(pid) == {:error, %Error{code: :configuration}} end)
     assert Process.alive?(pid)
-    assert {:error, %Error{code: :unavailable}} = DatadeftAuth.status(pid)
+    assert :sys.get_state(pid).port == nil
   end
 end

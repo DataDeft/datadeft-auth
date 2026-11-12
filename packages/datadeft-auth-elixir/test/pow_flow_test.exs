@@ -100,8 +100,8 @@ defmodule DatadeftAuthPowFlowTest do
     config = Map.put(fake_config(), :pow, %{difficulty: 0, proof_budget_per_solve: 2})
     pid = start_supervised!({DatadeftAuth, [config: config, restart_delay: 5000]})
 
-    Process.sleep(300)
+    eventually(fn -> DatadeftAuth.status(pid) == {:error, %Error{code: :configuration}} end)
     assert Process.alive?(pid)
-    assert {:error, %Error{code: :unavailable}} = DatadeftAuth.status(pid)
+    assert :sys.get_state(pid).port == nil
   end
 end

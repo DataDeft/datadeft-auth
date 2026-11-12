@@ -4,8 +4,8 @@ defmodule DatadeftAuth do
 
   The transport plus the magic-link/session and PoW APIs are implemented,
   backed by either the crate-shipped in-memory store (`mode: :fake`) or
-  DynamoDB/SES with Secrets Manager key loading (`mode: :aws`). This is not a
-  production authentication release; see the README for the open gates.
+  DynamoDB/SES with Secrets Manager key loading (`mode: :aws`). See the README
+  for source installation, tested platforms and application deployment checks.
   A healthy transport does not mean authentication is configured or available.
 
   Add `{DatadeftAuth, name: MyAuth}` to your application's supervision tree.
@@ -121,7 +121,7 @@ defmodule DatadeftAuth do
     %{id: id, start: {__MODULE__, :start_link, [opts]}}
   end
 
-  @doc "Checks transport health only; returns a fixed diagnostic error when unavailable."
+  @doc "Checks transport health; a refused initialization returns :configuration until the child is restarted with corrected config."
   @spec status(GenServer.server()) :: status_result()
   def status(server), do: call(server, :status)
 
@@ -184,7 +184,7 @@ defmodule DatadeftAuth do
   `country` is the trusted-edge signal, never client input. On `:rejected`
   or `:bad_request` clear the confirm cookie.
 
-  On `:unavailable`, `:timeout` or transport failure the outcome is
+  On `:unavailable`, `:timeout`, `:protocol` or worker failure the outcome is
   **indeterminate by contract**, not failed: the reply may have been lost
   after the session committed and the one-time link was consumed. The
   library never replays the commit and keeps no durable commit plan. Offer
@@ -217,7 +217,10 @@ defmodule DatadeftAuth do
   @doc """
   Validates a session cookie (read-only) and re-issues it when due. Send a
   returned `refreshed_cookie` with the normal session cookie settings on a
-  `no-store` response. `valid: false` means sign in again; clear the cookie.
+  `no-store` response. Refresh is best-effort: an unavailable mint key or
+  entropy failure does not invalidate an already verified session; its existing
+  idle/absolute expiry still applies. `valid: false` means sign in again;
+  clear the cookie.
   """
   @spec validate_session(GenServer.server(), String.t(), keyword()) ::
           {:ok, Validation.t()} | {:error, Error.t()}

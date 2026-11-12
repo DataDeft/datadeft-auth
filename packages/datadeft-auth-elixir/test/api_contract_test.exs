@@ -73,6 +73,11 @@ defmodule DatadeftAuthApiContractTest do
     [_, token] = String.split(url, "?token=", parts: 2)
     {:ok, landing} = DatadeftAuth.landing(pid, token)
 
+    # With country enforcement, missing edge data refuses confirmation
+    # without consuming the link; the later correctly bound call succeeds.
+    assert {:error, %Error{code: :rejected}} =
+             DatadeftAuth.confirm(pid, landing.confirm_cookie, landing.confirmation)
+
     {:ok, session} =
       DatadeftAuth.confirm(pid, landing.confirm_cookie, landing.confirmation, country: "HU")
 
@@ -86,6 +91,15 @@ defmodule DatadeftAuthApiContractTest do
 
     assert {:ok, %Validation{valid: false}} =
              DatadeftAuth.validate_session(pid, session.session_cookie)
+
+    assert {:ok, %{revoked: false}} =
+             DatadeftAuth.logout(pid, session.session_cookie, country: "GB")
+
+    assert {:ok, %Validation{valid: true}} =
+             DatadeftAuth.validate_session(pid, session.session_cookie, country: "HU")
+
+    assert {:ok, %{revoked: true}} =
+             DatadeftAuth.logout(pid, session.session_cookie, country: "HU")
   end
 
   test "concurrent confirmation of one link yields exactly one session" do

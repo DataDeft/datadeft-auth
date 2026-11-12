@@ -50,7 +50,8 @@ defmodule PackageCheck do
         use Mix.Project
         def project, do: [app: :consumer, version: "0.0.0",
           deps: [{:datadeft_auth, path: #{inspect(unpacked)}}]]
-        def application, do: []
+        # The smoke test generates fake-mode keys in this consuming app.
+        def application, do: [extra_applications: [:crypto]]
       end
       """)
 
