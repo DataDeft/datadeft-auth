@@ -3,36 +3,13 @@ use base64::engine::general_purpose::STANDARD;
 use datadeft_auth_token_core::keyring::KeyStatus;
 use datadeft_magic_link_service::{KeyId, KeyPurpose};
 
+use crate::test_support::{
+    auth_secret_document, auth_secret_document_with_keys, deterministic_key_b64,
+};
 use crate::{
     AuthSecretDocuments, AuthSecretsConfig, AwsAdapterError, AwsAuthConfig,
     DynamoDbAuthStoreConfig, LoadedAuthSecrets, SecretRef, SecretVersionRef, SesAuthEmailConfig,
 };
-
-fn key(byte: u8) -> String {
-    STANDARD.encode([byte; 32])
-}
-
-fn secret_json(kid: &str, base: u8, mint_until_unix: u64, verify_until_unix: u64) -> String {
-    format!(
-        r#"{{
-  "kid": "{kid}",
-  "mint_until_unix": {mint_until_unix},
-  "verify_until_unix": {verify_until_unix},
-  "magic_link_lookup_hmac_b64": "{}",
-  "storage_hmac_b64": "{}",
-  "session_cookie_root_b64": "{}",
-  "magic_link_confirm_cookie_root_b64": "{}",
-  "pow_challenge_secret_b64": "{}",
-  "pow_proof_cookie_root_b64": "{}"
-}}"#,
-        key(base),
-        key(base + 1),
-        key(base + 2),
-        key(base + 3),
-        key(base + 4),
-        key(base + 5),
-    )
-}
 
 #[test]
 fn config_is_plain_values_and_redacts_debug() {
@@ -67,8 +44,8 @@ fn config_is_plain_values_and_redacts_debug() {
 
 #[test]
 fn loaded_auth_secrets_builds_active_and_previous_cookie_keyrings() {
-    let active = secret_json("active", 0x10, 1_000, 4_000_000);
-    let previous = secret_json("previous", 0x20, 1, 4_000_000);
+    let active = auth_secret_document("active", 0x10, 1_000, 4_000_000);
+    let previous = auth_secret_document("previous", 0x20, 1, 4_000_000);
     let loaded = LoadedAuthSecrets::from_json(&active, Some(&previous)).expect("loaded secrets");
 
     let active_session = loaded
@@ -99,14 +76,14 @@ fn loaded_auth_secrets_builds_active_and_previous_cookie_keyrings() {
 
 #[test]
 fn loaded_auth_secrets_rejects_malformed_payloads() {
-    let mut malformed_key = secret_json("active", 0x10, 1_000, 4_000_000);
-    malformed_key = malformed_key.replace(&key(0x10), "not-base64");
+    let mut malformed_key = auth_secret_document("active", 0x10, 1_000, 4_000_000);
+    malformed_key = malformed_key.replace(&deterministic_key_b64(0x10), "not-base64");
     assert_eq!(
         LoadedAuthSecrets::from_json(&malformed_key, None).unwrap_err(),
         AwsAdapterError::Internal
     );
 
-    let expired_active = secret_json("active", 0x10, 1_000, 2_000);
+    let expired_active = auth_secret_document("active", 0x10, 1_000, 2_000);
     assert_eq!(
         LoadedAuthSecrets::from_json(&expired_active, None).unwrap_err(),
         AwsAdapterError::Internal
@@ -140,32 +117,26 @@ fn config_rejects_empty_or_control_metadata() {
 
 #[test]
 fn loaded_auth_secrets_keeps_previous_hmac_keys_only_when_rotated() {
-    let active = secret_json("active", 0x10, 1_000, 4_000_000);
+    let active = auth_secret_document("active", 0x10, 1_000, 4_000_000);
 
-    let rotated = secret_json("previous", 0x20, 1, 4_000_000);
+    let rotated = auth_secret_document("previous", 0x20, 1, 4_000_000);
     let loaded = LoadedAuthSecrets::from_json(&active, Some(&rotated)).expect("rotated");
     assert!(loaded.previous_lookup_hmac_key.is_some());
     assert!(loaded.previous_storage_hmac_key.is_some());
 
     // Cookie-only rotation: identical HMAC keys need no fallback reads.
-    let cookie_only = format!(
-        r#"{{
-  "kid": "previous",
-  "mint_until_unix": 1,
-  "verify_until_unix": 4000000,
-  "magic_link_lookup_hmac_b64": "{}",
-  "storage_hmac_b64": "{}",
-  "session_cookie_root_b64": "{}",
-  "magic_link_confirm_cookie_root_b64": "{}",
-  "pow_challenge_secret_b64": "{}",
-  "pow_proof_cookie_root_b64": "{}"
-}}"#,
-        key(0x10),
-        key(0x11),
-        key(0x22),
-        key(0x23),
-        key(0x14),
-        key(0x25),
+    let cookie_only = auth_secret_document_with_keys(
+        "previous",
+        1,
+        4_000_000,
+        &[
+            deterministic_key_b64(0x10),
+            deterministic_key_b64(0x11),
+            deterministic_key_b64(0x22),
+            deterministic_key_b64(0x23),
+            deterministic_key_b64(0x14),
+            deterministic_key_b64(0x25),
+        ],
     );
     let loaded = LoadedAuthSecrets::from_json(&active, Some(&cookie_only)).expect("cookie only");
     assert!(loaded.previous_lookup_hmac_key.is_none());
@@ -193,8 +164,8 @@ impl KeyPurpose for ProofLikePurpose {
 
 #[test]
 fn pow_fields_load_with_rotation_support() {
-    let active = secret_json("active", 0x10, 1_000, 4_000_000);
-    let previous = secret_json("previous", 0x20, 1, 4_000_000);
+    let active = auth_secret_document("active", 0x10, 1_000, 4_000_000);
+    let previous = auth_secret_document("previous", 0x20, 1, 4_000_000);
     let loaded = LoadedAuthSecrets::from_json(&active, Some(&previous)).expect("loaded");
 
     assert_eq!(loaded.pow_challenge_secret.as_bytes(), &[0x14; 32]);
@@ -225,7 +196,7 @@ fn pow_fields_load_with_rotation_support() {
 
 #[test]
 fn pow_fields_are_required_and_validated() {
-    let complete = secret_json("active", 0x10, 1_000, 4_000_000);
+    let complete = auth_secret_document("active", 0x10, 1_000, 4_000_000);
     for field in ["pow_challenge_secret_b64", "pow_proof_cookie_root_b64"] {
         // Drop the field's line, then the trailing comma it may leave behind.
         let missing = complete
@@ -240,7 +211,7 @@ fn pow_fields_are_required_and_validated() {
             "{field} missing"
         );
         let short = complete.replace(
-            &key(if field.starts_with("pow_challenge") {
+            &deterministic_key_b64(if field.starts_with("pow_challenge") {
                 0x14
             } else {
                 0x15
@@ -257,11 +228,11 @@ fn pow_fields_are_required_and_validated() {
 
 #[test]
 fn pow_proof_keyring_refuses_a_kid_too_long_for_the_proof_cookie() {
-    let twelve = secret_json("abcdefghijkl", 0x10, 1_000, 4_000_000);
+    let twelve = auth_secret_document("abcdefghijkl", 0x10, 1_000, 4_000_000);
     let loaded = LoadedAuthSecrets::from_json(&twelve, None).expect("loaded");
     assert!(loaded.pow_proof_keyring::<ProofLikePurpose>().is_ok());
 
-    let thirteen = secret_json("abcdefghijklm", 0x10, 1_000, 4_000_000);
+    let thirteen = auth_secret_document("abcdefghijklm", 0x10, 1_000, 4_000_000);
     let loaded = LoadedAuthSecrets::from_json(&thirteen, None).expect("loaded");
     assert_eq!(
         loaded.pow_proof_keyring::<ProofLikePurpose>().unwrap_err(),
@@ -271,8 +242,11 @@ fn pow_proof_keyring_refuses_a_kid_too_long_for_the_proof_cookie() {
 
 #[test]
 fn secret_key_bytes_debug_is_redacted() {
-    let loaded = LoadedAuthSecrets::from_json(&secret_json("active", 0x10, 1_000, 4_000_000), None)
-        .expect("loaded");
+    let loaded = LoadedAuthSecrets::from_json(
+        &auth_secret_document("active", 0x10, 1_000, 4_000_000),
+        None,
+    )
+    .expect("loaded");
     let debug = format!("{:?}", loaded.pow_challenge_secret);
     assert_eq!(debug, "SecretKeyBytes(..)");
 }
@@ -290,7 +264,8 @@ fn one_value_in_two_key_fields_is_refused() {
     for (index, field) in fields.iter().enumerate() {
         for other in fields.iter().skip(index + 1) {
             let mut document: serde_json::Value =
-                serde_json::from_str(&secret_json("active", 0x10, 1_000, 4_000_000)).expect("json");
+                serde_json::from_str(&auth_secret_document("active", 0x10, 1_000, 4_000_000))
+                    .expect("json");
             document[*other] = document[*field].clone();
             let json = document.to_string();
             assert_eq!(
@@ -298,7 +273,7 @@ fn one_value_in_two_key_fields_is_refused() {
                 AwsAdapterError::Internal,
                 "{field} = {other} must be refused"
             );
-            let active = secret_json("active", 0x30, 1_000, 4_000_000);
+            let active = auth_secret_document("active", 0x30, 1_000, 4_000_000);
             assert_eq!(
                 LoadedAuthSecrets::from_json(&active, Some(&json)).unwrap_err(),
                 AwsAdapterError::Internal,
@@ -310,8 +285,11 @@ fn one_value_in_two_key_fields_is_refused() {
 
 #[test]
 fn pow_proof_keyring_refuses_the_cookie_purposes_this_crate_keys() {
-    let loaded = LoadedAuthSecrets::from_json(&secret_json("active", 0x10, 1_000, 4_000_000), None)
-        .expect("loaded");
+    let loaded = LoadedAuthSecrets::from_json(
+        &auth_secret_document("active", 0x10, 1_000, 4_000_000),
+        None,
+    )
+    .expect("loaded");
     assert_eq!(
         loaded
             .pow_proof_keyring::<datadeft_magic_link_service::SessionCookie>()
@@ -328,7 +306,7 @@ fn pow_proof_keyring_refuses_the_cookie_purposes_this_crate_keys() {
 
 #[test]
 fn secret_documents_load_once_ignore_app_fields_and_redact() {
-    let active = secret_json("active", 0x10, 1_000, 4_000_000).replacen(
+    let active = auth_secret_document("active", 0x10, 1_000, 4_000_000).replacen(
         '{',
         r#"{ "app_field": "app value","#,
         1,

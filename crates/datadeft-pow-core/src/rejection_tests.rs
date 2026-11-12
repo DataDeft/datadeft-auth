@@ -31,11 +31,11 @@ fn solution_for_different_challenge_rejected() {
     let a = mint_challenge(&secret(), 1, at(TIM_UNIX), entropy()).expect("mint a");
     let b = mint_challenge(&secret(), 1, at(TIM_UNIX), [0xFF; 16]).expect("mint b");
     assert_ne!(a.chg, b.chg);
-    let (nonce, hash) = solve_like_worker(&b.chg, 1);
+    let (non, sol) = solve(&b.chg, 1);
     let sol = Solution {
         chg: a.chg,
-        sol: hash,
-        non: nonce.to_string(),
+        sol,
+        non,
         dif: 1,
         tim: a.tim,
         tag: a.tag,

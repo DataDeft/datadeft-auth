@@ -38,6 +38,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 
 [dev-dependencies]
-# flow_tests: solve the PoW challenge and drive the router with `oneshot`.
-sha2 = "0.10"
+# flow_tests: solve the PoW challenge (shared worker-mirror solver) and drive
+# the router with `oneshot`.
+datadeft-pow-core = { path = "../../crates/datadeft-pow-core", version = "0.5.0", features = ["test-support"] } # x-release-please-version
 tower = { version = "0.5", features = ["util"] }

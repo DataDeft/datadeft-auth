@@ -6,7 +6,6 @@ use datadeft_pow_core::{
     MAX_CHALLENGE_MAX_AGE_SECS, MAX_CLOCK_SKEW_SECS, PowProofCookie, PowSecret, UnixMillis,
     verify_pow_proof_cookie,
 };
-use sha2::{Digest, Sha256};
 
 use super::*;
 use crate::cookie::PowProofCookieConfig;
@@ -32,23 +31,14 @@ fn policy() -> PowPolicy {
     PowPolicy::new(DIFFICULTY, DEFAULT_POW_CHALLENGE_MAX_AGE_SECS).expect("policy is valid")
 }
 
-/// Mirrors the browser worker: SHA-256 over `chg + nonce`, `dif` leading zero
-/// hex chars, posting `{chg, sol, non, tim, tag}` (no `dif`).
+/// Solve the challenge with the shared worker-mirror solver, posting
+/// `{chg, sol, non, tim, tag}` (no `dif`).
 fn solve(challenge: &PowChallengeResponse) -> PowSolutionRequest {
-    let mut nonce: u64 = 0;
-    let sol = loop {
-        let hash = hex::encode(Sha256::digest(
-            format!("{}{nonce}", challenge.chg).as_bytes(),
-        ));
-        if hash.starts_with(&"0".repeat(usize::from(challenge.dif))) {
-            break hash;
-        }
-        nonce += 1;
-    };
+    let (non, sol) = datadeft_pow_core::test_support::solve(&challenge.chg, challenge.dif);
     PowSolutionRequest {
         chg: challenge.chg.clone(),
         sol,
-        non: nonce.to_string(),
+        non,
         tim: challenge.tim.clone(),
         tag: challenge.tag.clone(),
     }
