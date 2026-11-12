@@ -7,6 +7,22 @@ approval; each requires the six-question feature review and owner-approved scope
 
 ## 1. Scope
 
+Owner decision (2026-11-12): 0.6.0 ships exactly three items. Everything else
+from the draft table below is out of scope for this release; erasure and the
+PR #9 features need fresh owner approval to re-enter a future roadmap.
+
+| Id | Item | Status |
+| --- | --- | --- |
+| V06-009 | Remove `remove_legacy_session_ttl` (breaking cleanup) | PR #14 |
+| V06-007a | Authenticated-path fuzzing (past the MAC checks; no CI campaign) | In progress |
+| V06-011 | `/auth` route contract: prefix names the owner, `/dev/*` never ships | PR #13 |
+
+Dropped from 0.6.0: V06-001 (retention contract not approved), V06-003 and
+V06-010 (PR #9, not adopted), V06-004, V06-005, V06-006, V06-007 CI campaign,
+V06-008.
+
+### Original draft table (superseded)
+
 | Id | Item | Priority | Source |
 | --- | --- | --- | --- |
 | V06-001 | GDPR erasure (`erase_user`) | Must | CeleraTax #11, deferred from 0.5.0 |
