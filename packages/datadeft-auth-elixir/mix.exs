@@ -70,8 +70,7 @@ defmodule DatadeftAuth.MixProject do
       compilers: [:datadeft_port] ++ Mix.compilers(),
       start_permanent: Mix.env() == :prod,
       deps: [{:jason, "~> 1.4.4"}],
-      description:
-        "Framework-independent authentication through an isolated Rust process (in development)",
+      description: "Framework-independent authentication through an isolated Rust process",
       package: [
         licenses: ["MIT"],
         links: %{"GitHub" => "https://github.com/DataDeft/datadeft-auth"},

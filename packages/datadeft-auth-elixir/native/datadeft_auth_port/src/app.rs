@@ -5,7 +5,7 @@
 mod aws;
 mod handlers;
 
-use aws::{sdk_config, validate_aws};
+use aws::{sdk_config, secret_load_error, validate_aws};
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -102,7 +102,7 @@ impl ReadyApp {
                     let secrets_client = aws_sdk_secretsmanager::Client::new(&sdk);
                     resolve_auth_secrets(&secrets_client, &references)
                         .await
-                        .map_err(|_| ErrorCode::Unavailable)?
+                        .map_err(secret_load_error)?
                 };
                 let (shared, storage_hmac_key, previous_storage_hmac_key) =
                     shared_state(config, email, payload.pow, secrets)?;

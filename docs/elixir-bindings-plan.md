@@ -1,14 +1,16 @@
 # Proposal: Elixir bindings for datadeft-auth
 
-**Status:** design approved and implementation authorized. P1 transport and the
-P2–P4 execution/auth/session/PoW operations are implemented in
-`packages/datadeft-auth-elixir`. Source archive/consumer/release checks and native
-Linux CI are wired. The P2 recovery requirement was revised by owner decision
-(2026-11-12): a lost confirmation reply is a documented fail-closed indeterminate
-outcome with application-owned fresh-link recovery; no durable commit plan or
-automatic replay exists or is planned. Production security/API review, consumer
-validation and explicit release approval remain gates. Implemented operations are
-not a completed production release.
+**Status:** the approved Port/auth/session/PoW implementation is complete in
+`packages/datadeft-auth-elixir` against the released Rust 0.6.0 baseline.
+Independent read-only security/API review was completed and its findings fixed.
+Source archive tests and a clean consumer Mix release exercise sign-in and logout;
+DynamoDB Local tests cover real transactions, rotation and shared PoW budgets and
+are included in CI. Final-head native Linux CI is required before merge.
+The P2 recovery requirement was revised by owner decision (2026-11-12): a lost
+confirmation reply is a fail-closed indeterminate outcome with application-owned
+fresh-link recovery; no durable commit plan or automatic replay exists or is
+planned. Application deployment checks and explicit publication approval remain
+separate; code review/tests are not live production certification.
 **Release alignment:** use the released Rust 0.6.0 API and the repository's
 shared release version. The 0.6.0 main baseline is integrated in the binding.
 **HTTP baseline:** use the released 0.6.0 reference layout:
@@ -354,10 +356,12 @@ unverified mutable install-time downloads.
 | Session/admission | Revocation/disable, idle/absolute expiry and refresh, country policy; multi-node proof budgets, replay, expiry, rotation and storage failure |
 | HTTP | Uniform bodies/headers, scanner safety, origin/CSRF/frame defenses, escaped accounts, scrubbed redirects and cookie lifecycle |
 
-Tests must not leak secrets through assertion output. Add package mise tasks
-`fmt`, `fmt-check`, `check`, `test`, `docs`, `package-check`, `verify`; integrate
-root `elixir-verify` after toolchain provisioning review. Run full
-`mise run verify` before completion; existing Rust/TS/formal checks must pass.
+Tests must not leak secrets through assertion output. Package mise tasks
+`fmt`, `fmt-check`, `check`, `test`, `package-check`, `package-stage` and `verify`
+are wired through root `elixir-verify`. A standalone docs-site task, Dialyzer and
+Credo are not configured; typespecs are documentation, not static verification.
+Run full `mise run verify` before completion; existing Rust/TS/formal checks
+must pass.
 
 ## 9. Implementation gates and handoff
 

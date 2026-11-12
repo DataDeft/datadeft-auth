@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use aws_config::timeout::TimeoutConfig;
-use datadeft_magic_link_aws::{DynamoDbAuthStoreConfig, SesAuthEmailConfig};
+use datadeft_magic_link_aws::{AwsAdapterError, DynamoDbAuthStoreConfig, SesAuthEmailConfig};
 
 use crate::protocol::{AwsPayload, ErrorCode};
 
@@ -24,6 +24,14 @@ pub(super) fn validate_aws(aws: &AwsPayload) -> Result<(), ErrorCode> {
     SesAuthEmailConfig::new(&aws.from_email)
         .validate()
         .map_err(|_| ErrorCode::Configuration)
+}
+
+pub(super) fn secret_load_error(error: AwsAdapterError) -> ErrorCode {
+    match error {
+        // A malformed stored document will not heal by refetching it forever.
+        AwsAdapterError::Internal => ErrorCode::Configuration,
+        _ => ErrorCode::Unavailable,
+    }
 }
 
 fn timeouts() -> TimeoutConfig {
@@ -81,6 +89,21 @@ mod tests {
                 validate_aws(&region),
                 Err(ErrorCode::Configuration)
             ));
+        }
+    }
+
+    #[test]
+    fn malformed_secret_documents_are_configuration_errors_not_retry_loops() {
+        assert!(matches!(
+            secret_load_error(AwsAdapterError::Internal),
+            ErrorCode::Configuration
+        ));
+        for error in [
+            AwsAdapterError::DependencyUnavailable,
+            AwsAdapterError::RateLimited,
+            AwsAdapterError::ConditionalWriteFailed,
+        ] {
+            assert!(matches!(secret_load_error(error), ErrorCode::Unavailable));
         }
     }
 
