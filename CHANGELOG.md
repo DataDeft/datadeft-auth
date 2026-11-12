@@ -6,6 +6,8 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Unreleased
 
+## [0.6.0](https://github.com/DataDeft/datadeft-auth/compare/v0.5.0...v0.6.0) (2026-11-12)
+
 ### Upgrade summary (0.5.0 -> 0.6.0, consumer actions)
 
 0.6.0 is a breaking release at the API and deployment layers; no token,
@@ -73,34 +75,18 @@ documents carry over unchanged. Actions, in order:
   fresh table, so no supported deployment has rows for it to touch. There is
   no replacement.
 
+### Fixed
+
+- Remove the unused DynamoDB update-item error import left after the TTL
+  helper removal, restoring warning-free builds.
+- Isolate Elixir test fixture directories across BEAM processes so source
+  package checks cannot remove another test run's worker.
+
 ### Security
 
 - Upgrade rustls to 0.23.46, rustls-webpki to 0.103.16 and Tokio to 1.53.3.
 - Upgrade the DynamoDB, SES and Secrets Manager SDK dependency chain to remove
   the unmaintained `pin-utils` crate. No advisory exceptions are added.
-
-## [0.6.0](https://github.com/DataDeft/datadeft-auth/compare/v0.5.0...v0.6.0) (2026-11-12)
-
-
-### ⚠ BREAKING CHANGES
-
-* **magic-link-service:** borrow the service config instead of owning a per-request copy
-* remove the one-time session-TTL migration helper (V06-009)
-
-### Features
-
-* opt-in __Host- session cookie names and the 0.6.0 upgrade summary ([2b0296f](https://github.com/DataDeft/datadeft-auth/commit/2b0296ff93f45dbb0d794f5aa0309b94090d370b))
-* remove the one-time session-TTL migration helper (V06-009) ([31eb94b](https://github.com/DataDeft/datadeft-auth/commit/31eb94b391203838b690e925742aaa80dee68022))
-
-
-### Bug Fixes
-
-* drop the orphaned update-item import and pid-scope the test fixture dirs ([ba68cd5](https://github.com/DataDeft/datadeft-auth/commit/ba68cd54754ef37007b9248284c65dbea4659ac5))
-
-
-### Performance Improvements
-
-* **magic-link-service:** borrow the service config instead of owning a per-request copy ([bb6ea61](https://github.com/DataDeft/datadeft-auth/commit/bb6ea619b35507e22a738167a9231511fc203b94))
 
 ## [0.5.0](https://github.com/DataDeft/datadeft-auth/compare/v0.4.1...v0.5.0) (2026-10-11)
 
