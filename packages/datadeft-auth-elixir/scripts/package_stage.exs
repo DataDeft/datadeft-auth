@@ -54,6 +54,11 @@ defmodule PackageStage do
       File.mkdir_p!(target)
       File.cp_r!(Path.join(source, "src"), Path.join(target, "src"))
       File.cp_r!(Path.join(source, "Cargo.toml"), Path.join(target, "Cargo.toml"))
+
+      # Explicit [[bench]] targets must exist even in a non-benchmark build.
+      if File.dir?(Path.join(source, "benches")) do
+        File.cp_r!(Path.join(source, "benches"), Path.join(target, "benches"))
+      end
     end
 
     # The staged workspace inherits package metadata, dependency floors and
