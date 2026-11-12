@@ -66,6 +66,34 @@ The libraries hold no globals. You inject every dependency.
 - **Routes, cookie configuration, redirects, body limits, and token-safe
   logging.**
 
+## Route contract (0.6.0)
+
+The handlers are headless, so URLs are yours to choose; this is the reference
+layout the example app ships and the documented default for 0.6.0. The rule:
+a route's prefix names its owner, and production never mounts `/dev/*`. The
+paths are deployment contract, not just code: edge allowlists (WAF, ALB,
+gateway or CDN path rules) must change in the same rollout as the router.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/auth/magic-link/request` | Request the magic-link email |
+| GET | `/auth/magic-link/landing` | Scanner-safe landing (never consumes); the emailed URL via `link_base_url` |
+| GET | `/auth/magic-link/open` | Redirect-landing variant |
+| GET | `/auth/magic-link/flow-state` | Flow state bound to the confirm cookie |
+| POST | `/auth/magic-link/consume` | Consume the link and create the session atomically |
+| GET | `/auth/magic-link/confirm` (+ `.js`) | Static confirmation page (redirect mode) |
+| GET | `/auth/magic-link/complete` | Signed-in landing page |
+| POST | `/auth/pow/create` | Mint a proof-of-work challenge |
+| POST | `/auth/pow/validate` | Verify a solve, set the `dd_pow` proof cookie |
+| POST | `/auth/logout` | CSRF-protected session revocation |
+| GET | `/dev`, `/dev/me`, `/dev/latest-magic-link` | Development tooling only; never mounted in production |
+
+A deployment mounts one landing mode: server-rendered (`landing` + `consume`)
+or redirect mode (`open` + `flow-state` + `confirm` + `consume`). There is no
+proof-check endpoint: PoW admission runs inside each gated route and refuses
+with `401` and `WWW-Authenticate: DD-PoW`. The `/auth` prefix matches the
+confirm cookie's `Path=/auth` scope; keep them aligned if you rename routes.
+
 ## The flow you wire
 
 The Axum handlers are headless. They check input and return structured results

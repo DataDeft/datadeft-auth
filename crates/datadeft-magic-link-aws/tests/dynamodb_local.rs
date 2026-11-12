@@ -128,7 +128,7 @@ async fn login(
         clock: &WallClock,
         rng: &mut *rng,
         lookup_hmac_key: &keys.lookup,
-        config: keys.config.clone(),
+        config: &keys.config,
     }
     .request_magic_link(RequestMagicLinkCommand::new(
         NormalizedEmail::from_normalized(email).expect("email"),
@@ -156,7 +156,7 @@ async fn login(
         previous_lookup_hmac_key: None,
         confirm_keyring: &keys.confirm,
         session_keyring: &keys.session,
-        config: keys.config.clone(),
+        config: &keys.config,
     };
     let landing = flow
         .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(token))

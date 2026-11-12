@@ -13,6 +13,7 @@ cargo-fuzz = true
 
 [dependencies]
 arbitrary = { version = "1", features = ["derive"] }
+hex = "0.4"
 libfuzzer-sys = "0.4"
 datadeft-auth-token-core = { path = "../crates/datadeft-auth-token-core", features = ["test-support"] }
 datadeft-magic-link-core = { path = "../crates/datadeft-magic-link-core" }
@@ -96,6 +97,27 @@ bench = false
 [[bin]]
 name = "cookie_header"
 path = "fuzz_targets/cookie_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bound_cookie_roundtrip"
+path = "fuzz_targets/bound_cookie_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "confirm_cookie_roundtrip"
+path = "fuzz_targets/confirm_cookie_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pow_proof_roundtrip"
+path = "fuzz_targets/pow_proof_roundtrip.rs"
 test = false
 doc = false
 bench = false

@@ -1,8 +1,8 @@
 #![no_main]
 
-use libfuzzer_sys::fuzz_target;
 use arbitrary::Arbitrary;
 use datadeft_pow_core::{PowSecret, Solution, UnixMillis, verify_solution};
+use libfuzzer_sys::fuzz_target;
 #[derive(Arbitrary, Debug)]
 struct Input {
     chg: String,
@@ -22,5 +22,11 @@ fuzz_target!(|input: Input| {
         tim: input.tim,
         tag: input.tag,
     };
-    let _ = verify_solution(&PowSecret::new([5u8; 32]), &solution, UnixMillis::from_millis(input.now), 120, 1);
+    let _ = verify_solution(
+        &PowSecret::new([5u8; 32]),
+        &solution,
+        UnixMillis::from_millis(input.now),
+        120,
+        1,
+    );
 });

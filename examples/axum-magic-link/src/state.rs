@@ -76,7 +76,7 @@ impl AppState {
             previous_lookup_hmac_key: None,
             confirm_keyring: self.confirm_keyring.as_ref(),
             session_keyring: self.session_keyring.as_ref(),
-            config: self.config.clone(),
+            config: &self.config,
         }
     }
 }
@@ -132,7 +132,7 @@ pub(super) fn build_state() -> AppResult<AppState> {
     // Redirect landing mode: the confirm cookie (`Path=/auth`) covers the
     // flow-state route and the POST action.
     .with_redirect_landing(
-        SameOriginRedirect::parse("/login/confirm")
+        SameOriginRedirect::parse("/auth/magic-link/confirm")
             .map_err(|_| SetupError("invalid confirm page"))?,
         SameOriginRedirect::parse("/auth/magic-link/flow-state")
             .map_err(|_| SetupError("invalid flow-state route"))?,

@@ -23,7 +23,7 @@ async fn logged_in(state: &AppState) -> (String, datadeft_magic_link_service::Se
         clock: &LocalClock,
         rng: &mut rng,
         lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-        config: state.config.clone(),
+        config: &state.config,
     }
     .request_magic_link(RequestMagicLinkCommand::new(
         NormalizedEmail::from_normalized("logout-test@example.test").expect("email"),

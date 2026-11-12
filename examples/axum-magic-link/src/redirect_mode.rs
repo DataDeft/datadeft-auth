@@ -1,7 +1,7 @@
 //! The redirect landing mode (docs/security.md, "Redirect landing mode"), for
 //! apps whose UI is static files: the emailed link lands on
 //! `/auth/magic-link/open`, which redirects to the static page
-//! `/login/confirm`. That page reads `/auth/magic-link/flow-state` and posts
+//! `/auth/magic-link/confirm`. That page reads `/auth/magic-link/flow-state` and posts
 //! the confirmation to the same route as the server-rendered mode.
 
 use axum::extract::{Request, State};
@@ -47,7 +47,7 @@ pub(super) async fn flow_state_route(
     .await
 }
 
-/// `GET /login/confirm`: the static confirm page. In production it is a file
+/// `GET /auth/magic-link/confirm`: the static confirm page. In production it is a file
 /// on a CDN; the headers below are what that CDN must send. It holds the
 /// account and the confirmation value, so: scripts only from this origin, no
 /// third-party anything, no framing.
@@ -57,7 +57,7 @@ pub(super) async fn confirm_page() -> Response {
     response
 }
 
-/// `GET /login/confirm.js`: the page's only script.
+/// `GET /auth/magic-link/confirm.js`: the page's only script.
 pub(super) async fn confirm_page_script() -> Response {
     let mut response = CONFIRM_PAGE_JS.into_response();
     let headers = response.headers_mut();
@@ -87,7 +87,7 @@ const CONFIRM_PAGE_HTML: &str = r#"<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Confirm sign in</title>
-  <script src="/login/confirm.js" defer></script>
+  <script src="/auth/magic-link/confirm.js" defer></script>
 </head>
 <body>
   <main>
@@ -133,7 +133,7 @@ const unusable = 'This link cannot be used. Request a new one.';
     });
     if (confirmed.ok) {
       form.hidden = true;
-      window.location.assign('/auth/complete');
+      window.location.assign('/auth/magic-link/complete');
     } else if (confirmed.status === 503) {
       // Nothing was consumed; the link still works. Keep the form.
       status.textContent = 'The service is busy. Try again in a moment.';

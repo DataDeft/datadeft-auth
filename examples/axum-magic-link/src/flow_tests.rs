@@ -4,7 +4,6 @@
 use axum::body::{Body, to_bytes};
 use axum::http::header::{CONTENT_TYPE, COOKIE, LOCATION, ORIGIN, SET_COOKIE};
 use axum::http::{Request, Response, StatusCode};
-use sha2::{Digest, Sha256};
 use tower::ServiceExt;
 
 use super::*;
@@ -29,21 +28,13 @@ fn cookie(response: &Response<Body>, name: &str) -> Option<String> {
         .find(|pair| pair.starts_with(&format!("{name}=")) && pair.len() > name.len() + 1)
 }
 
-/// Solve the PoW challenge the way the browser worker does.
+/// Solve the PoW challenge with the shared worker-mirror solver.
 fn solve(challenge: &serde_json::Value) -> serde_json::Value {
     let chg = challenge["chg"].as_str().expect("chg");
-    let dif = challenge["dif"].as_u64().expect("dif") as usize;
-    let prefix = "0".repeat(dif);
-    let (non, sol) = (0u64..)
-        .map(|nonce| {
-            let digest = Sha256::digest(format!("{chg}{nonce}").as_bytes());
-            let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-            (nonce, hex)
-        })
-        .find(|(_, hex)| hex.starts_with(&prefix))
-        .expect("solution");
+    let dif = u8::try_from(challenge["dif"].as_u64().expect("dif")).expect("dif fits in u8");
+    let (non, sol) = datadeft_pow_core::test_support::solve(chg, dif);
     serde_json::json!({
-        "chg": chg, "sol": sol, "non": non.to_string(),
+        "chg": chg, "sol": sol, "non": non,
         "tim": challenge["tim"], "tag": challenge["tag"],
     })
 }
@@ -133,7 +124,7 @@ async fn sign_in_end_to_end_through_the_router() {
         Some("hu")
     );
     let token = email.token.as_secret_value().to_string();
-    let landing_uri = format!("/auth/magic-link?token={token}");
+    let landing_uri = format!("/auth/magic-link/landing?token={token}");
 
     // A scanner fetches the link twice; neither fetch consumes it.
     for _ in 0..2 {
@@ -195,7 +186,7 @@ async fn sign_in_end_to_end_through_the_router() {
 
     let me = send(
         &app,
-        Request::get("/me")
+        Request::get("/dev/me")
             .header(COOKIE, &session)
             .body(Body::empty())
             .expect("req"),
@@ -268,7 +259,7 @@ async fn redirect_mode_end_to_end_through_the_router() {
         clock: &LocalClock,
         rng: &mut rng,
         lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-        config: state.config.clone(),
+        config: &state.config,
     }
     .request_magic_link(RequestMagicLinkCommand::new(
         NormalizedEmail::from_normalized("static@example.test").expect("email"),
@@ -299,14 +290,14 @@ async fn redirect_mode_end_to_end_through_the_router() {
             .get(LOCATION)
             .and_then(|v| v.to_str().ok())
             .expect("location");
-        assert_eq!(location, "/login/confirm", "one target, no token");
+        assert_eq!(location, "/auth/magic-link/confirm", "one target, no token");
         confirm_cookie = cookie(&landed, "dd_auth_confirm").expect("confirm cookie");
     }
 
     // The static page carries its own strict headers.
     let page = send(
         &app,
-        Request::get("/login/confirm")
+        Request::get("/auth/magic-link/confirm")
             .body(Body::empty())
             .expect("req"),
     )
@@ -375,7 +366,7 @@ async fn redirect_mode_end_to_end_through_the_router() {
     let session = cookie(&confirmed, "dd_session").expect("session cookie");
     let me = send(
         &app,
-        Request::get("/me")
+        Request::get("/dev/me")
             .header(COOKIE, &session)
             .body(Body::empty())
             .expect("req"),

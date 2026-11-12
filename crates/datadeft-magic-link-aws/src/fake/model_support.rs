@@ -223,7 +223,7 @@ impl Harness {
             clock: &self.clock,
             rng: &mut self.rng,
             lookup_hmac_key: &self.lookup_key,
-            config: self.config.clone(),
+            config: &self.config,
         }
         .request_magic_link(RequestMagicLinkCommand::new(email.clone(), true, true))
         .await
@@ -353,7 +353,7 @@ impl Harness {
             previous_lookup_hmac_key: None,
             confirm_keyring: &self.confirm_keyring,
             session_keyring: &self.session_keyring,
-            config: self.config.clone(),
+            config: &self.config,
         }
     }
 

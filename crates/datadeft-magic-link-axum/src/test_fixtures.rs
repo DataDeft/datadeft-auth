@@ -180,7 +180,7 @@ pub(crate) async fn fixture_flow_error(kind: FixtureFlowError) -> MagicLinkFlowE
         previous_lookup_hmac_key: None,
         confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
-        config: service_config,
+        config: &service_config,
     };
     service
         .begin_magic_link_landing(BeginMagicLinkLandingCommand::new("malformed".to_owned()))
