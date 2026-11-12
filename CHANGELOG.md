@@ -6,6 +6,13 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Unreleased
 
+### Removed
+
+- **Breaking:** `DynamoDbAuthStore::remove_legacy_session_ttl` is removed. It
+  was the one-time 0.4-to-0.5 session-TTL migration; 0.5.0 already requires a
+  fresh table, so no supported deployment has rows for it to touch. There is
+  no replacement.
+
 ### Changed
 
 - **Breaking (deployment):** the reference route layout moved to one prefix
