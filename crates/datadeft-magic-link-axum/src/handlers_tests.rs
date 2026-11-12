@@ -286,7 +286,7 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
             clock: &FlowClock,
             rng: &mut rng,
             lookup_hmac_key: &lookup_key,
-            config: config.clone(),
+            config: &config,
         };
         request
             .request_magic_link(RequestMagicLinkCommand::new(
@@ -334,7 +334,7 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
                 previous_lookup_hmac_key: None,
                 confirm_keyring,
                 session_keyring,
-                config: config.clone(),
+                config,
             };
             service.begin_magic_link_landing(command).await
         }
@@ -384,7 +384,7 @@ async fn full_flow_through_handlers_lands_side_effect_free_then_confirms() {
                 previous_lookup_hmac_key: None,
                 confirm_keyring,
                 session_keyring,
-                config: config.clone(),
+                config,
             };
             service.confirm_magic_link_flow(command).await
         }

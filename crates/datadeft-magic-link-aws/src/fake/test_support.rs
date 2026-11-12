@@ -132,7 +132,7 @@ where
         previous_lookup_hmac_key: None,
         confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
-        config,
+        config: &config,
     };
     let landing = service
         .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(raw_token))
@@ -169,7 +169,7 @@ where
         previous_lookup_hmac_key: None,
         confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
-        config,
+        config: &config,
     };
     let command = ConfirmMagicLinkFlowCommand::new(flow.cookie, flow.confirmation, None)?;
     service.confirm_magic_link_flow(command).await
@@ -272,7 +272,7 @@ pub(super) async fn login_with_keys(
         clock: &FixedClock,
         rng: &mut *rng,
         lookup_hmac_key: request_key,
-        config: config.clone(),
+        config: &config,
     }
     .request_magic_link(command())
     .await
@@ -290,7 +290,7 @@ pub(super) async fn login_with_keys(
         previous_lookup_hmac_key: previous_key,
         confirm_keyring: &confirm_keyring,
         session_keyring: &session_keyring,
-        config,
+        config: &config,
     };
     let landing = service
         .begin_magic_link_landing(BeginMagicLinkLandingCommand::new(

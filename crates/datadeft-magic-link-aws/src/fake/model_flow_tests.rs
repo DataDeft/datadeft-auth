@@ -499,7 +499,7 @@ async fn race(h: &mut Harness, m: &mut Model, first: &MFlow, second: &MFlow) {
         previous_lookup_hmac_key: None,
         confirm_keyring: &h.confirm_keyring,
         session_keyring: &h.session_keyring,
-        config: h.config.clone(),
+        config: &h.config,
     };
     let command = |flow: &MFlow| {
         ConfirmMagicLinkFlowCommand::new(flow.cookie.clone(), flow.confirmation.clone(), None)
