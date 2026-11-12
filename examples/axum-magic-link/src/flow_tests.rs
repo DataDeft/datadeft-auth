@@ -124,7 +124,7 @@ async fn sign_in_end_to_end_through_the_router() {
         Some("hu")
     );
     let token = email.token.as_secret_value().to_string();
-    let landing_uri = format!("/auth/magic-link?token={token}");
+    let landing_uri = format!("/auth/magic-link/landing?token={token}");
 
     // A scanner fetches the link twice; neither fetch consumes it.
     for _ in 0..2 {
@@ -186,7 +186,7 @@ async fn sign_in_end_to_end_through_the_router() {
 
     let me = send(
         &app,
-        Request::get("/me")
+        Request::get("/dev/me")
             .header(COOKIE, &session)
             .body(Body::empty())
             .expect("req"),
@@ -290,14 +290,14 @@ async fn redirect_mode_end_to_end_through_the_router() {
             .get(LOCATION)
             .and_then(|v| v.to_str().ok())
             .expect("location");
-        assert_eq!(location, "/login/confirm", "one target, no token");
+        assert_eq!(location, "/auth/magic-link/confirm", "one target, no token");
         confirm_cookie = cookie(&landed, "dd_auth_confirm").expect("confirm cookie");
     }
 
     // The static page carries its own strict headers.
     let page = send(
         &app,
-        Request::get("/login/confirm")
+        Request::get("/auth/magic-link/confirm")
             .body(Body::empty())
             .expect("req"),
     )
@@ -366,7 +366,7 @@ async fn redirect_mode_end_to_end_through_the_router() {
     let session = cookie(&confirmed, "dd_session").expect("session cookie");
     let me = send(
         &app,
-        Request::get("/me")
+        Request::get("/dev/me")
             .header(COOKIE, &session)
             .body(Body::empty())
             .expect("req"),

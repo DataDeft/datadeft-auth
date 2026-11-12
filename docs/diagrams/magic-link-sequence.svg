@@ -17,7 +17,7 @@
   <line x1="610" y1="310" x2="102" y2="310" class="return"/><text x="356" y="302" text-anchor="middle" class="text">generic accepted response</text>
 
   <rect x="20" y="345" width="1360" height="230" class="phase"/><text x="35" y="368" class="head">2. Non-consuming landing</text>
-  <line x1="102" y1="395" x2="340" y2="395" class="msg"/><text x="221" y="387" text-anchor="middle" class="text">GET /auth/magic-link?token=...</text>
+  <line x1="102" y1="395" x2="340" y2="395" class="msg"/><text x="221" y="387" text-anchor="middle" class="text">GET /auth/magic-link/landing?token=...</text>
   <line x1="340" y1="430" x2="610" y2="430" class="msg"/><text x="475" y="422" text-anchor="middle" class="text">begin_magic_link_landing</text>
   <line x1="610" y1="465" x2="880" y2="465" class="msg"/><text x="745" y="457" text-anchor="middle" class="text">selector limit + consistent read</text>
   <line x1="880" y1="495" x2="610" y2="495" class="return"/><text x="745" y="487" text-anchor="middle" class="text">candidate or miss</text>
