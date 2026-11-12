@@ -30,7 +30,12 @@ defmodule DatadeftAuth.TestSupport do
   end
 
   def fake(mode) do
-    dir = Path.join(System.tmp_dir!(), "datadeft-fixture-#{System.unique_integer([:positive])}")
+    dir =
+      Path.join(
+        System.tmp_dir!(),
+        "datadeft-fixture-#{System.pid()}-#{System.unique_integer([:positive])}"
+      )
+
     File.mkdir_p!(dir)
     path = Path.join(dir, "worker")
 
