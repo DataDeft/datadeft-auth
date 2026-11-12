@@ -50,7 +50,7 @@ fn app(state: AppState) -> Router {
         .route("/auth/pow/create", post(pow_create))
         .route("/auth/pow/validate", post(pow_validate))
         .route("/auth/magic-link/request", post(request_magic_link))
-        .route("/auth/magic-link", get(landing_route))
+        .route("/auth/magic-link/landing", get(landing_route))
         .route("/auth/magic-link/consume", post(confirm_route))
         // Redirect landing mode, for static UIs.
         .route("/auth/magic-link/open", get(redirect_landing_route))

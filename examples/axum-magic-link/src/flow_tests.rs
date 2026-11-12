@@ -133,7 +133,7 @@ async fn sign_in_end_to_end_through_the_router() {
         Some("hu")
     );
     let token = email.token.as_secret_value().to_string();
-    let landing_uri = format!("/auth/magic-link?token={token}");
+    let landing_uri = format!("/auth/magic-link/landing?token={token}");
 
     // A scanner fetches the link twice; neither fetch consumes it.
     for _ in 0..2 {
