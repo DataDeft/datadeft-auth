@@ -43,7 +43,7 @@ fn invalid_session_policy_and_insecure_samesite_none_are_rejected() {
     assert_eq!(
         SessionCookieConfig::secure(&policy())
             .expect("production")
-            .with_name("__Host-session")
+            .with_name("__Host-Session")
             .unwrap_err(),
         CookieConfigError::InvalidName
     );

@@ -11,6 +11,9 @@ use datadeft_magic_link_service::{
 use crate::cookie_parse::{MAX_SELECTED_COOKIE_VALUE_BYTES, is_cookie_octet};
 use crate::error::MagicLinkHttpError;
 
+mod policy;
+use policy::validate_cookie_policy;
+
 /// Conservative default primary session cookie name.
 pub const DEFAULT_SESSION_COOKIE_NAME: &str = "dd_session";
 /// Primary session cookies are app-wide by default.
@@ -48,12 +51,18 @@ impl SameSite {
     }
 }
 
-/// Typed cookie setup failures.
+/// Typed cookie setup failures. Non-exhaustive: this release already had
+/// to grow it, so downstream matches keep a wildcard arm.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum CookieConfigError {
     InvalidName,
     InvalidPath,
     SameSiteNoneRequiresSecure,
+    /// A `__Host-` name cannot be used over local plain HTTP.
+    HostPrefixRequiresSecure,
+    /// A `__Host-` name requires exactly `Path=/`.
+    HostPrefixRequiresRootPath,
 }
 
 impl fmt::Display for CookieConfigError {
@@ -62,6 +71,8 @@ impl fmt::Display for CookieConfigError {
             Self::InvalidName => "invalid cookie name",
             Self::InvalidPath => "invalid cookie path",
             Self::SameSiteNoneRequiresSecure => "SameSite=None requires Secure",
+            Self::HostPrefixRequiresSecure => "__Host- requires Secure",
+            Self::HostPrefixRequiresRootPath => "__Host- requires Path=/",
         })
     }
 }
@@ -96,9 +107,8 @@ impl ConfirmCookieConfig {
     }
 
     fn build(name: String, path: String, secure: bool) -> Result<Self, CookieConfigError> {
-        validate_cookie_name(&name)?;
-        validate_cookie_path(&path)?;
         let same_site = SameSite::Lax;
+        validate_cookie_policy(&name, &path, secure, same_site)?;
         let clear_header = build_clear_cookie_header(&name, &path, secure, same_site)?;
         Ok(Self {
             name,
@@ -185,35 +195,44 @@ impl SessionCookieConfig {
         Ok(config)
     }
 
-    pub fn with_name(mut self, name: impl Into<String>) -> Result<Self, CookieConfigError> {
-        let name = name.into();
-        validate_cookie_name(&name)?;
+    /// Choose a lower snake_case name, optionally prefixed with `__Host-`.
+    ///
+    /// The prefix is opt-in and requires Secure, exactly Path=/ and host-only
+    /// scope (all policies are host-only). Local HTTP rejects prefixed names.
+    /// Changing the name requires reauthentication; no old-name reads are added.
+    pub fn with_name(self, name: impl Into<String>) -> Result<Self, CookieConfigError> {
+        let path = self.path.clone();
+        let same_site = self.same_site;
+        self.updated(name.into(), path, same_site)
+    }
+
+    pub fn with_path(self, path: impl Into<String>) -> Result<Self, CookieConfigError> {
+        let name = self.name.clone();
+        let same_site = self.same_site;
+        self.updated(name, path.into(), same_site)
+    }
+
+    pub fn with_same_site(self, same_site: SameSite) -> Result<Self, CookieConfigError> {
+        let name = self.name.clone();
+        let path = self.path.clone();
+        self.updated(name, path, same_site)
+    }
+
+    // The one revalidation point: every setter validates the complete
+    // candidate tuple before assigning, so the struct never holds a field
+    // that failed the policy, whatever a caller does with the error.
+    fn updated(
+        mut self,
+        name: String,
+        path: String,
+        same_site: SameSite,
+    ) -> Result<Self, CookieConfigError> {
+        validate_cookie_policy(&name, &path, self.secure, same_site)?;
+        self.clear_header = build_clear_cookie_header(&name, &path, self.secure, same_site)?;
         self.name = name;
-        self.rebuild_clear_header()?;
-        Ok(self)
-    }
-
-    pub fn with_path(mut self, path: impl Into<String>) -> Result<Self, CookieConfigError> {
-        let path = path.into();
-        validate_cookie_path(&path)?;
         self.path = path;
-        self.rebuild_clear_header()?;
-        Ok(self)
-    }
-
-    pub fn with_same_site(mut self, same_site: SameSite) -> Result<Self, CookieConfigError> {
-        if same_site == SameSite::None && !self.secure {
-            return Err(CookieConfigError::SameSiteNoneRequiresSecure);
-        }
         self.same_site = same_site;
-        self.rebuild_clear_header()?;
         Ok(self)
-    }
-
-    fn rebuild_clear_header(&mut self) -> Result<(), CookieConfigError> {
-        self.clear_header =
-            build_clear_cookie_header(&self.name, &self.path, self.secure, self.same_site)?;
-        Ok(())
     }
 
     #[must_use]
@@ -305,43 +324,6 @@ pub fn clear_confirm_cookie_header(config: &ConfirmCookieConfig) -> HeaderValue 
     config.clear_header.clone()
 }
 
-fn validate_cookie_name(value: &str) -> Result<(), CookieConfigError> {
-    if is_lower_snake_cookie_name(value) {
-        Ok(())
-    } else {
-        Err(CookieConfigError::InvalidName)
-    }
-}
-
-fn validate_cookie_path(value: &str) -> Result<(), CookieConfigError> {
-    if is_valid_cookie_path(value) {
-        Ok(())
-    } else {
-        Err(CookieConfigError::InvalidPath)
-    }
-}
-
-fn is_lower_snake_cookie_name(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-        && value
-            .bytes()
-            .next()
-            .is_some_and(|byte| byte.is_ascii_lowercase())
-}
-
-fn is_valid_cookie_path(value: &str) -> bool {
-    value.starts_with('/')
-        && value.len() <= 128
-        && !value.contains(['?', '#', '%', '\\', ',', ';'])
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii() && !byte.is_ascii_control() && !byte.is_ascii_whitespace())
-}
-
 fn is_valid_cookie_value(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= MAX_SELECTED_COOKIE_VALUE_BYTES
@@ -399,3 +381,7 @@ pub(crate) fn cookie_path_covers(cookie_path: &str, request_path: &str) -> bool 
 #[cfg(test)]
 #[path = "cookie_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "cookie_host_tests.rs"]
+mod host_tests;

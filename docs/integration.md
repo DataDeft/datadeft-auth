@@ -252,6 +252,31 @@ the challenges that the server minted before the rotation, within the challenge
 max age. The challenge max age is 120 s by default
 (`DEFAULT_POW_CHALLENGE_MAX_AGE_SECS`).
 
+## Adopting `__Host-` cookie names
+
+The `__Host-` prefix makes the browser refuse the session cookie unless it
+is `Secure`, `Path=/` and host-only, which blocks sibling-subdomain cookie
+planting. It is worth adopting only when less-trusted hosts share your
+registrable domain; the defaults stay unprefixed. The cookie value is
+name-agnostic and the session lives server-side, so adoption needs no
+reauthentication:
+
+1. **Configure** the session cookie name as `__Host-dd_session` through the
+   secure cookie config. Validation enforces the three browser rules at
+   startup; plain-HTTP local development keeps the unprefixed names.
+2. **Migrate** with a temporary middleware in your application: when
+   `__Host-dd_session` is absent but legacy `dd_session` is present, copy
+   the value into `Set-Cookie: __Host-dd_session=<value>; Secure; Path=/;
+   HttpOnly; SameSite=Lax`, clear the old name, and continue. The library
+   reads one name only; the dual-name logic lives in your app alone.
+3. **Sunset** after one session-absolute lifetime (default 30 days): every
+   live session has rotated, so delete the middleware and the old-name
+   clear config.
+
+The prefix's guarantee starts at step 3 - while the middleware accepts the
+legacy name, a planted cookie is still honored. Keep the window short, or
+skip step 2 and accept a one-time logout to get protection on day one.
+
 ## Clock-skew policy
 
 The default tolerance is 60 seconds of future skew.

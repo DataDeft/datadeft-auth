@@ -6,6 +6,51 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Unreleased
 
+### Upgrade summary (0.5.0 -> 0.6.0, consumer actions)
+
+0.6.0 is a breaking release at the API and deployment layers; no token,
+storage, cookie-format or secret-document changes. Sessions and secret
+documents carry over unchanged. Actions, in order:
+
+1. **Toolchain:** build with Rust 1.94.1 or newer (MSRV raise).
+2. **Routes and edge rules:** adopt the 0.6.0 route contract
+   ("Route contract (0.6.0)" in docs/integration.md): `/auth/magic-link/*`,
+   `/auth/pow/*`, `/auth/logout`, `/dev/*` never mounted in production.
+   Update the application router, the `link_base_url` email configuration
+   and every edge path allowlist (Terraform WAF/ALB/gateway/CDN rules) in
+   one rollout. Emailed links minted before the switch die at the old
+   landing path, bounded by the 10-minute token TTL.
+3. **Service construction:** `MagicLinkRequestService` and
+   `MagicLinkFlowService` now borrow their config; change
+   `config: config.clone()` to `config: &config` at each construction site.
+4. **Removed API:** `DynamoDbAuthStore::remove_legacy_session_ttl` is gone
+   (the 0.4->0.5 one-time migration; 0.5.0 already requires a fresh table).
+   Delete any caller; there is no replacement.
+5. **Error matching:** `CookieConfigError` is now `#[non_exhaustive]`; add a
+   wildcard arm to exhaustive matches.
+6. **Optional, recommended where sibling subdomains exist:** adopt
+   `__Host-` session cookie names without logging anyone out, using the
+   three-phase migration in "Adopting `__Host-` cookie names" in
+   docs/integration.md (opt-in config, temporary value-copy middleware,
+   sunset after one session-absolute lifetime). Defaults are unchanged if
+   you skip this.
+
+### Added
+
+- Opt-in `__Host-` session cookie names with Secure, Path=/, host-only
+  set/clear parity, total name-length validation and typed setup errors.
+  Default cookie names are unchanged; local plain HTTP rejects prefixed
+  names. The `__Host-` rules are one shared cookie-policy validation for
+  session and confirm configs; a root-path Secure confirm cookie may opt
+  in, the default narrow-path one fails typed.
+
+### Changed
+
+- **Breaking:** `CookieConfigError` adds `HostPrefixRequiresSecure` and
+  `HostPrefixRequiresRootPath` and is now `#[non_exhaustive]`, so
+  downstream matches keep a wildcard arm and future variants stop being
+  breaking.
+
 ### Changed
 
 - Raise the minimum supported Rust version from 1.88 to 1.94.1 to use maintained
