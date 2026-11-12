@@ -62,7 +62,7 @@ config = %{
     privacy_version: "privacy-v1"
   },
   email: %{
-    link_base_url: "https://auth.example.test/auth/magic-link?token=",
+    link_base_url: "https://auth.example.test/auth/magic-link/landing?token=",
     subject: "Sign in",
     text: "Open {magic_link_url} to sign in."
   },
@@ -109,19 +109,43 @@ Status is a transport ping, not a live DynamoDB/SES health probe. Without config
 `{DatadeftAuth, name: MyAuth}` is health-only and auth operations return a
 configuration error. Give supervised instances distinct names/child IDs.
 
-## High-level operations
+## Consuming-application HTTP mapping
 
-| Function | Application responsibility |
-| --- | --- |
-| `request_link(server, email, opts)` | Supply explicit consent; return generic acceptance, not the internal reason label. |
-| `landing(server, token)` | Call on landing GET; render a uniform scanner-safe page and store returned flow state in an HttpOnly temporary cookie. Never consume on GET. |
-| `flow_state(server, cookie)` | Enforce same-origin fetch/CSRF policy; clear temporary state when unusable. |
-| `confirm(server, cookie, confirmation, opts)` | Same-origin POST only; identify the account; set the session cookie and clear temporary state on success. |
-| `validate_session(server, cookie, opts)` | Use validated identity, then enforce application authorization. Set any returned refreshed cookie; clear an invalid session cookie. |
-| `logout(server, cookie, opts)` | CSRF-protected unsafe method; clear the cookie only after successful server-side invalidation or an already-invalid outcome. |
-| `pow_challenge(server)` | Return the existing browser-compatible challenge shape. |
-| `pow_verify(server, solution)` | Set a proof cookie only after successful verification. This does not spend its admission budget. |
-| `pow_admit(server, proof_cookie)` | Gate each protected action with shared lifetime admission; fail closed on store errors. |
+Use the reference application's **0.6.0 route layout** below. This treats PR #13's
+mapping as the integration baseline, not as a claim that 0.6.0 has been released.
+The binding does not mount routes, render pages, issue redirects or set cookies;
+all HTTP behavior belongs to the consuming application, with no Plug/Phoenix
+requirement. Route names are not private Port operation names.
+
+| Application route | Binding call | Application responsibility |
+| --- | --- | --- |
+| `POST /auth/magic-link/request` | `request_link(server, email, opts)` | Supply explicit consent; return generic acceptance, never the internal reason label. |
+| `GET /auth/magic-link/landing` | `landing(server, token)` | Server-rendered mode: uniform scanner-safe page, account identification and bound confirmation form. Never consume on GET. |
+| `GET /auth/magic-link/open` | `landing(server, token)` | Static-UI mode: same fixed `303` to `/auth/magic-link/confirm` for usable and unusable links. Set temporary state only when usable; do not clear it on an unusable cross-site landing. |
+| `GET /auth/magic-link/confirm` | None | Serve the static confirmation page; it reads flow state, identifies the account and submits same-origin POST. This is not the consume endpoint. |
+| `GET /auth/magic-link/confirm.js` | None | Serve the same-origin script with strict confirmation-page security headers. |
+| `GET /auth/magic-link/flow-state` | `flow_state(server, cookie)` | Require same-origin fetch; clear unusable temporary state. |
+| `POST /auth/magic-link/consume` | `confirm(server, cookie, confirmation, opts)` | Require same-origin/CSRF checks; set the session cookie and clear temporary state on success. |
+| `GET /auth/magic-link/complete` | None | Fixed completion page, not another consume or session-creation operation. |
+| `POST /auth/logout` | `logout(server, cookie, opts)` | CSRF-protected revocation before cookie clearing; pass the trusted country signal. |
+| `POST /auth/pow/create` | `pow_challenge(server)` | Return the existing browser-compatible challenge shape. |
+| `POST /auth/pow/validate` | `pow_verify(server, solution)` | Set the proof cookie only after verification; this does not spend its admission budget. |
+| `GET /dev` | None | Development form only; do not mount in production. |
+| `GET /dev/me` | `validate_session(server, cookie, opts)` | Development protected-resource demonstration only. |
+| `GET /dev/latest-magic-link` | `fake_last_magic_link(server, email)` | Local test outbox only; never expose bearer links in production. |
+
+Choose one landing mode in `email.link_base_url`: the configuration example uses
+`https://auth.example.test/auth/magic-link/landing?token=`; static-UI mode uses
+`https://auth.example.test/auth/magic-link/open?token=`. The destination remains
+explicit application configuration, not a hardcoded library path. No old-route
+aliases or automatic fallback redirects are supplied.
+
+For real protected application routes, call `validate_session` server-side, then
+enforce application authorization. Set any returned refreshed cookie; clear an
+invalid session cookie. There is no required `/auth/session/validate` endpoint.
+For each action protected by PoW, call `pow_admit(server, proof_cookie)` before
+performing the action and fail closed on errors/exhaustion. Admission is independent
+of magic-link operations; there is no new public admission endpoint.
 
 Public operations return `{:ok, result}` or `{:error, %DatadeftAuth.Error{}}`.
 Malformed argument types, malformed/duplicate/unknown options, invalid UTF-8 and
@@ -151,6 +175,15 @@ no-store/CSP/frame/referrer headers, cookie attributes/lifetimes, trusted-edge
 interpretation and IP/global admission. Preserve the repository's documented
 uniform 400/401/503 contract and generic request/landing exceptions; never expose
 internal reasons. No framework-specific HTTP helpers are included here.
+
+Use host-only, HttpOnly cookies with explicit TTL, conservative SameSite and Secure
+outside explicit local HTTP development. Primary session cookies use `Path=/`.
+The reference confirm cookie uses `Path=/auth` to cover flow-state and consumption;
+it therefore also accompanies the same-origin static confirmation page/script.
+This is the accepted route-layout trade-off, not permission to expose the cookie
+to JavaScript. Read exactly one configured cookie and refuse duplicates. Clear
+with the same name/path/security attributes used when setting it. Magic-link
+completion clears temporary flow state, not the independently owned PoW cookie.
 
 Confirmation rejection/shape failure clears temporary flow state. On unavailable,
 timeout or transport failure, do not infer rollback, do not automatically replay

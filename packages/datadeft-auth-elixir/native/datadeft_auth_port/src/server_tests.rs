@@ -40,7 +40,7 @@ fn init(id: u32, mode: &str) -> String {
             "mode": mode,
             "service": { "terms_version": "t1", "privacy_version": "p1" },
             "email": {
-                "link_base_url": "https://auth.test/magic?token=",
+                "link_base_url": "https://auth.test/auth/magic-link/landing?token=",
                 "subject": "Sign in",
                 "text": "Open {magic_link_url}"
             },

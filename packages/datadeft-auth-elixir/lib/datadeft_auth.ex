@@ -14,6 +14,12 @@ defmodule DatadeftAuth do
   need hand-written child specs to coexist under one supervisor.
   Native work never runs inside BEAM. No request is automatically replayed after
   a timeout or worker failure.
+
+  HTTP routes belong to the consuming application. The reference layout uses
+  `/auth/magic-link/*`, `/auth/pow/*` and `POST /auth/logout`; `/dev/*` is local
+  tooling only. In particular, `GET /auth/magic-link/confirm` serves a page,
+  while `POST /auth/magic-link/consume` calls `confirm/4`. See the README for
+  the full mapping; this module neither mounts routes nor sets HTTP cookies.
   """
 
   alias DatadeftAuth.{
@@ -51,7 +57,9 @@ defmodule DatadeftAuth do
   - `email` carries `link_base_url` (the token is appended), `subject`,
     `text` and optional `html`; bodies must contain `{magic_link_url}` and
     the subject must not (Subject headers are routinely logged in transit,
-    and the URL carries the bearer token).
+    and the URL carries the bearer token). The reference landing URL ends in
+    `/auth/magic-link/landing?token=`; redirect mode uses
+    `/auth/magic-link/open?token=`. The destination stays application-configured.
   - `secrets`: fake mode takes `active_document` (and optionally
     `previous_document`), the auth secret document JSON strings delivered
     once over the private pipe. AWS mode takes `active_ref`/`previous_ref`
@@ -171,6 +179,8 @@ defmodule DatadeftAuth do
 
   @doc """
   Confirms a landing: consumes the link and creates the session atomically.
+  In the reference HTTP layout this is `POST /auth/magic-link/consume`, never
+  the GET-only `/auth/magic-link/confirm` page.
   `country` is the trusted-edge signal, never client input. On `:rejected`
   or `:bad_request` clear the confirm cookie. On `:unavailable`, `:timeout`
   or transport failure, preserve it but do not assume rollback or blindly call
@@ -246,7 +256,7 @@ defmodule DatadeftAuth do
   def logout(_, _, _), do: bad_request()
 
   @doc """
-  Mints a proof-of-work challenge for the application's `pow/create` route.
+  Mints a proof-of-work challenge for the application's `POST /auth/pow/create` route.
   Serialize the struct as JSON for the shipping browser client verbatim.
   Requires the `pow` configuration key.
   """

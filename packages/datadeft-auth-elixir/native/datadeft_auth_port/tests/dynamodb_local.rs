@@ -172,7 +172,11 @@ async fn full_flow_against_real_storage_through_the_pipe() {
     );
     assert_eq!(last["found"], true);
     let url = last["magic_link_url"].as_str().expect("e2e");
-    let token = url.split("?token=").nth(1).expect("e2e");
+    let (destination, token) = url.split_once("?token=").expect("e2e");
+    assert!(
+        destination == "https://auth.test/auth/magic-link/landing",
+        "email must target the reference landing route"
+    );
 
     let landing = port.call("landing", serde_json::json!({ "token": token }));
     assert_eq!(landing["usable"], true);
@@ -329,7 +333,7 @@ fn init_payload(table: &str, document: &str) -> serde_json::Value {
         "mode": "aws",
         "service": { "terms_version": "t1", "privacy_version": "p1" },
         "email": {
-            "link_base_url": "https://auth.test/magic?token=",
+            "link_base_url": "https://auth.test/auth/magic-link/landing?token=",
             "subject": "Sign in",
             "text": "Open {magic_link_url}"
         },

@@ -51,7 +51,7 @@ defmodule DatadeftAuth.TestSupport do
       mode: :fake,
       service: %{terms_version: "test-terms-v1", privacy_version: "test-privacy-v1"},
       email: %{
-        link_base_url: "https://auth.example.test/magic?token=",
+        link_base_url: "https://auth.example.test/auth/magic-link/landing?token=",
         subject: "Sign in",
         text: "Open {magic_link_url} to sign in."
       },

@@ -64,7 +64,7 @@ fn eof_cancels_a_stalled_secret_fetch_during_initialization() {
             "mode": "aws",
             "service": { "terms_version": "t", "privacy_version": "p" },
             "email": {
-                "link_base_url": "https://auth.example.test/?token=",
+                "link_base_url": "https://auth.example.test/auth/magic-link/landing?token=",
                 "subject": "Sign in",
                 "text": "Open {magic_link_url}"
             },
@@ -90,6 +90,11 @@ fn eof_cancels_a_stalled_secret_fetch_during_initialization() {
             Err(_) => panic!("local accept failed"),
         }
     };
+    // Accepted sockets may inherit the listener's nonblocking mode (macOS).
+    // Use a genuinely blocking, bounded read rather than racing the sender.
+    connection
+        .set_nonblocking(false)
+        .expect("blocking fixture read");
     connection
         .set_read_timeout(Some(Duration::from_secs(5)))
         .expect("read bound");

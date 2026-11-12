@@ -8,6 +8,12 @@ production security/API review, consumer validation and explicit release approva
 remain gates. Implemented operations are not a completed production release.
 **Release alignment:** target the settled Rust 0.6.0 API and use the repository's
 shared release version; reconcile the current 0.5.0 baseline before implementation.
+**HTTP baseline:** use PR #13's assumed 0.6.0 reference layout:
+`/auth/magic-link/*`, `/auth/pow/*`, `POST /auth/logout`, and development-only
+`/dev/*`. The Elixir README maps each route to the existing binding operations.
+Applications own routing/cookie policy; `email.link_base_url` remains explicit
+configuration. This alignment neither releases 0.6.0 nor changes protocol/token
+versions or the unresolved outcome contract.
 **Approval boundary:** PR #7 approved this design; implementation was subsequently
 authorized. Publication and publishing credentials still require separate approval.
 
