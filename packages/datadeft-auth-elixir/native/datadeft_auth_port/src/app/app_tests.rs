@@ -17,7 +17,7 @@ fn the_test_secret_document_loads_and_requires_a_verify_window() {
     assert!(LoadedAuthSecrets::from_json(&secret_document(4_102_444_800), None).is_err());
 }
 
-fn init_json(pow: Option<serde_json::Value>) -> serde_json::Value {
+pub(super) fn init_json(pow: Option<serde_json::Value>) -> serde_json::Value {
     let mut payload = serde_json::json!({
         "mode": "fake",
         "service": { "terms_version": "t1", "privacy_version": "p1" },

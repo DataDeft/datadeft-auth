@@ -32,6 +32,8 @@ serde_json = { version = "1", features = ["raw_value"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
 
 [dev-dependencies]
+# Test-only: mint fresh-activity cookies with old issue times to isolate absolute expiry.
+datadeft-auth-token-core = { path = "../../../../crates/datadeft-auth-token-core" }
 # DynamoDB Local end-to-end test needs an HTTP client to create its table.
 aws-sdk-dynamodb = { workspace = true, features = ["default-https-client"] }
 # Test-only: the workspace's shared secret-document and solve fixtures.

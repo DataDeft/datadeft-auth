@@ -6,6 +6,8 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Unreleased
 
+## [0.6.0](https://github.com/DataDeft/datadeft-auth/compare/v0.5.0...v0.6.0) (2026-11-12)
+
 ### Upgrade summary (0.5.0 -> 0.6.0, consumer actions)
 
 0.6.0 is a breaking release at the API and deployment layers; no token,
@@ -72,6 +74,13 @@ documents carry over unchanged. Actions, in order:
   was the one-time 0.4-to-0.5 session-TTL migration; 0.5.0 already requires a
   fresh table, so no supported deployment has rows for it to touch. There is
   no replacement.
+
+### Fixed
+
+- Remove the unused DynamoDB update-item error import left after the TTL
+  helper removal, restoring warning-free builds.
+- Isolate Elixir test fixture directories across BEAM processes so source
+  package checks cannot remove another test run's worker.
 
 ### Security
 

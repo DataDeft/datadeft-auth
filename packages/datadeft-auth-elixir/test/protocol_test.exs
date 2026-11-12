@@ -43,6 +43,46 @@ defmodule DatadeftAuth.ProtocolTest do
     end
   end
 
+  test "session validation forwards refresh values and refuses inconsistent failures" do
+    for refreshed <- [nil, "fixture-refreshed-cookie"] do
+      frame =
+        Jason.encode!(%{
+          version: 1,
+          id: 2,
+          result: %{
+            operation: "validate_session",
+            valid: true,
+            user_id: "fixture-user",
+            refreshed_cookie: refreshed
+          }
+        })
+
+      assert {:ok, 2,
+              {:validate_session,
+               %DatadeftAuth.Validation{
+                 valid: true,
+                 user_id: "fixture-user",
+                 refreshed_cookie: ^refreshed
+               }}} = Protocol.reply(frame)
+    end
+
+    for result <- [
+          %{valid: false, user_id: "fixture-user", refreshed_cookie: nil},
+          %{valid: false, user_id: nil, refreshed_cookie: "fixture-cookie"},
+          %{valid: true, user_id: nil, refreshed_cookie: nil},
+          %{valid: true, user_id: "fixture-user", refreshed_cookie: 1}
+        ] do
+      frame =
+        Jason.encode!(%{
+          version: 1,
+          id: 2,
+          result: Map.put(result, :operation, "validate_session")
+        })
+
+      assert {:error, :protocol} = Protocol.reply(frame)
+    end
+  end
+
   test "strict response schema rejects duplicates, unknown fields and forged shapes" do
     valid = ~s({"version":1,"id":2,"result":{"operation":"ping"}})
     assert {:ok, 2, :ping} = Protocol.reply(valid)

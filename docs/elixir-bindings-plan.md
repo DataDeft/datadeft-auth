@@ -9,14 +9,14 @@ outcome with application-owned fresh-link recovery; no durable commit plan or
 automatic replay exists or is planned. Production security/API review, consumer
 validation and explicit release approval remain gates. Implemented operations are
 not a completed production release.
-**Release alignment:** target the settled Rust 0.6.0 API and use the repository's
-shared release version; reconcile the current 0.5.0 baseline before implementation.
-**HTTP baseline:** use PR #13's assumed 0.6.0 reference layout:
+**Release alignment:** use the released Rust 0.6.0 API and the repository's
+shared release version. The 0.6.0 main baseline is integrated in the binding.
+**HTTP baseline:** use the released 0.6.0 reference layout:
 `/auth/magic-link/*`, `/auth/pow/*`, `POST /auth/logout`, and development-only
 `/dev/*`. The Elixir README maps each route to the existing binding operations.
 Applications own routing/cookie policy; `email.link_base_url` remains explicit
-configuration. This alignment neither releases 0.6.0 nor changes protocol/token
-versions or the unresolved outcome contract.
+configuration. This alignment does not change protocol/token versions or the
+owner-approved indeterminate-outcome contract.
 **Approval boundary:** PR #7 approved this design; implementation was subsequently
 authorized. Publication and publishing credentials still require separate approval.
 
@@ -246,13 +246,17 @@ Prove lifecycle and transaction safety:
 1. Correlate bounded jobs/replies with unique IDs, deadlines and monitored callers;
    fail closed on overload/death/restart. Ignore stale/duplicate replies and
    define shutdown/drain behavior. AWS waits must not stall protocol processing.
-2. **Timeout is not rollback.** Once a commit is dispatched, preserve the identical
-   command/attempt ID for reconciliation. Do not generate entropy or replan while
-   its result is ambiguous. Prove durable recovery across Rust/BEAM restarts or
-   block production release; never blindly retry the public login operation.
+2. **Timeout is not rollback.** Owner decision (2026-11-12) replaces the
+   original durable-recovery requirement: a lost confirmation reply is an
+   indeterminate outcome. Never automatically retry the public operation or
+   retain/reconstruct a commit plan across Rust/BEAM restarts. Offer a fresh
+   sign-in link through application-owned recovery UX. Transport tests prove
+   no replay after worker death and discard late confirmation replies.
 3. Consume the expected unexpired link, validate immutable account linkage/consent
-   and create the session in one atomic transaction. Confirmed conflicts may
-   replan with new attempt IDs; ambiguous outcomes permit only identical retries.
+   and create the session in one atomic transaction. Existing in-call Rust
+   service retry behavior is unchanged: ambiguous storage retries reuse the
+   identical attempt, while confirmed conflicts may replan. A new public
+   confirmation call is not that same commit attempt.
 4. Retain existing storage HMAC keying, strongly consistent auth reads,
    expiry/revocation checks, shared counters and rotation behavior. No raw
    verifier reaches storage; outbox delivery must redact its bearer link.
@@ -268,8 +272,8 @@ are deferred; do not claim full Rust API parity.
 
 ## 6. Phoenix example only
 
-Provide a separately packaged, fake-backed Phoenix example—not a library framework
-dependency or generated router. It demonstrates application-owned HTTP wiring to
+Only after separate scope approval, provide a separately packaged, fake-backed
+Phoenix example—not a library framework dependency or generated router. It demonstrates application-owned HTTP wiring to
 the public auth API; other stacks can wire the same operations. The example must preserve the
 normative HTTP contract:
 
@@ -361,8 +365,8 @@ root `elixir-verify` after toolchain provisioning review. Run full
 | --- | --- | --- |
 | P0 | Plan review only | Explicit implementation scope approval |
 | P1 | Package/Port executable scaffold and root wiring | Handshake/lifecycle, isolated Hex/release build, CPU/OS/libc matrix settled |
-| P2 | Rust service/AWS execution spike | Bounded jobs, responsive Port lifecycle and durable ambiguous-commit recovery proven |
-| P3 | High-level auth/session API with DynamoDB | End-to-end request/confirm/logout, concurrent one-time consume, revocation and refresh proven |
+| P2 | Rust service/AWS execution | Bounded jobs, responsive lifecycle and documented indeterminate outcomes/no replay (owner-revised gate) |
+| P3 | High-level auth/session API with DynamoDB | End-to-end request/confirm/logout, concurrent one-time consume, country, revocation, refresh and idle/absolute expiry proven |
 | P4 | High-level PoW API and DynamoDB budget | Browser interoperability and shared lifetime admission/failure tests |
 | P5 | First-release docs/tasks/artifact readiness | Security/API review, full verify, clean consumer build and explicit release approval |
 | P6 | Standalone Phoenix example | Full HTTP security-contract tests; no framework dependencies in the library |

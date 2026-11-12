@@ -1,4 +1,4 @@
-# datadeft_auth (implementation in progress)
+# datadeft_auth
 
 Framework-independent Elixir authentication backed by a **separate Rust process**.
 No Rust code loads into BEAM; no Phoenix, Plug, Rustler or HTTP server is required.
@@ -8,11 +8,13 @@ execution, magic-link/session operations, and independent PoW admission. Fake mo
 uses the shipped in-memory store/outbox; AWS mode reuses Rust DynamoDB, SES and
 Secrets Manager adapters with the supported AWS credential chain.
 
-**Not production-ready:** the AWS integration has not passed production
-security review; do not deploy this branch for login. A lost confirmation
-reply is an **indeterminate outcome by contract** (owner-approved, 0.6.0):
-a timeout is not rollback, the library never replays the commit, and the
-application's recovery path is offering a fresh sign-in link.
+**Source integration:** the binding targets the released Rust 0.6.0 baseline;
+it is not yet published to Hex. Deployment still requires review of the
+consuming application's HTTP security, IAM/resources and recovery UX; local
+AWS integration tests are not live production validation. A lost confirmation
+reply is an **indeterminate outcome by contract** (owner-approved): a timeout
+is not rollback, the library never replays the commit, and the application's
+recovery path is offering a fresh sign-in link.
 
 ## Build and runtime
 
@@ -49,11 +51,27 @@ Typespecs document the public API and protocol/lifecycle contracts, and tests
 check their presence. They are not static verification; Dialyzer is not configured.
 Use `deps-update` only when intentionally updating the committed Mix lockfile.
 
+## Install from source
+
+Until an approved Hex publication, use a checked-out source dependency in your
+application's `mix.exs` (adjust the path to your checkout):
+
+```elixir
+{:datadeft_auth, path: "../datadeft-auth/packages/datadeft-auth-elixir"}
+```
+
+Run `mix deps.get` and build `MIX_ENV=prod mix release` on the target Linux
+architecture/libc with Rust installed. Deploy the resulting Mix release,
+which includes the native executable; do not copy a macOS-built executable to
+Linux. For a self-contained source artifact, use `package-stage` below rather
+than copying this subdirectory alone: its development Cargo paths refer to
+workspace crates. Git/subdirectory dependency installation is not validated.
+
 ## Explicit application configuration
 
 The following illustrates the AWS configuration shape; replace the resource,
 policy, sender and URL placeholders with reviewed application configuration.
-It is not authorization to access resources or deploy this incomplete release.
+It is not authorization to access resources or deploy without the application checks.
 
 ```elixir
 config = %{
@@ -112,8 +130,7 @@ configuration error. Give supervised instances distinct names/child IDs.
 
 ## Consuming-application HTTP mapping
 
-Use the reference application's **0.6.0 route layout** below. This treats PR #13's
-mapping as the integration baseline, not as a claim that 0.6.0 has been released.
+Use the reference application's released **0.6.0 route layout** below.
 The binding does not mount routes, render pages, issue redirects or set cookies;
 all HTTP behavior belongs to the consuming application, with no Plug/Phoenix
 requirement. Route names are not private Port operation names.
@@ -179,6 +196,10 @@ internal reasons. No framework-specific HTTP helpers are included here.
 
 Use host-only, HttpOnly cookies with explicit TTL, conservative SameSite and Secure
 outside explicit local HTTP development. Primary session cookies use `Path=/`.
+Optional `__Host-` session names require Secure, host-only scope and `Path=/`;
+the binding does not set cookies or read old-name aliases. See
+[the adoption guide](https://github.com/DataDeft/datadeft-auth/blob/v0.6.0/docs/integration.md#adopting-__host--cookie-names)
+for the explicit application-owned migration and its temporary trade-off.
 The reference confirm cookie uses `Path=/auth` to cover flow-state and consumption;
 it therefore also accompanies the same-origin static confirmation page/script.
 This is the accepted route-layout trade-off, not permission to expose the cookie
@@ -215,19 +236,27 @@ failure rather than declaring logout complete.
   Executable paths/config are trusted deployment input. Protect crash dumps and
   tracing; process separation is crash containment, not a sandbox.
 
-## Remaining completion gates
+## Validation and deployment boundary
 
-- **P2 (resolved):** the owner revised the delivery requirement to the
-  documented fail-closed, indeterminate-outcome contract: no durable commit
-  plan, no automatic replay, application-owned fresh-link recovery after an
-  ambiguous confirmation (see `confirm/4`). No journal/storage/API exists.
-- **P3/P4 review:** Country binding, concurrent confirmation, cross-node key
-  rotation, session revocation, shared PoW budgets and dependency failure are
-  covered through the binding/native pipe. Review refresh/expiry forwarding and
-  remaining binding-specific coverage alongside the underlying Rust tests.
-- **P5:** Independent security/API review, final native CI/consumer verification,
-  consuming-application validation and explicit release approval. The planned
-  package `docs` task/static analysis are not configured; do not imply otherwise.
+- **Outcome contract:** no durable commit plan or automatic replay. Transport
+  tests cover lost replies across restart and discarded late confirmation
+  replies. Applications own fresh-link recovery (see `confirm/4`).
+- **Authentication:** fake-backed Elixir tests and a real DynamoDB Local pipe
+  test cover country binding, concurrent one-time confirmation, cross-node key
+  rotation, revocation, shared PoW budgets and dependency failure. Adapter tests
+  exercise due/not-due refresh, original/refreshed cookie revocation and separate
+  idle/absolute expiry without a production clock-override API.
+- **Source delivery:** the isolated archive runs the Elixir suite, and a clean
+  consumer Mix release completes request/landing/flow-state/confirm/validate/
+  logout through its bundled executable. Native Linux CI must pass on the exact
+  revision you consume. These tests do not validate your live AWS setup.
+- **Before deployment:** review the application-owned HTTP responsibilities
+  above, provision least-privilege AWS resources, verify real mail delivery in
+  your approved environment, and exercise fresh-link recovery in your UI.
+  A transport ping is not a dependency-health or production-readiness signal.
+
+A package `docs` task, rendered API site, Dialyzer and Credo are not configured;
+typespecs and passing tests must not be described as static verification.
 
 Phoenix examples and prebuilt distribution are separately gated follow-ups.
 No publishing, version bump, live AWS validation or production configuration

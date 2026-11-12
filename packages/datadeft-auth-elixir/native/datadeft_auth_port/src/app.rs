@@ -470,3 +470,7 @@ pub(crate) fn now_unix_millis() -> Option<UnixMillis> {
 #[cfg(test)]
 #[path = "app/app_tests.rs"]
 pub(crate) mod tests;
+
+#[cfg(test)]
+#[path = "app/session_tests.rs"]
+mod session_tests;

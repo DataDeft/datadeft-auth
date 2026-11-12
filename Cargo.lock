@@ -563,7 +563,7 @@ dependencies = [
 
 [[package]]
 name = "axum-magic-link"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "axum",
  "base64",
@@ -956,12 +956,13 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "datadeft-auth-port"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "aws-config",
  "aws-sdk-dynamodb",
  "aws-sdk-secretsmanager",
  "aws-sdk-sesv2",
+ "datadeft-auth-token-core",
  "datadeft-magic-link-aws",
  "datadeft-magic-link-service",
  "datadeft-pow-core",
@@ -973,7 +974,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-auth-token-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "chacha20poly1305",
  "hex",
@@ -989,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-magic-link-aws"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "aws-sdk-dynamodb",
  "aws-sdk-secretsmanager",
@@ -1012,7 +1013,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-magic-link-axum"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "axum",
  "datadeft-auth-token-core",
@@ -1029,7 +1030,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-magic-link-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "datadeft-auth-token-core",
  "hex",
@@ -1043,7 +1044,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-magic-link-service"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "criterion",
  "datadeft-auth-token-core",
@@ -1057,7 +1058,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-pow-axum"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "axum",
  "blake3",
@@ -1071,7 +1072,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft-pow-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "blake3",
  "datadeft-auth-token-core",

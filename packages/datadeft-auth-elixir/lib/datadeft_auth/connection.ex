@@ -230,7 +230,8 @@ defmodule DatadeftAuth.Connection do
     with {:ok, id, result} <- Protocol.reply(frame),
          true <- id < state.next_id do
       case Map.pop(state.pending, id) do
-        # Late/cancelled read-only request; never reused.
+        # Late/cancelled request; IDs are never reused. Discarding a mutation's
+        # reply does not undo its effects and must never trigger a replay.
         {nil, _} ->
           {:ok, state}
 
