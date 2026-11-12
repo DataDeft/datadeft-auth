@@ -6,6 +6,24 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Unreleased
 
+## [0.6.1](https://github.com/DataDeft/datadeft-auth/compare/v0.6.0...v0.6.1) (2026-11-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **release:** publish from a maintainer's machine, never from CI
+
+### Bug Fixes
+
+* **elixir:** address independent review of refresh, initialization and AWS calls ([9c12b81](https://github.com/DataDeft/datadeft-auth/commit/9c12b81b2e6a30d8db5e2f30c3c0740208e4dcc6))
+* **elixir:** preserve verified Rust dependency versions in source archives ([92c5a98](https://github.com/DataDeft/datadeft-auth/commit/92c5a987627696067114521afc7215510c049c45))
+
+
+### Miscellaneous Chores
+
+* release 0.6.1 ([196b077](https://github.com/DataDeft/datadeft-auth/commit/196b077289b80226c6bb49532b3c23bfee627972))
+* **release:** publish from a maintainer's machine, never from CI ([b505236](https://github.com/DataDeft/datadeft-auth/commit/b50523648414442a74af15224d520170da9bee00))
+
 ## [0.6.0](https://github.com/DataDeft/datadeft-auth/compare/v0.5.0...v0.6.0) (2026-11-12)
 
 ### Upgrade summary (0.5.0 -> 0.6.0, consumer actions)

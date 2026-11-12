@@ -26,7 +26,7 @@ aws = [
 ]
 
 [dependencies]
-datadeft-magic-link-service = { path = "../datadeft-magic-link-service", version = "0.6.0" } # x-release-please-version
+datadeft-magic-link-service = { path = "../datadeft-magic-link-service", version = "0.6.1" } # x-release-please-version
 aws-sdk-dynamodb = { workspace = true, optional = true }
 aws-sdk-secretsmanager = { workspace = true, optional = true }
 aws-sdk-sesv2 = { workspace = true, optional = true }
@@ -43,8 +43,8 @@ zeroize = { version = "1", default-features = false, features = ["alloc"] }
 [dev-dependencies]
 # Tests against DynamoDB Local need an HTTP client; the library leaves that to the app.
 aws-sdk-dynamodb = { workspace = true, features = ["default-https-client"] }
-datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.6.0", features = ["test-support"] } # x-release-please-version
-datadeft-magic-link-core = { path = "../datadeft-magic-link-core", version = "0.6.0" } # x-release-please-version
+datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.6.1", features = ["test-support"] } # x-release-please-version
+datadeft-magic-link-core = { path = "../datadeft-magic-link-core", version = "0.6.1" } # x-release-please-version
 # SES tests inspect the request the outbox sends, without a network.
 aws-smithy-http-client = { workspace = true, features = ["test-util"] }
 # Model-conformance property tests; OsRng for unique ids against DynamoDB Local.
