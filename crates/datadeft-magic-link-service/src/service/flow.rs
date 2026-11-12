@@ -41,7 +41,7 @@ pub struct MagicLinkFlowService<'a, Authentication, Sessions, Limiter, ServiceCl
     pub previous_lookup_hmac_key: Option<&'a LookupHmacKey>,
     pub confirm_keyring: &'a KeyRing<MagicLinkConfirmCookie>,
     pub session_keyring: &'a KeyRing<SessionCookie>,
-    pub config: MagicLinkServiceConfig,
+    pub config: &'a MagicLinkServiceConfig,
 }
 
 impl<Authentication, Sessions, Limiter, ServiceClock, Rng>
@@ -58,7 +58,7 @@ where
         &mut self,
         command: BeginMagicLinkLandingCommand,
     ) -> Result<BeginMagicLinkLandingOutcome, MagicLinkFlowError> {
-        validate_config(&self.config).map_err(MagicLinkFlowError::from_public_error)?;
+        validate_config(self.config).map_err(MagicLinkFlowError::from_public_error)?;
         let now_unix = self
             .clock
             .now_unix()
@@ -78,7 +78,7 @@ where
             .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
         if landing_limits_deny(
             self.limiter,
-            &self.config,
+            self.config,
             selector_lookup.as_storage_value(),
             now_unix,
         )
@@ -108,7 +108,7 @@ where
         }
         let (selector_lookup, presented_verifier_hash, candidate) = found;
         let candidate =
-            validate_scanner_candidate(&self.config, candidate, &presented_verifier_hash, now_unix)
+            validate_scanner_candidate(self.config, candidate, &presented_verifier_hash, now_unix)
                 .map_err(MagicLinkFlowError::from_public_error)?;
 
         let email_lookup = email_lookup_hmac(self.lookup_hmac_key, &candidate.email)
@@ -167,7 +167,7 @@ where
         &mut self,
         command: ReadMagicLinkFlowStateCommand,
     ) -> Result<MagicLinkFlowState, MagicLinkFlowError> {
-        validate_config(&self.config).map_err(MagicLinkFlowError::from_public_error)?;
+        validate_config(self.config).map_err(MagicLinkFlowError::from_public_error)?;
         let now_unix = self
             .clock
             .now_unix()
@@ -186,7 +186,7 @@ where
         let presented_verifier_hash = verifier_hash_from_confirm_binding(verified.verifier());
         if landing_limits_deny(
             self.limiter,
-            &self.config,
+            self.config,
             selector_lookup.as_storage_value(),
             now_unix,
         )
@@ -202,7 +202,7 @@ where
             .map_err(map_dependency_error)
             .map_err(MagicLinkFlowError::from_public_error)?;
         let candidate =
-            validate_scanner_candidate(&self.config, candidate, &presented_verifier_hash, now_unix)
+            validate_scanner_candidate(self.config, candidate, &presented_verifier_hash, now_unix)
                 .map_err(MagicLinkFlowError::from_public_error)?;
         let email_lookup = email_lookup_hmac(self.lookup_hmac_key, &candidate.email)
             .map_err(|_| flow_error(MagicLinkServiceError::Internal))?;
@@ -226,13 +226,13 @@ where
         &mut self,
         command: ConfirmMagicLinkFlowCommand,
     ) -> Result<ConfirmMagicLinkFlowOutcome, MagicLinkFlowError> {
-        validate_config(&self.config).map_err(MagicLinkFlowError::from_public_error)?;
+        validate_config(self.config).map_err(MagicLinkFlowError::from_public_error)?;
         let now_unix = self
             .clock
             .now_unix()
             .map_err(map_dependency_error)
             .map_err(MagicLinkFlowError::from_public_error)?;
-        let country = mint_country(&self.config, command.request_country())
+        let country = mint_country(self.config, command.request_country())
             .map_err(MagicLinkFlowError::from_public_error)?;
 
         let verified = verify_magic_link_confirm(
@@ -248,7 +248,7 @@ where
         let presented_verifier_hash = verifier_hash_from_confirm_binding(verified.verifier());
         if consume_limits_deny(
             self.limiter,
-            &self.config,
+            self.config,
             selector_lookup.as_storage_value(),
             now_unix,
         )
@@ -263,7 +263,7 @@ where
             self.session_keyring,
             self.rng,
             self.lookup_hmac_key,
-            &self.config,
+            self.config,
             &selector_lookup,
             &presented_verifier_hash,
             &verified,

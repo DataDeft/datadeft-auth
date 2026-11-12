@@ -213,7 +213,7 @@
 //!         previous_lookup_hmac_key: None,
 //!         confirm_keyring: &state.confirm_keyring,
 //!         session_keyring: &state.session_keyring,
-//!         config: state.config.clone(),
+//!         config: &state.config,
 //!     }
 //! }
 //!

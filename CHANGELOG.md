@@ -6,8 +6,31 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Unreleased
 
+### Removed
+
+- **Breaking:** `DynamoDbAuthStore::remove_legacy_session_ttl` is removed. It
+  was the one-time 0.4-to-0.5 session-TTL migration; 0.5.0 already requires a
+  fresh table, so no supported deployment has rows for it to touch. There is
+  no replacement.
+
 ### Changed
 
+- **Breaking (deployment):** the reference route layout moved to one prefix
+  rule — `/auth/magic-link/*` (request, landing, open, flow-state, consume,
+  confirm, complete), `/auth/pow/*`, `/auth/logout`, and `/dev/*` for
+  development tooling that production never mounts. The library's APIs are
+  unchanged, but edge infrastructure that allowlists auth paths (WAF, ALB,
+  API-gateway or CDN rules, e.g. Terraform) must be updated together with
+  the application router and `link_base_url`. Emailed links minted before
+  the switch die at the old landing path, bounded by the 10-minute token
+  TTL. See "Route contract (0.6.0)" in docs/integration.md.
+
+### Changed
+
+- **Breaking:** `MagicLinkRequestService` and `MagicLinkFlowService` borrow
+  their configuration (`config: &MagicLinkServiceConfig`) instead of owning a
+  per-request copy. Consumers change `config: config.clone()` to
+  `config: &config` when constructing the service values.
 - Raise the minimum supported Rust version from 1.88 to 1.94.1 to use maintained
   AWS SDK/Smithy releases. All workspace crates inherit this requirement.
 

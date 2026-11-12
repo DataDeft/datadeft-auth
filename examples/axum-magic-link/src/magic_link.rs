@@ -66,7 +66,7 @@ async fn request_magic_link_inner(
         clock: &LocalClock,
         rng: &mut rng,
         lookup_hmac_key: state.lookup_hmac_key.as_ref(),
-        config: state.config.clone(),
+        config: &state.config,
     };
     let outcome = service
         .request_magic_link(command)
