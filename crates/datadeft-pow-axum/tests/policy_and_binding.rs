@@ -12,7 +12,6 @@ use datadeft_pow_core::{
     UnixMillis, verify_pow_proof_cookie,
 };
 use rand_core::{OsRng, RngCore};
-use sha2::{Digest, Sha256};
 
 const TIM_UNIX: u64 = 1_783_598_400;
 
@@ -33,18 +32,11 @@ fn policy(difficulty: u8) -> PowPolicy {
 }
 
 fn solve(challenge: &PowChallengeResponse) -> PowSolutionRequest {
-    let prefix = "0".repeat(usize::from(challenge.dif));
-    let (nonce, sol) = (0u64..)
-        .map(|n| {
-            let hash = hex::encode(Sha256::digest(format!("{}{n}", challenge.chg).as_bytes()));
-            (n, hash)
-        })
-        .find(|(_, hash)| hash.starts_with(&prefix))
-        .expect("solution exists");
+    let (non, sol) = datadeft_pow_core::test_support::solve(&challenge.chg, challenge.dif);
     PowSolutionRequest {
         chg: challenge.chg.clone(),
         sol,
-        non: nonce.to_string(),
+        non,
         tim: challenge.tim.clone(),
         tag: challenge.tag.clone(),
     }

@@ -206,11 +206,11 @@ fn millisecond_tim_round_trips_with_exact_delta() {
     let challenge =
         mint_challenge(&secret(), 1, UnixMillis::from_millis(mint_ms), entropy()).expect("mint");
     assert_eq!(challenge.tim, "2026-07-09T12:00:00.123Z");
-    let (nonce, hash) = solve_like_worker(&challenge.chg, 1);
+    let (non, sol) = solve(&challenge.chg, 1);
     let sol = Solution {
         chg: challenge.chg,
-        sol: hash,
-        non: nonce.to_string(),
+        sol,
+        non,
         dif: 1,
         tim: challenge.tim,
         tag: challenge.tag,

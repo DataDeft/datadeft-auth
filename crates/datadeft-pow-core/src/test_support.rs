@@ -1,26 +1,38 @@
-//! Shared fixtures for the PoW test modules: fixed secret, clock, and worker-style solver.
+//! Deterministic fixtures shared by the PoW test suites: fixed secret,
+//! clock, and the worker-style solver.
+//!
+//! Available under `cfg(test)` and the explicit `test-support` feature only.
+//! Never use it in default production builds. The solver is an honest
+//! brute-force client for tests; production clients solve in the browser
+//! worker.
 
-//! Tests for the proof-of-work core. Time/entropy are injected data, so
-//! generation is deterministic apart from proptest's own seeded RNG.
-
+#[cfg(test)]
 use crate::challenge::Solution;
+#[cfg(test)]
 use crate::clock::UnixMillis;
+#[cfg(test)]
 use crate::mint_challenge;
+#[cfg(test)]
 use crate::secret::PowSecret;
 use sha2::{Digest, Sha256};
 
-pub(super) const TIM: &str = "2026-07-09T12:00:00Z";
+#[cfg(test)]
+pub(crate) const TIM: &str = "2026-07-09T12:00:00Z";
 /// Unix timestamp of TIM (2026-07-09T12:00:00Z).
-pub(super) const TIM_UNIX: u64 = 1_783_598_400;
-pub(super) const MAX_AGE: u64 = 300;
+#[cfg(test)]
+pub(crate) const TIM_UNIX: u64 = 1_783_598_400;
+#[cfg(test)]
+pub(crate) const MAX_AGE: u64 = 300;
 
 /// Millisecond clock at a whole-second unix instant. The fixtures predate
 /// millisecond resolution and are specified in seconds.
-pub(super) fn at(unix_secs: u64) -> UnixMillis {
+#[cfg(test)]
+pub(crate) fn at(unix_secs: u64) -> UnixMillis {
     UnixMillis::from_millis(unix_secs * 1000)
 }
 
-pub(super) fn secret() -> PowSecret {
+#[cfg(test)]
+pub(crate) fn secret() -> PowSecret {
     let mut bytes = [0u8; 32];
     for (i, b) in bytes.iter_mut().enumerate() {
         *b = i as u8;
@@ -28,7 +40,8 @@ pub(super) fn secret() -> PowSecret {
     PowSecret::new(bytes)
 }
 
-pub(super) fn entropy() -> [u8; 16] {
+#[cfg(test)]
+pub(crate) fn entropy() -> [u8; 16] {
     let mut bytes = [0u8; 16];
     for (i, b) in bytes.iter_mut().enumerate() {
         *b = i as u8;
@@ -36,12 +49,17 @@ pub(super) fn entropy() -> [u8; 16] {
     bytes
 }
 
-/// Mirrors the browser worker exactly: the worker hashes
-/// `challenge + String(nonce)` (UTF-8, decimal nonce) with SHA-256 and
-/// checks `difficulty` leading zero NIBBLES of the digest (its hex string
-/// therefore starts with `difficulty` '0' chars). It reports the hash as
-/// lowercase hex. Single-worker equivalent: startNonce=0, step=1.
-pub(super) fn solve_like_worker(chg: &str, dif: u8) -> (u64, String) {
+/// Solve a challenge the way the browser worker does, for tests.
+///
+/// Mirrors the worker exactly: it hashes `chg + String(nonce)` (UTF-8,
+/// decimal nonce, counting up from 0) with SHA-256 and checks `dif` leading
+/// zero NIBBLES of the digest (its hex string therefore starts with `dif`
+/// '0' chars). Single-worker equivalent: startNonce=0, step=1.
+///
+/// Returns `(non, sol)` as the client posts them: the decimal nonce string
+/// and the lowercase hex digest.
+#[must_use]
+pub fn solve(chg: &str, dif: u8) -> (String, String) {
     let mut nonce: u64 = 0;
     loop {
         let digest = Sha256::digest(format!("{chg}{nonce}").as_bytes());
@@ -51,21 +69,22 @@ pub(super) fn solve_like_worker(chg: &str, dif: u8) -> (u64, String) {
             nibble == 0
         });
         if ok {
-            return (nonce, hex::encode(digest));
+            return (nonce.to_string(), hex::encode(digest));
         }
         nonce += 1;
     }
 }
 
-pub(super) fn solved_solution(dif: u8) -> Solution {
+#[cfg(test)]
+pub(crate) fn solved_solution(dif: u8) -> Solution {
     let challenge = mint_challenge(&secret(), dif, at(TIM_UNIX), entropy()).expect("mint");
-    let (nonce, hash) = solve_like_worker(&challenge.chg, dif);
+    let (non, sol) = solve(&challenge.chg, dif);
     // Field mapping as the client builds its Solution JSON: chg/tim/tag/dif
     // echoed, sol = hash, non = nonce.toString().
     Solution {
         chg: challenge.chg,
-        sol: hash,
-        non: nonce.to_string(),
+        sol,
+        non,
         dif,
         tim: challenge.tim,
         tag: challenge.tag,
