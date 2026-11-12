@@ -182,10 +182,16 @@ defmodule DatadeftAuth do
   In the reference HTTP layout this is `POST /auth/magic-link/consume`, never
   the GET-only `/auth/magic-link/confirm` page.
   `country` is the trusted-edge signal, never client input. On `:rejected`
-  or `:bad_request` clear the confirm cookie. On `:unavailable`, `:timeout`
-  or transport failure, preserve it but do not assume rollback or blindly call
-  confirm again: a fresh public call is not an identical commit retry. Durable
-  reconciliation is an unresolved production gate.
+  or `:bad_request` clear the confirm cookie.
+
+  On `:unavailable`, `:timeout` or transport failure the outcome is
+  **indeterminate by contract**, not failed: the reply may have been lost
+  after the session committed and the one-time link was consumed. The
+  library never replays the commit and keeps no durable commit plan. Offer
+  the user a fresh sign-in link; one repeated confirm with the same inputs
+  is harmless but answers `:rejected` when the first attempt had committed.
+  A session committed behind a lost reply holds no issued cookie, idles out
+  on its own and is revocable server-side.
   """
   @spec confirm(GenServer.server(), String.t(), String.t(), keyword()) ::
           {:ok, Session.t()} | {:error, Error.t()}

@@ -2,8 +2,9 @@
 //! bounded jobs, out-of-order replies through one writer. Protocol faults
 //! stay fatal (no error reply); only per-request application failures reply
 //! with the error result. Aborted in-flight work on a fatal exit is safe for
-//! the read-only operations; the mutating confirm path relies on the durable
-//! reconciliation design tracked on the PR before production release.
+//! the read-only operations; the mutating confirm path ships the documented
+//! fail-closed contract: a lost reply is an indeterminate outcome, never
+//! replayed, with application-owned fresh-link recovery.
 use std::future::Future;
 use std::io::{Read, Write};
 use std::sync::Arc;

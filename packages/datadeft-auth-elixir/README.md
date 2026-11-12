@@ -8,10 +8,11 @@ execution, magic-link/session operations, and independent PoW admission. Fake mo
 uses the shipped in-memory store/outbox; AWS mode reuses Rust DynamoDB, SES and
 Secrets Manager adapters with the supported AWS credential chain.
 
-**Not production-ready:** restart-durable ambiguous-commit recovery is not
-implemented, and the AWS integration has not passed production security review.
-Do not deploy this branch for login. A timeout is not rollback, and a new public
-confirmation call is not an identical retry of the original transaction.
+**Not production-ready:** the AWS integration has not passed production
+security review; do not deploy this branch for login. A lost confirmation
+reply is an **indeterminate outcome by contract** (owner-approved, 0.6.0):
+a timeout is not rollback, the library never replays the commit, and the
+application's recovery path is offering a fresh sign-in link.
 
 ## Build and runtime
 
@@ -216,9 +217,10 @@ failure rather than declaring logout complete.
 
 ## Remaining completion gates
 
-- **P2:** Agree and prove restart-durable ambiguous-commit recovery, or explicitly
-  revise that delivery requirement. Existing service retries retain a commit plan
-  only in memory. Do not add a journal/storage/API without a reviewed proposal.
+- **P2 (resolved):** the owner revised the delivery requirement to the
+  documented fail-closed, indeterminate-outcome contract: no durable commit
+  plan, no automatic replay, application-owned fresh-link recovery after an
+  ambiguous confirmation (see `confirm/4`). No journal/storage/API exists.
 - **P3/P4 review:** Country binding, concurrent confirmation, cross-node key
   rotation, session revocation, shared PoW budgets and dependency failure are
   covered through the binding/native pipe. Review refresh/expiry forwarding and

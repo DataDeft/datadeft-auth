@@ -3,9 +3,12 @@
 **Status:** design approved and implementation authorized. P1 transport and the
 P2–P4 execution/auth/session/PoW operations are implemented in
 `packages/datadeft-auth-elixir`. Source archive/consumer/release checks and native
-Linux CI are wired. P2 restart-durable ambiguous-commit recovery is not implemented;
-production security/API review, consumer validation and explicit release approval
-remain gates. Implemented operations are not a completed production release.
+Linux CI are wired. The P2 recovery requirement was revised by owner decision
+(2026-11-12): a lost confirmation reply is a documented fail-closed indeterminate
+outcome with application-owned fresh-link recovery; no durable commit plan or
+automatic replay exists or is planned. Production security/API review, consumer
+validation and explicit release approval remain gates. Implemented operations are
+not a completed production release.
 **Release alignment:** target the settled Rust 0.6.0 API and use the repository's
 shared release version; reconcile the current 0.5.0 baseline before implementation.
 **HTTP baseline:** use PR #13's assumed 0.6.0 reference layout:
