@@ -70,7 +70,9 @@ The libraries hold no globals. You inject every dependency.
 
 The handlers are headless, so URLs are yours to choose; this is the reference
 layout the example app ships and the documented default for 0.6.0. The rule:
-a route's prefix names its owner, and production never mounts `/dev/*`.
+a route's prefix names its owner, and production never mounts `/dev/*`. The
+paths are deployment contract, not just code: edge allowlists (WAF, ALB,
+gateway or CDN path rules) must change in the same rollout as the router.
 
 | Method | Path | Purpose |
 |--------|------|---------|
