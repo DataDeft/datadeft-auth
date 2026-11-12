@@ -1,10 +1,24 @@
 # Proposal: Elixir bindings for datadeft-auth
 
-**Status:** design approved and implementation authorized. P1 transport foundation
-is in progress in `packages/datadeft-auth-elixir`; authentication/AWS integration
-and remaining release gates are not implemented yet.
-**Release alignment:** target the settled Rust 0.6.0 API and use the repository's
-shared release version; reconcile the current 0.5.0 baseline before implementation.
+**Status:** the approved Port/auth/session/PoW implementation is complete in
+`packages/datadeft-auth-elixir` against the released Rust 0.6.0 baseline.
+Independent read-only security/API review was completed and its findings fixed.
+Source archive tests and a clean consumer Mix release exercise sign-in and logout;
+DynamoDB Local tests cover real transactions, rotation and shared PoW budgets and
+are included in CI. Final-head native Linux CI is required before merge.
+The P2 recovery requirement was revised by owner decision (2026-11-12): a lost
+confirmation reply is a fail-closed indeterminate outcome with application-owned
+fresh-link recovery; no durable commit plan or automatic replay exists or is
+planned. Application deployment checks and explicit publication approval remain
+separate; code review/tests are not live production certification.
+**Release alignment:** use the released Rust 0.6.0 API and the repository's
+shared release version. The 0.6.0 main baseline is integrated in the binding.
+**HTTP baseline:** use the released 0.6.0 reference layout:
+`/auth/magic-link/*`, `/auth/pow/*`, `POST /auth/logout`, and development-only
+`/dev/*`. The Elixir README maps each route to the existing binding operations.
+Applications own routing/cookie policy; `email.link_base_url` remains explicit
+configuration. This alignment does not change protocol/token versions or the
+owner-approved indeterminate-outcome contract.
 **Approval boundary:** PR #7 approved this design; implementation was subsequently
 authorized. Publication and publishing credentials still require separate approval.
 
@@ -147,10 +161,11 @@ of magic-link operations and requires shared DynamoDB-backed lifetime counters,
 not a local counter. Reuse core verification/minting; keep any new admission glue adapter-owned
 and test against the existing contract.
 
-Inject a clock dependency in client config, not timestamps on every public call;
-Rust remains deterministic. Protocol time fields use explicit units: PoW
-`now_unix_ms`, token/key windows `now_unix` seconds. Entropy is OS-backed inside
-the adapter; callers do not supply nonces.
+The current process adapter supplies a wall clock and OS-backed entropy to the
+Rust services. Public operations accept neither timestamps nor nonces; there is
+no configurable Elixir clock callback yet. Any need for that additional API must
+be justified rather than inferred from test convenience. Internal time units stay
+explicit: PoW milliseconds and token/key-window seconds.
 
 ## 4. Process boundary and security invariants
 
@@ -162,7 +177,8 @@ the adapter; callers do not supply nonces.
   path}, ...)`, not a shell. Elixir supervision owns startup, exit monitoring,
   restart backoff, shutdown and OS-child cleanup. Prove no orphan remains after
   owner/VM death. Use stdin/stdout only; never merge stderr into protocol output.
-- Propose length-prefixed frames (`{:packet, 4}`) with versioned JSON envelopes:
+- Use four-byte length-prefixed raw Port streams, not VM `packet: 4`, with
+  versioned JSON envelopes:
   protocol version, request ID, fixed operation and typed payload/result. Encode
   arbitrary bytes as canonical base64; validate integer ranges exactly. Reject
   unsupported versions, duplicate/unknown fields and malformed frames. No
@@ -176,13 +192,14 @@ the adapter; callers do not supply nonces.
   call a deadline and unique ID; route at most one reply. Drop late replies and
   distinguish application errors from transport failure. Never auto-replay a
   failed call, especially a mutation. A caller timeout does not cancel execution.
-- Rust owns typed key/parsed/verified objects in a capped handle table. Handles
-  are opaque, unguessable and scoped to a worker generation; reject stale,
-  wrong-type or cross-worker handles. Define expiry/explicit release and caller
-  cleanup; BEAM GC cannot free remote objects. Restart invalidates all handles.
-- On worker exit, fail pending calls once. Reload keys through an explicit
-  application-supplied initialization callback before marking the replacement
-  ready; never persist secret handles or use environment/argv for key transport.
+- Rust owns initialized keys and per-operation parsed/verified state. The current
+  high-level protocol exposes no generic crypto handles or remote handle table;
+  such a mechanism is not needed for these operations and is not part of this PR.
+  Restart discards process-local state and does not recover transaction plans.
+- On worker exit, fail pending calls once. Resend the explicit application config
+  and reload keys before marking the replacement ready. The implementation uses
+  a configuration map, not a caller callback. Never use argv for key transport;
+  AWS credentials follow the supported deployment-role credential chain.
 - Validate operation types/ranges before copying. Reuse Rust caps: Branca payload
   <= 1024 bytes, token <= 1437 bytes; audit magic-link/PoW parser caps. No PoW
   solving or unrelated IO in the core worker; no production unwrap/expect/panic,
@@ -231,13 +248,17 @@ Prove lifecycle and transaction safety:
 1. Correlate bounded jobs/replies with unique IDs, deadlines and monitored callers;
    fail closed on overload/death/restart. Ignore stale/duplicate replies and
    define shutdown/drain behavior. AWS waits must not stall protocol processing.
-2. **Timeout is not rollback.** Once a commit is dispatched, preserve the identical
-   command/attempt ID for reconciliation. Do not generate entropy or replan while
-   its result is ambiguous. Prove durable recovery across Rust/BEAM restarts or
-   block production release; never blindly retry the public login operation.
+2. **Timeout is not rollback.** Owner decision (2026-11-12) replaces the
+   original durable-recovery requirement: a lost confirmation reply is an
+   indeterminate outcome. Never automatically retry the public operation or
+   retain/reconstruct a commit plan across Rust/BEAM restarts. Offer a fresh
+   sign-in link through application-owned recovery UX. Transport tests prove
+   no replay after worker death and discard late confirmation replies.
 3. Consume the expected unexpired link, validate immutable account linkage/consent
-   and create the session in one atomic transaction. Confirmed conflicts may
-   replan with new attempt IDs; ambiguous outcomes permit only identical retries.
+   and create the session in one atomic transaction. Existing in-call Rust
+   service retry behavior is unchanged: ambiguous storage retries reuse the
+   identical attempt, while confirmed conflicts may replan. A new public
+   confirmation call is not that same commit attempt.
 4. Retain existing storage HMAC keying, strongly consistent auth reads,
    expiry/revocation checks, shared counters and rotation behavior. No raw
    verifier reaches storage; outbox delivery must redact its bearer link.
@@ -253,8 +274,8 @@ are deferred; do not claim full Rust API parity.
 
 ## 6. Phoenix example only
 
-Provide a separately packaged, fake-backed Phoenix example—not a library framework
-dependency or generated router. It demonstrates application-owned HTTP wiring to
+Only after separate scope approval, provide a separately packaged, fake-backed
+Phoenix example—not a library framework dependency or generated router. It demonstrates application-owned HTTP wiring to
 the public auth API; other stacks can wire the same operations. The example must preserve the
 normative HTTP contract:
 
@@ -335,10 +356,12 @@ unverified mutable install-time downloads.
 | Session/admission | Revocation/disable, idle/absolute expiry and refresh, country policy; multi-node proof budgets, replay, expiry, rotation and storage failure |
 | HTTP | Uniform bodies/headers, scanner safety, origin/CSRF/frame defenses, escaped accounts, scrubbed redirects and cookie lifecycle |
 
-Tests must not leak secrets through assertion output. Add package mise tasks
-`fmt`, `fmt-check`, `check`, `test`, `docs`, `package-check`, `verify`; integrate
-root `elixir-verify` after toolchain provisioning review. Run full
-`mise run verify` before completion; existing Rust/TS/formal checks must pass.
+Tests must not leak secrets through assertion output. Package mise tasks
+`fmt`, `fmt-check`, `check`, `test`, `package-check`, `package-stage` and `verify`
+are wired through root `elixir-verify`. A standalone docs-site task, Dialyzer and
+Credo are not configured; typespecs are documentation, not static verification.
+Run full `mise run verify` before completion; existing Rust/TS/formal checks
+must pass.
 
 ## 9. Implementation gates and handoff
 
@@ -346,8 +369,8 @@ root `elixir-verify` after toolchain provisioning review. Run full
 | --- | --- | --- |
 | P0 | Plan review only | Explicit implementation scope approval |
 | P1 | Package/Port executable scaffold and root wiring | Handshake/lifecycle, isolated Hex/release build, CPU/OS/libc matrix settled |
-| P2 | Rust service/AWS execution spike | Bounded jobs, responsive Port lifecycle and durable ambiguous-commit recovery proven |
-| P3 | High-level auth/session API with DynamoDB | End-to-end request/confirm/logout, concurrent one-time consume, revocation and refresh proven |
+| P2 | Rust service/AWS execution | Bounded jobs, responsive lifecycle and documented indeterminate outcomes/no replay (owner-revised gate) |
+| P3 | High-level auth/session API with DynamoDB | End-to-end request/confirm/logout, concurrent one-time consume, country, revocation, refresh and idle/absolute expiry proven |
 | P4 | High-level PoW API and DynamoDB budget | Browser interoperability and shared lifetime admission/failure tests |
 | P5 | First-release docs/tasks/artifact readiness | Security/API review, full verify, clean consumer build and explicit release approval |
 | P6 | Standalone Phoenix example | Full HTTP security-contract tests; no framework dependencies in the library |

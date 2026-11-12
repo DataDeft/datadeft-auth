@@ -6,18 +6,41 @@ defmodule DatadeftAuth.TypeContractTest do
   # implementations against specs; that requires a type analyzer. Private
   # helpers are deliberately not pinned so refactors stay one-file edits.
   @contracts [
-    {DatadeftAuth, [start_link: 1, child_spec: 1, status: 1],
+    {DatadeftAuth,
+     [
+       start_link: 1,
+       child_spec: 1,
+       status: 1,
+       request_link: 3,
+       landing: 2,
+       flow_state: 2,
+       confirm: 4,
+       validate_session: 3,
+       logout: 3,
+       pow_challenge: 1,
+       pow_verify: 2,
+       pow_admit: 2,
+       fake_last_magic_link: 2
+     ],
      [
        option: 0,
        options: 0,
+       config: 0,
        status_result: 0,
        request_timeout: 0,
        max_pending: 0,
        restart_delay: 0
      ]},
     {DatadeftAuth.Error, [], [code: 0, t: 0]},
+    {DatadeftAuth.Landing, [], [t: 0]},
+    {DatadeftAuth.FlowState, [], [t: 0]},
+    {DatadeftAuth.Session, [], [t: 0]},
+    {DatadeftAuth.Validation, [], [t: 0]},
+    {DatadeftAuth.PowChallenge, [], [t: 0]},
+    {DatadeftAuth.PowVerification, [], [t: 0]},
+    {DatadeftAuth.DevMagicLink, [], [t: 0]},
     {DatadeftAuth.Protocol,
-     [max_frame: 0, max_request_id: 0, build_version: 0, request: 2, feed: 2, reply: 1],
+     [max_frame: 0, max_request_id: 0, build_version: 0, request: 3, feed: 2, reply: 1],
      [request_id: 0, operation: 0, result: 0, failure: 0, frame: 0, buffer: 0, feed_result: 0]},
     {DatadeftAuth.Connection, [start_link: 1, format_status: 1], []}
   ]

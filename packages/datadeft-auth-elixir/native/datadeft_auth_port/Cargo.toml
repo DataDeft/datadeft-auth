@@ -12,5 +12,31 @@ description = "Private local process transport for the datadeft_auth Elixir pack
 workspace = true
 
 [dependencies]
+# This process owns the AWS clients and executor; core and service crates
+# stay IO-free and receive loaded material only.
+aws-config = { workspace = true }
+aws-sdk-dynamodb = { workspace = true }
+aws-sdk-secretsmanager = { workspace = true }
+aws-sdk-sesv2 = { workspace = true }
+# Workspace crates; the Hex package stage vendors them so the published
+# source builds without this checkout.
+datadeft-magic-link-aws = { path = "../../../../crates/datadeft-magic-link-aws", features = ["aws"] }
+datadeft-magic-link-service = { path = "../../../../crates/datadeft-magic-link-service" }
+datadeft-pow-core = { path = "../../../../crates/datadeft-pow-core" }
+# Owner: this crate. Reason: OS-backed CSPRNG for the service entropy inputs.
+rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
+# Owner: this crate. Reason: bounded concurrent job execution over the Port
+# pipe; required by the AWS SDK clients this process owns.
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+[dev-dependencies]
+# Test-only: mint fresh-activity cookies with old issue times to isolate absolute expiry.
+datadeft-auth-token-core = { path = "../../../../crates/datadeft-auth-token-core" }
+# DynamoDB Local end-to-end test needs an HTTP client to create its table.
+aws-sdk-dynamodb = { workspace = true, features = ["default-https-client"] }
+# Test-only: the workspace's shared secret-document and solve fixtures.
+datadeft-magic-link-aws = { path = "../../../../crates/datadeft-magic-link-aws", features = ["test-support"] }
+datadeft-pow-core = { path = "../../../../crates/datadeft-pow-core", features = ["test-support"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

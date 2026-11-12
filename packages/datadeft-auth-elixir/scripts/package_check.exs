@@ -8,8 +8,9 @@ defmodule PackageCheck do
   def run do
     root = File.cwd!()
 
-    temporary =
-      Path.join(System.tmp_dir!(), "datadeft-package-#{System.unique_integer([:positive])}")
+    suffix = Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
+    temporary = Path.join(System.tmp_dir!(), "datadeft-package-#{suffix}")
+    File.mkdir!(temporary)
 
     stage = Path.join(temporary, "stage")
     unpacked = Path.join(temporary, "unpacked")
@@ -49,7 +50,8 @@ defmodule PackageCheck do
         use Mix.Project
         def project, do: [app: :consumer, version: "0.0.0",
           deps: [{:datadeft_auth, path: #{inspect(unpacked)}}]]
-        def application, do: []
+        # The smoke test generates fake-mode keys in this consuming app.
+        def application, do: [extra_applications: [:crypto]]
       end
       """)
 
@@ -62,7 +64,25 @@ defmodule PackageCheck do
         [
           "eval",
           """
-          {:ok, pid} = DatadeftAuth.start_link([])
+          # Fresh test-only keys; no host credentials or AWS resources.
+          key = fn -> :crypto.strong_rand_bytes(32) |> Base.encode64() end
+          now = System.os_time(:second)
+          document = Jason.encode!(%{
+            kid: "release-test",
+            mint_until_unix: now + 90 * 86400,
+            verify_until_unix: now + 121 * 86400,
+            magic_link_lookup_hmac_b64: key.(), storage_hmac_b64: key.(),
+            session_cookie_root_b64: key.(), magic_link_confirm_cookie_root_b64: key.(),
+            pow_challenge_secret_b64: key.(), pow_proof_cookie_root_b64: key.()
+          })
+          config = %{
+            mode: :fake,
+            service: %{terms_version: "test-v1", privacy_version: "test-v1"},
+            email: %{link_base_url: "https://auth.example.test/auth/magic-link/landing?token=",
+              subject: "Sign in", text: "Open {magic_link_url}"},
+            secrets: %{active_document: document}
+          }
+          {:ok, pid} = DatadeftAuth.start_link(config: config)
           ready = Enum.reduce_while(1..100, false, fn _, _ ->
             case DatadeftAuth.status(pid) do
               {:ok, :transport_ready} -> {:halt, true}
@@ -70,6 +90,17 @@ defmodule PackageCheck do
             end
           end)
           if not ready, do: raise("release transport unavailable")
+          email = "release-user@example.test"
+          {:ok, _} = DatadeftAuth.request_link(pid, email,
+            terms_accepted: true, privacy_accepted: true)
+          {:ok, %{magic_link_url: url}} = DatadeftAuth.fake_last_magic_link(pid, email)
+          token = url |> URI.parse() |> Map.fetch!(:query) |> URI.decode_query() |> Map.fetch!("token")
+          {:ok, landing} = DatadeftAuth.landing(pid, token)
+          {:ok, %{usable: true}} = DatadeftAuth.flow_state(pid, landing.confirm_cookie)
+          {:ok, session} = DatadeftAuth.confirm(pid, landing.confirm_cookie, landing.confirmation)
+          {:ok, %{valid: true}} = DatadeftAuth.validate_session(pid, session.session_cookie)
+          {:ok, %{revoked: true}} = DatadeftAuth.logout(pid, session.session_cookie)
+          {:ok, %{valid: false}} = DatadeftAuth.validate_session(pid, session.session_cookie)
           GenServer.stop(pid)
           """
         ],

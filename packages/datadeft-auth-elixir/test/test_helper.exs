@@ -29,14 +29,40 @@ defmodule DatadeftAuth.TestSupport do
     status == 0
   end
 
-  def fake(mode) do
-    dir =
-      Path.join(
-        System.tmp_dir!(),
-        "datadeft-fixture-#{System.pid()}-#{System.unique_integer([:positive])}"
-      )
+  @doc "An auth config for the executable's fake mode with fresh random keys."
+  def fake_config do
+    key = fn -> :crypto.strong_rand_bytes(32) |> Base.encode64() end
+    now = System.os_time(:second)
 
-    File.mkdir_p!(dir)
+    document =
+      Jason.encode!(%{
+        kid: "test-active",
+        mint_until_unix: now + 90 * 24 * 60 * 60,
+        verify_until_unix: now + 121 * 24 * 60 * 60,
+        magic_link_lookup_hmac_b64: key.(),
+        storage_hmac_b64: key.(),
+        session_cookie_root_b64: key.(),
+        magic_link_confirm_cookie_root_b64: key.(),
+        pow_challenge_secret_b64: key.(),
+        pow_proof_cookie_root_b64: key.()
+      })
+
+    %{
+      mode: :fake,
+      service: %{terms_version: "test-terms-v1", privacy_version: "test-privacy-v1"},
+      email: %{
+        link_base_url: "https://auth.example.test/auth/magic-link/landing?token=",
+        subject: "Sign in",
+        text: "Open {magic_link_url} to sign in."
+      },
+      secrets: %{active_document: document}
+    }
+  end
+
+  def fake(mode) do
+    suffix = Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
+    dir = Path.join(System.tmp_dir!(), "datadeft-fixture-#{suffix}")
+    File.mkdir!(dir)
     path = Path.join(dir, "worker")
 
     handshake =

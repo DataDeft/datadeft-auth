@@ -70,8 +70,7 @@ defmodule DatadeftAuth.MixProject do
       compilers: [:datadeft_port] ++ Mix.compilers(),
       start_permanent: Mix.env() == :prod,
       deps: [{:jason, "~> 1.4.4"}],
-      description:
-        "Framework-independent authentication through an isolated Rust process (in development)",
+      description: "Framework-independent authentication through an isolated Rust process",
       package: [
         licenses: ["MIT"],
         links: %{"GitHub" => "https://github.com/DataDeft/datadeft-auth"},
@@ -83,9 +82,11 @@ defmodule DatadeftAuth.MixProject do
           "mix.lock",
           "README.md",
           "LICENSE",
+          "native/Cargo.toml",
+          "native/Cargo.lock",
           "native/datadeft_auth_port/Cargo.toml",
-          "native/datadeft_auth_port/Cargo.lock",
-          "native/datadeft_auth_port/src"
+          "native/datadeft_auth_port/src",
+          "native/vendor"
         ]
       ]
     ]

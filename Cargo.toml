@@ -15,6 +15,13 @@ authors = ["Istvan <dev@l1x.be>"]
 # Security-baseline floors, bumped in one place. Maintained Smithy releases
 # remove pin-utils and require Rust 1.94.1. Members add their own features.
 [workspace.dependencies]
+# Owner: the Elixir port executable. Reason: deployment-role credential chain,
+# region resolution and the default HTTPS client for the SDK clients it owns.
+aws-config = { version = "1.8", default-features = false, features = [
+  "behavior-version-latest",
+  "default-https-client",
+  "rt-tokio",
+] }
 aws-sdk-dynamodb = { version = "1.137", default-features = false, features = ["rt-tokio"] }
 aws-sdk-secretsmanager = { version = "1.125", default-features = false, features = ["rt-tokio"] }
 aws-sdk-sesv2 = { version = "1.145", default-features = false, features = ["rt-tokio"] }

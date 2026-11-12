@@ -7,27 +7,42 @@ defmodule DatadeftAuth.Connection do
   # :executable are validated separately. The public bound types in
   # DatadeftAuth mirror these limits (typespecs cannot reference attributes).
   @restart_delay_limit 5000
+
+  # Initialization in AWS mode resolves the credential chain and fetches the
+  # Secrets Manager documents over the network; a cold start routinely needs
+  # more than the per-request deadline, and timing init out costs a full
+  # disconnect whose retry repeats the same cold fetch. This deadline bounds
+  # the whole initialization; closing the pipe cancels a stalled native init.
+  @init_timeout 30_000
+
   @int_options [
     request_timeout: {1000, 60_000},
     max_pending: {32, 1024},
     restart_delay: {100, @restart_delay_limit}
   ]
   @defaults Enum.map(@int_options, fn {key, {default, _limit}} -> {key, default} end)
-  @allowed [:name, :executable] ++ Keyword.keys(@int_options)
+  @allowed [:name, :executable, :config] ++ Keyword.keys(@int_options)
 
   @typep pending_request ::
-           %{from: nil, monitor: nil, timer: reference()}
-           | %{from: GenServer.from(), monitor: reference(), timer: reference()}
+           %{operation: Protocol.operation(), from: nil, monitor: nil, timer: reference()}
+           | %{
+               operation: Protocol.operation(),
+               from: GenServer.from(),
+               monitor: reference(),
+               timer: reference()
+             }
 
   # The uint32 maximum plus one is an exhausted-ID sentinel, never a wire ID.
   @typep next_id :: 1..0x100000000
   @typep state :: %{
            port: port() | nil,
            ready: boolean(),
+           unready_error: :configuration | :unavailable,
            buffer: Protocol.buffer(),
            pending: %{optional(Protocol.request_id()) => pending_request()},
            next_id: next_id(),
            executable: String.t(),
+           config: map() | nil,
            timeout: DatadeftAuth.request_timeout(),
            max_pending: DatadeftAuth.max_pending(),
            restart_delay: DatadeftAuth.restart_delay(),
@@ -54,11 +69,13 @@ defmodule DatadeftAuth.Connection do
     state = %{
       port: nil,
       ready: false,
+      unready_error: :unavailable,
       buffer: <<>>,
       pending: %{},
       next_id: 1,
       # An explicit nil selects the bundled default, same as omitting the key.
       executable: Keyword.get(opts, :executable) || default_executable(),
+      config: Keyword.get(opts, :config),
       timeout: Keyword.fetch!(opts, :request_timeout),
       max_pending: Keyword.fetch!(opts, :max_pending),
       restart_delay: restart_delay,
@@ -73,9 +90,24 @@ defmodule DatadeftAuth.Connection do
   @spec handle_call(:status, GenServer.from(), state()) ::
           {:reply, DatadeftAuth.status_result(), state()} | {:noreply, state()}
   def handle_call(:status, _from, %{ready: false} = state),
-    do: {:reply, error(:unavailable), state}
+    do: {:reply, error(state.unready_error), state}
 
-  def handle_call(:status, from, state) do
+  def handle_call(:status, from, state), do: admit(state, :ping, %{}, from)
+
+  # Authentication operations need the initialized executable: without a
+  # config the transport is health-only by design.
+  def handle_call({:auth, _operation, _payload}, _from, %{config: nil} = state),
+    do: {:reply, error(:configuration), state}
+
+  def handle_call({:auth, _operation, _payload}, _from, %{ready: false} = state),
+    do: {:reply, error(state.unready_error), state}
+
+  def handle_call({:auth, operation, payload}, from, state),
+    do: admit(state, operation, payload, from)
+
+  @spec admit(state(), Protocol.operation(), map(), GenServer.from()) ::
+          {:reply, {:error, Error.t()}, state()} | {:noreply, state()}
+  defp admit(state, operation, payload, from) do
     cond do
       map_size(state.pending) >= state.max_pending ->
         {:reply, error(:overloaded), state}
@@ -84,9 +116,11 @@ defmodule DatadeftAuth.Connection do
         {:reply, error(:unavailable), disconnect(state, :unavailable)}
 
       true ->
-        case send_request(state, :ping, from) do
+        case send_request(state, operation, payload, from) do
           {:ok, state} -> {:noreply, state}
           :busy -> {:reply, error(:overloaded), state}
+          :too_large -> {:reply, error(:bad_request), state}
+          :invalid -> {:reply, error(:bad_request), state}
           :error -> {:reply, error(:unavailable), disconnect(state, :unavailable)}
         end
     end
@@ -99,7 +133,7 @@ defmodule DatadeftAuth.Connection do
       {:ok, port} ->
         state = %{state | port: port, buffer: <<>>, ready: false, next_id: 1}
 
-        case send_request(state, :handshake, nil) do
+        case send_request(state, :handshake, %{}, nil) do
           {:ok, state} -> {:noreply, state}
           # A fresh pipe should never be busy; treat it like any send failure.
           _ -> {:noreply, disconnect(state, :unavailable)}
@@ -115,7 +149,7 @@ defmodule DatadeftAuth.Connection do
       {:ok, frames, buffer} ->
         case replies(frames, %{state | buffer: buffer}) do
           {:ok, state} -> {:noreply, state}
-          {:error, state} -> {:noreply, disconnect(state, :protocol)}
+          {:disconnect, code, state} -> {:noreply, disconnect(state, code)}
         end
 
       _ ->
@@ -182,72 +216,144 @@ defmodule DatadeftAuth.Connection do
     end)
   end
 
-  @spec replies([Protocol.frame()], state()) :: {:ok, state()} | {:error, state()}
+  @spec replies([Protocol.frame()], state()) ::
+          {:ok, state()} | {:disconnect, Error.code(), state()}
   defp replies(frames, state) do
     Enum.reduce_while(frames, {:ok, state}, fn frame, {:ok, state} ->
       case reply(frame, state) do
         {:ok, state} -> {:cont, {:ok, state}}
-        _ -> {:halt, {:error, state}}
+        {:disconnect, code} -> {:halt, {:disconnect, code, state}}
       end
     end)
   end
 
-  @spec reply(Protocol.frame(), state()) :: {:ok, state()} | :error
+  @spec reply(Protocol.frame(), state()) :: {:ok, state()} | {:disconnect, Error.code()}
   defp reply(frame, state) do
     with {:ok, id, result} <- Protocol.reply(frame),
          true <- id < state.next_id do
       case Map.pop(state.pending, id) do
-        # Late/cancelled read-only request; never reused.
+        # Late/cancelled request; IDs are never reused. Discarding a mutation's
+        # reply does not undo its effects and must never trigger a replay.
         {nil, _} ->
           {:ok, state}
 
-        {%{from: nil} = pending, rest} when result == :handshake ->
+        {%{from: nil, operation: :handshake} = pending, rest} when result == :handshake ->
           finish(pending, :ok)
-          {:ok, %{state | ready: true, pending: rest, backoff: state.restart_delay}}
+          handshaken(%{state | pending: rest, backoff: state.restart_delay})
 
-        {%{from: from} = pending, rest} when from != nil and result == :ping ->
-          finish(pending, {:ok, :transport_ready})
-          {:ok, %{state | pending: rest}}
+        {%{from: nil, operation: :init} = pending, rest} ->
+          finish(pending, :ok)
+
+          case result do
+            :init ->
+              {:ok, %{state | ready: true, pending: rest}}
+
+            # Retry transient dependency failures. A configuration refusal
+            # remains observable and stops retries until the application
+            # fixes its config and restarts this supervised child.
+            {:error, :unavailable} ->
+              {:disconnect, :unavailable}
+
+            {:error, _code} ->
+              {:disconnect, :configuration}
+
+            _ ->
+              {:disconnect, :protocol}
+          end
+
+        {%{from: from, operation: operation} = pending, rest} when from != nil ->
+          case deliver(operation, result) do
+            {:ok, value} ->
+              finish(pending, value)
+              {:ok, %{state | pending: rest}}
+
+            :error ->
+              {:disconnect, :protocol}
+          end
 
         _ ->
-          :error
+          {:disconnect, :protocol}
       end
     else
-      _ -> :error
+      _ -> {:disconnect, :protocol}
     end
   end
 
+  # Readiness: transport-only connections are ready at handshake; configured
+  # connections only once the executable accepted the initialization.
+  @spec handshaken(state()) :: {:ok, state()} | {:disconnect, Error.code()}
+  defp handshaken(%{config: nil} = state), do: {:ok, %{state | ready: true}}
+
+  defp handshaken(state) do
+    case send_request(state, :init, state.config, nil) do
+      {:ok, state} -> {:ok, state}
+      refused when refused in [:too_large, :invalid] -> {:disconnect, :configuration}
+      _ -> {:disconnect, :unavailable}
+    end
+  end
+
+  # Route a reply to its caller: the echoed operation must match the pending
+  # one; a per-request failure keeps the connection up.
+  @spec deliver(Protocol.operation(), Protocol.result()) ::
+          {:ok, DatadeftAuth.status_result() | {:ok, term()}} | :error
+  defp deliver(:ping, :ping), do: {:ok, {:ok, :transport_ready}}
+  defp deliver(operation, {operation, value}), do: {:ok, {:ok, value}}
+  defp deliver(_operation, {:error, code}), do: {:ok, error(code)}
+  defp deliver(_, _), do: :error
+
   # The exhausted-ID sentinel is never sent; this fails closed if a caller
-  # skips the handle_call guard. A busy pipe consumes no ID.
-  @spec send_request(state(), Protocol.operation(), GenServer.from() | nil) ::
-          {:ok, state()} | :busy | :error
-  defp send_request(state, operation, from) do
+  # skips the admit guard. A busy pipe, an oversized payload or a payload
+  # JSON cannot carry consumes no ID.
+  @spec send_request(state(), Protocol.operation(), map(), GenServer.from() | nil) ::
+          {:ok, state()} | :busy | :too_large | :invalid | :error
+  defp send_request(state, operation, payload, from) do
     id = state.next_id
+    frame = Protocol.request(id, operation, payload)
 
     cond do
       id > Protocol.max_request_id() ->
         :error
 
+      byte_size(frame) > Protocol.max_frame() + 4 ->
+        :too_large
+
       # nosuspend avoids blocking the GenServer on a busy OS pipe; a full
       # pipe rejects only this request instead of dropping the connection.
-      Port.command(state.port, Protocol.request(id, operation), [:nosuspend]) ->
+      Port.command(state.port, frame, [:nosuspend]) ->
         monitor = if from, do: Process.monitor(elem(from, 0)), else: nil
-        timer = Process.send_after(self(), {:deadline, state.port, id}, state.timeout)
-        pending = %{from: from, timer: timer, monitor: monitor}
+
+        timer =
+          Process.send_after(self(), {:deadline, state.port, id}, deadline(operation, state))
+
+        pending = %{operation: operation, from: from, timer: timer, monitor: monitor}
         {:ok, %{state | pending: Map.put(state.pending, id, pending), next_id: id + 1}}
 
       true ->
         :busy
     end
   rescue
+    # A closed or dead port raises ArgumentError. Invalid UTF-8 in caller
+    # input (reachable through percent-decoded URL parameters) raises at
+    # JSON encoding and is this request's problem, not the connection's.
     ArgumentError -> :error
+    Jason.EncodeError -> :invalid
   end
+
+  @spec deadline(Protocol.operation(), state()) :: pos_integer()
+  defp deadline(:init, _state), do: @init_timeout
+  defp deadline(_operation, state), do: state.timeout
 
   @spec disconnect(state(), Error.code()) :: state()
   defp disconnect(state, code) do
     close(state.port)
     Enum.each(state.pending, fn {_, pending} -> finish(pending, error(code)) end)
-    schedule_restart(%{state | port: nil, ready: false, pending: %{}, buffer: <<>>})
+    state = %{state | port: nil, ready: false, pending: %{}, buffer: <<>>}
+
+    if code == :configuration do
+      %{state | unready_error: :configuration}
+    else
+      schedule_restart(%{state | unready_error: :unavailable})
+    end
   end
 
   @spec schedule_restart(state()) :: state()
@@ -301,10 +407,31 @@ defmodule DatadeftAuth.Connection do
       Enum.all?(@int_options, fn {key, {default, limit}} ->
         value = Keyword.get(opts, key, default)
         is_integer(value) and value > 0 and value <= limit
-      end) and valid_path?(Keyword.get(opts, :executable)) and valid_name?(opts)
+      end) and valid_path?(Keyword.get(opts, :executable)) and valid_name?(opts) and
+      valid_config?(Keyword.get(opts, :config))
   end
 
   defp valid_options?(_), do: false
+
+  # The executable validates the configuration's content fail-closed; here we
+  # only require the shape that makes the init frame sendable at all. nil
+  # keeps the transport health-only.
+  defp valid_config?(nil), do: true
+
+  defp valid_config?(config) when is_map(config) do
+    match?(%{mode: mode} when mode in [:fake, :aws], config) and init_frame_fits?(config)
+  end
+
+  defp valid_config?(_), do: false
+
+  # Measures the frame the connection will actually send (init always goes
+  # as wire ID 2: the handshake takes 1 on every connect) against the same
+  # bound send_request enforces, so one authority decides the size.
+  defp init_frame_fits?(config) do
+    byte_size(Protocol.request(2, :init, config)) <= Protocol.max_frame() + 4
+  rescue
+    _ -> false
+  end
 
   defp valid_keys?(keys), do: Enum.all?(keys, &(&1 in @allowed)) and keys == Enum.uniq(keys)
 

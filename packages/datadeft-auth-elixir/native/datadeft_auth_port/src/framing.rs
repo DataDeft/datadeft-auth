@@ -1,9 +1,12 @@
 //! Bounds the length prefix before allocating a frame.
 use std::io::{self, Read, Write};
 
-pub const MAX_FRAME_BYTES: usize = 4096;
+// Sized for the configuration frame (service policy, email templates and the
+// inline secret documents); every other operation stays far below it. Both
+// sides check the prefix before allocating a body.
+pub const MAX_FRAME_BYTES: usize = 16384;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum FrameError {
     Io,
     Invalid,
@@ -36,6 +39,8 @@ pub fn read_frame(reader: &mut impl Read) -> Result<Option<Vec<u8>>, FrameError>
     Ok(Some(frame))
 }
 
+/// Writes one length-prefixed frame. Flushing stays with the caller, which
+/// knows whether more frames are queued behind this one.
 pub fn write_frame(writer: &mut impl Write, frame: &[u8]) -> Result<(), FrameError> {
     if frame.is_empty() || frame.len() > MAX_FRAME_BYTES {
         return Err(FrameError::Invalid);
@@ -43,7 +48,6 @@ pub fn write_frame(writer: &mut impl Write, frame: &[u8]) -> Result<(), FrameErr
     let length = u32::try_from(frame.len()).map_err(|_| FrameError::Invalid)?;
     writer.write_all(&length.to_be_bytes())?;
     writer.write_all(frame)?;
-    writer.flush()?;
     Ok(())
 }
 
@@ -63,9 +67,11 @@ mod tests {
 
     #[test]
     fn reject_empty_oversized_and_truncated_frames() {
+        let mut oversized = Vec::new();
+        oversized.extend(u32::try_from(MAX_FRAME_BYTES + 1).unwrap().to_be_bytes());
         for bytes in [
             vec![0, 0, 0, 0],
-            vec![0, 0, 16, 1],
+            oversized,
             vec![255, 255, 255, 255],
             vec![0],
             vec![0, 0, 0, 2, b'a'],

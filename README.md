@@ -47,13 +47,17 @@ and a same-origin `POST` confirms it. There is no raw consume alternative. See
 The adapters are siblings. Neither adapter depends on the other. See
 [architecture.md](docs/architecture.md) for the dependency graph.
 
-## Elixir bindings (in development)
+## Elixir bindings
 
 [`packages/datadeft-auth-elixir`](packages/datadeft-auth-elixir/README.md) contains
-the framework-independent Elixir package foundation. It launches a separate Rust
-process through an Erlang Port—not a NIF. Only transport startup/health is
-implemented; authentication and DynamoDB/SES integration are not available yet.
-It is not published to Hex. See the [approved plan](docs/elixir-bindings-plan.md).
+the framework-independent Elixir binding. It launches a separate Rust process
+through an Erlang Port—not a NIF—and delegates high-level magic-link/session and
+PoW operations to the existing Rust services and AWS adapters. Source integration
+targets the released Rust 0.6.0 baseline; Hex publication is separate. A lost
+confirmation reply has an explicit indeterminate-outcome contract: no automatic
+replay or durable recovery plan; the application offers a fresh sign-in link.
+See the [plan/status](docs/elixir-bindings-plan.md) and package README for source
+installation, tested platforms and application-owned deployment checks.
 
 ## Install
 

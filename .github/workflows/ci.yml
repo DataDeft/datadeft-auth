@@ -27,6 +27,9 @@ jobs:
       # workflow-check in parallel, and installs the tools it needs (bun,
       # cargo-deny, tla-checker, actionlint). See mise.toml.
       - run: mise run verify
+      # Exercise real DynamoDB transactions/rotation/budgets through the Port,
+      # not only the ignored-by-default test compilation. Uses local Docker.
+      - run: mise run dynamodb-local-test
       - run: mise run package-crates
 
   msrv:
