@@ -79,7 +79,17 @@ defmodule PackageStage do
     [workspace.package]#{inherited}
     """)
 
-    cmd!("cargo", ["generate-lockfile", "--manifest-path", "native/Cargo.toml"], stage)
+    # Retain the dependency versions verified in the checkout. Update only
+    # workspace packages to reconcile the staged member set; generate-lockfile
+    # would instead resolve every dependency again against the latest index.
+    File.cp!(Path.join(workspace_root, "Cargo.lock"), Path.join(native, "Cargo.lock"))
+
+    cmd!(
+      "cargo",
+      ["update", "--workspace", "--offline", "--manifest-path", "native/Cargo.toml"],
+      stage
+    )
+
     :ok
   end
 
