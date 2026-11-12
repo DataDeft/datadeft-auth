@@ -179,56 +179,6 @@ impl DynamoDbAuthStore {
         Ok(())
     }
 
-    /// One-time migration: remove the `ttl` attribute from session and
-    /// session-index rows written before audit retention, so DynamoDB TTL
-    /// cannot delete them. Idempotent; safe while serving traffic. Needs
-    /// `dynamodb:Scan` and `UpdateItem`. Returns the number of rows updated.
-    pub async fn remove_legacy_session_ttl(&self) -> Result<u64, AwsAdapterError> {
-        let mut updated = 0u64;
-        let mut start_key: Option<HashMap<String, AttributeValue>> = None;
-        loop {
-            let output = self
-                .client
-                .scan()
-                .table_name(&self.table_name)
-                .filter_expression(
-                    "(entity_type = :session OR entity_type = :index) AND attribute_exists(#ttl)",
-                )
-                .expression_attribute_names("#ttl", "ttl")
-                .expression_attribute_values(":session", av_s("session"))
-                .expression_attribute_values(":index", av_s("user_session_index"))
-                .projection_expression("pk, sk")
-                .set_exclusive_start_key(start_key.take())
-                .send()
-                .await
-                .map_err(map_scan_error)?;
-            for item in output.items() {
-                let result = self
-                    .client
-                    .update_item()
-                    .table_name(&self.table_name)
-                    .key("pk", av_s(required_s(item, "pk")?))
-                    .key("sk", av_s(required_s(item, "sk")?))
-                    .update_expression("REMOVE #ttl")
-                    .condition_expression("attribute_exists(pk)")
-                    .expression_attribute_names("#ttl", "ttl")
-                    .send()
-                    .await
-                    .map_err(map_update_item_error);
-                match result {
-                    Ok(_) => updated = updated.saturating_add(1),
-                    // Deleted by TTL between the scan and the update.
-                    Err(AwsAdapterError::ConditionalWriteFailed) => {}
-                    Err(error) => return Err(error),
-                }
-            }
-            match output.last_evaluated_key() {
-                Some(key) if !key.is_empty() => start_key = Some(key.clone()),
-                _ => return Ok(updated),
-            }
-        }
-    }
-
     async fn get_user_summary(
         &self,
         user_id: &UserId,
