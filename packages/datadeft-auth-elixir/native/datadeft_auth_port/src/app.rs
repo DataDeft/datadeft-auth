@@ -295,7 +295,7 @@ impl<Store, Outbox> App<Store, Outbox> {
             previous_lookup_hmac_key: self.shared.previous_lookup_hmac_key.as_ref(),
             confirm_keyring: &self.shared.confirm_keyring,
             session_keyring: &self.shared.session_keyring,
-            config: self.shared.config.clone(),
+            config: &self.shared.config,
         }
     }
 }

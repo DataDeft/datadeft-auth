@@ -64,7 +64,7 @@ where
             clock: &WallClock,
             rng: &mut rng,
             lookup_hmac_key: &self.shared.lookup_hmac_key,
-            config: self.shared.config.clone(),
+            config: &self.shared.config,
         };
         match service.request_magic_link(command).await {
             Ok(outcome) => ResultBody::RequestLink {
