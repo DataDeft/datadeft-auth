@@ -69,8 +69,12 @@ defmodule DatadeftAuth.MixProject do
       elixir: "~> 1.16",
       compilers: [:datadeft_port] ++ Mix.compilers(),
       start_permanent: Mix.env() == :prod,
-      deps: [{:jason, "~> 1.4.4"}],
+      deps: [
+        {:jason, "~> 1.4.4"},
+        {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
+      ],
       description: "Framework-independent authentication through an isolated Rust process",
+      docs: [main: "readme", extras: ["README.md"]],
       package: [
         licenses: ["MIT"],
         links: %{"GitHub" => "https://github.com/DataDeft/datadeft-auth"},
