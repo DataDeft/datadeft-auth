@@ -59,7 +59,7 @@ defmodule DatadeftAuth.MixProject do
   end
 
   # x-release-please-start-version
-  @version "0.6.1"
+  @version "0.6.2"
   # x-release-please-end
 
   def project do
