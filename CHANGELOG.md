@@ -11,7 +11,6 @@ All notable changes to this workspace are recorded here. The format follows
 
 ### Features
 
-* **elixir:** one magic-link email per configured locale ([01ed6e1](https://github.com/DataDeft/datadeft-auth/commit/01ed6e1a37297cf27c81cc7d9463a08b2f12970a))
 * **elixir:** one magic-link email per configured locale ([747ff67](https://github.com/DataDeft/datadeft-auth/commit/747ff6776e578aab1677befddccd5b58b5e9e9f8))
 
 
