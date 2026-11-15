@@ -292,6 +292,8 @@ names so concurrent BEAM instances do not reuse VM-local directory identifiers.
 `mise -C packages/datadeft-auth-elixir run package-stage` creates a reviewable
 source archive under `_build/publish_stage`. Publishing requires separate approval
 and runs manually from that stage, never directly from the checkout.
+Both tasks print each step; set `VERBOSE=1` to also stream each command's
+output, for example cargo's build progress.
 
 ## Dependency rationale
 

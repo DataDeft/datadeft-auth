@@ -7,6 +7,8 @@ root = File.cwd!()
 stage = Mix.Project.build_path() |> Path.dirname() |> Path.join("publish_stage")
 File.rm_rf!(stage)
 PackageStage.stage!(root, stage)
+# `mix hex.publish` builds the docs, which needs the stage's own deps.
+PackageStage.cmd!("mix", ["deps.get"], stage)
 PackageStage.cmd!("mix", ["hex.build"], stage)
 IO.puts("Publishable package staged; review and run `mix hex.publish` from:")
 IO.puts(stage)
