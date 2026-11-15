@@ -6,6 +6,19 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Unreleased
 
+## [0.6.2](https://github.com/DataDeft/datadeft-auth/compare/v0.6.1...v0.6.2) (2026-11-15)
+
+
+### Features
+
+* **elixir:** one magic-link email per configured locale ([747ff67](https://github.com/DataDeft/datadeft-auth/commit/747ff6776e578aab1677befddccd5b58b5e9e9f8))
+
+
+### Bug Fixes
+
+* **elixir:** keep configs without locale_emails working ([ef8218e](https://github.com/DataDeft/datadeft-auth/commit/ef8218e3015fc7bc791f29b5934aeee0a46d8f02))
+* **elixir:** list locale_emails in the config typespec ([012e1b3](https://github.com/DataDeft/datadeft-auth/commit/012e1b3c6acc149e93c2ea842ac27032b8d6c38e))
+
 ## [0.6.1](https://github.com/DataDeft/datadeft-auth/compare/v0.6.0...v0.6.1) (2026-11-12)
 
 
