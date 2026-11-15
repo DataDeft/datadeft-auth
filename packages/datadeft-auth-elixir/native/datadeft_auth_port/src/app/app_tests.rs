@@ -187,6 +187,16 @@ fn localized_init_json() -> serde_json::Value {
     payload
 }
 
+/// The emails of a payload shaped like `localized_init_json` (`hu` default, `en` other).
+fn localized_emails(json: serde_json::Value) -> Emails {
+    let payload: InitPayload = serde_json::from_value(json).expect("payload");
+    Emails::validate(payload.email, payload.locale_emails, &["en".to_owned()]).expect("emails")
+}
+
+fn localized_locales() -> LocaleAllowlist {
+    LocaleAllowlist::new("hu", ["en"]).expect("locales")
+}
+
 #[tokio::test]
 async fn locale_emails_must_match_the_configured_locales_exactly() {
     let mut empty = localized_init_json();
@@ -212,21 +222,15 @@ fn omitted_locale_emails_send_the_default_email_for_every_locale() {
     json.as_object_mut()
         .expect("object")
         .remove("locale_emails");
-    let payload: InitPayload = serde_json::from_value(json).expect("payload");
-    let emails =
-        Emails::validate(payload.email, payload.locale_emails, &["en".to_owned()]).expect("emails");
-    let en = LocaleAllowlist::new("hu", ["en"])
-        .expect("locales")
-        .resolve(Some("en"));
+    let emails = localized_emails(json);
+    let en = localized_locales().resolve(Some("en"));
     assert_eq!(emails.for_locale(Some(&en)).subject, "Sign in");
 }
 
 #[test]
 fn the_resolved_locale_selects_its_email() {
-    let payload: InitPayload = serde_json::from_value(localized_init_json()).expect("payload");
-    let emails =
-        Emails::validate(payload.email, payload.locale_emails, &["en".to_owned()]).expect("emails");
-    let locales = LocaleAllowlist::new("hu", ["en"]).expect("locales");
+    let emails = localized_emails(localized_init_json());
+    let locales = localized_locales();
     let en = locales.resolve(Some("en-GB"));
     let hu = locales.resolve(Some("hu"));
     assert_eq!(emails.for_locale(Some(&en)).subject, "Sign in (en)");
@@ -269,14 +273,10 @@ async fn a_request_link_locale_reaches_the_landing_url() {
 fn the_renderer_fills_the_resolved_locale_email() {
     let mut json = localized_init_json();
     json["locale_emails"]["en"]["html"] = serde_json::json!("<a href=\"{magic_link_url}\">en</a>");
-    let payload: InitPayload = serde_json::from_value(json).expect("payload");
     let renderer = TemplateRenderer {
-        emails: Arc::new(
-            Emails::validate(payload.email, payload.locale_emails, &["en".to_owned()])
-                .expect("emails"),
-        ),
+        emails: Arc::new(localized_emails(json)),
     };
-    let locales = LocaleAllowlist::new("hu", ["en"]).expect("locales");
+    let locales = localized_locales();
     let raw = "mlv1.000102030405060708090a0b0c0d0e0f.101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f";
     let email = |hint| MagicLinkEmail {
         email: datadeft_magic_link_service::NormalizedEmail::normalize("user@example.test")
