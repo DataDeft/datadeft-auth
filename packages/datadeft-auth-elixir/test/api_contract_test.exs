@@ -132,15 +132,12 @@ defmodule DatadeftAuthApiContractTest do
       text: "Open {magic_link_url}"
     }
 
-    config = fake_config()
+    config =
+      fake_config()
+      |> update_in([:service], &Map.merge(&1, %{default_locale: "hu", locales: ["en"]}))
+      |> Map.put(:locale_emails, %{"en" => en})
 
-    config = %{
-      config
-      | service: Map.merge(config.service, %{default_locale: "hu", locales: ["en"]})
-    }
-
-    pid =
-      start_supervised!({DatadeftAuth, [config: Map.put(config, :locale_emails, %{"en" => en})]})
+    pid = start_supervised!({DatadeftAuth, [config: config]})
 
     ready(pid)
 

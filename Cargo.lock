@@ -964,6 +964,7 @@ dependencies = [
  "aws-sdk-sesv2",
  "datadeft-auth-token-core",
  "datadeft-magic-link-aws",
+ "datadeft-magic-link-core",
  "datadeft-magic-link-service",
  "datadeft-pow-core",
  "rand_core 0.6.4",

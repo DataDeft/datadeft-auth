@@ -358,7 +358,7 @@ where
                     found: true,
                     magic_link_url: Some(
                         self.shared
-                            .email
+                            .emails
                             .for_locale(entry.locale.as_ref())
                             .magic_link_url(entry.token.as_secret_value().as_str()),
                     ),

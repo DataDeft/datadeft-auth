@@ -66,6 +66,7 @@ defmodule DatadeftAuth do
     of the same shape, for example `%{"en" => %{link_base_url: ..., ...}}`;
     the keys must be exactly those tags. `request_link/3`'s `locale` is
     resolved against the allowlist, and the resolved locale selects the email.
+    When `locale_emails` is omitted, `email` is sent for every locale.
   - `secrets`: fake mode takes `active_document` (and optionally
     `previous_document`), the auth secret document JSON strings delivered
     once over the private pipe. AWS mode takes `active_ref`/`previous_ref`

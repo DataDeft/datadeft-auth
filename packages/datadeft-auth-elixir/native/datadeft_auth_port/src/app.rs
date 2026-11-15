@@ -62,7 +62,7 @@ impl ReadyApp {
     /// application mistake and will not heal by retrying; `Unavailable`
     /// covers transient dependency failures, healed by the restart loop.
     pub async fn initialize(payload: InitPayload) -> Result<Self, ErrorCode> {
-        let email = Arc::new(Emails::validate(
+        let emails = Arc::new(Emails::validate(
             payload.email,
             payload.locale_emails,
             &payload.service.locales,
@@ -75,7 +75,7 @@ impl ReadyApp {
                 }
                 let secrets = inline_secrets(payload.secrets)?;
                 let (shared, storage_hmac_key, _) =
-                    shared_state(config, email, payload.pow, secrets)?;
+                    shared_state(config, emails, payload.pow, secrets)?;
                 let outbox = FakeMagicLinkOutbox::default();
                 Ok(Self::Fake(Arc::new(App {
                     shared,
@@ -110,7 +110,7 @@ impl ReadyApp {
                         .map_err(secret_load_error)?
                 };
                 let (shared, storage_hmac_key, previous_storage_hmac_key) =
-                    shared_state(config, email, payload.pow, secrets)?;
+                    shared_state(config, emails, payload.pow, secrets)?;
                 let mut store = DynamoDbAuthStore::new(
                     aws_sdk_dynamodb::Client::new(&sdk),
                     aws.table.clone(),
@@ -129,7 +129,7 @@ impl ReadyApp {
                     })));
                 }
                 let renderer = TemplateRenderer {
-                    emails: shared.email.clone(),
+                    emails: shared.emails.clone(),
                 };
                 let outbox = SesMagicLinkOutbox::new(
                     aws_sdk_sesv2::Client::new(&sdk),
@@ -158,7 +158,7 @@ struct Shared {
     confirm_keyring: KeyRing<MagicLinkConfirmCookie>,
     session_keyring: KeyRing<SessionCookie>,
     /// Shared with the outbox renderer in SES mode, never duplicated.
-    email: Arc<Emails>,
+    emails: Arc<Emails>,
     /// Present only when initialization configured the PoW admission gate.
     pow: Option<PowState>,
 }
@@ -167,7 +167,7 @@ struct Shared {
 /// site) and hands back the storage keys the store constructors consume.
 fn shared_state(
     config: MagicLinkServiceConfig,
-    email: Arc<Emails>,
+    emails: Arc<Emails>,
     pow: Option<PowPayload>,
     secrets: LoadedAuthSecrets,
 ) -> Result<(Shared, StorageHmacKey, Option<StorageHmacKey>), ErrorCode> {
@@ -188,7 +188,7 @@ fn shared_state(
             previous_lookup_hmac_key,
             confirm_keyring,
             session_keyring,
-            email,
+            emails,
             pow,
         },
         storage_hmac_key,
@@ -352,27 +352,34 @@ impl EmailTemplate {
     }
 }
 
-/// The default email plus one per other configured locale.
+/// The default email plus, when supplied, one per other configured locale.
 pub(crate) struct Emails {
     default: EmailTemplate,
     by_locale: BTreeMap<String, EmailTemplate>,
 }
 
 impl Emails {
-    /// `locale_emails` must hold exactly one email per tag of `locales`
-    /// (the non-default locales); each email passes [`EmailTemplate::validate`].
+    /// Omitted `locale_emails` sends `email` for every locale. Supplied, it
+    /// must hold exactly one email per tag of `locales` (the non-default
+    /// locales); each email passes [`EmailTemplate::validate`].
     fn validate(
         email: EmailTemplatePayload,
-        locale_emails: BTreeMap<String, EmailTemplatePayload>,
+        locale_emails: Option<BTreeMap<String, EmailTemplatePayload>>,
         locales: &[String],
     ) -> Result<Self, ErrorCode> {
-        let keys_ok = locale_emails.len() == locales.len()
-            && locales
-                .iter()
-                .all(|locale| locale_emails.contains_key(locale));
-        if !keys_ok {
-            return Err(ErrorCode::Configuration);
-        }
+        let locale_emails = match locale_emails {
+            None => BTreeMap::new(),
+            Some(locale_emails) => {
+                let keys_ok = locale_emails.len() == locales.len()
+                    && locales
+                        .iter()
+                        .all(|locale| locale_emails.contains_key(locale));
+                if !keys_ok {
+                    return Err(ErrorCode::Configuration);
+                }
+                locale_emails
+            }
+        };
         let by_locale = locale_emails
             .into_iter()
             .map(|(locale, payload)| Ok((locale, EmailTemplate::validate(payload)?)))

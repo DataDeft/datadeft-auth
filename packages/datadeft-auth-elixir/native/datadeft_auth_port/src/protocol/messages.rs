@@ -25,9 +25,10 @@ pub struct InitPayload {
     /// locales are configured.
     pub email: EmailTemplatePayload,
     /// One email per entry of `service.locales`, keyed by that tag; the
-    /// keys must be exactly those entries.
+    /// keys must be exactly those entries. Absent means `email` for every
+    /// locale.
     #[serde(default)]
-    pub locale_emails: BTreeMap<String, EmailTemplatePayload>,
+    pub locale_emails: Option<BTreeMap<String, EmailTemplatePayload>>,
     pub secrets: SecretsPayload,
     /// Required in AWS mode, refused in fake mode.
     #[serde(default)]

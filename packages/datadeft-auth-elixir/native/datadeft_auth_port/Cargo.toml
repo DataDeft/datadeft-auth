@@ -34,6 +34,8 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "ti
 [dev-dependencies]
 # Test-only: mint fresh-activity cookies with old issue times to isolate absolute expiry.
 datadeft-auth-token-core = { path = "../../../../crates/datadeft-auth-token-core" }
+# Test-only: parse a fixed token to render an email through the SES renderer.
+datadeft-magic-link-core = { path = "../../../../crates/datadeft-magic-link-core" }
 # DynamoDB Local end-to-end test needs an HTTP client to create its table.
 aws-sdk-dynamodb = { workspace = true, features = ["default-https-client"] }
 # Test-only: the workspace's shared secret-document and solve fixtures.
