@@ -60,6 +60,13 @@ defmodule DatadeftAuth do
     and the URL carries the bearer token). The reference landing URL ends in
     `/auth/magic-link/landing?token=`; redirect mode uses
     `/auth/magic-link/open?token=`. The destination stays application-configured.
+    `email` is the email of `service.default_locale`, and of every request
+    when no locales are configured.
+  - `locale_emails` (optional) maps each tag of `service.locales` to an email
+    of the same shape, for example `%{"en" => %{link_base_url: ..., ...}}`;
+    the keys must be exactly those tags. `request_link/3`'s `locale` is
+    resolved against the allowlist, and the resolved locale selects the email.
+    When `locale_emails` is omitted, `email` is sent for every locale.
   - `secrets`: fake mode takes `active_document` (and optionally
     `previous_document`), the auth secret document JSON strings delivered
     once over the private pipe. AWS mode takes `active_ref`/`previous_ref`
@@ -80,6 +87,7 @@ defmodule DatadeftAuth do
           required(:mode) => :fake | :aws,
           required(:service) => map(),
           required(:email) => map(),
+          optional(:locale_emails) => %{optional(String.t()) => map()},
           required(:secrets) => map(),
           optional(:aws) => map(),
           optional(:pow) => map()

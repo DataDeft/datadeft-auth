@@ -7,6 +7,7 @@ mod handlers;
 
 use aws::{sdk_config, secret_load_error, validate_aws};
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -16,7 +17,7 @@ use datadeft_magic_link_aws::{
     SesMagicLinkOutbox, StorageHmacKey, resolve_auth_secrets,
 };
 use datadeft_magic_link_service::{
-    AccountDisplay, Clock, DependencyError, KeyRing, LocaleAllowlist, LookupHmacKey,
+    AccountDisplay, Clock, DependencyError, KeyRing, Locale, LocaleAllowlist, LookupHmacKey,
     MagicLinkConfirmCookie, MagicLinkEmail, MagicLinkFlowService, MagicLinkServiceConfig,
     SessionCookie,
 };
@@ -61,8 +62,12 @@ impl ReadyApp {
     /// application mistake and will not heal by retrying; `Unavailable`
     /// covers transient dependency failures, healed by the restart loop.
     pub async fn initialize(payload: InitPayload) -> Result<Self, ErrorCode> {
+        let emails = Arc::new(Emails::validate(
+            payload.email,
+            payload.locale_emails,
+            &payload.service.locales,
+        )?);
         let config = service_config(payload.service)?;
-        let email = Arc::new(EmailTemplate::validate(payload.email)?);
         match payload.mode {
             Mode::Fake => {
                 if payload.aws.is_some() {
@@ -70,7 +75,7 @@ impl ReadyApp {
                 }
                 let secrets = inline_secrets(payload.secrets)?;
                 let (shared, storage_hmac_key, _) =
-                    shared_state(config, email, payload.pow, secrets)?;
+                    shared_state(config, emails, payload.pow, secrets)?;
                 let outbox = FakeMagicLinkOutbox::default();
                 Ok(Self::Fake(Arc::new(App {
                     shared,
@@ -105,7 +110,7 @@ impl ReadyApp {
                         .map_err(secret_load_error)?
                 };
                 let (shared, storage_hmac_key, previous_storage_hmac_key) =
-                    shared_state(config, email, payload.pow, secrets)?;
+                    shared_state(config, emails, payload.pow, secrets)?;
                 let mut store = DynamoDbAuthStore::new(
                     aws_sdk_dynamodb::Client::new(&sdk),
                     aws.table.clone(),
@@ -124,7 +129,7 @@ impl ReadyApp {
                     })));
                 }
                 let renderer = TemplateRenderer {
-                    template: shared.email.clone(),
+                    emails: shared.emails.clone(),
                 };
                 let outbox = SesMagicLinkOutbox::new(
                     aws_sdk_sesv2::Client::new(&sdk),
@@ -153,7 +158,7 @@ struct Shared {
     confirm_keyring: KeyRing<MagicLinkConfirmCookie>,
     session_keyring: KeyRing<SessionCookie>,
     /// Shared with the outbox renderer in SES mode, never duplicated.
-    email: Arc<EmailTemplate>,
+    emails: Arc<Emails>,
     /// Present only when initialization configured the PoW admission gate.
     pow: Option<PowState>,
 }
@@ -162,7 +167,7 @@ struct Shared {
 /// site) and hands back the storage keys the store constructors consume.
 fn shared_state(
     config: MagicLinkServiceConfig,
-    email: Arc<EmailTemplate>,
+    emails: Arc<Emails>,
     pow: Option<PowPayload>,
     secrets: LoadedAuthSecrets,
 ) -> Result<(Shared, StorageHmacKey, Option<StorageHmacKey>), ErrorCode> {
@@ -183,7 +188,7 @@ fn shared_state(
             previous_lookup_hmac_key,
             confirm_keyring,
             session_keyring,
-            email,
+            emails,
             pow,
         },
         storage_hmac_key,
@@ -347,23 +352,66 @@ impl EmailTemplate {
     }
 }
 
-/// Renders the application's template with the bearer landing URL. One
-/// template for every locale in v1; the resolved locale is not yet used.
+/// The default email plus, when supplied, one per other configured locale.
+pub(crate) struct Emails {
+    default: EmailTemplate,
+    by_locale: BTreeMap<String, EmailTemplate>,
+}
+
+impl Emails {
+    /// Omitted `locale_emails` sends `email` for every locale. Supplied, it
+    /// must hold exactly one email per tag of `locales` (the non-default
+    /// locales); each email passes [`EmailTemplate::validate`].
+    fn validate(
+        email: EmailTemplatePayload,
+        locale_emails: Option<BTreeMap<String, EmailTemplatePayload>>,
+        locales: &[String],
+    ) -> Result<Self, ErrorCode> {
+        let locale_emails = match locale_emails {
+            None => BTreeMap::new(),
+            Some(locale_emails) => {
+                let keys_ok = locale_emails.len() == locales.len()
+                    && locales
+                        .iter()
+                        .all(|locale| locale_emails.contains_key(locale));
+                if !keys_ok {
+                    return Err(ErrorCode::Configuration);
+                }
+                locale_emails
+            }
+        };
+        let by_locale = locale_emails
+            .into_iter()
+            .map(|(locale, payload)| Ok((locale, EmailTemplate::validate(payload)?)))
+            .collect::<Result<_, ErrorCode>>()?;
+        Ok(Self {
+            default: EmailTemplate::validate(email)?,
+            by_locale,
+        })
+    }
+
+    /// The email of the resolved locale; the default locale, or none, is `email`.
+    pub(crate) fn for_locale(&self, locale: Option<&Locale>) -> &EmailTemplate {
+        locale
+            .and_then(|locale| self.by_locale.get(locale.as_str()))
+            .unwrap_or(&self.default)
+    }
+}
+
+/// Renders the email of the resolved locale with the bearer landing URL.
 pub struct TemplateRenderer {
-    template: Arc<EmailTemplate>,
+    emails: Arc<Emails>,
 }
 
 impl MagicLinkEmailRenderer for TemplateRenderer {
     fn render(&self, email: &MagicLinkEmail) -> Result<RenderedMagicLinkEmail, DependencyError> {
-        let url = self
-            .template
-            .magic_link_url(email.token.as_secret_value().as_str());
+        let template = self.emails.for_locale(email.locale.as_ref());
+        let url = template.magic_link_url(email.token.as_secret_value().as_str());
         Ok(RenderedMagicLinkEmail {
             to: email.email.as_str().to_owned(),
-            subject: self.template.subject.clone(),
-            text: self.template.text.replace(URL_MARKER, &url),
-            html: self
-                .template
+            subject: template.subject.clone(),
+            text: template.text.replace(URL_MARKER, &url),
+            html: template
                 .html
                 .as_ref()
                 .map(|html| html.replace(URL_MARKER, &url)),

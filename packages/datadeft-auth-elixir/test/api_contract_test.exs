@@ -124,4 +124,35 @@ defmodule DatadeftAuthApiContractTest do
     assert Enum.count(results, &match?({:ok, %Session{}}, &1)) == 1
     assert Enum.count(results, &match?({:error, %Error{code: :rejected}}, &1)) == 1
   end
+
+  test "the request locale selects the locale email" do
+    en = %{
+      link_base_url: "https://auth.example.test/en?token=",
+      subject: "Sign in (en)",
+      text: "Open {magic_link_url}"
+    }
+
+    config =
+      fake_config()
+      |> update_in([:service], &Map.merge(&1, %{default_locale: "hu", locales: ["en"]}))
+      |> Map.put(:locale_emails, %{"en" => en})
+
+    pid = start_supervised!({DatadeftAuth, [config: config]})
+
+    ready(pid)
+
+    for {locale, base} <- [{"en", en.link_base_url}, {"hu", config.email.link_base_url}] do
+      email = "locale-#{locale}@example.test"
+
+      {:ok, _} =
+        DatadeftAuth.request_link(pid, email,
+          terms_accepted: true,
+          privacy_accepted: true,
+          locale: locale
+        )
+
+      {:ok, %{magic_link_url: url}} = DatadeftAuth.fake_last_magic_link(pid, email)
+      assert String.starts_with?(url, base)
+    end
+  end
 end

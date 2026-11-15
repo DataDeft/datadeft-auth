@@ -1,6 +1,8 @@
 //! Strict request payloads and reply results for the v1 operations. Every
 //! payload denies unknown fields; every result serializes a fixed key set so
 //! the Elixir side can validate exact shapes.
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 /// Backing mode selected by the application at initialization.
@@ -19,7 +21,14 @@ pub enum Mode {
 pub struct InitPayload {
     pub mode: Mode,
     pub service: ServicePayload,
+    /// The email of the default locale, and of every request when no
+    /// locales are configured.
     pub email: EmailTemplatePayload,
+    /// One email per entry of `service.locales`, keyed by that tag; the
+    /// keys must be exactly those entries. Absent means `email` for every
+    /// locale.
+    #[serde(default)]
+    pub locale_emails: Option<BTreeMap<String, EmailTemplatePayload>>,
     pub secrets: SecretsPayload,
     /// Required in AWS mode, refused in fake mode.
     #[serde(default)]
