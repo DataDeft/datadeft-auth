@@ -87,6 +87,7 @@ defmodule DatadeftAuth do
           required(:mode) => :fake | :aws,
           required(:service) => map(),
           required(:email) => map(),
+          optional(:locale_emails) => %{optional(String.t()) => map()},
           required(:secrets) => map(),
           optional(:aws) => map(),
           optional(:pow) => map()
