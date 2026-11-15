@@ -99,6 +99,11 @@ config = %{
 children = [{DatadeftAuth, name: MyAuth, config: config, request_timeout: 5000}]
 ```
 
+For emails in more than one language, set `service.default_locale` and
+`service.locales`, and give one email per entry of `service.locales` in
+`locale_emails`, for example `locale_emails: %{"en" => %{link_base_url: ..., subject: ..., text: ...}}`.
+`email` stays the default locale's email; `request_link/3`'s `locale` selects the email.
+
 Keys load inside Rust from Secrets Manager; production configuration does not
 contain raw secret documents. Previous-version loading is optional and follows
 the existing Rust rotation policy. Configuration and keys reload on reconnect;

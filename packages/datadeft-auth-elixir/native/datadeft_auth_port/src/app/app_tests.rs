@@ -172,3 +172,80 @@ async fn pow_policy_is_validated_at_init_and_required_for_the_operations() {
         ));
     }
 }
+
+fn localized_init_json() -> serde_json::Value {
+    let mut payload = init_json(None);
+    payload["service"]["default_locale"] = serde_json::json!("hu");
+    payload["service"]["locales"] = serde_json::json!(["en"]);
+    payload["locale_emails"] = serde_json::json!({
+        "en": {
+            "link_base_url": "https://auth.test/landing/en?token=",
+            "subject": "Sign in (en)",
+            "text": "Open {magic_link_url}"
+        }
+    });
+    payload
+}
+
+#[tokio::test]
+async fn locale_emails_must_match_the_configured_locales_exactly() {
+    let mut missing = localized_init_json();
+    missing["locale_emails"] = serde_json::json!({});
+    let mut extra = localized_init_json();
+    extra["locale_emails"]["de"] = extra["locale_emails"]["en"].clone();
+    let mut without_locales = init_json(None);
+    without_locales["locale_emails"] = localized_init_json()["locale_emails"].clone();
+    let mut marked_subject = localized_init_json();
+    marked_subject["locale_emails"]["en"]["subject"] = serde_json::json!("{magic_link_url}");
+    for payload in [missing, extra, without_locales, marked_subject] {
+        let payload: InitPayload = serde_json::from_value(payload).expect("payload shape");
+        assert!(matches!(
+            ReadyApp::initialize(payload).await,
+            Err(ErrorCode::Configuration)
+        ));
+    }
+}
+
+#[test]
+fn the_resolved_locale_selects_its_email() {
+    let payload: InitPayload = serde_json::from_value(localized_init_json()).expect("payload");
+    let emails =
+        Emails::validate(payload.email, payload.locale_emails, &["en".to_owned()]).expect("emails");
+    let locales = LocaleAllowlist::new("hu", ["en"]).expect("locales");
+    let en = locales.resolve(Some("en-GB"));
+    let hu = locales.resolve(Some("hu"));
+    assert_eq!(emails.for_locale(Some(&en)).subject, "Sign in (en)");
+    assert_eq!(emails.for_locale(Some(&hu)).subject, "Sign in");
+    assert_eq!(emails.for_locale(None).subject, "Sign in");
+}
+
+#[tokio::test]
+async fn a_request_link_locale_reaches_the_landing_url() {
+    let app = ReadyApp::initialize(serde_json::from_value(localized_init_json()).expect("payload"))
+        .await
+        .expect("initialized");
+    for (locale, base) in [
+        (Some("en"), "https://auth.test/landing/en?token="),
+        (None, "https://auth.test/auth/magic-link/landing?token="),
+    ] {
+        let email = format!("locale-{}@example.test", locale.unwrap_or("default"));
+        app.handle(AppCommand::RequestLink(
+            crate::protocol::RequestLinkPayload {
+                email: email.clone(),
+                terms_accepted: true,
+                privacy_accepted: true,
+                locale: locale.map(str::to_owned),
+            },
+        ))
+        .await;
+        let peek = crate::protocol::OutboxPeekPayload { email };
+        let ResultBody::FakeLastMagicLink {
+            magic_link_url: Some(url),
+            ..
+        } = app.handle(AppCommand::FakeLastMagicLink(peek)).await
+        else {
+            panic!("a recorded magic link expected");
+        };
+        assert!(url.starts_with(base), "{url}");
+    }
+}
