@@ -12,8 +12,13 @@ defmodule Mix.Tasks.Compile.DatadeftPort do
       Mix.Project.build_path() |> Path.dirname() |> Path.join("datadeft_native") |> Path.expand()
 
     args = ["build", "--release", "--locked", "--manifest-path", manifest, "--target-dir", target]
+    # DATADEFT_AUTH_VERBOSE=1 streams cargo's progress; otherwise its output
+    # shows only on failure.
+    verbose = System.get_env("DATADEFT_AUTH_VERBOSE") == "1"
+    into = if verbose, do: IO.stream(:stdio, :line), else: ""
+    Mix.shell().info("==> datadeft_auth: cargo build --release (a cold build takes minutes)")
 
-    case System.cmd("cargo", args, stderr_to_stdout: true) do
+    case System.cmd("cargo", args, stderr_to_stdout: true, into: into) do
       {_output, 0} ->
         priv = Path.join(Mix.Project.app_path(), "priv")
         File.mkdir_p!(priv)
@@ -27,7 +32,7 @@ defmodule Mix.Tasks.Compile.DatadeftPort do
         {:ok, []}
 
       {output, _status} ->
-        Mix.shell().info(output)
+        unless verbose, do: Mix.shell().info(output)
         Mix.shell().error("datadeft_auth Rust executable build failed")
         {:error, []}
     end

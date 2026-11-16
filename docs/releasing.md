@@ -1,6 +1,7 @@
 # Registry releases
 
-All seven Rust crates and the npm client share one version and one release PR.
+All seven Rust crates, the npm client and the Elixir package share one version
+and one release PR.
 For the published versions, see crates.io and npm. The project publishes no
 release-candidate or other pre-release versions. Consumers test an unpublished
 version through a git ref. Never move a release tag.
@@ -41,10 +42,23 @@ mise run publish-crates
 ```
 
 ```fish
-# 3. Publish the npm client, then clean up.
+# 3. Publish the npm client.
 npm login
 mise run ts-verify
 mise run publish-npm
+```
+
+```fish
+# 4. Publish the Elixir package from its stage, then clean up. Set
+# DATADEFT_AUTH_VERBOSE=1 to see each command's output.
+cd packages/datadeft-auth-elixir
+mise run package-check; and mise run package-stage
+cd _build/publish_stage
+mix hex.user whoami; or mix hex.user auth
+mix hex.publish
+# Approve the staged release and docs on the printed hex.pm dashboard URL;
+# check that its package SHA-256 matches the one package-check built.
+cd ../../../..
 git checkout main
 cargo logout
 npm logout

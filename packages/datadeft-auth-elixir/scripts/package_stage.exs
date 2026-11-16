@@ -93,12 +93,23 @@ defmodule PackageStage do
     :ok
   end
 
+  # Prints each step; with DATADEFT_AUTH_VERBOSE=1 it also streams the
+  # command's output (for example cargo's progress), otherwise output shows
+  # only on failure.
   def cmd!(command, args, dir, env \\ []) do
-    {output, code} = System.cmd(command, args, cd: dir, env: env, stderr_to_stdout: true)
+    label = Enum.map_join([Path.basename(command) | args], " ", &step_arg/1)
+    IO.puts("==> #{label}  (in #{dir})")
+    verbose = System.get_env("DATADEFT_AUTH_VERBOSE") == "1"
+    into = if verbose, do: IO.stream(:stdio, :line), else: ""
+
+    {output, code} =
+      System.cmd(command, args, cd: dir, env: env, stderr_to_stdout: true, into: into)
 
     if code != 0 do
-      IO.write(output)
-      raise "command failed: #{command} #{Enum.join(args, " ")}"
+      unless verbose, do: IO.write(output)
+      raise "command failed: #{label}"
     end
   end
+
+  defp step_arg(arg), do: if(String.contains?(arg, "\n"), do: "<script>", else: arg)
 end
