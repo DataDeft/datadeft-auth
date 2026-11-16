@@ -1,0 +1,8 @@
+# Release notes are PR-oriented. Release-please's ranges already exclude its
+# own release PRs; this also drops them from notes generated manually or in the
+# GitHub UI.
+changelog:
+  exclude:
+    labels:
+      - "autorelease: pending"
+      - "autorelease: tagged"

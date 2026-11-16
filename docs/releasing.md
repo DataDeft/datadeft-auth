@@ -114,6 +114,18 @@ Release steps:
    `package.json`, Bun's lockfile, and `CHANGELOG.md`. Keep these versions
    synchronized. When you change JS dependencies, use `mise run js-lock`. This
    task normalizes Bun's JSONC output for release-please's strict JSON updater.
+   Changelog text uses release-please's built-in `github` provider: one entry
+   per merged PR, rather than separate entries for a feature commit and its
+   merge message. Every merged PR is listed, including `chore`, `ci` and `docs`
+   PRs. `.github/release.yml` drops release automation PRs from manually
+   generated notes. Conventional commits still determine the version; GitHub
+   supplies PR links and contributor attribution for the notes. Each release
+   section in `CHANGELOG.md` is GitHub's notes under the version heading, so it
+   contains its own `## What's Changed` heading. The generated notes omit
+   `BREAKING CHANGE:` footers: a breaking PR must say so in its title
+   (`feat!:` or `fix!:`), and reviewers confirm this on the release PR. Do not
+   hand-deduplicate generated entries or change merge history to repair note
+   formatting.
 3. Approve any pending CI runs that a bot created. Review the full release PR.
    Before the merge, get two maintainer approvals.
 4. Release-please creates the `vX.Y.Z` tag and the release. Then it dispatches
