@@ -1,0 +1,6 @@
+# Release notes are PR-oriented; do not list the release automation itself.
+changelog:
+  exclude:
+    labels:
+      - "autorelease: pending"
+      - "autorelease: tagged"

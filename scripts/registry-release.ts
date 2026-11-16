@@ -24,6 +24,8 @@ async function run(args: string[]): Promise<number> {
 async function check(): Promise<string> {
   const root = TOML.parse(await Bun.file("Cargo.toml").text()) as any;
   const version = root.workspace.package.version;
+  const releaseConfig = await Bun.file("release-please-config.json").json();
+  requireCondition(releaseConfig.packages?.["."]?.["changelog-type"] === "github", "Release notes must use GitHub PR-oriented generation to avoid duplicate merge/commit entries");
   const mise = TOML.parse(await Bun.file("mise.toml").text()) as any;
   requireCondition(mise.vars.msrv === root.workspace.package["rust-version"], "mise msrv var and workspace rust-version must match");
   const pkg = await Bun.file("packages/dd-protect-client/package.json").json();
