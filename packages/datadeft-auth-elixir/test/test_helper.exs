@@ -3,18 +3,26 @@ ExUnit.start()
 defmodule DatadeftAuth.TestSupport do
   import ExUnit.Assertions
 
-  def eventually(fun, attempts \\ 150)
-
-  def eventually(fun, attempts) when attempts > 0 do
-    if fun.() do
-      :ok
-    else
-      Process.sleep(20)
-      eventually(fun, attempts - 1)
-    end
+  # Polls until `fun` returns true. The bound is wall-clock time, not a retry
+  # count, and generous: starting the port is slow while `mise run verify`
+  # builds and tests everything else in parallel.
+  def eventually(fun, timeout_ms \\ 15_000) do
+    poll(fun, System.monotonic_time(:millisecond) + timeout_ms)
   end
 
-  def eventually(_, 0), do: flunk("condition did not become true")
+  defp poll(fun, deadline) do
+    cond do
+      fun.() ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        flunk("condition did not become true")
+
+      true ->
+        Process.sleep(20)
+        poll(fun, deadline)
+    end
+  end
 
   def ready(pid), do: eventually(fn -> DatadeftAuth.status(pid) == {:ok, :transport_ready} end)
 

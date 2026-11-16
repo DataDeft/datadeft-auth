@@ -7,7 +7,11 @@ main(_) ->
     io:setopts(standard_io, [binary, {encoding, latin1}]),
     frame(),
     case __MODE__ of
-        silent -> timer:sleep(2000), halt(0);
+        %% Never reply, but observe EOF so closing the Port leaves no orphan.
+        silent -> frame(), halt(2);
+        delayed_handshake ->
+            timer:sleep(1200),
+            send_frame(base64:decode(<<"__HANDSHAKE__">>)), loop(2);
         malformed -> send_frame(<<"{}">>), loop(2);
         oversized -> io:put_chars(standard_io, <<4097:32>>), loop(2);
         confirm_crash ->

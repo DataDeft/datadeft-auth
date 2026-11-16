@@ -115,7 +115,9 @@ AWS SDK calls have explicit bounds: 3s connect, 5s read/attempt and 10s total
 per SDK operation (including SDK retries). Multi-step service workflows may
 span several calls; these bounds are not a transaction deadline or rollback.
 The application's request timeout may expire first, with the indeterminate
-outcome contract below. Initialization remains separately bounded at 30s.
+outcome contract below. Handshake and initialization each have a separate
+30-second startup deadline; `request_timeout` applies to ordinary operations,
+not cold process startup.
 
 Use deployment roles/the supported AWS credential chain, least-privilege IAM,
 HTTPS, configured DynamoDB encryption/TTL/backups and an approved SES identity.
@@ -235,7 +237,8 @@ failure rather than declaring logout complete.
 - Four-byte big-endian length prefix; 1–16384-byte UTF-8 JSON bodies; v1 envelope,
   strict fields/duplicate-key rejection and monotonic non-reused uint32 IDs.
 - Exact build/version handshake, then explicit initialization before auth work.
-  The owner's 30-second initialization deadline closes the pipe on expiry;
+  Each startup step has a 30-second deadline, independent of request timeouts.
+  Either startup deadline closes the pipe on expiry;
   native initialization observes EOF and cancels a stalled SDK future.
   Jobs/replies are bounded; replies may arrive out of order and must match the
   pending request's ID and operation. Application failures are per-request;
