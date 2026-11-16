@@ -24,14 +24,15 @@ production hosts need neither Cargo nor a Rust compiler.
 
 The native CI pairs run in the official `elixir` images:
 
-| Target | Image / libc | Elixir / OTP |
-| --- | --- | --- |
-| Debian x86_64 | `elixir:1.16.3-otp-26` / glibc | 1.16.3 / 26 |
-| Debian AArch64 | `elixir:1.19-otp-28` / glibc | 1.19 / 28 |
-| Alpine x86_64 | `elixir:1.19-otp-28-alpine` / musl | 1.19 / 28 |
-| Alpine AArch64 | `elixir:1.16.3-otp-26-alpine` / musl | 1.16.3 / 26 |
+| Target | Image | Distribution / libc | Elixir / OTP |
+| --- | --- | --- | --- |
+| Debian x86_64 | `elixir:1.16.3-otp-26` | Debian 12 / glibc 2.36 | 1.16.3 / 26 |
+| Debian AArch64 | `elixir:1.19-otp-28` | Debian 13 / glibc 2.41 | 1.19 / 28 |
+| Alpine x86_64 | `elixir:1.19-otp-28-alpine` | Alpine 3.23 / musl | 1.19 / 28 |
+| Alpine AArch64 | `elixir:1.16.3-otp-26-alpine` | Alpine 3.24 / musl | 1.16.3 / 26 |
 
-Each job logs its distribution and libc version.
+Distributions are as of 2026-11-15; image tags can move to newer bases, and
+each job logs its distribution and libc version.
 
 The aggregate verification job also exercises its configured x86_64 Linux host.
 These are source-build/native-execution checks, not a promise that a binary built
