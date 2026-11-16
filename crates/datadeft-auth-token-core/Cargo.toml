@@ -19,7 +19,8 @@ test-support = []
 workspace = true
 
 [dependencies]
-chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
+# `zeroize` wipes the cipher's key copy on drop; opt-in since 0.11.
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc", "zeroize"] }
 hkdf = "0.13"
 rand_core = "0.6"
 sha2 = "0.11"
