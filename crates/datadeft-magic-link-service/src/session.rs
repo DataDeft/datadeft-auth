@@ -132,6 +132,72 @@ where
     Sessions: SessionRepository,
     ServiceClock: Clock,
 {
+    authenticate_session(
+        cookie_value,
+        CountryCheck::Enforce(request_country),
+        session_keyring,
+        sessions,
+        clock,
+        config,
+    )
+    .await
+}
+
+/// Authenticate a session cookie so its holder can end the session.
+///
+/// Runs every [`validate_session`] check except the country lock: the cookie
+/// must authenticate and be fresh, and the server-side session must exist, be
+/// unexpired, unrevoked, and owned by an active user. The country lock decides
+/// whether a request may *use* a session; whoever holds an authentic cookie may
+/// always *end* it. Otherwise a user who logs out from another country clears
+/// the cookie while a copied cookie stays live in the pinned country.
+///
+/// Revoke the returned record's `session_id` before clearing the cookie. It
+/// returns a [`SessionRecord`], not a [`ValidatedSession`], so the result
+/// cannot feed [`refresh_session_cookie`]. Like validation, it never writes.
+pub async fn validate_session_for_logout<Sessions, ServiceClock>(
+    cookie_value: &str,
+    session_keyring: &KeyRing<SessionCookie>,
+    sessions: &Sessions,
+    clock: &ServiceClock,
+    config: &MagicLinkServiceConfig,
+) -> Result<SessionRecord, SessionValidationError>
+where
+    Sessions: SessionRepository,
+    ServiceClock: Clock,
+{
+    authenticate_session(
+        cookie_value,
+        CountryCheck::Skip,
+        session_keyring,
+        sessions,
+        clock,
+        config,
+    )
+    .await
+    .map(|validated| validated.session)
+}
+
+/// Whether [`authenticate_session`] applies the session country lock.
+enum CountryCheck<'a> {
+    /// Enforce the lock against the request's trusted-edge country.
+    Enforce(Option<&'a str>),
+    /// Logout only: any authentic session may be ended.
+    Skip,
+}
+
+async fn authenticate_session<Sessions, ServiceClock>(
+    cookie_value: &str,
+    country_check: CountryCheck<'_>,
+    session_keyring: &KeyRing<SessionCookie>,
+    sessions: &Sessions,
+    clock: &ServiceClock,
+    config: &MagicLinkServiceConfig,
+) -> Result<ValidatedSession, SessionValidationError>
+where
+    Sessions: SessionRepository,
+    ServiceClock: Clock,
+{
     let max_age = config
         .session_max_age()
         .map_err(|_| SessionValidationError::Internal)?;
@@ -143,7 +209,8 @@ where
         .map_err(|_| SessionValidationError::InvalidSession)?;
     // Compare pinned values: a session bound to a group tag (CountryPolicy)
     // accepts any country of that group.
-    if let Some(bound_country) = body.country.as_deref()
+    if let CountryCheck::Enforce(request_country) = country_check
+        && let Some(bound_country) = body.country.as_deref()
         && request_country.and_then(|country| config.country_policy.pin(country))
             != Some(bound_country)
     {

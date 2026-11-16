@@ -80,6 +80,12 @@ Session country is an opportunistic lock.
   validation must see the same country.
 - A missing country does not satisfy a locked session. Fail closed.
 - A session bound without a country stays unlocked and skips the check.
+- Logout skips the lock (`validate_session_for_logout`). The lock limits who
+  may use a session, but whoever holds an authentic cookie may always end it.
+  Otherwise a user who logs out abroad clears the cookie while a copied cookie
+  stays live in the pinned country. The cost: whoever steals a cookie can end
+  its session from any country. That only signs the user out; it grants no
+  access.
 - The lock works only when the edge strips or overwrites the header. The
   origin must also not be directly reachable.
 

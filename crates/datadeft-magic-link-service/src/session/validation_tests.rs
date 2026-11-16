@@ -594,3 +594,65 @@ async fn user_status_lookup_failures_never_count_as_active() {
         );
     }
 }
+
+// --- logout ------------------------------------------------------------------
+
+async fn for_logout(
+    cookie: &str,
+    sessions: &TestSessions,
+) -> Result<SessionRecord, SessionValidationError> {
+    validate_session_for_logout(cookie, &keyring(), sessions, &TestClock::at(900), &config()).await
+}
+
+#[tokio::test]
+async fn logout_validation_skips_only_the_country_lock() {
+    let keyring = keyring();
+    let locked = cookie(&keyring, 900, 800, Some("HU"));
+
+    // A country-locked session can be ended from anywhere, with no signal.
+    let sessions = TestSessions::with_record(record(800));
+    let session = for_logout(&locked, &sessions)
+        .await
+        .expect("an authentic session is revocable");
+    assert_eq!(session.session_id, session_id());
+    assert_eq!(sessions.revoke_calls.get(), 0, "validation never writes");
+
+    // Every other check still applies.
+    let mut tampered = locked.clone().into_bytes();
+    let last = tampered.len() - 1;
+    tampered[last] = if tampered[last] == b'0' { b'1' } else { b'0' };
+    let tampered = String::from_utf8(tampered).expect("cookie is ascii");
+    assert_eq!(
+        for_logout(&tampered, &sessions).await.unwrap_err(),
+        SessionValidationError::InvalidSession
+    );
+    let much_later = TestClock::at(900 + 365 * 24 * 60 * 60);
+    assert_eq!(
+        validate_session_for_logout(&locked, &keyring, &sessions, &much_later, &config())
+            .await
+            .unwrap_err(),
+        SessionValidationError::InvalidSession,
+        "an expired cookie is not revocable"
+    );
+
+    let mut revoked_record = record(800);
+    revoked_record.revoked_at_unix = Some(850);
+    let revoked = TestSessions::with_record(revoked_record);
+    assert_eq!(
+        for_logout(&locked, &revoked).await.unwrap_err(),
+        SessionValidationError::InvalidSession
+    );
+
+    let disabled = TestSessions::with_record(record(800));
+    disabled.user_disabled.set(true);
+    assert_eq!(
+        for_logout(&locked, &disabled).await.unwrap_err(),
+        SessionValidationError::InvalidSession
+    );
+
+    let missing = TestSessions::default();
+    assert_eq!(
+        for_logout(&locked, &missing).await.unwrap_err(),
+        SessionValidationError::InvalidSession
+    );
+}

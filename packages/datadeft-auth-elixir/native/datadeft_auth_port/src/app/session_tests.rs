@@ -182,20 +182,33 @@ async fn an_expired_mint_window_does_not_invalidate_a_verified_session() {
 }
 
 #[tokio::test]
-async fn mismatched_country_logout_does_not_revoke_the_live_session() {
-    let (app, cookie) = session_aged(0).await;
-    assert!(matches!(
-        app.handle(AppCommand::Logout(SessionPayload {
-            session_cookie: cookie.clone(),
-            country: Some("DE".to_owned()),
-        }))
-        .await,
-        ResultBody::Logout { revoked: false }
-    ));
-    assert!(matches!(
-        validate(&app, &cookie, "HU").await,
-        ResultBody::ValidateSession { valid: true, .. }
-    ));
+async fn logout_revokes_a_country_locked_session_from_any_country() {
+    // A user who logs out abroad (DE) or without an edge signal must not
+    // leave a copied cookie live in the pinned country (HU).
+    for country in [Some("DE"), None] {
+        let (app, cookie) = session_aged(0).await;
+        assert!(matches!(
+            app.handle(AppCommand::Logout(SessionPayload {
+                session_cookie: cookie.clone(),
+                country: country.map(str::to_owned),
+            }))
+            .await,
+            ResultBody::Logout { revoked: true }
+        ));
+        assert!(matches!(
+            validate(&app, &cookie, "HU").await,
+            ResultBody::ValidateSession { valid: false, .. }
+        ));
+        // Ending it again reports it as already invalid.
+        assert!(matches!(
+            app.handle(AppCommand::Logout(SessionPayload {
+                session_cookie: cookie.clone(),
+                country: Some("HU".to_owned()),
+            }))
+            .await,
+            ResultBody::Logout { revoked: false }
+        ));
+    }
 }
 
 #[tokio::test]
