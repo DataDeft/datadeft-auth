@@ -182,19 +182,80 @@ async fn an_expired_mint_window_does_not_invalidate_a_verified_session() {
 }
 
 #[tokio::test]
-async fn mismatched_country_logout_does_not_revoke_the_live_session() {
-    let (app, cookie) = session_aged(0).await;
+async fn logout_revokes_a_country_locked_session_from_any_country() {
+    // A user who logs out abroad (DE) or without an edge signal must not
+    // leave a copied cookie live in the pinned country (HU).
+    for country in [Some("DE"), None] {
+        let (app, cookie) = session_aged(0).await;
+        assert!(matches!(
+            app.handle(AppCommand::Logout(SessionPayload {
+                session_cookie: cookie.clone(),
+                country: country.map(str::to_owned),
+            }))
+            .await,
+            ResultBody::Logout { revoked: true }
+        ));
+        assert!(matches!(
+            validate(&app, &cookie, "HU").await,
+            ResultBody::ValidateSession { valid: false, .. }
+        ));
+        // Ending it again reports it as already invalid.
+        assert!(matches!(
+            app.handle(AppCommand::Logout(SessionPayload {
+                session_cookie: cookie.clone(),
+                country: Some("HU".to_owned()),
+            }))
+            .await,
+            ResultBody::Logout { revoked: false }
+        ));
+    }
+}
+
+#[tokio::test]
+async fn logout_with_an_idle_expired_cookie_revokes_a_refreshed_copy() {
+    use datadeft_auth_token_core::cookie::{mint_bound_cookie, parse_bound_cookie};
+
+    let (app, old) = session_aged(200).await;
+    let ReadyApp::Fake(fake) = &app else {
+        panic!("fake backend expected");
+    };
+    let now = WallClock.now_unix().expect("clock");
+    let original = parse_bound_cookie::<SessionCookie>(
+        &old,
+        &fake.shared.session_keyring,
+        now - 200,
+        fake.shared.config.session_max_age().expect("max age"),
+    )
+    .expect("cookie at creation");
+    // Model a copy kept active by sliding refresh. Both identify one session.
+    let refreshed = mint_bound_cookie::<SessionCookie, _>(
+        original.body(),
+        &fake.shared.session_keyring,
+        &mut OsRng,
+        u32::try_from(now - 40).expect("timestamp"),
+        original.iat(),
+        now - 40,
+    )
+    .expect("refreshed copy");
     assert!(matches!(
-        app.handle(AppCommand::Logout(SessionPayload {
-            session_cookie: cookie.clone(),
-            country: Some("DE".to_owned()),
-        }))
-        .await,
-        ResultBody::Logout { revoked: false }
+        validate(&app, &old, "HU").await,
+        ResultBody::ValidateSession { valid: false, .. }
     ));
     assert!(matches!(
-        validate(&app, &cookie, "HU").await,
+        validate(&app, &refreshed, "HU").await,
         ResultBody::ValidateSession { valid: true, .. }
+    ));
+    assert!(matches!(
+        app.handle(AppCommand::Logout(SessionPayload {
+            session_cookie: old,
+            country: None,
+        }))
+        .await,
+        ResultBody::Logout { revoked: true }
+    ));
+    assert!(matches!(
+        validate(&app, &refreshed, "HU").await,
+        ResultBody::ValidateSession { valid: false, .. }
     ));
 }
 

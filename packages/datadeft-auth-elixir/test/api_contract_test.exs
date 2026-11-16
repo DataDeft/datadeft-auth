@@ -92,13 +92,15 @@ defmodule DatadeftAuthApiContractTest do
     assert {:ok, %Validation{valid: false}} =
              DatadeftAuth.validate_session(pid, session.session_cookie)
 
-    assert {:ok, %{revoked: false}} =
+    # Logout ignores the country lock: ending the session from another
+    # country revokes it, so no copied cookie stays live in HU.
+    assert {:ok, %{revoked: true}} =
              DatadeftAuth.logout(pid, session.session_cookie, country: "GB")
 
-    assert {:ok, %Validation{valid: true}} =
+    assert {:ok, %Validation{valid: false}} =
              DatadeftAuth.validate_session(pid, session.session_cookie, country: "HU")
 
-    assert {:ok, %{revoked: true}} =
+    assert {:ok, %{revoked: false}} =
              DatadeftAuth.logout(pid, session.session_cookie, country: "HU")
   end
 

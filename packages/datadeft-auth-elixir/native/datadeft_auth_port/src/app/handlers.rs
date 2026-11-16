@@ -8,6 +8,7 @@ use datadeft_magic_link_service::{
     MagicLinkRequestService, MagicLinkServiceError, NormalizedEmail, RateLimitDecision,
     RateLimitKey, RateLimiter, ReadMagicLinkFlowStateCommand, RequestMagicLinkCommand,
     SessionRepository, SessionValidationError, refresh_session_cookie, validate_session,
+    validate_session_for_logout,
 };
 use datadeft_pow_core::{
     MAX_FUTURE_SKEW_SECS, Solution, mint_pow_proof_cookie, proof_budget_expiry, proof_budget_key,
@@ -198,10 +199,12 @@ where
         }
     }
 
+    // The country lock does not apply: any authentic, live session is revoked,
+    // so logging out from another country cannot leave a copied cookie live.
+    // `payload.country` is accepted for symmetry with validation and ignored.
     async fn logout(&self, payload: SessionPayload) -> ResultBody {
-        match validate_session(
+        match validate_session_for_logout(
             &payload.session_cookie,
-            payload.country.as_deref(),
             &self.shared.session_keyring,
             &self.store,
             &WallClock,
@@ -209,13 +212,13 @@ where
         )
         .await
         {
-            Ok(validated) => {
+            Ok(session) => {
                 let mut rng = OsRng;
                 // Revoke server state first; the application clears its
                 // cookie only after this reply.
                 match self
                     .flow_service(&mut rng)
-                    .revoke_session(&validated.session().session_id)
+                    .revoke_session(&session.session_id)
                     .await
                 {
                     Ok(()) => ResultBody::Logout { revoked: true },

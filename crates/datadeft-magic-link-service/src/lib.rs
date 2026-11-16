@@ -63,7 +63,7 @@ pub use locale::{Locale, LocaleAllowlist, LocaleError, MAX_LOCALE_HINT_BYTES};
 pub use service::{MagicLinkFlowService, MagicLinkRequestService};
 pub use session::{
     RefreshedSessionCookie, SessionValidationError, ValidatedSession, refresh_session_cookie,
-    validate_session,
+    validate_session, validate_session_for_logout,
 };
 pub use session_body::{
     SessionBodyError, SessionCookieBody, decode_session_cookie_body, encode_session_cookie_body,

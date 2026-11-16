@@ -80,6 +80,12 @@ Session country is an opportunistic lock.
   validation must see the same country.
 - A missing country does not satisfy a locked session. Fail closed.
 - A session bound without a country stays unlocked and skips the check.
+- Logout skips the lock (`validate_session_for_logout`). The lock limits who
+  may use a session, but whoever holds an authentic cookie may always end it.
+  Otherwise a user who logs out abroad clears the cookie while a copied cookie
+  stays live in the pinned country. The cost: whoever steals a cookie can end
+  its session from any country. That only signs the user out; it grants no
+  access.
 - The lock works only when the edge strips or overwrites the header. The
   origin must also not be directly reachable.
 
@@ -643,6 +649,11 @@ from CSRF.
 The default session model supports server-side invalidation.
 
 - On logout, revoke server-side session state before you clear the cookie.
+- `validate_session_for_logout` ignores the presented cookie's idle deadline
+  as well as the country lock. An idle-expired copy can still identify a live
+  session whose other copies have been refreshed. Cookie integrity, key windows,
+  future timestamps, absolute expiry and server-side checks remain mandatory.
+  This result cannot authorize access or feed cookie refresh.
 - Logout is a CSRF-protected `POST`.
 - Support compromise revocation before absolute expiry.
 - Stateless sessions are not the default. If an app uses them, the app must

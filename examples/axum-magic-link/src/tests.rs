@@ -15,6 +15,14 @@ use crate::util::current_unix;
 
 /// Log in through the real services and return the session cookie value.
 async fn logged_in(state: &AppState) -> (String, datadeft_magic_link_service::SessionId) {
+    logged_in_from(state, None).await
+}
+
+/// Log in with a trusted-edge country, which pins the session to it.
+async fn logged_in_from(
+    state: &AppState,
+    country: Option<&str>,
+) -> (String, datadeft_magic_link_service::SessionId) {
     let mut rng = OsRng;
     MagicLinkRequestService {
         magic_links: &state.auth,
@@ -45,7 +53,7 @@ async fn logged_in(state: &AppState) -> (String, datadeft_magic_link_service::Se
             ConfirmMagicLinkFlowCommand::new(
                 landing.confirm_cookie_value().to_owned(),
                 landing.confirmation_value().to_owned(),
-                None,
+                country.map(str::to_owned),
             )
             .expect("command"),
         )
@@ -123,4 +131,33 @@ async fn logout_revokes_server_state_and_old_cookie_stops_working() {
     )
     .await;
     assert_ne!(replay.status(), StatusCode::SEE_OTHER);
+}
+
+#[tokio::test]
+async fn logout_revokes_a_country_pinned_session_from_anywhere() {
+    let state = build_state().expect("state");
+    let (cookie, session_id) = logged_in_from(&state, Some("HU")).await;
+
+    // No trusted country on the logout request: validation refuses the
+    // pinned session, but logout must still end it.
+    assert!(
+        datadeft_magic_link_service::validate_session(
+            &cookie,
+            None,
+            state.session_keyring.as_ref(),
+            &state.auth,
+            &LocalClock,
+            &state.config,
+        )
+        .await
+        .is_err(),
+        "the session is country-pinned"
+    );
+    let response = logout(
+        State(state.clone()),
+        logout_headers(&state, &cookie, Some(LOCAL_ORIGIN)),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert!(!session_is_live(&state, &session_id).await);
 }

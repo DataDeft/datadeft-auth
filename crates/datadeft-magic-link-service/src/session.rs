@@ -54,8 +54,9 @@ impl std::error::Error for SessionValidationError {}
 
 /// Authenticated server-side session and its cookie-bound country context.
 ///
-/// Only [`validate_session`] constructs one, so holding a `ValidatedSession`
-/// proves the cookie and the server-side record passed every check. That is
+/// Only [`validate_session`] returns one (the logout path builds one privately
+/// and discards it), so holding a `ValidatedSession` proves the cookie and the
+/// server-side record passed every check. That is
 /// what makes it safe input for [`refresh_session_cookie`]. Building one by
 /// hand does not compile:
 ///
@@ -132,9 +133,81 @@ where
     Sessions: SessionRepository,
     ServiceClock: Clock,
 {
-    let max_age = config
+    authenticate_session(
+        cookie_value,
+        SessionUse::Authenticate(request_country),
+        session_keyring,
+        sessions,
+        clock,
+        config,
+    )
+    .await
+}
+
+/// Authenticate a session cookie so its holder can end the session.
+///
+/// Runs every [`validate_session`] check except the country lock and cookie
+/// idle deadline: the cookie must authenticate within its absolute lifetime,
+/// and the server-side session must exist, be unexpired, unrevoked, and owned
+/// by an active user. Country and idle checks govern *using* a session, not
+/// ending it. A holder may have an older idle-expired cookie while another
+/// copy has been refreshed; logout must revoke both copies. Key verification
+/// windows, future-timestamp checks and absolute expiry still apply.
+///
+/// Revoke the returned record's `session_id` before clearing the cookie. It
+/// returns a [`SessionRecord`], not a [`ValidatedSession`], so the result
+/// cannot feed [`refresh_session_cookie`]. Like validation, it never writes.
+pub async fn validate_session_for_logout<Sessions, ServiceClock>(
+    cookie_value: &str,
+    session_keyring: &KeyRing<SessionCookie>,
+    sessions: &Sessions,
+    clock: &ServiceClock,
+    config: &MagicLinkServiceConfig,
+) -> Result<SessionRecord, SessionValidationError>
+where
+    Sessions: SessionRepository,
+    ServiceClock: Clock,
+{
+    authenticate_session(
+        cookie_value,
+        SessionUse::Logout,
+        session_keyring,
+        sessions,
+        clock,
+        config,
+    )
+    .await
+    .map(|validated| validated.session)
+}
+
+/// Authentication enforces admission checks; logout can only end a session.
+enum SessionUse<'a> {
+    /// Enforce idle freshness and the request's trusted-edge country.
+    Authenticate(Option<&'a str>),
+    /// Skip admission-only checks, retaining absolute freshness and integrity.
+    Logout,
+}
+
+async fn authenticate_session<Sessions, ServiceClock>(
+    cookie_value: &str,
+    session_use: SessionUse<'_>,
+    session_keyring: &KeyRing<SessionCookie>,
+    sessions: &Sessions,
+    clock: &ServiceClock,
+    config: &MagicLinkServiceConfig,
+) -> Result<ValidatedSession, SessionValidationError>
+where
+    Sessions: SessionRepository,
+    ServiceClock: Clock,
+{
+    let mut max_age = config
         .session_max_age()
         .map_err(|_| SessionValidationError::Internal)?;
+    if matches!(session_use, SessionUse::Logout) {
+        // Still freshness-bounded by absolute expiry; never mint or admit
+        // with this relaxed idle bound. Only logout uses this branch.
+        max_age.idle_secs = max_age.absolute_secs;
+    }
     let now_unix = clock.now_unix().map_err(map_session_dependency_error)?;
     let verified =
         parse_bound_cookie::<SessionCookie>(cookie_value, session_keyring, now_unix, max_age)
@@ -143,7 +216,8 @@ where
         .map_err(|_| SessionValidationError::InvalidSession)?;
     // Compare pinned values: a session bound to a group tag (CountryPolicy)
     // accepts any country of that group.
-    if let Some(bound_country) = body.country.as_deref()
+    if let SessionUse::Authenticate(request_country) = session_use
+        && let Some(bound_country) = body.country.as_deref()
         && request_country.and_then(|country| config.country_policy.pin(country))
             != Some(bound_country)
     {

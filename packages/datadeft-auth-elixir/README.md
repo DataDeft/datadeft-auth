@@ -166,7 +166,7 @@ requirement. Route names are not private Port operation names.
 | `GET /auth/magic-link/flow-state` | `flow_state(server, cookie)` | Require same-origin fetch; clear unusable temporary state. |
 | `POST /auth/magic-link/consume` | `confirm(server, cookie, confirmation, opts)` | Require same-origin/CSRF checks; set the session cookie and clear temporary state on success. |
 | `GET /auth/magic-link/complete` | None | Fixed completion page, not another consume or session-creation operation. |
-| `POST /auth/logout` | `logout(server, cookie, opts)` | CSRF-protected revocation before cookie clearing; pass the trusted country signal. |
+| `POST /auth/logout` | `logout(server, cookie, opts)` | CSRF-protected revocation before cookie clearing; revokes from any country (no country lock). |
 | `POST /auth/pow/create` | `pow_challenge(server)` | Return the existing browser-compatible challenge shape. |
 | `POST /auth/pow/validate` | `pow_verify(server, solution)` | Set the proof cookie only after verification; this does not spend its admission budget. |
 | `GET /dev` | None | Development form only; do not mount in production. |
