@@ -1,12 +1,13 @@
 # Workspace task runner. Run `mise tasks` to list tasks.
 
-[vars]
-# Keep in sync with workspace.package.rust-version in Cargo.toml.
-msrv = "1.94.1"
-
 [tools]
 bun = "latest"
 node = "24"
+# The one Rust version for builds, CI, the CI images and the declared
+# workspace rust-version (release-check enforces the match). Installed through
+# rustup; mise would bootstrap a missing rustup from sh.rustup.rs without
+# checksum verification, so CI requires the runner's rustup.
+rust = { version = "1.99.1", components = "rustfmt,clippy" }
 
 [tasks.api-guard]
 description = "Assert datadeft-auth-token-core API hygiene (encode_with_nonce gating, test-support dev-only)"
@@ -128,14 +129,6 @@ run = "bun scripts/registry-release.ts publish"
 description = "Publish the npm client from the tagged checkout (npm login first; no provenance locally)"
 dir = "packages/dd-protect-client"
 run = "npm publish --access public --ignore-scripts"
-
-[tasks.msrv-install]
-description = "Install the declared minimum Rust toolchain"
-run = "rustup toolchain install {{vars.msrv}} --profile minimal"
-
-[tasks.msrv]
-description = "Check the declared minimum Rust version (mise run msrv-install first)"
-run = "cargo +{{vars.msrv}} check --workspace --all-targets --all-features --locked"
 
 [tasks.test-default-features]
 description = "Build every crate's tests with default features, one crate at a time (workspace feature unification hides gaps)"

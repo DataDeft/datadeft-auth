@@ -307,7 +307,8 @@ x86_64/AMD64 and ARM64/AArch64, all 64-bit; musl/Alpine was added on
 2026-11-15. No 32-bit x86 or Windows support. macOS ARM64
 can be used for development but is not an approved deployment target.
 Approved runtime baseline: Elixir >= 1.16 and OTP >= 26. Rust build baseline:
->= 1.94.1 (raised to use the maintained AWS SDK/Smithy dependency chain).
+>= 1.99.1 (the single pinned toolchain in mise.toml; first raised to 1.94.1 for
+the maintained AWS SDK/Smithy dependency chain).
 Validate supported Elixir/OTP combinations in CI and test/document the minimum
 supported glibc version.
 All deployment targets need native execution tests, not cross-compilation alone.

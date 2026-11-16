@@ -18,11 +18,13 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # mise installs Rust through rustup and, when rustup is missing, would
+      # fetch and run sh.rustup.rs unverified. Hosted runners ship rustup;
+      # fail instead of letting mise bootstrap it.
+      - run: command -v rustup
+      # Installs the tools in mise.toml, Rust stable included.
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
         with:
           otp-version: '26.2'
@@ -36,17 +38,6 @@ jobs:
       # not only the ignored-by-default test compilation. Uses local Docker.
       - run: mise run dynamodb-local-test
       - run: mise run package-crates
-
-  msrv:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-      - run: mise run msrv-install
-      - run: mise run msrv
 
   elixir-platforms:
     strategy:
@@ -62,6 +53,10 @@ jobs:
           - { distro: alpine, runner: ubuntu-24.04-arm, image: 'elixir:1.16.3-otp-26-alpine' }
     name: elixir-platforms (${{ matrix.distro }}, ${{ matrix.runner }}, ${{ matrix.image }})
     runs-on: ${{ matrix.runner }}
+    # The host only runs the Bun script; Rust is installed inside the image
+    # from a pinned, checksum-verified rustup-init.
+    env:
+      MISE_DISABLE_TOOLS: rust
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:

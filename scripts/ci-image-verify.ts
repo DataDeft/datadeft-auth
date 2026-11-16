@@ -8,15 +8,18 @@
 // piped to a shell. The container gets the checkout at /work and the verified
 // binaries read-only at /tools, then runs the same `elixir-verify` task as the
 // host jobs. It runs as root and is removed afterwards, along with the
-// downloads. Only the downloads are digest-pinned: the image tag and Rust
-// `stable` float. Meant for CI: locally on Linux, build output in the checkout
-// ends up owned by root.
+// downloads. Only the downloads are digest-pinned: the image tag floats, and
+// Rust is the workspace's pinned version. Meant for CI: locally on Linux,
+// build output in the checkout ends up owned by root.
 
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { TOML } from "bun";
 
 const MISE_VERSION = "2026.11.8";
+// The workspace's single Rust version, so the image builds what CI builds.
+const RUST_VERSION: string = (TOML.parse(await Bun.file("mise.toml").text()) as any).tools.rust.version;
 const RUSTUP_VERSION = "1.29.3";
 
 // Digests from the mise release's SHASUMS256.txt and rustup's
@@ -102,7 +105,7 @@ try {
     await exec(["apt-get", "update"]);
     await exec(["apt-get", "install", "-y", "--no-install-recommends", "build-essential", "ca-certificates", "git"]);
   }
-  await exec(["rustup-init", "-y", "--no-modify-path", "--profile", "minimal", "--default-toolchain", "stable"]);
+  await exec(["rustup-init", "-y", "--no-modify-path", "--profile", "minimal", "--default-toolchain", RUST_VERSION]);
 
   // The mounted checkout is owned by another user.
   await exec(["git", "config", "--global", "--add", "safe.directory", "*"]);
@@ -110,10 +113,10 @@ try {
   await exec(["mix", "local.rebar", "--force"]);
 
   // The workspace's bun and node tools serve other tasks and have no musl
-  // builds; elixir-verify needs neither.
+  // builds; elixir-verify needs neither. Rust is already installed above.
   await exec(["mise", "run", "elixir-verify"], [
     "MISE_TRUSTED_CONFIG_PATHS=/work",
-    "MISE_DISABLE_TOOLS=bun,node",
+    "MISE_DISABLE_TOOLS=bun,node,rust",
   ]);
 } finally {
   // No container exists when the downloads or `docker run` failed early.

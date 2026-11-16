@@ -18,7 +18,7 @@ recovery path is offering a fresh sign-in link.
 
 ## Build and runtime
 
-Build with Elixir >= 1.16, OTP >= 26, Rust >= 1.94.1 and native build tools.
+Build with Elixir >= 1.16, OTP >= 26, Rust >= 1.99.1 and native build tools.
 The initial distribution builds from source. Mix releases include the executable;
 production hosts need neither Cargo nor a Rust compiler.
 
