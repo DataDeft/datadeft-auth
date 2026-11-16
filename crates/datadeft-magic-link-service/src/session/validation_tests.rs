@@ -605,7 +605,7 @@ async fn for_logout(
 }
 
 #[tokio::test]
-async fn logout_validation_skips_only_the_country_lock() {
+async fn logout_validation_skips_country_but_preserves_integrity_and_absolute_expiry() {
     let keyring = keyring();
     let locked = cookie(&keyring, 900, 800, Some("HU"));
 
@@ -617,7 +617,7 @@ async fn logout_validation_skips_only_the_country_lock() {
     assert_eq!(session.session_id, session_id());
     assert_eq!(sessions.revoke_calls.get(), 0, "validation never writes");
 
-    // Every other check still applies.
+    // Integrity and absolute freshness checks still apply.
     let mut tampered = locked.clone().into_bytes();
     let last = tampered.len() - 1;
     tampered[last] = if tampered[last] == b'0' { b'1' } else { b'0' };
@@ -632,7 +632,7 @@ async fn logout_validation_skips_only_the_country_lock() {
             .await
             .unwrap_err(),
         SessionValidationError::InvalidSession,
-        "an expired cookie is not revocable"
+        "a cookie outside its verification/absolute window is not revocable"
     );
 
     let mut revoked_record = record(800);
@@ -655,4 +655,30 @@ async fn logout_validation_skips_only_the_country_lock() {
         for_logout(&locked, &missing).await.unwrap_err(),
         SessionValidationError::InvalidSession
     );
+}
+
+#[tokio::test]
+async fn logout_accepts_an_idle_expired_cookie_but_never_admits_or_refreshes_it() {
+    let keyring = keyring();
+    let old = cookie(&keyring, 700, 700, Some("HU"));
+    let sessions = TestSessions::with_record(record(700));
+    assert!(matches!(
+        validated_at(&old, Some("HU"), &keyring, &sessions, 900).await,
+        Err(SessionValidationError::InvalidSession)
+    ));
+    assert_eq!(
+        for_logout(&old, &sessions)
+            .await
+            .expect("revocable")
+            .session_id,
+        session_id()
+    );
+    assert_eq!(sessions.revoke_calls.get(), 0);
+
+    // Fresh activity cannot rescue a cookie beyond the original absolute TTL.
+    let expired = cookie(&keyring, 850, 500, Some("HU"));
+    assert!(matches!(
+        for_logout(&expired, &sessions).await,
+        Err(SessionValidationError::InvalidSession)
+    ));
 }

@@ -134,7 +134,7 @@ where
 {
     authenticate_session(
         cookie_value,
-        CountryCheck::Enforce(request_country),
+        SessionUse::Authenticate(request_country),
         session_keyring,
         sessions,
         clock,
@@ -145,12 +145,13 @@ where
 
 /// Authenticate a session cookie so its holder can end the session.
 ///
-/// Runs every [`validate_session`] check except the country lock: the cookie
-/// must authenticate and be fresh, and the server-side session must exist, be
-/// unexpired, unrevoked, and owned by an active user. The country lock decides
-/// whether a request may *use* a session; whoever holds an authentic cookie may
-/// always *end* it. Otherwise a user who logs out from another country clears
-/// the cookie while a copied cookie stays live in the pinned country.
+/// Runs every [`validate_session`] check except the country lock and cookie
+/// idle deadline: the cookie must authenticate within its absolute lifetime,
+/// and the server-side session must exist, be unexpired, unrevoked, and owned
+/// by an active user. Country and idle checks govern *using* a session, not
+/// ending it. A holder may have an older idle-expired cookie while another
+/// copy has been refreshed; logout must revoke both copies. Key verification
+/// windows, future-timestamp checks and absolute expiry still apply.
 ///
 /// Revoke the returned record's `session_id` before clearing the cookie. It
 /// returns a [`SessionRecord`], not a [`ValidatedSession`], so the result
@@ -168,7 +169,7 @@ where
 {
     authenticate_session(
         cookie_value,
-        CountryCheck::Skip,
+        SessionUse::Logout,
         session_keyring,
         sessions,
         clock,
@@ -178,17 +179,17 @@ where
     .map(|validated| validated.session)
 }
 
-/// Whether [`authenticate_session`] applies the session country lock.
-enum CountryCheck<'a> {
-    /// Enforce the lock against the request's trusted-edge country.
-    Enforce(Option<&'a str>),
-    /// Logout only: any authentic session may be ended.
-    Skip,
+/// Authentication enforces admission checks; logout can only end a session.
+enum SessionUse<'a> {
+    /// Enforce idle freshness and the request's trusted-edge country.
+    Authenticate(Option<&'a str>),
+    /// Skip admission-only checks, retaining absolute freshness and integrity.
+    Logout,
 }
 
 async fn authenticate_session<Sessions, ServiceClock>(
     cookie_value: &str,
-    country_check: CountryCheck<'_>,
+    session_use: SessionUse<'_>,
     session_keyring: &KeyRing<SessionCookie>,
     sessions: &Sessions,
     clock: &ServiceClock,
@@ -198,9 +199,14 @@ where
     Sessions: SessionRepository,
     ServiceClock: Clock,
 {
-    let max_age = config
+    let mut max_age = config
         .session_max_age()
         .map_err(|_| SessionValidationError::Internal)?;
+    if matches!(session_use, SessionUse::Logout) {
+        // Still freshness-bounded by absolute expiry; never mint or admit
+        // with this relaxed idle bound. Only logout uses this branch.
+        max_age.idle_secs = max_age.absolute_secs;
+    }
     let now_unix = clock.now_unix().map_err(map_session_dependency_error)?;
     let verified =
         parse_bound_cookie::<SessionCookie>(cookie_value, session_keyring, now_unix, max_age)
@@ -209,7 +215,7 @@ where
         .map_err(|_| SessionValidationError::InvalidSession)?;
     // Compare pinned values: a session bound to a group tag (CountryPolicy)
     // accepts any country of that group.
-    if let CountryCheck::Enforce(request_country) = country_check
+    if let SessionUse::Authenticate(request_country) = session_use
         && let Some(bound_country) = body.country.as_deref()
         && request_country.and_then(|country| config.country_policy.pin(country))
             != Some(bound_country)

@@ -212,6 +212,54 @@ async fn logout_revokes_a_country_locked_session_from_any_country() {
 }
 
 #[tokio::test]
+async fn logout_with_an_idle_expired_cookie_revokes_a_refreshed_copy() {
+    use datadeft_auth_token_core::cookie::{mint_bound_cookie, parse_bound_cookie};
+
+    let (app, old) = session_aged(200).await;
+    let ReadyApp::Fake(fake) = &app else {
+        panic!("fake backend expected");
+    };
+    let now = WallClock.now_unix().expect("clock");
+    let original = parse_bound_cookie::<SessionCookie>(
+        &old,
+        &fake.shared.session_keyring,
+        now - 200,
+        fake.shared.config.session_max_age().expect("max age"),
+    )
+    .expect("cookie at creation");
+    // Model a copy kept active by sliding refresh. Both identify one session.
+    let refreshed = mint_bound_cookie::<SessionCookie, _>(
+        original.body(),
+        &fake.shared.session_keyring,
+        &mut OsRng,
+        u32::try_from(now - 40).expect("timestamp"),
+        original.iat(),
+        now - 40,
+    )
+    .expect("refreshed copy");
+    assert!(matches!(
+        validate(&app, &old, "HU").await,
+        ResultBody::ValidateSession { valid: false, .. }
+    ));
+    assert!(matches!(
+        validate(&app, &refreshed, "HU").await,
+        ResultBody::ValidateSession { valid: true, .. }
+    ));
+    assert!(matches!(
+        app.handle(AppCommand::Logout(SessionPayload {
+            session_cookie: old,
+            country: None,
+        }))
+        .await,
+        ResultBody::Logout { revoked: true }
+    ));
+    assert!(matches!(
+        validate(&app, &refreshed, "HU").await,
+        ResultBody::ValidateSession { valid: false, .. }
+    ));
+}
+
+#[tokio::test]
 async fn handler_never_refreshes_idle_or_absolute_expired_sessions() {
     // Both are safely beyond the default 60-second skew allowance.
     for age in [200, 400] {

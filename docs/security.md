@@ -649,6 +649,11 @@ from CSRF.
 The default session model supports server-side invalidation.
 
 - On logout, revoke server-side session state before you clear the cookie.
+- `validate_session_for_logout` ignores the presented cookie's idle deadline
+  as well as the country lock. An idle-expired copy can still identify a live
+  session whose other copies have been refreshed. Cookie integrity, key windows,
+  future timestamps, absolute expiry and server-side checks remain mandatory.
+  This result cannot authorize access or feed cookie refresh.
 - Logout is a CSRF-protected `POST`.
 - Support compromise revocation before absolute expiry.
 - Stateless sessions are not the default. If an app uses them, the app must
