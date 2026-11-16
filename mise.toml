@@ -101,6 +101,10 @@ bun install --frozen-lockfile --ignore-scripts
 mise -C packages/dd-protect-client run verify
 """
 
+[tasks.elixir-image-verify]
+description = "Run elixir-verify inside an official elixir image (Docker); pass the image tag"
+run = "bun scripts/ci-image-verify.ts"
+
 [tasks.package-crates]
 description = "Package and build all seven crates, staging unpublished workspace dependencies"
 # datadeft-auth-port is publish = false (it ships inside the Hex package via
