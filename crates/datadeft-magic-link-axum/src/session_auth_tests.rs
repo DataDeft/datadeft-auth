@@ -3,6 +3,8 @@ use std::rc::Rc;
 
 use axum::http::header::COOKIE;
 
+use datadeft_magic_link_service::ValidatedSession;
+
 use super::*;
 use crate::test_fixtures::{policy, response_parts};
 
@@ -36,7 +38,7 @@ async fn session_auth_parser_skips_dependency_on_malformed_input() {
         let closure_called = Rc::clone(&called);
         let rejection = authenticate_session(&headers, &config, move |_cookie| {
             closure_called.set(true);
-            async { Err(SessionValidationError::Internal) }
+            async { Err::<ValidatedSession, _>(SessionValidationError::Internal) }
         })
         .await
         .expect_err("rejection");
@@ -89,7 +91,7 @@ async fn session_auth_maps_invalid_unavailable_and_internal_dispositions() {
             closure_called.set(true);
             assert_eq!(cookie.as_str(), "secret-cookie");
             assert!(!format!("{cookie:?}").contains("secret-cookie"));
-            async move { Err(error) }
+            async move { Err::<ValidatedSession, _>(error) }
         })
         .await
         .expect_err("rejection");

@@ -54,8 +54,9 @@ impl std::error::Error for SessionValidationError {}
 
 /// Authenticated server-side session and its cookie-bound country context.
 ///
-/// Only [`validate_session`] constructs one, so holding a `ValidatedSession`
-/// proves the cookie and the server-side record passed every check. That is
+/// Only [`validate_session`] returns one (the logout path builds one privately
+/// and discards it), so holding a `ValidatedSession` proves the cookie and the
+/// server-side record passed every check. That is
 /// what makes it safe input for [`refresh_session_cookie`]. Building one by
 /// hand does not compile:
 ///

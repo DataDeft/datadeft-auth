@@ -632,7 +632,27 @@ async fn logout_validation_skips_country_but_preserves_integrity_and_absolute_ex
             .await
             .unwrap_err(),
         SessionValidationError::InvalidSession,
-        "a cookie outside its verification/absolute window is not revocable"
+        "a cookie past its absolute lifetime is not revocable"
+    );
+    // A retired key (verify-only window closed at 899) is not revocable either.
+    assert_eq!(
+        validate_session_for_logout(
+            &locked,
+            &rotated_keyring(899),
+            &sessions,
+            &TestClock::at(900),
+            &config()
+        )
+        .await
+        .unwrap_err(),
+        SessionValidationError::InvalidSession
+    );
+    // Nor is a cookie dated beyond the clock-skew tolerance.
+    assert_eq!(
+        for_logout(&cookie(&keyring, 1_100, 1_100, Some("HU")), &sessions)
+            .await
+            .unwrap_err(),
+        SessionValidationError::InvalidSession
     );
 
     let mut revoked_record = record(800);

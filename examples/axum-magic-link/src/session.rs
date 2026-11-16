@@ -9,7 +9,9 @@ use datadeft_magic_link_axum::{
     MagicLinkHttpError, apply_magic_link_security_headers, authenticate_session,
     clear_session_cookie_header, session_set_cookie_header, viewer_country_from,
 };
-use datadeft_magic_link_service::{refresh_session_cookie, validate_session};
+use datadeft_magic_link_service::{
+    refresh_session_cookie, validate_session, validate_session_for_logout,
+};
 use rand_core::OsRng;
 
 use super::state::{AppState, LocalClock};
@@ -89,15 +91,15 @@ pub(super) async fn logout(State(state): State<AppState>, headers: HeaderMap) ->
         return (StatusCode::FORBIDDEN, "forbidden\n").into_response();
     }
 
+    // No country: logout ends any authentic session, wherever the request
+    // comes from, so no copied cookie stays live in the pinned country.
     let auth_state = state.clone();
-    let country = viewer_country_from(&headers, state.http_config.country_header());
     let session = match authenticate_session(
         &headers,
         state.http_config.session_cookie(),
         move |cookie| async move {
-            validate_session(
+            validate_session_for_logout(
                 cookie.as_str(),
-                country.as_deref(),
                 auth_state.session_keyring.as_ref(),
                 &auth_state.auth,
                 &LocalClock,
@@ -114,11 +116,7 @@ pub(super) async fn logout(State(state): State<AppState>, headers: HeaderMap) ->
 
     let mut rng = OsRng;
     let service = state.flow_service(&mut rng);
-    if service
-        .revoke_session(&session.session().session_id)
-        .await
-        .is_err()
-    {
+    if service.revoke_session(&session.session_id).await.is_err() {
         return MagicLinkHttpError::Unavailable.into_response();
     }
 

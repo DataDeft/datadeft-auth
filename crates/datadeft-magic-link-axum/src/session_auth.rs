@@ -8,7 +8,7 @@ use axum::Json;
 use axum::http::header::{CACHE_CONTROL, SET_COOKIE, WWW_AUTHENTICATE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use datadeft_magic_link_service::{SessionValidationError, ValidatedSession};
+use datadeft_magic_link_service::SessionValidationError;
 use zeroize::Zeroize;
 
 use crate::cookie::{SessionCookieConfig, clear_session_cookie_header};
@@ -135,14 +135,19 @@ impl IntoResponse for SessionAuthRejection {
 ///
 /// Missing, empty, malformed, quoted, oversized, or duplicate cookies return the
 /// same `401` response and do not invoke `validate`.
-pub async fn authenticate_session<F, Fut>(
+///
+/// `validate` is normally [`validate_session`](datadeft_magic_link_service::validate_session),
+/// yielding a [`ValidatedSession`](datadeft_magic_link_service::ValidatedSession); a logout route passes
+/// [`validate_session_for_logout`](datadeft_magic_link_service::validate_session_for_logout),
+/// yielding the [`SessionRecord`](datadeft_magic_link_service::SessionRecord) to revoke.
+pub async fn authenticate_session<F, Fut, Session>(
     headers: &HeaderMap,
     cookie_config: &SessionCookieConfig,
     validate: F,
-) -> Result<ValidatedSession, SessionAuthRejection>
+) -> Result<Session, SessionAuthRejection>
 where
     F: FnOnce(SessionCookieValue) -> Fut,
-    Fut: Future<Output = Result<ValidatedSession, SessionValidationError>>,
+    Fut: Future<Output = Result<Session, SessionValidationError>>,
 {
     let value = match extract_target_cookie(headers, cookie_config.name()) {
         Ok(value) => value,
