@@ -17,9 +17,9 @@ workspace = true
 [dependencies]
 datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.6.3" } # x-release-please-version
 hex = "0.4"
-hmac = "0.12"
+hmac = "0.13"
 rand_core = "0.6"
-sha2 = "0.10"
+sha2 = "0.11"
 subtle = "2"
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
 

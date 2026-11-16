@@ -19,10 +19,10 @@ test-support = []
 workspace = true
 
 [dependencies]
-chacha20poly1305 = "0.10"
-hkdf = "0.12"
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
+hkdf = "0.13"
 rand_core = "0.6"
-sha2 = "0.10"
+sha2 = "0.11"
 subtle = "2"
 zeroize = { version = "1", default-features = false }
 

@@ -4,7 +4,7 @@
 //! challenge, and verification is a pure pipeline. The caller injects time and
 //! entropy. This module never reads the clock or generates randomness.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use time::OffsetDateTime;
