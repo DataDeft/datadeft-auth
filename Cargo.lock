@@ -953,6 +953,7 @@ dependencies = [
  "cipher",
  "hex",
  "hkdf",
+ "poly1305",
  "proptest",
  "rand_core 0.6.4",
  "serde",
@@ -1755,6 +1756,7 @@ checksum = "6e2d0073b297041425c7c3df6eb4792d598a15323fe63346852b092eca02904c"
 dependencies = [
  "cpufeatures",
  "universal-hash",
+ "zeroize",
 ]
 
 [[package]]
