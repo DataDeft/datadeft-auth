@@ -7,7 +7,7 @@ members = ["crates/*", "examples/*", "packages/datadeft-auth-elixir/native/datad
 [workspace.package]
 version = "0.6.3" # x-release-please-version
 edition = "2024"
-rust-version = "1.94.1"
+rust-version = "1.99.1"
 license = "MIT"
 repository = "https://github.com/DataDeft/datadeft-auth"
 authors = ["Istvan <dev@l1x.be>"]

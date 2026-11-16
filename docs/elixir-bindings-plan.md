@@ -32,7 +32,7 @@ Port. No Rust code is loaded into BEAM; do not port crypto/security policy to El
 dependencies. The library requires neither Plug nor Phoenix; Phoenix is an example
 consumer only. "Framework-independent" does not mean a public crypto toolkit.
 Use a separate Rust process for native crash isolation. Required deployment
-targets are Linux glibc on 64-bit x86_64/AMD64 and ARM64/AArch64.
+targets are Linux glibc and musl on 64-bit x86_64/AMD64 and ARM64/AArch64.
 
 Deliver the first usable release as high-level magic-link and session workflows,
 backed by the Rust service and existing DynamoDB storage/limiter adapter.
@@ -55,8 +55,9 @@ Reviewer decisions:
       is accepted. Prebuilt executables are deferred.
 - [x] Hex package name: `datadeft_auth`; Elixir namespace: `DatadeftAuth`.
       Project branding remains `datadeft-auth`; registry availability must be checked.
-- [x] Deployment platforms: Linux glibc on x86_64/AMD64 and ARM64/AArch64;
-      no 32-bit x86. Other platforms are outside the initial deployment matrix.
+- [x] Deployment platforms: Linux glibc (Debian) and musl (Alpine) on
+      x86_64/AMD64 and ARM64/AArch64; no 32-bit x86. Other platforms are outside
+      the deployment matrix.
 - [x] Runtime baseline: Elixir >= 1.16 and OTP >= 26; validate the supported
       version combinations in CI before publishing compatibility claims.
 - [x] Publish public `datadeft_auth` under the existing personal Hex account
@@ -301,14 +302,16 @@ country headers.
 
 ## 7. Packaging, compatibility and release
 
-Approved deployment targets: Linux glibc on x86_64/AMD64 and ARM64/AArch64,
-both 64-bit. No initial 32-bit x86, musl/Alpine or Windows support. macOS ARM64
+Approved deployment targets: Linux glibc (Debian) and musl (Alpine) on
+x86_64/AMD64 and ARM64/AArch64, all 64-bit; musl/Alpine was added on
+2026-11-15. No 32-bit x86 or Windows support. macOS ARM64
 can be used for development but is not an approved deployment target.
 Approved runtime baseline: Elixir >= 1.16 and OTP >= 26. Rust build baseline:
->= 1.94.1 (raised to use the maintained AWS SDK/Smithy dependency chain).
+>= 1.99.1 (the single pinned toolchain in mise.toml; first raised to 1.94.1 for
+the maintained AWS SDK/Smithy dependency chain).
 Validate supported Elixir/OTP combinations in CI and test/document the minimum
 supported glibc version.
-Both deployment targets need native execution tests, not cross-compilation alone.
+All deployment targets need native execution tests, not cross-compilation alone.
 The executable has an OS/CPU/libc target, not an Erlang NIF ABI; the versioned
 protocol is the compatibility boundary.
 

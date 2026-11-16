@@ -61,7 +61,7 @@ installation, tested platforms and application-owned deployment checks.
 
 ## Install
 
-This is the single install block for the libraries. You need Rust 1.94.1 or
+This is the single install block for the libraries. You need Rust 1.99.1 or
 newer. The common case is Axum plus DynamoDB. The service crate re-exports
 the keyring and lookup-key types.
 

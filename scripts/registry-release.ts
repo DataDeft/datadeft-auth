@@ -25,7 +25,7 @@ async function check(): Promise<string> {
   const root = TOML.parse(await Bun.file("Cargo.toml").text()) as any;
   const version = root.workspace.package.version;
   const mise = TOML.parse(await Bun.file("mise.toml").text()) as any;
-  requireCondition(mise.vars.msrv === root.workspace.package["rust-version"], "mise msrv var and workspace rust-version must match");
+  requireCondition(mise.tools.rust?.version === root.workspace.package["rust-version"], "mise rust version and workspace rust-version must match");
   const pkg = await Bun.file("packages/dd-protect-client/package.json").json();
   requireCondition(pkg.version === version, "Rust and npm versions must match");
   const elixir = await Bun.file("packages/datadeft-auth-elixir/mix.exs").text();

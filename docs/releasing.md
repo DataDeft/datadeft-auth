@@ -85,7 +85,6 @@ On a clean, committed checkout, run these tasks:
 
 ```sh
 mise run verify
-mise run msrv
 mise run workflow-check
 mise run package-crates
 mise run crates-dry-run
@@ -96,8 +95,8 @@ mise run crates-dry-run
   metadata checks. It also runs the nine TLA+ safety and liveness models (ten
   configs, `spec`) and the 44 spec mutants (`spec-mutants`). Last, it runs the
   npm build, tests, dry run, and isolated packed-consumer checks.
-- Before the first `msrv` run, run
-  `mise run msrv-install` one time (Rust 1.94.1).
+- Rust is one pinned version (`rust` in `mise.toml`), which is also the
+  declared `rust-version`, so `verify` is the minimum-version check.
 - `package-crates` uses the workspace staging registry of current stable
   Cargo. Before any public upload, it packages and builds all seven archives
   with all features.
