@@ -67,8 +67,6 @@ defmodule DatadeftAuth.TestSupport do
     }
   end
 
-  # The fake worker starts another VM. Startup has its own bounded deadline,
-  # independent of the short request timeouts exercised by these fixtures.
   def fake(mode) do
     suffix = Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
     dir = Path.join(System.tmp_dir!(), "datadeft-fixture-#{suffix}")

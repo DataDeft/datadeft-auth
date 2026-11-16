@@ -221,7 +221,9 @@ defmodule DatadeftAuthTest do
   test "handshake deadline closes an unresponsive executable" do
     pid =
       start_supervised!(
-        {DatadeftAuth, [executable: fake(:silent), request_timeout: 100, restart_delay: 1000]}
+        # A long restart delay keeps port == nil observable after the
+        # deadline even on a loaded machine.
+        {DatadeftAuth, [executable: fake(:silent), request_timeout: 100, restart_delay: 5000]}
       )
 
     eventually(fn -> map_size(:sys.get_state(pid).pending) == 1 end)
