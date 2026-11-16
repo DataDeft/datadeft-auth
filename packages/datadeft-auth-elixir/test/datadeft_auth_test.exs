@@ -177,7 +177,7 @@ defmodule DatadeftAuthTest do
   test "worker failure completes an outstanding request once without replay" do
     pid =
       start_supervised!(
-        {DatadeftAuth, [executable: fake(:crash), request_timeout: 10_000, restart_delay: 1000]}
+        {DatadeftAuth, [executable: fake(:crash), request_timeout: 2000, restart_delay: 1000]}
       )
 
     # Wait for handshake without sending a health ping (which crashes this fixture).
@@ -189,14 +189,14 @@ defmodule DatadeftAuthTest do
   test "bounded admission, timeout and caller-death cleanup" do
     pid =
       start_supervised!(
-        {DatadeftAuth, [executable: fake(:slow), request_timeout: 5000, max_pending: 1]}
+        {DatadeftAuth, [executable: fake(:slow), request_timeout: 700, max_pending: 1]}
       )
 
     eventually(fn -> :sys.get_state(pid).ready end)
     task = Task.async(fn -> DatadeftAuth.status(pid) end)
     eventually(fn -> map_size(:sys.get_state(pid).pending) == 1 end)
     assert {:error, %Error{code: :overloaded}} = DatadeftAuth.status(pid)
-    assert {:error, %Error{code: :timeout}} = Task.await(task, 10_000)
+    assert {:error, %Error{code: :timeout}} = Task.await(task)
     assert map_size(:sys.get_state(pid).pending) == 0
 
     caller = spawn(fn -> DatadeftAuth.status(pid) end)
@@ -205,13 +205,33 @@ defmodule DatadeftAuthTest do
     eventually(fn -> map_size(:sys.get_state(pid).pending) == 0 end)
   end
 
+  test "cold handshake has its own allowance despite a short request deadline" do
+    pid =
+      start_supervised!(
+        {DatadeftAuth,
+         [executable: fake(:delayed_handshake), request_timeout: 100, restart_delay: 1000]}
+      )
+
+    # The fixture deliberately waits 1.2 seconds before answering handshake.
+    # An ordinary 100 ms request deadline must not repeatedly kill startup.
+    eventually(fn -> :sys.get_state(pid).ready end)
+    assert {:ok, :transport_ready} = DatadeftAuth.status(pid)
+  end
+
   test "handshake deadline closes an unresponsive executable" do
     pid =
       start_supervised!(
-        {DatadeftAuth, [executable: fake(:silent), request_timeout: 1000, restart_delay: 1000]}
+        {DatadeftAuth, [executable: fake(:silent), request_timeout: 100, restart_delay: 1000]}
       )
 
-    Process.sleep(1200)
+    eventually(fn -> map_size(:sys.get_state(pid).pending) == 1 end)
+    %{port: port, pending: pending} = :sys.get_state(pid)
+    [{id, request}] = Map.to_list(pending)
+    remaining = Process.read_timer(request.timer)
+    assert is_integer(remaining) and remaining > 20_000 and remaining <= 30_000
+
+    # Deliver the actual timer message without making the suite sleep 30 s.
+    send(pid, {:deadline, port, id})
     assert {:error, %Error{code: :unavailable}} = DatadeftAuth.status(pid)
     assert :sys.get_state(pid).port == nil
   end
