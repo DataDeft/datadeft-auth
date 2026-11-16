@@ -310,7 +310,7 @@ Approved runtime baseline: Elixir >= 1.16 and OTP >= 26. Rust build baseline:
 >= 1.94.1 (raised to use the maintained AWS SDK/Smithy dependency chain).
 Validate supported Elixir/OTP combinations in CI and test/document the minimum
 supported glibc version.
-Both deployment targets need native execution tests, not cross-compilation alone.
+All deployment targets need native execution tests, not cross-compilation alone.
 The executable has an OS/CPU/libc target, not an Erlang NIF ABI; the versioned
 protocol is the compatibility boundary.
 

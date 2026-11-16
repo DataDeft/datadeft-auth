@@ -32,7 +32,8 @@ The native CI pairs run in the official `elixir` images:
 | Alpine AArch64 | `elixir:1.16.3-otp-26-alpine` | Alpine 3.24 / musl | 1.16.3 / 26 |
 
 Distributions are as of 2026-11-15; image tags can move to newer bases, and
-each job logs its distribution and libc version.
+each job logs its distribution and libc version. The oldest glibc tested is
+2.36 (Debian 12).
 
 The aggregate verification job also exercises its configured x86_64 Linux host.
 These are source-build/native-execution checks, not a promise that a binary built

@@ -7,9 +7,12 @@
 // against its SHA-256 before the container can run it; no installer script is
 // piped to a shell. The container gets the checkout at /work and the verified
 // binaries read-only at /tools, then runs the same `elixir-verify` task as the
-// host jobs. It runs as root and is removed afterwards.
+// host jobs. It runs as root and is removed afterwards, along with the
+// downloads. Only the downloads are digest-pinned: the image tag and Rust
+// `stable` float. Meant for CI: locally on Linux, build output in the checkout
+// ends up owned by root.
 
-import { mkdtemp } from "node:fs/promises";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -50,12 +53,12 @@ async function fetchVerified(url: string, path: string, sha256: string): Promise
   const actual = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
   requireCondition(actual === sha256, `SHA-256 mismatch for ${url}: ${actual}`);
   await Bun.write(path, bytes);
-  await run(["chmod", "755", path]);
+  await chmod(path, 0o755);
   console.log(`${path}: OK`);
 }
 
 const image = Bun.argv[2];
-requireCondition(image, "usage: ci-image-verify.ts <elixir image>");
+requireCondition(image, "usage: ci-image-verify.ts <elixir image, Alpine tags ending in -alpine>");
 const alpine = image.endsWith("-alpine");
 const libc = alpine ? "musl" : "gnu";
 const arch = process.arch;
@@ -65,27 +68,29 @@ const rustupSha = RUSTUP_SHA256[triple];
 requireCondition(miseSha && rustupSha, `unsupported platform: ${arch}-${libc}`);
 
 const tools = await mkdtemp(join(tmpdir(), "ci-image-tools-"));
-await fetchVerified(
-  `https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${arch}-musl`,
-  join(tools, "mise"),
-  miseSha,
-);
-await fetchVerified(
-  `https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${triple}/rustup-init`,
-  join(tools, "rustup-init"),
-  rustupSha,
-);
-
 const container = `ci-image-verify-${process.pid}`;
 const exec = (args: string[], env: string[] = []) =>
   run(["docker", "exec", "-e", `PATH=${PATH}`, ...env.flatMap((e) => ["-e", e]), container, ...args]);
 
-await run([
-  "docker", "run", "-d", "--name", container,
-  "-v", `${process.cwd()}:/work`, "-v", `${tools}:/tools:ro`, "-w", "/work",
-  image, "sleep", "infinity",
-]);
 try {
+  await fetchVerified(
+    `https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${arch}-musl`,
+    join(tools, "mise"),
+    miseSha,
+  );
+  await fetchVerified(
+    `https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${triple}/rustup-init`,
+    join(tools, "rustup-init"),
+    rustupSha,
+  );
+
+  // Inside the try: a container created by a failed `docker run` is removed too.
+  await run([
+    "docker", "run", "-d", "--name", container,
+    "-v", `${process.cwd()}:/work`, "-v", `${tools}:/tools:ro`, "-w", "/work",
+    image, "sleep", "infinity",
+  ]);
+
   // Record the distribution and libc in the job log.
   await exec(["cat", "/etc/os-release"]);
   // musl's ldd prints its version and exits non-zero.
@@ -111,5 +116,7 @@ try {
     "MISE_DISABLE_TOOLS=bun,node",
   ]);
 } finally {
-  await run(["docker", "rm", "-f", container]);
+  // No container exists when the downloads or `docker run` failed early.
+  await run(["docker", "rm", "-f", container]).catch(() => {});
+  await rm(tools, { recursive: true, force: true });
 }
