@@ -223,7 +223,8 @@ defmodule DatadeftAuth do
   def confirm(_, _, _, _), do: bad_request()
 
   @doc """
-  Validates a session cookie (read-only) and re-issues it when due. Send a
+  Validates a session cookie (read-only) and re-issues it when due. A valid
+  session gives its `user_id` and normalized `email`. Send a
   returned `refreshed_cookie` with the normal session cookie settings on a
   `no-store` response. Refresh is best-effort: an unavailable mint key or
   entropy failure does not invalidate an already verified session; its existing

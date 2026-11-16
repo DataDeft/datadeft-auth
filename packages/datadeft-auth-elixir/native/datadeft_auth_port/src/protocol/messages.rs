@@ -255,6 +255,7 @@ pub enum ResultBody {
     ValidateSession {
         valid: bool,
         user_id: Option<String>,
+        email: Option<String>,
         refreshed_cookie: Option<String>,
     },
     Logout {

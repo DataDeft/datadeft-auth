@@ -178,6 +178,7 @@ where
                     Ok(refreshed) => ResultBody::ValidateSession {
                         valid: true,
                         user_id: Some(validated.session().user_id.as_str().to_owned()),
+                        email: Some(validated.session().email.as_str().to_owned()),
                         refreshed_cookie: refreshed
                             .map(|cookie| cookie.as_secret_value().to_owned()),
                     },
@@ -187,6 +188,7 @@ where
                     Err(_) => ResultBody::ValidateSession {
                         valid: true,
                         user_id: Some(validated.session().user_id.as_str().to_owned()),
+                        email: Some(validated.session().email.as_str().to_owned()),
                         refreshed_cookie: None,
                     },
                 }
@@ -194,6 +196,7 @@ where
             Err(SessionValidationError::InvalidSession) => ResultBody::ValidateSession {
                 valid: false,
                 user_id: None,
+                email: None,
                 refreshed_cookie: None,
             },
             Err(failure) => session_error(failure),

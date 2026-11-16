@@ -264,15 +264,21 @@ defmodule DatadeftAuth.Protocol do
 
   defp result("validate_session", value) do
     with {:ok, result} <-
-           object(value, ["operation", "valid", "user_id", "refreshed_cookie"]) do
+           object(value, ["operation", "valid", "user_id", "email", "refreshed_cookie"]) do
       case result do
-        %{"valid" => true, "user_id" => user_id, "refreshed_cookie" => refreshed}
-        when is_binary(user_id) and (is_binary(refreshed) or is_nil(refreshed)) ->
+        %{
+          "valid" => true,
+          "user_id" => user_id,
+          "email" => email,
+          "refreshed_cookie" => refreshed
+        }
+        when is_binary(user_id) and is_binary(email) and
+               (is_binary(refreshed) or is_nil(refreshed)) ->
           {:ok,
            {:validate_session,
-            %Validation{valid: true, user_id: user_id, refreshed_cookie: refreshed}}}
+            %Validation{valid: true, user_id: user_id, email: email, refreshed_cookie: refreshed}}}
 
-        %{"valid" => false, "user_id" => nil, "refreshed_cookie" => nil} ->
+        %{"valid" => false, "user_id" => nil, "email" => nil, "refreshed_cookie" => nil} ->
           {:ok, {:validate_session, %Validation{valid: false}}}
 
         _ ->

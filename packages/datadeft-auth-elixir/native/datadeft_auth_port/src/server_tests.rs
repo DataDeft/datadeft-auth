@@ -242,6 +242,7 @@ fn unknown_session_cookie_is_invalid_not_fatal() {
             "operation": "validate_session",
             "valid": false,
             "user_id": null,
+            "email": null,
             "refreshed_cookie": null
         })
     );
