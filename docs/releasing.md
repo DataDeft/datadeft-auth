@@ -50,7 +50,7 @@ mise run publish-npm
 
 ```fish
 # 4. Publish the Elixir package from its stage, then clean up. Set
-# VERBOSE=1 to see each command's output.
+# DATADEFT_AUTH_VERBOSE=1 to see each command's output.
 cd packages/datadeft-auth-elixir
 mise run package-check; and mise run package-stage
 cd _build/publish_stage
