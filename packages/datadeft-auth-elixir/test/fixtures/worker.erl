@@ -36,7 +36,7 @@ send_frame(Data) ->
 loop(Id) ->
     frame(),
     case __MODE__ of
-        slow -> timer:sleep(2000);
+        slow -> timer:sleep(6000);
         crash -> halt(9);
         _ -> ok
     end,
@@ -59,7 +59,7 @@ auth_loop(Id, Mode) ->
                     ok = file:write_file(Marker, <<"1">>, [append]),
                     case Mode of
                         confirm_crash -> halt(9);
-                        confirm_late -> timer:sleep(900)
+                        confirm_late -> timer:sleep(6000)
                     end,
                     <<"{\"operation\":\"confirm\",\"session_cookie\":\"fixture-cookie\",",
                       "\"user_id\":\"usr-000102030405060708090a0b0c0d0e0f\",",

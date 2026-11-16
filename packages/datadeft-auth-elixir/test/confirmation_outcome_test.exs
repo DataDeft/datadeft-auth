@@ -10,7 +10,12 @@ defmodule DatadeftAuthConfirmationOutcomeTest do
     pid =
       start_supervised!(
         {DatadeftAuth,
-         [executable: executable, config: fake_config(), request_timeout: 2000, restart_delay: 30]}
+         [
+           executable: executable,
+           config: fake_config(),
+           request_timeout: 10_000,
+           restart_delay: 30
+         ]}
       )
 
     ready(pid)
@@ -37,7 +42,7 @@ defmodule DatadeftAuthConfirmationOutcomeTest do
     pid =
       start_supervised!(
         {DatadeftAuth,
-         [executable: executable, config: fake_config(), request_timeout: 600, restart_delay: 30]}
+         [executable: executable, config: fake_config(), request_timeout: 5000, restart_delay: 30]}
       )
 
     ready(pid)
@@ -47,7 +52,7 @@ defmodule DatadeftAuthConfirmationOutcomeTest do
              DatadeftAuth.confirm(pid, "fixture-flow", "fixture-confirmation")
 
     assert :sys.get_state(pid).pending == %{}
-    # The fixture finishes after 900 ms; this ping queues behind that reply.
+    # The fixture finishes after 6 s; this ping queues behind that reply.
     # A mismatched late reply must not satisfy the ping or restart the child.
     assert {:ok, :transport_ready} = DatadeftAuth.status(pid)
     assert os_pid(pid) == previous

@@ -67,6 +67,9 @@ defmodule DatadeftAuth.TestSupport do
     }
   end
 
+  # The fake worker is an escript: booting its VM takes ~0.1 s idle but
+  # seconds under load, and the handshake must beat the request_timeout.
+  # Tests that use it therefore keep request_timeout at 5 s or more.
   def fake(mode) do
     suffix = Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
     dir = Path.join(System.tmp_dir!(), "datadeft-fixture-#{suffix}")

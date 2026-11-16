@@ -177,7 +177,7 @@ defmodule DatadeftAuthTest do
   test "worker failure completes an outstanding request once without replay" do
     pid =
       start_supervised!(
-        {DatadeftAuth, [executable: fake(:crash), request_timeout: 2000, restart_delay: 1000]}
+        {DatadeftAuth, [executable: fake(:crash), request_timeout: 10_000, restart_delay: 1000]}
       )
 
     # Wait for handshake without sending a health ping (which crashes this fixture).
@@ -189,14 +189,14 @@ defmodule DatadeftAuthTest do
   test "bounded admission, timeout and caller-death cleanup" do
     pid =
       start_supervised!(
-        {DatadeftAuth, [executable: fake(:slow), request_timeout: 700, max_pending: 1]}
+        {DatadeftAuth, [executable: fake(:slow), request_timeout: 5000, max_pending: 1]}
       )
 
     eventually(fn -> :sys.get_state(pid).ready end)
     task = Task.async(fn -> DatadeftAuth.status(pid) end)
     eventually(fn -> map_size(:sys.get_state(pid).pending) == 1 end)
     assert {:error, %Error{code: :overloaded}} = DatadeftAuth.status(pid)
-    assert {:error, %Error{code: :timeout}} = Task.await(task)
+    assert {:error, %Error{code: :timeout}} = Task.await(task, 10_000)
     assert map_size(:sys.get_state(pid).pending) == 0
 
     caller = spawn(fn -> DatadeftAuth.status(pid) end)
