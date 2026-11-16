@@ -19,7 +19,7 @@ datadeft-auth-token-core = { path = "../datadeft-auth-token-core", version = "0.
 hex = "0.4"
 hmac = "0.13"
 rand_core = "0.6"
-sha2 = "0.11"
+sha2 = { version = "0.11", features = ["zeroize"] }
 subtle = "2"
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
 
