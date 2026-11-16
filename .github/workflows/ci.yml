@@ -61,7 +61,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      # docker run instead of a job container: the JavaScript actions above
+      # docker run instead of a job container: JavaScript actions such as checkout
       # need the runner's glibc Node, which Alpine images lack.
       - env:
           IMAGE: ${{ matrix.image }}
