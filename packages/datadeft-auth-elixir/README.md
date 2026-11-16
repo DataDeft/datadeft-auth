@@ -22,19 +22,23 @@ Build with Elixir >= 1.16, OTP >= 26, Rust >= 1.94.1 and native build tools.
 The initial distribution builds from source. Mix releases include the executable;
 production hosts need neither Cargo nor a Rust compiler.
 
-The native CI pairs are:
+The native CI pairs run in the official `elixir` images:
 
-| Target | Build host / glibc | Elixir / OTP |
+| Target | Image / libc | Elixir / OTP |
 | --- | --- | --- |
-| Linux x86_64 | Ubuntu 22.04 / 2.35 | 1.16.3 / 26.2 |
-| Linux AArch64 | Ubuntu 24.04 / 2.39 | 1.19 / 28 |
+| Debian x86_64 | `elixir:1.16.3-otp-26` / glibc | 1.16.3 / 26 |
+| Debian AArch64 | `elixir:1.19-otp-28` / glibc | 1.19 / 28 |
+| Alpine x86_64 | `elixir:1.19-otp-28-alpine` / musl | 1.19 / 28 |
+| Alpine AArch64 | `elixir:1.16.3-otp-26-alpine` / musl | 1.16.3 / 26 |
+
+Each job logs its distribution and libc version.
 
 The aggregate verification job also exercises its configured x86_64 Linux host.
 These are source-build/native-execution checks, not a promise that a binary built
 on a newer distribution runs on an older libc. Older libc versions and every
 architecture/runtime cross-product have not been validated. macOS ARM64 is a
-local development host, not an approved deployment target. Alpine/musl, Windows
-and 32-bit systems are outside the initial scope.
+local development host, not an approved deployment target. Windows and 32-bit
+systems are outside the initial scope.
 
 From the repository root:
 

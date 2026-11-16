@@ -47,23 +47,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Minimal spanning set: the verify job already runs elixir-verify on
-        # x64 ubuntu-latest with the floor BEAM; these legs add the glibc
-        # floor (22.04) and AArch64 with the newest BEAM.
+        # Debian (glibc) and Alpine (musl), each on x64 and AArch64, in the
+        # official elixir images. Each distro runs the floor BEAM on one
+        # architecture and the newest on the other.
         include:
-          - os: ubuntu-22.04
-            beam: { otp: '26.2', elixir: '1.16.3' }
-          - os: ubuntu-24.04-arm
-            beam: { otp: '28', elixir: '1.19' }
-    runs-on: ${{ matrix.os }}
+          - { distro: debian, runner: ubuntu-latest, image: 'elixir:1.16.3-otp-26' }
+          - { distro: debian, runner: ubuntu-24.04-arm, image: 'elixir:1.19-otp-28' }
+          - { distro: alpine, runner: ubuntu-latest, image: 'elixir:1.19-otp-28-alpine' }
+          - { distro: alpine, runner: ubuntu-24.04-arm, image: 'elixir:1.16.3-otp-26-alpine' }
+    name: elixir-platforms (${{ matrix.distro }}, ${{ matrix.runner }}, ${{ matrix.image }})
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
-        with:
-          otp-version: ${{ matrix.beam.otp }}
-          elixir-version: ${{ matrix.beam.elixir }}
-      - run: mise run elixir-verify
+      # docker run instead of a job container: the JavaScript actions above
+      # need the runner's glibc Node, which Alpine images lack.
+      - env:
+          IMAGE: ${{ matrix.image }}
+        run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" sh packages/datadeft-auth-elixir/scripts/ci_image_verify.sh
