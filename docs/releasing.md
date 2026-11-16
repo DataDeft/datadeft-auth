@@ -56,6 +56,8 @@ mise run package-check; and mise run package-stage
 cd _build/publish_stage
 mix hex.user whoami; or mix hex.user auth
 mix hex.publish
+# Approve the staged release and docs on the printed hex.pm dashboard URL;
+# check that its package SHA-256 matches the one package-check built.
 cd ../../../..
 git checkout main
 cargo logout
