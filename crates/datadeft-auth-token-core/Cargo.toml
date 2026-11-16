@@ -19,10 +19,14 @@ test-support = []
 workspace = true
 
 [dependencies]
-chacha20poly1305 = "0.10"
-hkdf = "0.12"
+# The `zeroize` features (opt-in since the 0.11 generation) wipe key-derived
+# cipher and hash state on drop; src/lib.rs fails to compile without them.
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc", "zeroize"] }
+# Only enables zeroization of the stream cipher's buffered keystream.
+cipher = { version = "0.5", default-features = false, features = ["zeroize"] }
+hkdf = "0.13"
 rand_core = "0.6"
-sha2 = "0.10"
+sha2 = { version = "0.11", features = ["zeroize"] }
 zeroize = { version = "1", default-features = false }
 
 [dev-dependencies]

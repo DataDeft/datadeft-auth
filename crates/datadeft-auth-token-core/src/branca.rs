@@ -21,7 +21,7 @@
 use std::fmt;
 
 use chacha20poly1305::aead::{Aead, KeyInit};
-use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use rand_core::{CryptoRng, RngCore};
 use zeroize::Zeroize;
 
@@ -190,7 +190,7 @@ fn encode_with_nonce_inner(
 ) -> Result<String, TokenError> {
     validate_encode_inputs(data, key)?;
 
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
+    let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| TokenError::BadKeyLength)?;
 
     // Header = version || timestamp(BE) || nonce, authenticated as AAD.
     let mut header = [0u8; HEADER_BYTES];
@@ -200,7 +200,7 @@ fn encode_with_nonce_inner(
 
     let ciphertext = cipher
         .encrypt(
-            XNonce::from_slice(nonce),
+            &XNonce::from(*nonce),
             chacha20poly1305::aead::Payload {
                 msg: data,
                 aad: &header,
@@ -309,10 +309,10 @@ pub fn decode(token: &str, key: &[u8]) -> Result<Verified, TokenError> {
     nonce.copy_from_slice(&blob[5..HEADER_BYTES]);
     let ciphertext = &blob[HEADER_BYTES..];
 
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
+    let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| TokenError::BadKeyLength)?;
     let payload = cipher
         .decrypt(
-            XNonce::from_slice(&nonce),
+            &XNonce::from(nonce),
             chacha20poly1305::aead::Payload {
                 msg: ciphertext,
                 aad: header,
