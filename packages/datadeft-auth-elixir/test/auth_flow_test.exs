@@ -44,7 +44,7 @@ defmodule DatadeftAuthFlowTest do
     assert {:ok, %Session{session_cookie: cookie, user_created: true}} =
              DatadeftAuth.confirm(pid, landing.confirm_cookie, landing.confirmation)
 
-    assert {:ok, %Validation{valid: true, user_id: user_id}} =
+    assert {:ok, %Validation{valid: true, user_id: user_id, email: @email}} =
              DatadeftAuth.validate_session(pid, cookie)
 
     assert String.starts_with?(user_id, "usr-")

@@ -53,6 +53,7 @@ defmodule DatadeftAuth.ProtocolTest do
             operation: "validate_session",
             valid: true,
             user_id: "fixture-user",
+            email: "fixture@example.test",
             refreshed_cookie: refreshed
           }
         })
@@ -62,15 +63,24 @@ defmodule DatadeftAuth.ProtocolTest do
                %DatadeftAuth.Validation{
                  valid: true,
                  user_id: "fixture-user",
+                 email: "fixture@example.test",
                  refreshed_cookie: ^refreshed
                }}} = Protocol.reply(frame)
     end
 
     for result <- [
-          %{valid: false, user_id: "fixture-user", refreshed_cookie: nil},
-          %{valid: false, user_id: nil, refreshed_cookie: "fixture-cookie"},
-          %{valid: true, user_id: nil, refreshed_cookie: nil},
-          %{valid: true, user_id: "fixture-user", refreshed_cookie: 1}
+          %{valid: false, user_id: "fixture-user", email: nil, refreshed_cookie: nil},
+          %{valid: false, user_id: nil, email: "fixture@example.test", refreshed_cookie: nil},
+          %{valid: false, user_id: nil, email: nil, refreshed_cookie: "fixture-cookie"},
+          %{valid: true, user_id: nil, email: nil, refreshed_cookie: nil},
+          %{valid: true, user_id: "fixture-user", email: nil, refreshed_cookie: nil},
+          %{valid: true, user_id: "fixture-user", refreshed_cookie: nil},
+          %{
+            valid: true,
+            user_id: "fixture-user",
+            email: "fixture@example.test",
+            refreshed_cookie: 1
+          }
         ] do
       frame =
         Jason.encode!(%{

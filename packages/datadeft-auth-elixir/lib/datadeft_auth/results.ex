@@ -63,15 +63,16 @@ defmodule DatadeftAuth.Validation do
   Session validation outcome. A `refreshed_cookie` (redacted in `Inspect`)
   re-issues the session cookie with the same `Set-Cookie` settings on a
   `no-store` response; nil means the presented cookie stays. The user identifier
-  is also redacted in `Inspect`.
+  and the session's normalized email are also redacted in `Inspect`.
   """
-  @derive {Inspect, except: [:refreshed_cookie, :user_id]}
+  @derive {Inspect, except: [:refreshed_cookie, :user_id, :email]}
   @enforce_keys [:valid]
-  defstruct [:valid, :user_id, :refreshed_cookie]
+  defstruct [:valid, :user_id, :email, :refreshed_cookie]
 
   @type t :: %__MODULE__{
           valid: boolean(),
           user_id: String.t() | nil,
+          email: String.t() | nil,
           refreshed_cookie: String.t() | nil
         }
 end

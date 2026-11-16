@@ -168,32 +168,30 @@ where
         {
             Ok(validated) => {
                 let mut rng = OsRng;
-                match refresh_session_cookie(
+                // Validation already checked expiry, country, owner and
+                // revocation. A failed best-effort refresh (for example an
+                // expired mint window) must not invalidate that session.
+                let refreshed = refresh_session_cookie(
                     &validated,
                     &self.shared.session_keyring,
                     &mut rng,
                     &WallClock,
                     &self.shared.config,
-                ) {
-                    Ok(refreshed) => ResultBody::ValidateSession {
-                        valid: true,
-                        user_id: Some(validated.session().user_id.as_str().to_owned()),
-                        refreshed_cookie: refreshed
-                            .map(|cookie| cookie.as_secret_value().to_owned()),
-                    },
-                    // Validation already checked expiry, country, owner and
-                    // revocation. A failed best-effort refresh (for example an
-                    // expired mint window) must not invalidate that session.
-                    Err(_) => ResultBody::ValidateSession {
-                        valid: true,
-                        user_id: Some(validated.session().user_id.as_str().to_owned()),
-                        refreshed_cookie: None,
-                    },
+                )
+                .ok()
+                .flatten();
+                let session = validated.session();
+                ResultBody::ValidateSession {
+                    valid: true,
+                    user_id: Some(session.user_id.as_str().to_owned()),
+                    email: Some(session.email.as_str().to_owned()),
+                    refreshed_cookie: refreshed.map(|cookie| cookie.as_secret_value().to_owned()),
                 }
             }
             Err(SessionValidationError::InvalidSession) => ResultBody::ValidateSession {
                 valid: false,
                 user_id: None,
+                email: None,
                 refreshed_cookie: None,
             },
             Err(failure) => session_error(failure),

@@ -121,12 +121,14 @@ async fn handler_forwards_refresh_only_when_due_and_preserves_country_and_revoca
     let ResultBody::ValidateSession {
         valid: true,
         user_id: Some(user),
+        email: Some(email),
         refreshed_cookie: Some(refreshed),
     } = validate(&app, &cookie, "HU").await
     else {
         panic!("due session must forward refreshed cookie");
     };
     assert_ne!(refreshed, cookie);
+    assert_eq!(email, "session-fixture@example.test");
     assert!(matches!(
         validate(&app, &refreshed, "HU").await,
         ResultBody::ValidateSession { valid: true, user_id: Some(same_user), .. }
@@ -137,6 +139,7 @@ async fn handler_forwards_refresh_only_when_due_and_preserves_country_and_revoca
         ResultBody::ValidateSession {
             valid: false,
             user_id: None,
+            email: None,
             refreshed_cookie: None
         }
     ));
@@ -154,6 +157,7 @@ async fn handler_forwards_refresh_only_when_due_and_preserves_country_and_revoca
             ResultBody::ValidateSession {
                 valid: false,
                 user_id: None,
+                email: None,
                 refreshed_cookie: None
             }
         ));
@@ -171,6 +175,7 @@ async fn an_expired_mint_window_does_not_invalidate_a_verified_session() {
         ResultBody::ValidateSession {
             valid: true,
             user_id: Some(_),
+            email: Some(_),
             refreshed_cookie: None
         }
     ));
@@ -228,6 +233,7 @@ async fn handler_never_refreshes_idle_or_absolute_expired_sessions() {
             ResultBody::ValidateSession {
                 valid: false,
                 user_id: None,
+                email: None,
                 refreshed_cookie: None
             }
         ));
