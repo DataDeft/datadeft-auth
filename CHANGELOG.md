@@ -6,6 +6,14 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Unreleased
 
+## [0.6.3](https://github.com/DataDeft/datadeft-auth/compare/v0.6.2...v0.6.3) (2026-11-16)
+
+
+### Features
+
+* **elixir:** validate_session returns the session's email ([a4600c9](https://github.com/DataDeft/datadeft-auth/commit/a4600c91d00ca1a54b5dc8faf6cb3dbea8929bd3))
+* **elixir:** validate_session returns the session's email ([2fcf642](https://github.com/DataDeft/datadeft-auth/commit/2fcf642b166ffc81b278c7f95ecc743b91874414))
+
 ## [0.6.2](https://github.com/DataDeft/datadeft-auth/compare/v0.6.1...v0.6.2) (2026-11-15)
 
 
