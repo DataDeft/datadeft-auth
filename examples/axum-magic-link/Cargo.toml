@@ -29,9 +29,7 @@ datadeft-magic-link-service = { path = "../../crates/datadeft-magic-link-service
 datadeft-pow-axum = { path = "../../crates/datadeft-pow-axum", version = "0.6.3" } # x-release-please-version
 datadeft-pow-core = { path = "../../crates/datadeft-pow-core", version = "0.6.3" } # x-release-please-version
 rand_core = { version = "0.6", features = ["getrandom"] }
-serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-time = { version = "0.3.47", default-features = false, features = ["formatting", "std"] }
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
 # Reasons are logged as tracing events, so a log probe can see every line.
 tracing = "0.1"

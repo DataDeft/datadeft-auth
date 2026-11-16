@@ -16,7 +16,7 @@ defmodule Mix.Tasks.Compile.DatadeftPort do
     # shows only on failure.
     verbose = System.get_env("DATADEFT_AUTH_VERBOSE") == "1"
     into = if verbose, do: IO.stream(:stdio, :line), else: ""
-    Mix.shell().info("==> datadeft_auth: cargo build --release (a cold build takes minutes)")
+    Mix.shell().info("==> datadeft_auth: cargo build --release")
 
     case System.cmd("cargo", args, stderr_to_stdout: true, into: into) do
       {_output, 0} ->
