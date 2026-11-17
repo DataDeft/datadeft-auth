@@ -8,8 +8,8 @@ execution, magic-link/session operations, and independent PoW admission. Fake mo
 uses the shipped in-memory store/outbox; AWS mode reuses Rust DynamoDB, SES and
 Secrets Manager adapters with the supported AWS credential chain.
 
-**Source integration:** the binding targets the released Rust 0.6.0 baseline;
-it is not yet published to Hex. Deployment still requires review of the
+**Status:** published to Hex as `datadeft_auth`; compiling it builds the Rust
+executable from source. Deployment still requires review of the
 consuming application's HTTP security, IAM/resources and recovery UX; local
 AWS integration tests are not live production validation. A lost confirmation
 reply is an **indeterminate outcome by contract** (owner-approved): a timeout
@@ -57,10 +57,17 @@ Typespecs document the public API and protocol/lifecycle contracts, and tests
 check their presence. They are not static verification; Dialyzer is not configured.
 Use `deps-update` only when intentionally updating the committed Mix lockfile.
 
-## Install from source
+## Install
 
-Until an approved Hex publication, use a checked-out source dependency in your
-application's `mix.exs` (adjust the path to your checkout):
+Add the Hex package to your application's `mix.exs`. Pre-1.0 minor releases
+may break, so pin the minor version:
+
+```elixir
+{:datadeft_auth, "~> 0.7.0"}
+```
+
+To test an unreleased commit, use a checked-out source dependency instead
+(adjust the path to your checkout):
 
 ```elixir
 {:datadeft_auth, path: "../datadeft-auth/packages/datadeft-auth-elixir"}

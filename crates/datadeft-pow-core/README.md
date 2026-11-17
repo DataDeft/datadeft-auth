@@ -6,7 +6,7 @@ Pure, IO-free proof-of-work challenge mint and verify, plus the encrypted
 
 ```toml
 [dependencies]
-datadeft-pow-core = "0.5"
+datadeft-pow-core = "0.7"
 ```
 
 The browser solver is the npm package

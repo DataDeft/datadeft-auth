@@ -4,7 +4,9 @@ Reusable Rust authentication libraries: proof-of-work (PoW), encrypted session
 tokens, and scanner-safe magic-link login. Small, deterministic, IO-free cores
 plus optional framework and cloud adapters.
 
-**Status:** pre-1.0. The latest version on crates.io and npm is `0.5.0`.
+**Status:** pre-1.0. The crates are on crates.io, the TypeScript client on
+npm and the Elixir package on Hex; [CHANGELOG.md](CHANGELOG.md) lists
+releases.
 
 ## What this is
 
@@ -67,16 +69,16 @@ the keyring and lookup-key types.
 
 ```toml
 [dependencies]
-datadeft-magic-link-service = "0.5"
-datadeft-magic-link-axum    = "0.5"
-datadeft-magic-link-aws     = { version = "0.5", features = ["aws"] }
-datadeft-pow-axum           = "0.5"
-datadeft-pow-core           = "0.5"
+datadeft-magic-link-service = "0.7"
+datadeft-magic-link-axum    = "0.7"
+datadeft-magic-link-aws     = { version = "0.7", features = ["aws"] }
+datadeft-pow-axum           = "0.7"
+datadeft-pow-core           = "0.7"
 # Optional core crates. Add them only when you use their items directly
 # (for example, you implement KeyPurpose or read token and email types
 # that are not re-exported):
-datadeft-auth-token-core    = "0.5"
-datadeft-magic-link-core    = "0.5"
+datadeft-auth-token-core    = "0.7"
+datadeft-magic-link-core    = "0.7"
 ```
 
 ```sh

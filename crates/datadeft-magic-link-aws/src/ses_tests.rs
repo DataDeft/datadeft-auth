@@ -105,10 +105,39 @@ fn reply_to_is_validated_normalized_and_bounded() {
 
 #[cfg(feature = "aws")]
 mod ses_requests {
+    use std::sync::{Arc, Mutex};
+
     use aws_sdk_sesv2::config::{BehaviorVersion, Credentials, Region};
-    use aws_smithy_http_client::test_util::capture_request;
+    use aws_smithy_runtime_api::client::http::{
+        HttpClient, HttpConnector, HttpConnectorFuture, HttpConnectorSettings, SharedHttpConnector,
+    };
+    use aws_smithy_runtime_api::client::orchestrator::{HttpRequest, HttpResponse};
+    use aws_smithy_runtime_api::client::runtime_components::RuntimeComponents;
+    use aws_smithy_types::body::SdkBody;
 
     use super::*;
+
+    /// Records the body of the last request and answers with an empty `200`.
+    #[derive(Clone, Debug, Default)]
+    struct CaptureBody(Arc<Mutex<Option<Vec<u8>>>>);
+
+    impl HttpConnector for CaptureBody {
+        fn call(&self, request: HttpRequest) -> HttpConnectorFuture {
+            *self.0.lock().expect("lock") = request.body().bytes().map(<[u8]>::to_vec);
+            let status = 200.try_into().expect("status");
+            HttpConnectorFuture::ready(Ok(HttpResponse::new(status, SdkBody::empty())))
+        }
+    }
+
+    impl HttpClient for CaptureBody {
+        fn http_connector(
+            &self,
+            _settings: &HttpConnectorSettings,
+            _components: &RuntimeComponents,
+        ) -> SharedHttpConnector {
+            SharedHttpConnector::new(self.clone())
+        }
+    }
 
     struct PlainRenderer;
 
@@ -127,12 +156,12 @@ mod ses_requests {
     }
 
     async fn sent_body(reply_to: Option<&[&str]>) -> String {
-        let (http_client, request) = capture_request(None);
+        let http_client = CaptureBody::default();
         let config = aws_sdk_sesv2::Config::builder()
             .behavior_version(BehaviorVersion::latest())
             .region(Region::new("eu-west-1"))
             .credentials_provider(Credentials::new("akid", "secret", None, None, "test"))
-            .http_client(http_client)
+            .http_client(http_client.clone())
             .build();
         let mut outbox = SesMagicLinkOutbox::new(
             aws_sdk_sesv2::Client::from_conf(config),
@@ -142,10 +171,16 @@ mod ses_requests {
         if let Some(reply_to) = reply_to {
             outbox = outbox.with_reply_to(reply_to).expect("reply-to");
         }
-        // The canned empty response does not parse; only the request matters.
+        // Whether the canned empty response parses does not matter; only the
+        // request does.
         let _ = outbox.enqueue_magic_link(email()).await;
-        let request = request.expect_request();
-        String::from_utf8(request.body().bytes().expect("body").to_vec()).expect("utf-8")
+        let body = http_client
+            .0
+            .lock()
+            .expect("lock")
+            .take()
+            .expect("request sent");
+        String::from_utf8(body).expect("utf-8")
     }
 
     #[tokio::test]
