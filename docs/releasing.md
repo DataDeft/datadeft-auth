@@ -98,8 +98,8 @@ mise run crates-dry-run
 - Rust is one pinned version (`rust` in `mise.toml`), which is also the
   declared `rust-version`, so `verify` is the minimum-version check.
 - `package-crates` uses the workspace staging registry of the pinned Cargo.
-  Before any public upload, it packages and builds all seven archives
-  with all features.
+  Before any public upload, it packages and builds all seven archives with
+  all features.
 - `crates-dry-run` tries every crate and reports each failure. A single
   `cargo publish --dry-run` cannot resolve unpublished renamed dependencies
   from crates.io. Do not bypass archive verification to hide this bootstrap

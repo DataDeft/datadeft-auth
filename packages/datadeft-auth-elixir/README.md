@@ -243,8 +243,8 @@ failure rather than declaring logout complete.
 - Four-byte big-endian length prefix; 1–16384-byte UTF-8 JSON bodies; v1 envelope,
   strict fields/duplicate-key rejection and monotonic non-reused uint32 IDs.
 - Exact build/version handshake, then explicit initialization before auth work.
-  Each startup step has a 30-second deadline, independent of request timeouts.
-  Either startup deadline closes the pipe on expiry;
+  Handshake and initialization each have a 30-second deadline, independent of
+  request timeouts, that closes the pipe on expiry;
   native initialization observes EOF and cancels a stalled SDK future.
   Jobs/replies are bounded; replies may arrive out of order and must match the
   pending request's ID and operation. Application failures are per-request;
