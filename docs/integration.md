@@ -25,11 +25,12 @@ Use the dependency block and the git-ref testing note in
 [README.md](../README.md#install). You need Rust 1.99.1 or newer.
 
 Cargo adds the other core crates as transitive dependencies. The service and
-Axum crates re-export the types that you need. Commit your lockfiles. 0.5.0 is
-on crates.io and npm, so you need no git credentials and no vendored
-TypeScript.
+Axum crates re-export the types that you need. Commit your lockfiles. The
+crates are on crates.io and the client is on npm, so you need no git
+credentials and no vendored TypeScript.
 
-To upgrade an existing app, see [Upgrading from 0.4](#upgrading-from-04).
+To upgrade an existing app, see [Upgrading from 0.6](#upgrading-from-06) and
+[Upgrading from 0.4](#upgrading-from-04).
 
 ## What you provide
 
@@ -66,10 +67,10 @@ The libraries hold no globals. You inject every dependency.
 - **Routes, cookie configuration, redirects, body limits, and token-safe
   logging.**
 
-## Route contract (0.6.0)
+## Route contract
 
 The handlers are headless, so URLs are yours to choose; this is the reference
-layout the example app ships and the documented default for 0.6.0. The rule:
+layout the example app ships and the documented default since 0.6.0. The rule:
 a route's prefix names its owner, and production never mounts `/dev/*`. The
 paths are deployment contract, not just code: edge allowlists (WAF, ALB,
 gateway or CDN path rules) must change in the same rollout as the router.
@@ -374,6 +375,25 @@ particular, make sure that:
   logout, and post-revocation visibility.
 - A production-like probe confirms that logs contain no token material.
 - The consuming application tests pass.
+
+## Upgrading from 0.6
+
+0.7.0 is a breaking release. Token formats, storage and secret documents are
+unchanged, so existing tables and sessions keep working.
+
+- **Rust 1.99.1** is the minimum (`rust-version`).
+- **Logout:** validate the logout cookie with `validate_session_for_logout`
+  instead of `validate_session`, then revoke the returned record. It skips the
+  country lock and the cookie idle deadline, so a logout from another country,
+  or with an idle-expired copy, still revokes the session. Integrity, key
+  windows, absolute expiry and owner checks still apply.
+- **`datadeft-magic-link-axum::authenticate_session`** is generic over the
+  validator's session type, so a logout route can pass
+  `validate_session_for_logout`. Calls with `validate_session` compile
+  unchanged; a closure that only returns `Err(..)` needs a type annotation.
+- **Elixir:** `logout/3` revokes from any country and with an idle-expired
+  cookie. Handshake and initialization each have a 30-second deadline;
+  `request_timeout` covers ordinary operations only.
 
 ## Upgrading from 0.4
 

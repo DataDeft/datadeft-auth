@@ -5,7 +5,7 @@ AWS adapters for
 
 ```toml
 [dependencies]
-datadeft-magic-link-aws = { version = "0.5", features = ["aws"] }
+datadeft-magic-link-aws = { version = "0.7", features = ["aws"] }
 ```
 
 | Build | Provides |

@@ -1,6 +1,8 @@
 # Onboarding
 
-**Status:** pre-1.0. The latest version on crates.io and npm is `0.5.0`.
+**Status:** pre-1.0. The crates are on crates.io, the TypeScript client on
+npm and the Elixir package on Hex; [CHANGELOG.md](../CHANGELOG.md) lists
+releases.
 
 To integrate the libraries into your application, follow
 [integration.md](integration.md) step by step. See
@@ -20,7 +22,7 @@ To integrate the libraries into your application, follow
 | Browser PoW client | Ready | Serve the built worker and call `protect()` from your login page. |
 | Country-aware PoW | Not ready | Build an upstream policy. Never lower the difficulty below the floor. |
 | Example app | Ready | Start with `examples/axum-magic-link`. |
-| Published crates | Done | `0.5.0` is on crates.io and npm ([releasing.md](releasing.md)). |
+| Published packages | Done | Crates on crates.io, client on npm, Elixir package on Hex ([releasing.md](releasing.md)). |
 
 Never use fake secrets, fake clocks, or fake entropy in production.
 
