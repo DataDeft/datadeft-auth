@@ -5,6 +5,10 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+# Authenticates mise's GitHub API lookups (tool installs during tasks) with
+# the read-only token; anonymous lookups hit 403 rate limits.
+env:
+  GITHUB_TOKEN: ${{ github.token }}
 concurrency:
   group: registry-release
   cancel-in-progress: false
@@ -17,6 +21,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # mise installs Rust through rustup and, when rustup is missing, would
+      # fetch and run sh.rustup.rs unverified. Fail instead.
+      - run: command -v rustup
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
         with:

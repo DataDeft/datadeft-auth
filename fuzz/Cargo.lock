@@ -227,7 +227,6 @@ dependencies = [
  "poly1305",
  "rand_core",
  "sha2",
- "subtle",
  "zeroize",
 ]
 

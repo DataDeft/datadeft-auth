@@ -54,9 +54,8 @@ impl std::error::Error for SessionValidationError {}
 
 /// Authenticated server-side session and its cookie-bound country context.
 ///
-/// Only [`validate_session`] returns one (the logout path builds one privately
-/// and discards it), so holding a `ValidatedSession` proves the cookie and the
-/// server-side record passed every check. That is
+/// Only [`validate_session`] returns one, so holding a `ValidatedSession`
+/// proves the cookie and the server-side record passed every check. That is
 /// what makes it safe input for [`refresh_session_cookie`]. Building one by
 /// hand does not compile:
 ///
@@ -133,7 +132,7 @@ where
     Sessions: SessionRepository,
     ServiceClock: Clock,
 {
-    authenticate_session(
+    check_session_cookie(
         cookie_value,
         SessionUse::Authenticate(request_country),
         session_keyring,
@@ -168,7 +167,7 @@ where
     Sessions: SessionRepository,
     ServiceClock: Clock,
 {
-    authenticate_session(
+    check_session_cookie(
         cookie_value,
         SessionUse::Logout,
         session_keyring,
@@ -188,7 +187,7 @@ enum SessionUse<'a> {
     Logout,
 }
 
-async fn authenticate_session<Sessions, ServiceClock>(
+async fn check_session_cookie<Sessions, ServiceClock>(
     cookie_value: &str,
     session_use: SessionUse<'_>,
     session_keyring: &KeyRing<SessionCookie>,

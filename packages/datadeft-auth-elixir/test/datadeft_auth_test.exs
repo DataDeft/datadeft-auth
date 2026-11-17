@@ -205,13 +205,35 @@ defmodule DatadeftAuthTest do
     eventually(fn -> map_size(:sys.get_state(pid).pending) == 0 end)
   end
 
+  test "cold handshake has its own allowance despite a short request deadline" do
+    pid =
+      start_supervised!(
+        {DatadeftAuth,
+         [executable: fake(:delayed_handshake), request_timeout: 100, restart_delay: 1000]}
+      )
+
+    # The fixture deliberately waits 1.2 seconds before answering handshake.
+    # An ordinary 100 ms request deadline must not repeatedly kill startup.
+    eventually(fn -> :sys.get_state(pid).ready end)
+    assert {:ok, :transport_ready} = DatadeftAuth.status(pid)
+  end
+
   test "handshake deadline closes an unresponsive executable" do
     pid =
       start_supervised!(
-        {DatadeftAuth, [executable: fake(:silent), request_timeout: 1000, restart_delay: 1000]}
+        # A long restart delay keeps port == nil observable after the
+        # deadline even on a loaded machine.
+        {DatadeftAuth, [executable: fake(:silent), request_timeout: 100, restart_delay: 5000]}
       )
 
-    Process.sleep(1200)
+    eventually(fn -> map_size(:sys.get_state(pid).pending) == 1 end)
+    %{port: port, pending: pending} = :sys.get_state(pid)
+    [{id, request}] = Map.to_list(pending)
+    remaining = Process.read_timer(request.timer)
+    assert is_integer(remaining) and remaining > 20_000 and remaining <= 30_000
+
+    # Deliver the actual timer message without making the suite sleep 30 s.
+    send(pid, {:deadline, port, id})
     assert {:error, %Error{code: :unavailable}} = DatadeftAuth.status(pid)
     assert :sys.get_state(pid).port == nil
   end

@@ -257,7 +257,8 @@ defmodule DatadeftAuth do
   has been refreshed. `revoked: true` confirms server-side revocation;
   `revoked: false` means the presented cookie is unusable or the session is
   already inactive. Key verification windows and absolute expiry still apply.
-  The `country` option is accepted and ignored.
+  A well-formed `country` option is accepted and ignored; a malformed one is
+  still rejected with `:bad_request`.
   """
   @spec logout(GenServer.server(), String.t(), keyword()) ::
           {:ok, %{revoked: boolean()}} | {:error, Error.t()}

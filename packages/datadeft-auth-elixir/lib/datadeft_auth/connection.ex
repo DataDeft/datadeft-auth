@@ -8,12 +8,12 @@ defmodule DatadeftAuth.Connection do
   # DatadeftAuth mirror these limits (typespecs cannot reference attributes).
   @restart_delay_limit 5000
 
-  # Initialization in AWS mode resolves the credential chain and fetches the
-  # Secrets Manager documents over the network; a cold start routinely needs
-  # more than the per-request deadline, and timing init out costs a full
-  # disconnect whose retry repeats the same cold fetch. This deadline bounds
-  # the whole initialization; closing the pipe cancels a stalled native init.
-  @init_timeout 30_000
+  # Lifecycle work needs its own allowance: cold process startup and AWS
+  # initialization can both take longer than an ordinary request. Applying
+  # request_timeout to the handshake creates a reconnect loop when callers
+  # choose short request deadlines. Each startup step is bounded separately;
+  # closing the pipe cancels a stalled native initialization.
+  @startup_timeout 30_000
 
   @int_options [
     request_timeout: {1000, 60_000},
@@ -340,7 +340,9 @@ defmodule DatadeftAuth.Connection do
   end
 
   @spec deadline(Protocol.operation(), state()) :: pos_integer()
-  defp deadline(:init, _state), do: @init_timeout
+  defp deadline(operation, _state) when operation in [:handshake, :init],
+    do: @startup_timeout
+
   defp deadline(_operation, state), do: state.timeout
 
   @spec disconnect(state(), Error.code()) :: state()

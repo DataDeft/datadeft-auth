@@ -4,9 +4,7 @@
 bun = "latest"
 node = "24"
 # The one Rust version for builds, CI, the CI images and the declared
-# workspace rust-version (release-check enforces the match). Installed through
-# rustup; mise would bootstrap a missing rustup from sh.rustup.rs without
-# checksum verification, so CI requires the runner's rustup.
+# workspace rust-version (release-check enforces the match).
 rust = { version = "1.99.1", components = "rustfmt,clippy" }
 
 [tasks.api-guard]

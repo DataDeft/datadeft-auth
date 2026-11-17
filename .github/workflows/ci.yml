@@ -22,7 +22,7 @@ jobs:
       # fetch and run sh.rustup.rs unverified. Hosted runners ship rustup;
       # fail instead of letting mise bootstrap it.
       - run: command -v rustup
-      # Installs the tools in mise.toml, Rust stable included.
+      # Installs the tools in mise.toml, Rust 1.99.1 included.
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1

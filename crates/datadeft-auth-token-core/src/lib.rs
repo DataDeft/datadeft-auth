@@ -34,11 +34,10 @@
 //! Key material wrappers zeroize their in-process byte arrays on drop on a
 //! best-effort basis. The XChaCha20-Poly1305 key, keystream and Poly1305
 //! one-time key, and SHA-256 state (HMAC, HKDF), zeroize themselves on drop
-//! too; a compile-time check below keeps the main dependency features that
-//! provide this. Cookie-owned plaintext buffers are redacted in `Debug` and
-//! zeroized where this crate owns their lifetime, but raw [`branca::Verified`]
-//! payloads are ordinary `Vec<u8>` values returned to callers. A caller that
-//! puts session identifiers or other sensitive plaintext there owns any
+//! too. Cookie-owned plaintext buffers are redacted in `Debug` and zeroized
+//! where this crate owns their lifetime, but raw [`branca::Verified`] payloads
+//! are ordinary `Vec<u8>` values returned to callers. A caller that puts
+//! session identifiers or other sensitive plaintext there owns any
 //! additional zeroization policy.
 
 #![forbid(unsafe_code)]
