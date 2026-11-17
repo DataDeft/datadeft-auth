@@ -88,8 +88,10 @@ try {
   );
 
   // Inside the try: a container created by a failed `docker run` is removed too.
+  // `--init` reaps orphans: a Port child outliving its BEAM would otherwise stay
+  // a zombie under `sleep`, and the pipe-closure tests would see it alive.
   await run([
-    "docker", "run", "-d", "--name", container,
+    "docker", "run", "-d", "--init", "--name", container,
     "-v", `${process.cwd()}:/work`, "-v", `${tools}:/tools:ro`, "-w", "/work",
     image, "sleep", "infinity",
   ]);
