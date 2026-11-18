@@ -198,6 +198,14 @@ pub struct OutboxPeekPayload {
     pub email: String,
 }
 
+/// An admin query by user id (`usr-` and 32 hex characters); the application
+/// authorizes the caller.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GetUserPayload {
+    pub user_id: String,
+}
+
 /// A posted solution, in the shipping browser client's wire shape. The
 /// difficulty is not client input: the port fills it from its configured
 /// policy, and the HMAC tag binds the minted value.
@@ -260,6 +268,12 @@ pub enum ResultBody {
     },
     Logout {
         revoked: bool,
+    },
+    /// A user's account email and status; `found: false` carries nothing.
+    GetUser {
+        found: bool,
+        email: Option<String>,
+        disabled: Option<bool>,
     },
     FakeLastMagicLink {
         found: bool,

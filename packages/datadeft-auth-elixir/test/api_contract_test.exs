@@ -28,6 +28,8 @@ defmodule DatadeftAuthApiContractTest do
           {:validate_session, ["cookie", [country: "HU", country: "GB"]]},
           {:logout, [nil]},
           {:logout, ["cookie", [country: <<255>>]]},
+          {:get_user, [nil]},
+          {:get_user, [<<255>>]},
           {:pow_verify, [nil]},
           {:pow_verify, [%{chg: <<255>>, sol: "x", non: "x", tim: "x", tag: "x"}]},
           {:pow_admit, [nil]},

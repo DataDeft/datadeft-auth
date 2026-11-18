@@ -77,6 +77,23 @@ defmodule DatadeftAuth.Validation do
         }
 end
 
+defmodule DatadeftAuth.User do
+  @moduledoc """
+  Admin query outcome for one user id. A found user carries the account's
+  normalized email (redacted in `Inspect`) and whether an admin disabled it;
+  an unknown id carries nothing.
+  """
+  @derive {Inspect, except: [:email]}
+  @enforce_keys [:found]
+  defstruct [:found, :email, :disabled]
+
+  @type t :: %__MODULE__{
+          found: boolean(),
+          email: String.t() | nil,
+          disabled: boolean() | nil
+        }
+end
+
 defmodule DatadeftAuth.PowChallenge do
   @moduledoc """
   Proof-of-work challenge in the shipping browser client's wire shape:

@@ -12,6 +12,23 @@ defmodule DatadeftAuthTest do
     assert DatadeftAuth.status(:nonexistent_datadeft_auth) == {:error, %Error{code: :unavailable}}
   end
 
+  test "crash reports carry no reply, request or state data" do
+    # A crash while handling a reply would otherwise log its raw frame, for
+    # example a get_user or validate_session email.
+    email = "crash-report@example.test"
+    frame = ~s({"version":1,"id":2,"result":{"operation":"get_user","email":"#{email}"}})
+
+    status =
+      DatadeftAuth.Connection.format_status(%{
+        state: %{buffer: frame},
+        message: {make_ref(), {:data, frame}},
+        reason: {:badmatch, frame},
+        log: [frame]
+      })
+
+    assert status == %{state: :redacted, message: :redacted, reason: :redacted, log: []}
+  end
+
   test "invalid configuration is redacted and the published bounds are enforced" do
     for opts <- [
           [unknown: 1],

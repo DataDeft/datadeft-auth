@@ -192,6 +192,10 @@ For real protected application routes, call `validate_session` server-side, then
 enforce application authorization. Set any returned refreshed cookie; clear an
 invalid session cookie. Refresh is best-effort: a mint/entropy failure returns
 an otherwise valid session without a new cookie, never extending its lifetime. There is no required `/auth/session/validate` endpoint.
+`get_user(server, user_id)` is an admin query: the account email and disabled
+status of one user id, for an application screen that names users (an audit
+trail, a team list). The application authorizes the caller first; a found user
+is not a session and grants nothing. The email is redacted in Inspect.
 For each action protected by PoW, call `pow_admit(server, proof_cookie)` before
 performing the action and fail closed on errors/exhaustion. Admission is independent
 of magic-link operations; there is no new public admission endpoint.

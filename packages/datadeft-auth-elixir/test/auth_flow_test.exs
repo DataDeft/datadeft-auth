@@ -1,7 +1,7 @@
 defmodule DatadeftAuthFlowTest do
   use ExUnit.Case, async: false
   import DatadeftAuth.TestSupport
-  alias DatadeftAuth.{DevMagicLink, Error, FlowState, Landing, Session, Validation}
+  alias DatadeftAuth.{DevMagicLink, Error, FlowState, Landing, Session, User, Validation}
 
   @email "flow-user@example.test"
   @consent [terms_accepted: true, privacy_accepted: true]
@@ -48,6 +48,19 @@ defmodule DatadeftAuthFlowTest do
              DatadeftAuth.validate_session(pid, cookie)
 
     assert String.starts_with?(user_id, "usr-")
+
+    # The admin query names the account the session made; an unknown id is
+    # a miss, a malformed one a typed error, and no email reaches Inspect.
+    assert {:ok, %User{found: true, email: @email, disabled: false} = user} =
+             DatadeftAuth.get_user(pid, user_id)
+
+    refute inspect(user) =~ @email
+    unknown = "usr-" <> String.duplicate("0", 32)
+
+    assert {:ok, %User{found: false, email: nil, disabled: nil}} =
+             DatadeftAuth.get_user(pid, unknown)
+
+    assert {:error, %Error{code: :bad_request}} = DatadeftAuth.get_user(pid, "not-a-user-id")
 
     assert {:ok, %{revoked: true}} = DatadeftAuth.logout(pid, cookie)
     assert {:ok, %Validation{valid: false}} = DatadeftAuth.validate_session(pid, cookie)

@@ -7,6 +7,7 @@ defmodule DatadeftAuth.Protocol do
     PowChallenge,
     PowVerification,
     Session,
+    User,
     Validation
   }
 
@@ -28,6 +29,7 @@ defmodule DatadeftAuth.Protocol do
           | :confirm
           | :validate_session
           | :logout
+          | :get_user
           | :fake_last_magic_link
           | :pow_challenge
           | :pow_verify
@@ -55,6 +57,7 @@ defmodule DatadeftAuth.Protocol do
           | {:confirm, Session.t()}
           | {:validate_session, Validation.t()}
           | {:logout, %{revoked: boolean()}}
+          | {:get_user, User.t()}
           | {:fake_last_magic_link, DevMagicLink.t()}
           | {:pow_challenge, PowChallenge.t()}
           | {:pow_verify, PowVerification.t()}
@@ -293,6 +296,24 @@ defmodule DatadeftAuth.Protocol do
     with {:ok, result} <- object(value, ["operation", "revoked"]),
          %{"revoked" => revoked} when is_boolean(revoked) <- result do
       {:ok, {:logout, %{revoked: revoked}}}
+    else
+      _ -> {:error, :protocol}
+    end
+  end
+
+  defp result("get_user", value) do
+    with {:ok, result} <- object(value, ["operation", "found", "email", "disabled"]) do
+      case result do
+        %{"found" => true, "email" => email, "disabled" => disabled}
+        when is_binary(email) and is_boolean(disabled) ->
+          {:ok, {:get_user, %User{found: true, email: email, disabled: disabled}}}
+
+        %{"found" => false, "email" => nil, "disabled" => nil} ->
+          {:ok, {:get_user, %User{found: false}}}
+
+        _ ->
+          {:error, :protocol}
+      end
     else
       _ -> {:error, :protocol}
     end
