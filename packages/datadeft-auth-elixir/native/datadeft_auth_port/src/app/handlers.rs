@@ -4,11 +4,11 @@
 //! outcome class.
 use datadeft_magic_link_service::{
     AuthAdminRepository, BeginMagicLinkLandingCommand, Clock, ConfirmMagicLinkFlowCommand,
-    DependencyError, MagicLinkAuthenticationRepository, MagicLinkFlowError, MagicLinkOutbox,
-    MagicLinkRepository, MagicLinkRequestService, MagicLinkServiceError, NormalizedEmail,
-    RateLimitDecision, RateLimitKey, RateLimiter, ReadMagicLinkFlowStateCommand,
-    RequestMagicLinkCommand, SessionRepository, SessionValidationError, UserId,
-    refresh_session_cookie, validate_session, validate_session_for_logout,
+    MagicLinkAuthenticationRepository, MagicLinkFlowError, MagicLinkOutbox, MagicLinkRepository,
+    MagicLinkRequestService, MagicLinkServiceError, NormalizedEmail, RateLimitDecision,
+    RateLimitKey, RateLimiter, ReadMagicLinkFlowStateCommand, RequestMagicLinkCommand,
+    SessionRepository, SessionValidationError, UserId, refresh_session_cookie, validate_session,
+    validate_session_for_logout,
 };
 use datadeft_pow_core::{
     MAX_FUTURE_SKEW_SECS, Solution, mint_pow_proof_cookie, proof_budget_expiry, proof_budget_key,
@@ -251,7 +251,8 @@ where
                 email: None,
                 disabled: None,
             },
-            Err(failure) => dependency_error(failure),
+            // The service crate's own store-failure rule.
+            Err(failure) => service_error(MagicLinkServiceError::from(failure)),
         }
     }
 
@@ -423,15 +424,6 @@ fn service_error(failure: MagicLinkServiceError) -> ResultBody {
             ErrorCode::Unavailable
         }
         MagicLinkServiceError::Internal => ErrorCode::Internal,
-    })
-}
-
-/// A store failure on a read: a throttled or unavailable store is retryable,
-/// anything else is an invariant failure.
-fn dependency_error(failure: DependencyError) -> ResultBody {
-    error(match failure {
-        DependencyError::Unavailable | DependencyError::RateLimited => ErrorCode::Unavailable,
-        DependencyError::ConditionalWriteFailed | DependencyError::Internal => ErrorCode::Internal,
     })
 }
 
