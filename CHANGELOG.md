@@ -6,6 +6,26 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Unreleased
 
+## [0.7.0](https://github.com/DataDeft/datadeft-auth/compare/v0.6.3...v0.7.0) (2026-11-17)
+
+### ⚠ BREAKING CHANGES
+
+* Rust 1.99.1 is the minimum supported version.
+* Logout validates with `validate_session_for_logout`, which skips the country
+  lock and cookie idle deadline; `authenticate_session` in
+  `datadeft-magic-link-axum` is generic over the session type. See
+  [Upgrading from 0.6](docs/integration.md#upgrading-from-06).
+
+### Pull requests
+
+* ci: Debian/Alpine image matrix and one pinned Rust (1.99.1) via mise by @l1x in https://github.com/DataDeft/datadeft-auth/pull/32
+* deps: move to the RustCrypto generation the AWS SDK uses by @l1x in https://github.com/DataDeft/datadeft-auth/pull/33
+* fix(elixir): separate startup deadlines and remove unused dependencies by @l1x in https://github.com/DataDeft/datadeft-auth/pull/34
+* fix(session)!: revoke sessions on logout across country and idle changes by @l1x in https://github.com/DataDeft/datadeft-auth/pull/35
+* fix(release): generate changelog entries once per pull request by @l1x in https://github.com/DataDeft/datadeft-auth/pull/36
+* fix(elixir): land separate startup deadlines and post-merge review fixes by @l1x in https://github.com/DataDeft/datadeft-auth/pull/39
+* fix(deps): drop chrono (RUSTSEC-2026-0543) and sync docs with 0.7.0 by @l1x in https://github.com/DataDeft/datadeft-auth/pull/40
+
 ## [0.6.3](https://github.com/DataDeft/datadeft-auth/compare/v0.6.2...v0.6.3) (2026-11-16)
 
 
