@@ -25,6 +25,9 @@ All notable changes to this workspace are recorded here. The format follows
 * fix(release): generate changelog entries once per pull request by @l1x in https://github.com/DataDeft/datadeft-auth/pull/36
 * fix(elixir): land separate startup deadlines and post-merge review fixes by @l1x in https://github.com/DataDeft/datadeft-auth/pull/39
 * fix(deps): drop chrono (RUSTSEC-2026-0543) and sync docs with 0.7.0 by @l1x in https://github.com/DataDeft/datadeft-auth/pull/40
+* Elixir adds `DatadeftAuth.get_user/2` to read a user's email and disabled
+  status by ID. The calling application must authorize access before calling it.
+  [#41](https://github.com/DataDeft/datadeft-auth/pull/41)
 
 ## [0.6.3](https://github.com/DataDeft/datadeft-auth/compare/v0.6.2...v0.6.3) (2026-11-16)
 

@@ -4,6 +4,8 @@
 //! clients and executor; core and service crates receive loaded material.
 mod aws;
 mod handlers;
+mod session;
+mod user;
 
 use aws::{sdk_config, secret_load_error, validate_aws};
 

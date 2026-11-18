@@ -7,8 +7,7 @@ use datadeft_magic_link_service::{
     MagicLinkAuthenticationRepository, MagicLinkFlowError, MagicLinkOutbox, MagicLinkRepository,
     MagicLinkRequestService, MagicLinkServiceError, NormalizedEmail, RateLimitDecision,
     RateLimitKey, RateLimiter, ReadMagicLinkFlowStateCommand, RequestMagicLinkCommand,
-    SessionRepository, SessionValidationError, UserId, refresh_session_cookie, validate_session,
-    validate_session_for_logout,
+    SessionRepository,
 };
 use datadeft_pow_core::{
     MAX_FUTURE_SKEW_SECS, Solution, mint_pow_proof_cookie, proof_budget_expiry, proof_budget_key,
@@ -18,9 +17,8 @@ use rand_core::{OsRng, RngCore};
 
 use super::{App, WallClock, now_unix_millis};
 use crate::protocol::{
-    AppCommand, ConfirmPayload, ErrorCode, FlowStatePayload, GetUserPayload, LandingPayload,
-    OutboxPeekPayload, PowAdmitPayload, PowVerifyPayload, RequestLinkPayload, ResultBody,
-    SessionPayload,
+    AppCommand, ConfirmPayload, ErrorCode, FlowStatePayload, LandingPayload, OutboxPeekPayload,
+    PowAdmitPayload, PowVerifyPayload, RequestLinkPayload, ResultBody,
 };
 
 impl<Store, Outbox> App<Store, Outbox>
@@ -156,103 +154,6 @@ where
                 }
             }
             Err(failure) => flow_error(failure),
-        }
-    }
-
-    async fn validate(&self, payload: SessionPayload) -> ResultBody {
-        match validate_session(
-            &payload.session_cookie,
-            payload.country.as_deref(),
-            &self.shared.session_keyring,
-            &self.store,
-            &WallClock,
-            &self.shared.config,
-        )
-        .await
-        {
-            Ok(validated) => {
-                let mut rng = OsRng;
-                // Validation already checked expiry, country, owner and
-                // revocation. A failed best-effort refresh (for example an
-                // expired mint window) must not invalidate that session.
-                let refreshed = refresh_session_cookie(
-                    &validated,
-                    &self.shared.session_keyring,
-                    &mut rng,
-                    &WallClock,
-                    &self.shared.config,
-                )
-                .ok()
-                .flatten();
-                let session = validated.session();
-                ResultBody::ValidateSession {
-                    valid: true,
-                    user_id: Some(session.user_id.as_str().to_owned()),
-                    email: Some(session.email.as_str().to_owned()),
-                    refreshed_cookie: refreshed.map(|cookie| cookie.as_secret_value().to_owned()),
-                }
-            }
-            Err(SessionValidationError::InvalidSession) => ResultBody::ValidateSession {
-                valid: false,
-                user_id: None,
-                email: None,
-                refreshed_cookie: None,
-            },
-            Err(failure) => session_error(failure),
-        }
-    }
-
-    // The country lock does not apply: any authentic, live session is revoked,
-    // so logging out from another country cannot leave a copied cookie live.
-    // `payload.country` is accepted for symmetry with validation and ignored.
-    async fn logout(&self, payload: SessionPayload) -> ResultBody {
-        match validate_session_for_logout(
-            &payload.session_cookie,
-            &self.shared.session_keyring,
-            &self.store,
-            &WallClock,
-            &self.shared.config,
-        )
-        .await
-        {
-            Ok(session) => {
-                let mut rng = OsRng;
-                // Revoke server state first; the application clears its
-                // cookie only after this reply.
-                match self
-                    .flow_service(&mut rng)
-                    .revoke_session(&session.session_id)
-                    .await
-                {
-                    Ok(()) => ResultBody::Logout { revoked: true },
-                    Err(failure) => service_error(failure),
-                }
-            }
-            Err(SessionValidationError::InvalidSession) => ResultBody::Logout { revoked: false },
-            Err(failure) => session_error(failure),
-        }
-    }
-
-    /// An admin query: the account email and status of one user by id. The
-    /// application authorizes the caller; a malformed id is `bad_request`,
-    /// an unknown one `found: false`.
-    async fn get_user(&self, payload: GetUserPayload) -> ResultBody {
-        let Ok(user_id) = UserId::parse(&payload.user_id) else {
-            return error(ErrorCode::BadRequest);
-        };
-        match self.store.get_user(&user_id).await {
-            Ok(Some(user)) => ResultBody::GetUser {
-                found: true,
-                email: Some(user.email.as_str().to_owned()),
-                disabled: Some(user.disabled),
-            },
-            Ok(None) => ResultBody::GetUser {
-                found: false,
-                email: None,
-                disabled: None,
-            },
-            // The service crate's own store-failure rule.
-            Err(failure) => service_error(MagicLinkServiceError::from(failure)),
         }
     }
 
@@ -416,7 +317,7 @@ fn unusable_or_error(failure: MagicLinkFlowError, unusable: ResultBody) -> Resul
     }
 }
 
-fn service_error(failure: MagicLinkServiceError) -> ResultBody {
+pub(super) fn service_error(failure: MagicLinkServiceError) -> ResultBody {
     error(match failure {
         MagicLinkServiceError::BadRequest => ErrorCode::BadRequest,
         MagicLinkServiceError::MagicLinkUnavailable => ErrorCode::Rejected,
@@ -427,16 +328,6 @@ fn service_error(failure: MagicLinkServiceError) -> ResultBody {
     })
 }
 
-fn session_error(failure: SessionValidationError) -> ResultBody {
-    error(match failure {
-        // Stale-validation refusals cannot happen in one job; fail loud.
-        SessionValidationError::InvalidSession | SessionValidationError::Internal => {
-            ErrorCode::Internal
-        }
-        SessionValidationError::Unavailable => ErrorCode::Unavailable,
-    })
-}
-
-fn error(code: ErrorCode) -> ResultBody {
+pub(super) fn error(code: ErrorCode) -> ResultBody {
     ResultBody::Error { code }
 }

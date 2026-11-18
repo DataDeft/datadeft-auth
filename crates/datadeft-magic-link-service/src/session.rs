@@ -373,6 +373,8 @@ fn map_session_dependency_error(error: DependencyError) -> SessionValidationErro
 }
 
 #[cfg(test)]
+mod logout_tests;
+#[cfg(test)]
 mod refresh_tests;
 #[cfg(test)]
 mod test_support;
