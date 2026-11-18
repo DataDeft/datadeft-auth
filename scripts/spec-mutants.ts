@@ -387,9 +387,9 @@ function untargetedObligations(): string[] {
   const missing = new Set<string>();
   for (const file of readdirSync(root).filter((f) => f.endsWith(".cfg"))) {
     for (const line of readFileSync(join(root, file), "utf8").split("\n")) {
-      const match = /^(INVARIANT|PROPERTY)\s+(\S+)/.exec(line.trim());
-      if (match && match[2] !== "TypeOK" && !targeted.has(match[2])) {
-        missing.add(`${file}: ${match[2]}`);
+      const obligation = /^(INVARIANT|PROPERTY)\s+(\S+)/.exec(line.trim())?.[2];
+      if (obligation && obligation !== "TypeOK" && !targeted.has(obligation)) {
+        missing.add(`${file}: ${obligation}`);
       }
     }
   }

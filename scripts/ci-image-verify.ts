@@ -19,7 +19,8 @@ import { TOML } from "bun";
 
 const MISE_VERSION = "2026.11.8";
 // The workspace's single Rust version, so the image builds what CI builds.
-const RUST_VERSION: string = (TOML.parse(await Bun.file("mise.toml").text()) as any).tools.rust.version;
+const RUST_VERSION = (TOML.parse(await Bun.file("mise.toml").text()) as { tools: { rust: { version: string } } }).tools
+  .rust.version;
 const RUSTUP_VERSION = "1.29.3";
 
 // Digests from the mise release's SHASUMS256.txt and rustup's
