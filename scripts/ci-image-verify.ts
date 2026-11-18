@@ -92,9 +92,21 @@ try {
   // `--init` reaps orphans: a Port child outliving its BEAM would otherwise stay
   // a zombie under `sleep`, and the pipe-closure tests would see it alive.
   await run([
-    "docker", "run", "-d", "--init", "--name", container,
-    "-v", `${process.cwd()}:/work`, "-v", `${tools}:/tools:ro`, "-w", "/work",
-    image, "sleep", "infinity",
+    "docker",
+    "run",
+    "-d",
+    "--init",
+    "--name",
+    container,
+    "-v",
+    `${process.cwd()}:/work`,
+    "-v",
+    `${tools}:/tools:ro`,
+    "-w",
+    "/work",
+    image,
+    "sleep",
+    "infinity",
   ]);
 
   // Record the distribution and libc in the job log.
@@ -117,10 +129,7 @@ try {
 
   // The workspace's bun and node tools serve other tasks and have no musl
   // builds; elixir-verify needs neither. Rust is already installed above.
-  await exec(["mise", "run", "elixir-verify"], [
-    "MISE_TRUSTED_CONFIG_PATHS=/work",
-    "MISE_DISABLE_TOOLS=bun,node,rust",
-  ]);
+  await exec(["mise", "run", "elixir-verify"], ["MISE_TRUSTED_CONFIG_PATHS=/work", "MISE_DISABLE_TOOLS=bun,node,rust"]);
 } finally {
   // No container exists when the downloads or `docker run` failed early.
   await run(["docker", "rm", "-f", container]).catch(() => {});
