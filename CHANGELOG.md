@@ -6,6 +6,16 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Unreleased
 
+## 0.7.1 (2026-11-18)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* feat(elixir): get_user answers one user's account email and status by id by @l1x in https://github.com/DataDeft/datadeft-auth/pull/41
+
+
+**Full Changelog**: https://github.com/DataDeft/datadeft-auth/compare/v0.7.0...v0.7.1
+
 ## [0.7.0](https://github.com/DataDeft/datadeft-auth/compare/v0.6.3...v0.7.0) (2026-11-17)
 
 ### ⚠ BREAKING CHANGES
