@@ -2,7 +2,7 @@
 //! or adding a production clock override. Seed sessions through the existing
 //! service's injected clock, then validate/refresh/logout through the adapter.
 use super::*;
-use crate::protocol::SessionPayload;
+use crate::protocol::{GetUserPayload, SessionPayload};
 use datadeft_magic_link_service::{
     BeginMagicLinkLandingCommand, ConfirmMagicLinkFlowCommand, MagicLinkRequestService,
     NormalizedEmail, RequestMagicLinkCommand,
@@ -299,4 +299,43 @@ async fn handler_never_refreshes_idle_or_absolute_expired_sessions() {
             }
         ));
     }
+}
+
+#[tokio::test]
+async fn get_user_names_a_confirmed_account_and_misses_an_unknown_id() {
+    let (app, cookie) = session_aged(0).await;
+    let ResultBody::ValidateSession {
+        user_id: Some(user_id),
+        ..
+    } = validate(&app, &cookie, "HU").await
+    else {
+        panic!("a valid session");
+    };
+    let get_user = |user_id: &str| {
+        app.handle(AppCommand::GetUser(GetUserPayload {
+            user_id: user_id.to_owned(),
+        }))
+    };
+    assert!(matches!(
+        get_user(&user_id).await,
+        ResultBody::GetUser {
+            found: true,
+            email: Some(email),
+            disabled: Some(false),
+        } if email == "session-fixture@example.test"
+    ));
+    assert!(matches!(
+        get_user(&format!("usr-{}", "0".repeat(32))).await,
+        ResultBody::GetUser {
+            found: false,
+            email: None,
+            disabled: None,
+        }
+    ));
+    assert!(matches!(
+        get_user("not-a-user-id").await,
+        ResultBody::Error {
+            code: ErrorCode::BadRequest
+        }
+    ));
 }

@@ -5,8 +5,9 @@ mod messages;
 
 pub(crate) use messages::{
     AccountDisplayPayload, AwsPayload, ConfirmPayload, EmailTemplatePayload, FlowStatePayload,
-    LandingPayload, OutboxPeekPayload, PowAdmitPayload, PowPayload, PowVerifyPayload,
-    RequestLinkPayload, SecretRefPayload, SecretsPayload, ServicePayload, SessionPayload,
+    GetUserPayload, LandingPayload, OutboxPeekPayload, PowAdmitPayload, PowPayload,
+    PowVerifyPayload, RequestLinkPayload, SecretRefPayload, SecretsPayload, ServicePayload,
+    SessionPayload,
 };
 pub use messages::{ErrorCode, InitPayload, Mode, ResultBody};
 
@@ -39,6 +40,7 @@ enum Operation {
     Confirm,
     ValidateSession,
     Logout,
+    GetUser,
     FakeLastMagicLink,
     PowChallenge,
     PowVerify,
@@ -69,6 +71,7 @@ pub enum AppCommand {
     Confirm(ConfirmPayload),
     ValidateSession(SessionPayload),
     Logout(SessionPayload),
+    GetUser(GetUserPayload),
     FakeLastMagicLink(OutboxPeekPayload),
     PowChallenge,
     PowVerify(PowVerifyPayload),
@@ -102,6 +105,7 @@ pub fn parse_request(frame: &[u8]) -> Result<ParsedRequest, FrameError> {
             Command::App(AppCommand::ValidateSession(parse_payload(payload)?))
         }
         Operation::Logout => Command::App(AppCommand::Logout(parse_payload(payload)?)),
+        Operation::GetUser => Command::App(AppCommand::GetUser(parse_payload(payload)?)),
         Operation::FakeLastMagicLink => {
             Command::App(AppCommand::FakeLastMagicLink(parse_payload(payload)?))
         }

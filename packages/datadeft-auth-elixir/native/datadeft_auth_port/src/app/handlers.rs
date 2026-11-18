@@ -3,12 +3,12 @@
 //! payloads through the service crates and return one exact result shape per
 //! outcome class.
 use datadeft_magic_link_service::{
-    BeginMagicLinkLandingCommand, Clock, ConfirmMagicLinkFlowCommand,
-    MagicLinkAuthenticationRepository, MagicLinkFlowError, MagicLinkOutbox, MagicLinkRepository,
-    MagicLinkRequestService, MagicLinkServiceError, NormalizedEmail, RateLimitDecision,
-    RateLimitKey, RateLimiter, ReadMagicLinkFlowStateCommand, RequestMagicLinkCommand,
-    SessionRepository, SessionValidationError, refresh_session_cookie, validate_session,
-    validate_session_for_logout,
+    AuthAdminRepository, BeginMagicLinkLandingCommand, Clock, ConfirmMagicLinkFlowCommand,
+    DependencyError, MagicLinkAuthenticationRepository, MagicLinkFlowError, MagicLinkOutbox,
+    MagicLinkRepository, MagicLinkRequestService, MagicLinkServiceError, NormalizedEmail,
+    RateLimitDecision, RateLimitKey, RateLimiter, ReadMagicLinkFlowStateCommand,
+    RequestMagicLinkCommand, SessionRepository, SessionValidationError, UserId,
+    refresh_session_cookie, validate_session, validate_session_for_logout,
 };
 use datadeft_pow_core::{
     MAX_FUTURE_SKEW_SECS, Solution, mint_pow_proof_cookie, proof_budget_expiry, proof_budget_key,
@@ -18,8 +18,9 @@ use rand_core::{OsRng, RngCore};
 
 use super::{App, WallClock, now_unix_millis};
 use crate::protocol::{
-    AppCommand, ConfirmPayload, ErrorCode, FlowStatePayload, LandingPayload, OutboxPeekPayload,
-    PowAdmitPayload, PowVerifyPayload, RequestLinkPayload, ResultBody, SessionPayload,
+    AppCommand, ConfirmPayload, ErrorCode, FlowStatePayload, GetUserPayload, LandingPayload,
+    OutboxPeekPayload, PowAdmitPayload, PowVerifyPayload, RequestLinkPayload, ResultBody,
+    SessionPayload,
 };
 
 impl<Store, Outbox> App<Store, Outbox>
@@ -28,6 +29,7 @@ where
         + MagicLinkAuthenticationRepository
         + SessionRepository
         + RateLimiter
+        + AuthAdminRepository
         + Sync,
     Outbox: MagicLinkOutbox + Sync,
 {
@@ -41,6 +43,7 @@ where
             AppCommand::Confirm(payload) => self.confirm(payload).await,
             AppCommand::ValidateSession(payload) => self.validate(payload).await,
             AppCommand::Logout(payload) => self.logout(payload).await,
+            AppCommand::GetUser(payload) => self.get_user(payload).await,
             AppCommand::FakeLastMagicLink(payload) => self.fake_last_magic_link(payload),
             AppCommand::PowChallenge => self.pow_challenge(),
             AppCommand::PowVerify(payload) => self.pow_verify(payload),
@@ -230,6 +233,28 @@ where
         }
     }
 
+    /// An admin query: the account email and status of one user by id. The
+    /// application authorizes the caller; a malformed id is `bad_request`,
+    /// an unknown one `found: false`.
+    async fn get_user(&self, payload: GetUserPayload) -> ResultBody {
+        let Ok(user_id) = UserId::parse(&payload.user_id) else {
+            return error(ErrorCode::BadRequest);
+        };
+        match self.store.get_user(&user_id).await {
+            Ok(Some(user)) => ResultBody::GetUser {
+                found: true,
+                email: Some(user.email.as_str().to_owned()),
+                disabled: Some(user.disabled),
+            },
+            Ok(None) => ResultBody::GetUser {
+                found: false,
+                email: None,
+                disabled: None,
+            },
+            Err(failure) => dependency_error(failure),
+        }
+    }
+
     /// Mint a fresh challenge for the application's `pow/create` route.
     fn pow_challenge(&self) -> ResultBody {
         let Some(pow) = &self.shared.pow else {
@@ -398,6 +423,15 @@ fn service_error(failure: MagicLinkServiceError) -> ResultBody {
             ErrorCode::Unavailable
         }
         MagicLinkServiceError::Internal => ErrorCode::Internal,
+    })
+}
+
+/// A store failure on a read: a throttled or unavailable store is retryable,
+/// anything else is an invariant failure.
+fn dependency_error(failure: DependencyError) -> ResultBody {
+    error(match failure {
+        DependencyError::Unavailable | DependencyError::RateLimited => ErrorCode::Unavailable,
+        DependencyError::ConditionalWriteFailed | DependencyError::Internal => ErrorCode::Internal,
     })
 }
 

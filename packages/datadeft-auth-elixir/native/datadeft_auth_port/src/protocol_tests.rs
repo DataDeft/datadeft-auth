@@ -24,6 +24,14 @@ fn parses_operation_payloads_strictly() {
         }
         _ => panic!("expected request_link"),
     }
+    let request = parse_request(
+        br#"{"version":1,"id":4,"operation":"get_user","payload":{"user_id":"usr-x"}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        request.command,
+        Command::App(AppCommand::GetUser(payload)) if payload.user_id == "usr-x"
+    ));
     for request in [
         // Unknown payload field.
         r#"{"version":1,"id":3,"operation":"request_link","payload":{"email":"a@b.test","terms_accepted":true,"privacy_accepted":true,"x":1}}"#,
@@ -76,5 +84,17 @@ fn response_encoding_is_canonical() {
     assert_eq!(
         encode_response(4, ResultBody::Logout { revoked: false }).unwrap(),
         br#"{"version":1,"id":4,"result":{"operation":"logout","revoked":false}}"#
+    );
+    assert_eq!(
+        encode_response(
+            5,
+            ResultBody::GetUser {
+                found: false,
+                email: None,
+                disabled: None
+            }
+        )
+        .unwrap(),
+        br#"{"version":1,"id":5,"result":{"operation":"get_user","found":false,"email":null,"disabled":null}}"#
     );
 }

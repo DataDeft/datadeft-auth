@@ -145,6 +145,7 @@ workflows, not finalized arities; use validated config and command structs.
 | `Auth.validate_session` | Check authenticated lifetime, server state, owner activity and country policy; return validated identity, not just decrypted bytes |
 | `Auth.refresh_session` | Refresh only after validation, preserve original identity/absolute expiry and use active keys |
 | `Auth.logout` | Revoke server-side session before returning a session-clear action |
+| `Auth.get_user` | Admin query: one user's account email and disabled status by id, after the application's own authorization |
 | `Pow.create_challenge` | Browser-compatible challenge from configured difficulty/time and OS entropy |
 | `Pow.complete_challenge` | Verify submitted solution and mint its bound proof; no caller-constructed verified state |
 | `Pow.admit_proof` | Verify proof and spend shared atomic lifetime budget; deny exhausted/invalid proofs and fail closed on storage faults |

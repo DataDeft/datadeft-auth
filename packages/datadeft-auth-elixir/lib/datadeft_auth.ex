@@ -31,6 +31,7 @@ defmodule DatadeftAuth do
     PowChallenge,
     PowVerification,
     Session,
+    User,
     Validation
   }
 
@@ -275,6 +276,18 @@ defmodule DatadeftAuth do
   end
 
   def logout(_, _, _), do: bad_request()
+
+  @doc """
+  Admin query: the account email and status of one user by id (`usr-` and 32
+  hex characters). The application authorizes the caller; this is not a
+  session check and grants nothing. `found: false` means no such user; a
+  malformed id is `:bad_request`. The email is redacted in `Inspect`.
+  """
+  @spec get_user(GenServer.server(), String.t()) :: {:ok, User.t()} | {:error, Error.t()}
+  def get_user(server, user_id) when is_binary(user_id),
+    do: call(server, {:auth, :get_user, %{user_id: user_id}})
+
+  def get_user(_, _), do: bad_request()
 
   @doc """
   Mints a proof-of-work challenge for the application's `POST /auth/pow/create` route.

@@ -43,6 +43,43 @@ defmodule DatadeftAuth.ProtocolTest do
     end
   end
 
+  test "a user lookup parses the found and missing shapes only" do
+    found =
+      Jason.encode!(%{
+        version: 1,
+        id: 3,
+        result: %{
+          operation: "get_user",
+          found: true,
+          email: "fixture@example.test",
+          disabled: false
+        }
+      })
+
+    assert {:ok, 3,
+            {:get_user,
+             %DatadeftAuth.User{found: true, email: "fixture@example.test", disabled: false}}} =
+             Protocol.reply(found)
+
+    missing =
+      Jason.encode!(%{
+        version: 1,
+        id: 3,
+        result: %{operation: "get_user", found: false, email: nil, disabled: nil}
+      })
+
+    assert {:ok, 3, {:get_user, %DatadeftAuth.User{found: false}}} = Protocol.reply(missing)
+
+    for result <- [
+          %{operation: "get_user", found: true, email: nil, disabled: false},
+          %{operation: "get_user", found: false, email: "fixture@example.test", disabled: nil},
+          %{operation: "get_user", found: true, email: "fixture@example.test"}
+        ] do
+      assert {:error, :protocol} =
+               Protocol.reply(Jason.encode!(%{version: 1, id: 3, result: result}))
+    end
+  end
+
   test "session validation forwards refresh values and refuses inconsistent failures" do
     for refreshed <- [nil, "fixture-refreshed-cookie"] do
       frame =
