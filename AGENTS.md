@@ -98,6 +98,7 @@ Common validation commands:
 
 ```sh
 mise run fmt
+mise run ts-fmt
 mise run check
 mise run test
 mise run clippy

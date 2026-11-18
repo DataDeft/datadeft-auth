@@ -19,7 +19,8 @@ import { TOML } from "bun";
 
 const MISE_VERSION = "2026.11.8";
 // The workspace's single Rust version, so the image builds what CI builds.
-const RUST_VERSION: string = (TOML.parse(await Bun.file("mise.toml").text()) as any).tools.rust.version;
+const RUST_VERSION = (TOML.parse(await Bun.file("mise.toml").text()) as { tools: { rust: { version: string } } }).tools
+  .rust.version;
 const RUSTUP_VERSION = "1.29.3";
 
 // Digests from the mise release's SHASUMS256.txt and rustup's
@@ -91,9 +92,21 @@ try {
   // `--init` reaps orphans: a Port child outliving its BEAM would otherwise stay
   // a zombie under `sleep`, and the pipe-closure tests would see it alive.
   await run([
-    "docker", "run", "-d", "--init", "--name", container,
-    "-v", `${process.cwd()}:/work`, "-v", `${tools}:/tools:ro`, "-w", "/work",
-    image, "sleep", "infinity",
+    "docker",
+    "run",
+    "-d",
+    "--init",
+    "--name",
+    container,
+    "-v",
+    `${process.cwd()}:/work`,
+    "-v",
+    `${tools}:/tools:ro`,
+    "-w",
+    "/work",
+    image,
+    "sleep",
+    "infinity",
   ]);
 
   // Record the distribution and libc in the job log.
@@ -116,10 +129,7 @@ try {
 
   // The workspace's bun and node tools serve other tasks and have no musl
   // builds; elixir-verify needs neither. Rust is already installed above.
-  await exec(["mise", "run", "elixir-verify"], [
-    "MISE_TRUSTED_CONFIG_PATHS=/work",
-    "MISE_DISABLE_TOOLS=bun,node,rust",
-  ]);
+  await exec(["mise", "run", "elixir-verify"], ["MISE_TRUSTED_CONFIG_PATHS=/work", "MISE_DISABLE_TOOLS=bun,node,rust"]);
 } finally {
   // No container exists when the downloads or `docker run` failed early.
   await run(["docker", "rm", "-f", container]).catch(() => {});

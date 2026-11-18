@@ -6,15 +6,15 @@ const workspaceRoot = resolve(packageRoot, "../..");
 
 await rm(resolve(packageRoot, "dist"), { recursive: true, force: true });
 for (const config of ["tsconfig.build.json", "tsconfig.worker-build.json"]) {
-    const compiler = Bun.spawn(["bun", Bun.resolveSync("typescript/bin/tsc", packageRoot), "-p", config], {
-        cwd: packageRoot,
-        stdout: "inherit",
-        stderr: "inherit",
-    });
-    if ((await compiler.exited) !== 0) {
-        throw new Error(`TypeScript build failed: ${config}`);
-    }
+  const compiler = Bun.spawn(["bun", Bun.resolveSync("typescript/bin/tsc", packageRoot), "-p", config], {
+    cwd: packageRoot,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  if ((await compiler.exited) !== 0) {
+    throw new Error(`TypeScript build failed: ${config}`);
+  }
 }
 for (const license of ["LICENSE"]) {
-    await copyFile(resolve(workspaceRoot, license), resolve(packageRoot, license));
+  await copyFile(resolve(workspaceRoot, license), resolve(packageRoot, license));
 }

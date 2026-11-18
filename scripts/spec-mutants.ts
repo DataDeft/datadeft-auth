@@ -31,86 +31,112 @@ const MUTANTS: Mutant[] = [
   {
     name: "GET landing consumes the challenge",
     spec: "MagicLink",
-    edits: [[
-      "    /\\ landed' = TRUE\n    /\\ UNCHANGED << challenge, session, consumedByPost,",
-      "    /\\ landed' = TRUE\n    /\\ challenge' = \"Consumed\"\n    /\\ UNCHANGED << session, consumedByPost,",
-    ]],
+    edits: [
+      [
+        "    /\\ landed' = TRUE\n    /\\ UNCHANGED << challenge, session, consumedByPost,",
+        "    /\\ landed' = TRUE\n    /\\ challenge' = \"Consumed\"\n    /\\ UNCHANGED << session, consumedByPost,",
+      ],
+    ],
     expect: "Inv001_LandingNeverConsumes",
   },
   {
     name: "confirm does not require an unconsumed challenge",
     spec: "MagicLink",
-    edits: [[
-      "ConfirmCorrect ==\n    /\\ challenge = \"Issued\"",
-      "ConfirmCorrect ==\n    /\\ challenge \\in {\"Issued\", \"Consumed\"}",
-    ]],
+    edits: [
+      [
+        'ConfirmCorrect ==\n    /\\ challenge = "Issued"',
+        'ConfirmCorrect ==\n    /\\ challenge \\in {"Issued", "Consumed"}',
+      ],
+    ],
     expect: "Inv002_AtMostOneSession",
   },
   {
     name: "confirm creates a session without consuming",
     spec: "MagicLink",
-    edits: [["    /\\ challenge' = \"Consumed\"\n    /\\ session' = \"Active\"", "    /\\ challenge' = challenge\n    /\\ session' = \"Active\""]],
+    edits: [
+      [
+        '    /\\ challenge\' = "Consumed"\n    /\\ session\' = "Active"',
+        "    /\\ challenge' = challenge\n    /\\ session' = \"Active\"",
+      ],
+    ],
     expect: "Inv003_SessionImpliesConsumed",
   },
   {
     name: "confirm consumes without creating a session",
     spec: "MagicLink",
-    edits: [["    /\\ challenge' = \"Consumed\"\n    /\\ session' = \"Active\"", "    /\\ challenge' = \"Consumed\"\n    /\\ session' = session"]],
+    edits: [
+      [
+        '    /\\ challenge\' = "Consumed"\n    /\\ session\' = "Active"',
+        "    /\\ challenge' = \"Consumed\"\n    /\\ session' = session",
+      ],
+    ],
     expect: "Inv003_ConsumedImpliesSession",
   },
   {
     name: "wrong binding creates a session",
     spec: "MagicLink",
-    edits: [[
-      "    /\\ rejectedWrongBinding' = TRUE\n    /\\ UNCHANGED << challenge, session, landed,",
-      "    /\\ rejectedWrongBinding' = TRUE\n    /\\ session' = \"Active\"\n    /\\ UNCHANGED << challenge, landed,",
-    ]],
+    edits: [
+      [
+        "    /\\ rejectedWrongBinding' = TRUE\n    /\\ UNCHANGED << challenge, session, landed,",
+        "    /\\ rejectedWrongBinding' = TRUE\n    /\\ session' = \"Active\"\n    /\\ UNCHANGED << challenge, landed,",
+      ],
+    ],
     expect: "Inv004_SessionNeedsCorrectBinding",
   },
   {
     name: "wrong binding burns the challenge",
     spec: "MagicLink",
-    edits: [[
-      "    /\\ rejectedWrongBinding' = TRUE\n    /\\ UNCHANGED << challenge, session, landed,",
-      "    /\\ rejectedWrongBinding' = TRUE\n    /\\ challenge' = \"Consumed\"\n    /\\ UNCHANGED << session, landed,",
-    ]],
+    edits: [
+      [
+        "    /\\ rejectedWrongBinding' = TRUE\n    /\\ UNCHANGED << challenge, session, landed,",
+        "    /\\ rejectedWrongBinding' = TRUE\n    /\\ challenge' = \"Consumed\"\n    /\\ UNCHANGED << session, landed,",
+      ],
+    ],
     expect: "Inv004_ConsumeNeedsCorrectBinding",
   },
   {
     name: "disabled-user confirm burns the challenge",
     spec: "MagicLink",
-    edits: [[
-      "    /\\ disabledConfirmAttempted' = TRUE\n    /\\ UNCHANGED << challenge, session,",
-      "    /\\ disabledConfirmAttempted' = TRUE\n    /\\ challenge' = \"Consumed\"\n    /\\ UNCHANGED << session,",
-    ]],
+    edits: [
+      [
+        "    /\\ disabledConfirmAttempted' = TRUE\n    /\\ UNCHANGED << challenge, session,",
+        "    /\\ disabledConfirmAttempted' = TRUE\n    /\\ challenge' = \"Consumed\"\n    /\\ UNCHANGED << session,",
+      ],
+    ],
     expect: "Inv005_DisabledAttemptDoesNotBurn",
   },
   {
     name: "redirect-mode flow-state read consumes the challenge",
     spec: "MagicLink",
-    edits: [[
-      "FlowStateRead ==\n    /\\ challenge = \"Issued\"\n    /\\ landed\n    /\\ UNCHANGED << challenge, session,",
-      "FlowStateRead ==\n    /\\ challenge = \"Issued\"\n    /\\ landed\n    /\\ challenge' = \"Consumed\"\n    /\\ UNCHANGED << session,",
-    ]],
+    edits: [
+      [
+        'FlowStateRead ==\n    /\\ challenge = "Issued"\n    /\\ landed\n    /\\ UNCHANGED << challenge, session,',
+        'FlowStateRead ==\n    /\\ challenge = "Issued"\n    /\\ landed\n    /\\ challenge\' = "Consumed"\n    /\\ UNCHANGED << session,',
+      ],
+    ],
     expect: "Inv001_LandingNeverConsumes",
   },
   // --- MagicLinkRace.tla ---------------------------------------------------
   {
     name: "commit is not conditional on an unconsumed challenge",
     spec: "MagicLinkRace",
-    edits: [[
-      "CommitSucceeds(a) ==\n    /\\ clientStatus[a] \\in {\"pending\", \"ambiguous\"}\n    /\\ challenge = \"Issued\"",
-      "CommitSucceeds(a) ==\n    /\\ clientStatus[a] \\in {\"pending\", \"ambiguous\"}",
-    ]],
+    edits: [
+      [
+        'CommitSucceeds(a) ==\n    /\\ clientStatus[a] \\in {"pending", "ambiguous"}\n    /\\ challenge = "Issued"',
+        'CommitSucceeds(a) ==\n    /\\ clientStatus[a] \\in {"pending", "ambiguous"}',
+      ],
+    ],
     expect: "Inv_AtMostOneSession",
   },
   {
     name: "commit does not record its consumer",
     spec: "MagicLinkRace",
-    edits: [[
-      "    /\\ consumedBy' = a\n    /\\ sessions' = sessions \\cup {a}\n    /\\ clientStatus'",
-      "    /\\ consumedBy' = consumedBy\n    /\\ sessions' = sessions \\cup {a}\n    /\\ clientStatus'",
-    ]],
+    edits: [
+      [
+        "    /\\ consumedBy' = a\n    /\\ sessions' = sessions \\cup {a}\n    /\\ clientStatus'",
+        "    /\\ consumedBy' = consumedBy\n    /\\ sessions' = sessions \\cup {a}\n    /\\ clientStatus'",
+      ],
+    ],
     expect: "Inv_ConsumedIffConsumer",
   },
   {
@@ -122,10 +148,12 @@ const MUTANTS: Mutant[] = [
   {
     name: "a conflicted attempt gets a session",
     spec: "MagicLinkRace",
-    edits: [[
-      "    /\\ clientStatus' = [clientStatus EXCEPT ![a] = \"conflict\"]\n    /\\ UNCHANGED << challenge, consumedBy, sessions >>",
-      "    /\\ clientStatus' = [clientStatus EXCEPT ![a] = \"conflict\"]\n    /\\ sessions' = sessions \\cup {a}\n    /\\ UNCHANGED << challenge, consumedBy >>",
-    ]],
+    edits: [
+      [
+        '    /\\ clientStatus\' = [clientStatus EXCEPT ![a] = "conflict"]\n    /\\ UNCHANGED << challenge, consumedBy, sessions >>',
+        "    /\\ clientStatus' = [clientStatus EXCEPT ![a] = \"conflict\"]\n    /\\ sessions' = sessions \\cup {a}\n    /\\ UNCHANGED << challenge, consumedBy >>",
+      ],
+    ],
     expect: "Inv_ConflictNoSession",
   },
   // --- Session.tla: validation and refresh (Session.cfg) -------------------
@@ -282,7 +310,7 @@ const MUTANTS: Mutant[] = [
   {
     name: "erasure keeps the stored email",
     spec: "Erasure",
-    edits: [["    /\\ email' = [email EXCEPT ![u] = \"erased\"]\n", "    /\\ email' = email\n"]],
+    edits: [['    /\\ email\' = [email EXCEPT ![u] = "erased"]\n', "    /\\ email' = email\n"]],
     expect: "Inv_ErasedEmailGone",
   },
   // --- Pow.tla -------------------------------------------------------------
@@ -321,13 +349,20 @@ const MUTANTS: Mutant[] = [
   {
     name: "direct confirm creates a session without consuming",
     spec: "Liveness",
-    edits: [["    /\\ challenge' = \"Consumed\"\n    /\\ session' = \"Active\"", "    /\\ challenge' = challenge\n    /\\ session' = \"Active\""]],
+    edits: [
+      [
+        '    /\\ challenge\' = "Consumed"\n    /\\ session\' = "Active"',
+        "    /\\ challenge' = challenge\n    /\\ session' = \"Active\"",
+      ],
+    ],
     expect: "Inv_SessionImpliesConsumed",
   },
   {
     name: "request loops without issuing a link",
     spec: "Liveness",
-    edits: [["    /\\ challenge' = \"Issued\"\n    /\\ UNCHANGED << landed, pending, session >>", "    /\\ UNCHANGED vars"]],
+    edits: [
+      ['    /\\ challenge\' = "Issued"\n    /\\ UNCHANGED << landed, pending, session >>', "    /\\ UNCHANGED vars"],
+    ],
     expect: "Live_ReachesSession",
     liveness: true,
   },
@@ -341,7 +376,12 @@ const MUTANTS: Mutant[] = [
   {
     name: "landing stalls before it lands",
     spec: "Liveness",
-    edits: [["    /\\ ~landed\n    /\\ landed' = TRUE\n    /\\ UNCHANGED << challenge, pending, session >>", "    /\\ ~landed\n    /\\ UNCHANGED vars"]],
+    edits: [
+      [
+        "    /\\ ~landed\n    /\\ landed' = TRUE\n    /\\ UNCHANGED << challenge, pending, session >>",
+        "    /\\ ~landed\n    /\\ UNCHANGED vars",
+      ],
+    ],
     expect: "Live_EveryStateReachesSession",
     liveness: true,
   },
@@ -387,9 +427,9 @@ function untargetedObligations(): string[] {
   const missing = new Set<string>();
   for (const file of readdirSync(root).filter((f) => f.endsWith(".cfg"))) {
     for (const line of readFileSync(join(root, file), "utf8").split("\n")) {
-      const match = /^(INVARIANT|PROPERTY)\s+(\S+)/.exec(line.trim());
-      if (match && match[2] !== "TypeOK" && !targeted.has(match[2])) {
-        missing.add(`${file}: ${match[2]}`);
+      const obligation = /^(INVARIANT|PROPERTY)\s+(\S+)/.exec(line.trim())?.[2];
+      if (obligation && obligation !== "TypeOK" && !targeted.has(obligation)) {
+        missing.add(`${file}: ${obligation}`);
       }
     }
   }

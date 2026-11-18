@@ -1,0 +1,4 @@
+# Build outputs and vendored sources
+**/_build/
+**/deps/
+**/native/vendor/
