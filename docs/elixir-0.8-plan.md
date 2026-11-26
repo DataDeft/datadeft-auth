@@ -2,7 +2,16 @@
 
 Status: owner-approved in the planning conversation, including byte-for-byte
 Rust parity and minimal additional Rust code. Crypto dependency selection and
-any project-specific native runtime component remain separately gated below.
+any project-specific native runtime component were separately gated below.
+
+Amendment approved by the owner in the implementation conversation: "approved,
+keep it extremely small and lean". A crypto-only Rustler NIF is now authorized,
+replacing the no-native/no-Rust-build requirement. Services and IO stay in Elixir;
+no Port, native auth engine or solver. The exact initial boundary, six-question
+justification, safety and build/release contract are recorded in
+[`hex/datadeft_auth/CRYPTO-DEPENDENCIES.md`](../hex/datadeft_auth/CRYPTO-DEPENDENCIES.md).
+This amendment supersedes the original no-NIF/no-Rust acceptance wording below;
+precompiled consumers plus a working source-build fallback replace that gate.
 Delivery: one PR, built in small tested commits. Do not publish from this work.
 
 ## Goal
@@ -44,8 +53,8 @@ Use one Hex package, `datadeft_auth`, with separate Token, MagicLink.Core,
 MagicLink.Service, MagicLink.Plug, AWS, PoW.Core and PoW.Plug namespaces.
 Core functions receive time, entropy and loaded keys. Services use behaviours;
 adapters own IO. Plug supplies HTTP integration; Bandit runs the example only.
-No Phoenix, Port, Rustler, custom NIF, worker-pool framework or optimization work
-in the initial implementation. If implementation establishes that reuse is
+No Phoenix, Port, worker-pool framework or optimization work. The approved
+crypto-only Rustler exception is limited to the native-boundary contract above. If implementation establishes that reuse is
 absolutely necessary, propose a tiny wrapper over the existing Rust libraries,
 limited to the specific missing operation. Obtain owner approval of its API,
 transport, build/deployment cost and safety implications before adding it. Never
@@ -55,20 +64,22 @@ on BEAM.
 
 ## Feature justification
 
-1. Problem: Elixir applications need native authentication without a Rust build
-   or subprocess, while sharing a live system with Rust applications.
+1. Problem: Elixir applications need authentication without a subprocess or Rust
+   compiler on production hosts, while sharing a system with Rust applications.
 2. Existing solution: Rust libraries and the former Elixir Port binding implement
    the workflows and formats; existing tests provide reference behavior.
 3. Gap: the binding requires Rust and a transport process. A new incompatible
    format would prevent the required mixed-language deployment.
 4. Smallest solution: one Elixir package mirroring the existing layers and exact
    formats, with shared compatibility vectors. Keeping the Port avoids a second
-   implementation but does not meet the Elixir-only goal.
+   implementation but retains the unwanted subprocess. The approved amendment
+   reuses only crypto through a tiny NIF, retaining Elixir services and IO.
 5. Cost: maintaining two security implementations, exact crypto/framing parity,
    AWS dependencies and mixed-language integration tests. No format migration or
    speculative performance work.
 6. Proof: fixed-input byte comparisons, bidirectional verification, shared-table
-   race tests, browser interoperability and a clean Elixir build without Rust.
+   race tests, browser interoperability, clean precompiled consumers and native
+   source-build fallback.
 
 ## Iterations (one PR)
 
@@ -86,8 +97,8 @@ on BEAM.
    writes before expanding to the full repository contract in iteration 6.
 3. **Prove crypto parity.** Implement canonical Base62, exact Branca
    XChaCha20-Poly1305 framing, HKDF/HMAC and BLAKE3 compatibility. Use OTP crypto
-   and reviewed existing BEAM implementations where suitable; assess dependency
-   maintenance, native build requirements and test vectors before choosing them.
+   where compatible, and reuse existing Rust crypto through the approved tiny
+   NIF. Assess native build requirements and maintain shared test vectors.
    Do not substitute AES-GCM or SHA-256 for existing algorithms. If a required
    primitive cannot reasonably be delivered without custom native code, stop for
    owner review rather than silently changing the scope or format.
@@ -109,7 +120,8 @@ on BEAM.
    rendering, authorization and edge controls.
 8. **Finish the single PR.** Remove dangling Port references in workspace tasks,
    CI, release checks and docs without disturbing unrelated staged changes. Check
-   Hex archive and Mix release consumers without Rust. Run `mise run verify`,
+   Hex archive and Mix release consumers, native source fallback and precompiled
+   consumption without a Rust toolchain. Run `mise run verify`,
    mixed-language tests and an independent security review. Document any checks
    that could not run. Version 0.8 through the repository's release process.
 
@@ -123,8 +135,9 @@ on BEAM.
 - Tamper, malformed input, expiry, replay, failure and concurrency tests pass.
 - GET never consumes; confirmation creates at most one session; logout revokes
   before cookie clearing; storage/limiter failures fail closed.
-- No Rust toolchain or executable is needed to build or run the Elixir package.
-  Rust remains necessary for the repository's compatibility verification suite.
+- Rust is required for source builds and repository compatibility checks, not
+  in a bundled runtime release. Precompiled consumers and source-build fallback
+  must both pass clean-consumer tests before release.
 
 ## Implementation tracking
 
@@ -138,6 +151,8 @@ Shared vectors and parity checks live in
 - Scope and one-package namespace layout: approved by the owner.
 - Rust 0.7.0 is the frozen reference; review any reference changes explicitly.
 - Keep additional Rust limited to necessary compatibility-test glue over existing
-  libraries. This does not authorize a Rust runtime dependency for Elixir.
+  libraries. The later owner-approved exception permits only the tiny crypto NIF,
+  not a second Rust authentication service.
 - Approve crypto dependencies after iteration 3's investigation. Standard OTP
-  native crypto is allowed; a project-specific NIF requires a separate decision.
+  native crypto is allowed. The crypto-only NIF decision is now approved as
+  described above; broader native scope still requires a separate decision.

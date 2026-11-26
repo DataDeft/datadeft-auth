@@ -115,7 +115,7 @@ run = "bun scripts/ci-image-verify.ts"
 
 [tasks.package-crates]
 description = "Package and build all seven crates, staging unpublished workspace dependencies"
-run = "cargo package --workspace --exclude axum-magic-link --all-features --locked"
+run = "cargo package --workspace --exclude axum-magic-link --exclude datadeft_auth_nif --all-features --locked"
 
 [tasks.crates-dry-run]
 description = "Try every crate against crates.io in dependency order; never uploads"
@@ -143,7 +143,7 @@ done
 """
 
 [tasks.elixir-verify]
-description = "Verify the native Elixir package without Rust"
+description = "Verify the Elixir package and its tiny Rust crypto NIF"
 run = """
 mise -C hex/datadeft_auth run deps
 mise -C hex/datadeft_auth run verify

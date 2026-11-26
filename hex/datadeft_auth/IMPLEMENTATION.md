@@ -10,7 +10,7 @@ not a completed authentication system.
 
 ## 1. Foundation and reference contract
 
-- [x] Independent Mix package under `hex/datadeft_auth/`; no umbrella or Rust runtime.
+- [x] Independent Mix package under `hex/datadeft_auth/`; no umbrella; owner-approved tiny crypto NIF.
 - [x] Package-local format/compile/test tasks and test-only support.
 - [x] Shared synthetic vectors asserted by Rust and Elixir.
 - [x] Root compatibility gate and shared-table CI task.
@@ -45,17 +45,18 @@ Elixir HTTP client is loopback-only test support, not a production AWS adapter.
 
 ## 3. Crypto and pure cores
 
-- [ ] Owner approval of investigated crypto candidates ([proposal](CRYPTO-DEPENDENCIES.md)); no dependency added.
+- [x] Owner-approved crypto-only Rustler boundary ([contract](CRYPTO-DEPENDENCIES.md)); b3/JOSE not selected.
 - [x] Rust-compatible Base62 integer codec, golden vectors and round trips.
-- [ ] Exact Branca/XChaCha20-Poly1305, including token-level canonicality gates.
+- [x] Bounded Branca encode/decode over the existing Rust production API, including canonicality/tamper checks.
+- [ ] Higher-level purpose-bound cookie/keyring API and clean native artifact/source-archive consumers.
 - [ ] HKDF and purpose/key-ID-bound cookie keyrings.
 - [x] Magic-link grammar, independently drawn selector/verifier, lookup HMACs.
 - [ ] Confirm/session/proof cookie bodies, expiry, skew and key-window parity.
 - [ ] BLAKE3 PoW identity and exact challenge/tag/work formats.
 - [ ] Bidirectional cookie/token/proof verification, tamper and rotation vectors.
 
-No new formats, algorithm substitutions or hand-rolled native bridge. A wrapper
-over existing Rust libraries requires a separately reviewed, necessary operation.
+No new formats or algorithm substitutions. The owner has approved a tiny Rustler
+crypto wrapper over existing Rust libraries; no native service or generic bridge.
 
 ## 4. Framework-neutral services
 
@@ -81,18 +82,18 @@ over existing Rust libraries requires a separately reviewed, necessary operation
 ## Validation commands
 
 ```sh
-mise -C hex/datadeft_auth run verify  # no Rust needed
+mise run elixir-verify               # builds the tiny crypto NIF with Rust
 mise run compatibility-test          # shared Rust/Elixir vectors
 mise run dynamodb-compatibility-test # disposable Docker table + Rust/Elixir
 mise run verify                     # full workspace, excluding Docker integration
 ```
 
-Rust additions are compatibility tests only; no Rust auth implementation or
-public API changed. Cargo.lock drops the removed Port dependencies and patches
+Earlier Rust additions were compatibility tests only. The owner-approved native
+increment now adds a tiny crypto adapter, without changing any core public API. Cargo.lock drops the removed Port dependencies and patches
 `url` to 2.5.9 (plus its form_urlencoded patch) to resolve RUSTSEC-2026-0592 found
 by verification. The existing Bun lock normalization task was needed for release
-checks after Bun emitted JSONC. Jason is test-only JSON support for DynamoDB
-Local. Production Elixir uses OTP crypto and currently has no Hex dependencies.
+checks after Bun emitted JSONC. Jason supports Rustler's build and DynamoDB Local
+tests. Rustler is compile-time only; production loads the tiny native library.
 
 ## Foundation checkpoint
 
@@ -152,3 +153,24 @@ through its old-key row and reads its session. The mixed gate reports 58 tests,
 zero failures, two vector exclusions. Existing Rust DynamoDB regressions and full
 workspace verification passed. Framework-neutral authentication orchestration,
 cookie minting and production IO remain unimplemented.
+
+## Owner-approved tiny NIF increment
+
+The owner approved replacing the no-native requirement with an extremely small
+crypto-only Rustler wrapper. The first slice is two calls, 63 lines of Rust
+including the entry module: Branca encode/decode delegate directly to the existing
+production core, with bounded inputs and fixed error atoms even for direct native
+calls. Encode uses OsRng; both calls use dirty CPU scheduling. No core API change,
+test-support production feature, service engine, resources, solver or unsafe
+adapter code. Low-level decode deliberately does not authorize or check TTL.
+
+Validation passed: full workspace verify (including Clippy, Rust tests/docs/audit
+and expanded API guard), official Rust Branca vectors through the NIF, package
+round-trip/tamper/canonicality/argument tests, mixed-language DynamoDB gate
+(61 tests, zero failures, three exclusions), and a source-built production Mix
+release exercising its bundled NIF. Rustler/Jason remain compile-time dependencies.
+CI now provisions the native source toolchain for the Linux BEAM matrix.
+
+Not yet validated: the updated Linux container matrix, clean source archive
+fallback, precompiled artifacts and independent native-boundary security review.
+Those remain release gates; no artifact has been published.

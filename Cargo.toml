@@ -2,7 +2,7 @@
 resolver = "3"
 # Rust crates and examples share a workspace. Elixir lives under hex/;
 # the shared browser client lives under packages/dd-protect-client.
-members = ["crates/*", "examples/*"]
+members = ["crates/*", "examples/*", "hex/datadeft_auth/native/datadeft_auth_nif"]
 
 [workspace.package]
 version = "0.7.1" # x-release-please-version

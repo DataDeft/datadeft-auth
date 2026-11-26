@@ -4,8 +4,9 @@
 - `examples/bandit_magic_link/`: planned independent Plug/Bandit consumer.
 
 All Elixir code, tests, examples and package-specific scripts live here. There is
-no Mix umbrella and no Rust runtime component. Root mise tasks orchestrate the
-package and the mixed-language compatibility suite.
+no Mix umbrella. A tiny owner-approved Rustler crypto NIF reuses the existing
+Rust core; services, storage and HTTP remain in Elixir. Root mise tasks
+orchestrate the package and mixed-language compatibility suite.
 
 The shared browser client stays in `packages/dd-protect-client/`; Rust libraries
 stay in `crates/`. Shared contracts and vectors live in `spec/compatibility/`.

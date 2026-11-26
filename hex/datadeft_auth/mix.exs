@@ -12,7 +12,7 @@ defmodule DatadeftAuth.MixProject do
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: if(Mix.env() == :test, do: ["lib", "test/support"], else: ["lib"]),
-      deps: [{:jason, "~> 1.4", only: :test}],
+      deps: [{:rustler, "== 0.38.0", runtime: false}, {:jason, "~> 1.4", runtime: false}],
       description: "Native Elixir authentication compatible with datadeft-auth Rust.",
       package: [licenses: ["MIT"], files: ["lib", "mix.exs", "README.md", "LICENSE"]]
     ]
