@@ -617,6 +617,73 @@ async fn a_zero_limit_denies_against_dynamodb() {
     );
 }
 
+/// Minimal cross-language glue: Elixir owns the disposable table and asserts
+/// the combined results. All Rust writes go through the existing store.
+#[tokio::test]
+#[ignore = "mixed-language table: mise run dynamodb-compatibility-test"]
+async fn shared_elixir_counters() {
+    let client = client().await;
+    let table = std::env::var("DD_AUTH_COMPATIBILITY_TABLE").expect("shared table");
+    let old = DynamoDbAuthStore::new(
+        client.clone(),
+        table.clone(),
+        StorageHmacKey::new([0x11; 32]),
+    );
+    let rotated = DynamoDbAuthStore::new(client, table, StorageHmacKey::new([0x22; 32]));
+    let sequential = RateLimitKey::parse("pow:compatibility:sequential").expect("key");
+    assert_eq!(
+        rotated
+            .check_lifetime_limit(&sequential, 3, 999, 100)
+            .await
+            .expect("spend"),
+        RateLimitDecision::Allowed
+    );
+    let windowed = RateLimitKey::parse("req:compatibility").expect("key");
+    assert_eq!(
+        old.check_rate_limit(&windowed, 2, 60, 119)
+            .await
+            .expect("spend"),
+        RateLimitDecision::Allowed
+    );
+
+    // Release both implementations together, rather than spending the whole
+    // budget in one language while the other is still compiling/starting.
+    let barrier = std::path::PathBuf::from(
+        std::env::var("DD_AUTH_COMPATIBILITY_BARRIER").expect("barrier directory"),
+    );
+    std::fs::write(barrier.join("ready"), "ready").expect("signal ready");
+    let start = std::time::Instant::now();
+    while !barrier.join("release").exists() {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(10),
+            "barrier timeout"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let race = RateLimitKey::parse("pow:compatibility:race").expect("key");
+    let mut allowed = 0;
+    for _ in 0..12 {
+        if rotated
+            .check_lifetime_limit(&race, 5, 200, 100)
+            .await
+            .expect("spend")
+            == RateLimitDecision::Allowed
+        {
+            allowed += 1;
+        }
+    }
+    println!("compatibility_rust_allowed={allowed}");
+
+    // Populate an account through the real Rust login workflow; Elixir must
+    // resolve the same authoritative profile, not infer identity from email.
+    let keys = keys();
+    let outcome = login(&old, &keys, &mut OsRng, "shared@example.test").await;
+    println!(
+        "compatibility_user_id={}",
+        outcome.authentication().user_id().as_str()
+    );
+}
+
 /// A storage-key rotation does not split or reset a lifetime budget: nodes on
 /// the old and the new key share one counter.
 #[tokio::test]
