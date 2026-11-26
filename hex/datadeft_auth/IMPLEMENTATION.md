@@ -44,7 +44,8 @@ Elixir HTTP client is loopback-only test support, not a production AWS adapter.
 ## 3. Crypto and pure cores
 
 - [ ] Dependency investigation and owner approval before selecting crypto packages.
-- [ ] Canonical Base62 and exact Branca/XChaCha20-Poly1305.
+- [x] Rust-compatible Base62 integer codec, golden vectors and round trips.
+- [ ] Exact Branca/XChaCha20-Poly1305, including token-level canonicality gates.
 - [ ] HKDF and purpose/key-ID-bound cookie keyrings.
 - [ ] Magic-link grammar, independently drawn selector/verifier, lookup HMACs.
 - [ ] Confirm/session/proof cookie bodies, expiry, skew and key-window parity.
