@@ -29,7 +29,7 @@ not a completed authentication system.
 - [x] Exact fixed-window and rotation-independent lifetime-counter keys.
 - [x] Conditional counters, first-use expiry, TTL saturation and fail-closed errors.
 - [x] Shared-table Rust/Elixir quota exhaustion and barrier-started race test.
-- [ ] Previous-key fallback, email lookup migration and rekeying.
+- [x] Previous-key fallback, email lookup migration and rekeying (including Rust-created dormant accounts).
 - [ ] Magic-link record encoding/strict decoding.
 - [ ] Atomic consume + account + session + index transaction.
 - [ ] Cross-language consume and account-creation contention tests.
@@ -91,7 +91,7 @@ by verification. The existing Bun lock normalization task was needed for release
 checks after Bun emitted JSONC. Jason is test-only JSON support for DynamoDB
 Local. Production Elixir uses OTP crypto and currently has no Hex dependencies.
 
-## Latest checkpoint
+## Foundation checkpoint
 
 - Package-local verification: 30 tests passed; 4 explicit integration/vector tests
   excluded from the standalone gate.
@@ -109,3 +109,12 @@ Local. Production Elixir uses OTP crypto and currently has no Hex dependencies.
   use Elixir 1.19.5 / OTP 28. The platform matrix remains unverified locally.
 - Full auth flows, cookie parity, production AWS delivery, archive/release
   consumers and independent security review remain unfinished.
+
+## Rotation increment
+
+Previous-key account reads migrate the current lookup only after validating the
+profile. Rekey scans all pages, counts only successful conditional writes and is
+idempotent. Unit tests cover outages/corruption and equal-key deduplication;
+DynamoDB Local proves login-time migration and dormant-account rekeying over
+accounts created by the real Rust workflow. Full workspace verification and the
+mixed-language Docker gate passed.

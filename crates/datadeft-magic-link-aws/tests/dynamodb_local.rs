@@ -682,6 +682,11 @@ async fn shared_elixir_counters() {
         "compatibility_user_id={}",
         outcome.authentication().user_id().as_str()
     );
+    let dormant = login(&old, &keys, &mut OsRng, "dormant@example.test").await;
+    println!(
+        "compatibility_dormant_id={}",
+        dormant.authentication().user_id().as_str()
+    );
 }
 
 /// A storage-key rotation does not split or reset a lifetime budget: nodes on
