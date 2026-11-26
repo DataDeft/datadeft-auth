@@ -1,0 +1,31 @@
+[tasks.deps]
+run = "mix deps.get"
+
+[tasks.fmt]
+description = "Format the Elixir package"
+run = "mix format"
+
+[tasks.fmt-check]
+run = "mix format --check-formatted"
+
+[tasks.check]
+run = "mix compile --warnings-as-errors"
+
+[tasks.test]
+run = "mix test --warnings-as-errors"
+
+[tasks.compatibility-test]
+description = "Run repository vectors (DD_AUTH_COMPATIBILITY_DIR required)"
+run = "mix test --warnings-as-errors --include repository"
+
+[tasks.dynamodb-compatibility-test]
+description = "Mixed-language shared-counter tests (DynamoDB Local and Rust required)"
+run = "mix test --warnings-as-errors --include dynamodb"
+
+[tasks.verify]
+description = "Check formatting, compilation and tests without Rust"
+run = """
+mix format --check-formatted
+mix compile --warnings-as-errors
+mix test --warnings-as-errors
+"""

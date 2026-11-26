@@ -54,19 +54,12 @@ async function check(): Promise<string> {
   );
   const pkg = await Bun.file("packages/dd-protect-client/package.json").json();
   requireCondition(pkg.version === version, "Rust and npm versions must match");
-  const elixir = await Bun.file("packages/datadeft-auth-elixir/mix.exs").text();
+  const elixir = await Bun.file("hex/datadeft_auth/mix.exs").text();
   // Match the release-please marker semantically, not its exact byte layout.
   const elixirVersion = elixir.match(
     /x-release-please-start-version[\s\S]*?@version "([^"]+)"[\s\S]*?x-release-please-end/,
   )?.[1];
   requireCondition(elixirVersion === version, "Rust and Elixir versions must match");
-  const port = TOML.parse(
-    await Bun.file("packages/datadeft-auth-elixir/native/datadeft_auth_port/Cargo.toml").text(),
-  ) as CrateManifest;
-  requireCondition(
-    port.package.publish === false && port.package.version.workspace,
-    "Port executable must remain unpublished and inherit the release version",
-  );
   const bunLock = await Bun.file("bun.lock").json();
   requireCondition(
     bunLock.workspaces["packages/dd-protect-client"].version === version,
@@ -89,7 +82,7 @@ async function check(): Promise<string> {
     requireCondition(!pkg.scripts?.[script], `Unexpected npm lifecycle hook: ${script}`);
   }
   const lock = TOML.parse(await Bun.file("Cargo.lock").text()) as CargoLock;
-  for (const name of [...crates, "axum-magic-link", "datadeft-auth-port"]) {
+  for (const name of [...crates, "axum-magic-link"]) {
     requireCondition(
       lock.package.some((p) => p.name === name && !p.source && p.version === version),
       `${name}: stale Cargo.lock version`,

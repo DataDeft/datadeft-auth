@@ -30,6 +30,60 @@ fn storage_hmac_vectors_are_pinned() {
     );
 }
 
+/// Repository-only vectors are supplied at runtime, so packaged crate tests do
+/// not depend on files outside the crate. No production API or Rust logic added.
+#[test]
+#[ignore = "repository vectors: mise run compatibility-test"]
+fn shared_storage_and_email_vectors() {
+    use datadeft_magic_link_service::NormalizedEmail;
+    let directory = std::path::PathBuf::from(
+        std::env::var("DD_AUTH_COMPATIBILITY_DIR").expect("compatibility fixture directory"),
+    );
+    let storage =
+        std::fs::read_to_string(directory.join("storage_hmac.tsv")).expect("storage vectors");
+    let mut count = 0;
+    for line in storage.lines().filter(|line| !line.starts_with('#')) {
+        let columns: Vec<_> = line.split('\t').collect();
+        assert_eq!(columns.len(), 4);
+        let key = StorageHmacKey::from_slice(&hex::decode(columns[0]).expect("key hex"))
+            .expect("synthetic key");
+        let prefix =
+            String::from_utf8(hex::decode(columns[1]).expect("prefix hex")).expect("prefix");
+        let value = String::from_utf8(hex::decode(columns[2]).expect("value hex")).expect("value");
+        assert_eq!(key.hmac(&prefix, &value).expect("hmac"), columns[3]);
+        count += 1;
+    }
+    assert!(count >= 6);
+
+    let emails = std::fs::read_to_string(directory.join("email.tsv")).expect("email vectors");
+    let mut count = 0;
+    for line in emails.lines().filter(|line| !line.starts_with('#')) {
+        let columns: Vec<_> = line.split('\t').collect();
+        assert_eq!(columns.len(), 3);
+        let input = String::from_utf8(hex::decode(columns[0]).expect("input hex")).expect("input");
+        match columns[1] {
+            "-" => assert!(NormalizedEmail::normalize(&input).is_err()),
+            expected => {
+                let expected = String::from_utf8(hex::decode(expected).expect("expected hex"))
+                    .expect("expected");
+                assert_eq!(
+                    NormalizedEmail::normalize(&input)
+                        .expect("normalize")
+                        .as_str(),
+                    expected
+                );
+            }
+        }
+        let stored = NormalizedEmail::from_normalized(&input);
+        assert_eq!(stored.is_ok(), columns[2] == "true");
+        if let Ok(stored) = stored {
+            assert_eq!(stored.as_str(), input);
+        }
+        count += 1;
+    }
+    assert!(count >= 50);
+}
+
 #[test]
 fn storage_hmac_key_debug_is_redacted() {
     let key = StorageHmacKey::new([0x2A; STORAGE_HMAC_KEY_BYTES]);

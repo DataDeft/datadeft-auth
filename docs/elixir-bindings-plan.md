@@ -1,4 +1,8 @@
-# Proposal: Elixir bindings for datadeft-auth
+# Historical proposal: Elixir bindings for datadeft-auth
+
+> Superseded by the owner-approved [native Elixir 0.8 plan](elixir-0.8-plan.md).
+> The Port package has been removed from the working tree. The status and paths
+> below describe the former binding, not the current implementation under `hex/`.
 
 **Status:** the approved Port/auth/session/PoW implementation is complete in
 `packages/datadeft-auth-elixir` against the released Rust 0.6.0 baseline.

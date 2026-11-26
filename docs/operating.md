@@ -34,9 +34,10 @@ mise run verify
 
 `verify` runs fmt-check, clippy, test, test-default-features, docs, audit,
 token-core-guard, ts-verify, elixir-verify, spec, spec-mutants, release-check, and
-workflow-check. The Elixir gate requires an installed Elixir >= 1.16 / OTP >= 26
-and Rust toolchain; CI provisions the tested runtime pairs. See
-[`packages/datadeft-auth-elixir`](../packages/datadeft-auth-elixir/README.md).
+workflow-check, plus shared Rust/Elixir compatibility vectors. The Elixir-only
+gate requires Elixir >= 1.16 / OTP >= 26, not Rust. Cross-language checks use the
+workspace Rust toolchain; CI provisions the runtime pairs. See
+[`hex/datadeft_auth`](../hex/datadeft_auth/README.md).
 
 `ts-verify` checks every TypeScript and JavaScript file against Prettier,
 type-checks and lints the workspace `scripts/`, then runs the npm package gate.
@@ -48,7 +49,9 @@ Other tasks:
 | --- | --- | --- |
 | `spec`, `spec-mutants` | Check the TLA+ models and prove each invariant can fail. | Yes |
 | `fuzz` | Fuzz every untrusted-input parser for 60 s each. It needs nightly Rust and `cargo install cargo-fuzz`. | No |
-| `dynamodb-local-test` | Run integration tests against DynamoDB Local. It needs Docker. | No |
+| `dynamodb-local-test` | Rust integration tests against DynamoDB Local. It needs Docker. | No |
+| `dynamodb-compatibility-test` | Mixed Rust/Elixir account lookup and shared counter/race tests. It needs Docker. | No |
+| `compatibility-test` | Shared storage-HMAC and email vectors asserted by Rust and Elixir. | Yes |
 
 ## Agent ownership
 
@@ -67,7 +70,7 @@ branches or worktrees.
 | Axum adapter | `crates/datadeft-magic-link-axum` | HTTP integration |
 | AWS adapter | `crates/datadeft-magic-link-aws` | DynamoDB and SES adapters |
 | Browser client | `@datadeft/protect-client` (`packages/dd-protect-client`) | Browser PoW client |
-| Elixir bindings | `packages/datadeft-auth-elixir` (including unpublished Rust executable) | Separate-process transport; auth integration in progress |
+| Elixir implementation | `hex/` | Native Elixir package, tests and examples; implementation in progress |
 | Example | `examples/axum-magic-link` | Integration proof |
 
 ## Work packet

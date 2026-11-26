@@ -83,7 +83,7 @@ on BEAM.
    derivation, attribute encoding and repository semantics needed for a small
    cross-language test against one DynamoDB Local table. Reuse existing Rust
    adapters; add only necessary test glue. Prove account identity and atomic
-   writes before expanding to the full repository contract in iteration 5.
+   writes before expanding to the full repository contract in iteration 6.
 3. **Prove crypto parity.** Implement canonical Base62, exact Branca
    XChaCha20-Poly1305 framing, HKDF/HMAC and BLAKE3 compatibility. Use OTP crypto
    and reviewed existing BEAM implementations where suitable; assess dependency
@@ -125,6 +125,13 @@ on BEAM.
   before cookie clearing; storage/limiter failures fail closed.
 - No Rust toolchain or executable is needed to build or run the Elixir package.
   Rust remains necessary for the repository's compatibility verification suite.
+
+## Implementation tracking
+
+The itemized test-first checklist lives in
+[`hex/datadeft_auth/IMPLEMENTATION.md`](../hex/datadeft_auth/IMPLEMENTATION.md).
+Shared vectors and parity checks live in
+[`spec/compatibility/`](../spec/compatibility/README.md).
 
 ## Decisions before implementation
 
