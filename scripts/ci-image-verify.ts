@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 // Run the native Elixir package gate on the supported BEAM/Linux matrix.
-// Only the orchestration binary is downloaded (pinned and checksum-verified).
-// No Rust toolchain, compiler, Port executable or NIF build is needed.
+// The orchestration binary is pinned/checksummed. Source-build Rust comes from
+// the versioned official Rust image; no downloaded bootstrap installer runs.
+import { TOML } from "bun";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,8 +28,11 @@ const sha = MISE_SHA256[process.arch];
 requireCondition(sha, `unsupported architecture: ${process.arch}`);
 const tools = await mkdtemp(join(tmpdir(), "ci-image-tools-"));
 const container = `ci-image-verify-${process.pid}`;
+const rustVersion = TOML.parse(await Bun.file("Cargo.toml").text()).workspace.package["rust-version"];
+const nativeImage = `${container}-native`;
 const exec = (args: string[]) => run([
-  "docker", "exec", "-e", "PATH=/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  "docker", "exec", "-e", "PATH=/tools:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  "-e", `RUSTFLAGS=${image.includes("alpine") ? "-C target-feature=-crt-static" : ""}`,
   "-e", "MISE_TRUSTED_CONFIG_PATHS=/work", "-e", "MISE_DISABLE_TOOLS=bun,node,rust",
   container, ...args,
 ]);
@@ -43,16 +47,24 @@ try {
   await Bun.write(binary, bytes);
   await chmod(binary, 0o755);
 
+  await run([
+    "docker", "build", "-t", nativeImage,
+    "--build-arg", `BEAM_IMAGE=${image}`,
+    "--build-arg", `RUST_IMAGE=rust:${rustVersion}-${image.includes("alpine") ? "alpine" : "bookworm"}`,
+    "-f", "hex/datadeft_auth/scripts/native-ci.Dockerfile", "hex/datadeft_auth/scripts",
+  ]);
+
   // CI checkout is mounted read-write for Mix build products. Never mount
   // developer credentials or forward tokens into the disposable container.
   await run([
     "docker", "run", "-d", "--init", "--name", container,
     "-v", `${process.cwd()}:/work`, "-v", `${tools}:/tools:ro`, "-w", "/work",
-    image, "sleep", "infinity",
+    nativeImage, "sleep", "infinity",
   ]);
   await exec(["mix", "local.hex", "--force"]);
   await exec(["mise", "run", "elixir-verify"]);
 } finally {
   await run(["docker", "rm", "-f", container]).catch(() => {});
+  await run(["docker", "image", "rm", nativeImage]).catch(() => {});
   await rm(tools, { recursive: true, force: true });
 }

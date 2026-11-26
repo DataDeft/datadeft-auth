@@ -1,63 +1,65 @@
-# Crypto dependency decision — approval requested
+# Crypto reuse: approved tiny Rust NIF
 
-Status: investigation only. No proposed dependency has been added to mix.exs.
-The approved 0.8 plan separately gates crypto dependency selection.
+Owner approval: implementation conversation, "approved, keep it extremely small
+and lean". Supersedes the no-Rust/native-dependency requirement and the earlier
+unapproved b3/JOSE proposal. Services, storage, HTTP and IO integrations stay in
+Elixir. Do not restore the Port or introduce a generic Rust service bridge.
 
-## Proposed choice
+## Six-question justification
 
-- `b3 == 0.2.1`: pure Elixir BLAKE3, Apache-2.0, no runtime dependencies.
-- `jose == 1.11.13`, `runtime: false`: use only its exported, deterministic
-  `jose_jwa_xchacha20:subkey_and_nonce/2` path, which calls the pure Erlang
-  HChaCha20 implementation. Use OTP `:crypto` for ChaCha20-Poly1305 itself.
-  MIT, no runtime dependencies. Do not start JOSE, use its global algorithm
-  selection, or enable optional native backends.
-- Continue using OTP for HMAC/SHA-256, HKDF's HMAC operations, CSPRNG and
-  constant-time secret-derived comparisons.
+1. Problem: Elixir cookies and PoW must match the existing Rust 0.7.0 crypto
+   exactly, without maintaining another cipher/hash implementation.
+2. Existing support: the Rust token and PoW core crates already implement the
+   required formats, checks and cryptography.
+3. Gap: OTP does not directly supply XChaCha20-Poly1305 or BLAKE3. BEAM packages
+   would add another implementation to review and keep compatible. Doing nothing
+   leaves the authentication package incomplete.
+4. Smallest solution: Rustler glue calling existing core functions only. Add
+   operations as needed, not a generic crypto facade. First slice: Branca encode
+   and decode. No resources, native key store, callbacks, processes, solver,
+   async runtime, AWS SDK or new authentication implementation.
+5. Cost: Rustler dependency, source-build Rust toolchain and native artifact
+   release/platform maintenance. A native fault can crash BEAM; Rustler is not
+   process isolation. BEAM copies cannot promise zeroization. Existing native
+   core buffers retain their own best-effort zeroization behavior.
+6. Proof: existing Rust fixed-input vectors through the boundary, round trips,
+   malformed/tampered/noncanonical/wrong-key inputs, independent CSPRNG nonces,
+   explicit input limits, dependency/API guards, source builds and full verify.
+   Clean Hex-archive consumers, precompiled artifacts and the platform matrix
+   remain acceptance gates before release, not assumptions of this first slice.
 
-This preserves the exact Rust algorithms without project-authored cipher code,
-Rust, Rustler, libsodium or custom NIFs. These candidates are not yet certified
-for this project: approval authorizes a bounded parity implementation and tests,
-not production readiness or a security-review waiver.
+## Boundary and safety contract
 
-## Six questions
+- Native source: `native/datadeft_auth_nif/`; an unpublished workspace member.
+- Use the existing token core's production `branca::encode` / `branca::decode`.
+  Never enable `test-support` in the production dependency or expose fixed-nonce
+  minting. Native encode supplies OsRng; timestamp is an explicit u32 input.
+- Exactly two initial calls: encode returns a token binary; decode returns
+  `{timestamp, nonce, plaintext}`. Decode authenticates but intentionally does
+  not establish expiry, purpose, account or session validity. Higher cookie/core
+  APIs must impose those checks before any authentication use.
+- Key: exactly 32 bytes. Plaintext: at most 1024 bytes. Token: at most 1437 bytes,
+  matching the existing core caps. Check before copying or core work.
+- Both calls run on dirty CPU schedulers. No unbounded input, solving loop,
+  network, clock, environment reads, logging or application callbacks. The only
+  IO is the OS entropy draw for encode, outside the deterministic core.
+- Decode arguments explicitly and return fixed error atoms; do not stringify
+  Rust/provider errors, keys, tokens or plaintext. Allocation failure fails closed.
+- No project-authored unsafe code. Rustler owns the established FFI machinery;
+  core crates retain their existing unsafe prohibition. No panic/unwrap/expect
+  in adapter production code. This does not guarantee native crash containment.
+- Borrow input binaries; do not retain them or introduce shared native state.
+  Return explicit binary copies only where the caller needs the result. Do not
+  claim deterministic zeroization in BEAM or for all intermediate native copies.
+- Fail closed on NIF load failure. No silent BEAM crypto/algorithm fallback.
 
-1. Problem: mixed Rust/Elixir servers need byte-identical BLAKE3 PoW computations and
-   XChaCha20-Poly1305 cookies; OTP does not expose these directly.
-2. Existing support: Rust already supplies both. OTP supplies the underlying
-   ChaCha20-Poly1305 but not XChaCha's subkey derivation. The inspected Hex
-   releases provide the missing BEAM implementations.
-3. Gap: switching hashes or AEAD would break parity. A Rust wrapper would add
-   native build/deployment work before it has been shown necessary.
-4. Smallest solution: two pinned BEAM dependencies, behind internal wrappers,
-   with Rust vectors and bidirectional interoperability checks. No generic crypto
-   facade, extra processes, alternate wire formats or fallback algorithms.
-5. Cost: review and maintain two dependencies; JOSE is broader than the tiny API
-   we need and the low-level exported API must be pinned/tested. BEAM arithmetic,
-   memory handling and GC do not promise native constant-time execution or
-   deterministic zeroization. Secret-derived equality still uses OTP hash_equals.
-   Validate Elixir 1.16 / OTP 26 before accepting either dependency. Keep keys out
-   of errors, telemetry and Inspect, including dependency failures.
-6. Proof: official HChaCha/BLAKE3 vectors, Rust Branca and HKDF vectors, exact
-   fixed-input cookie bytes, Rust-to-Elixir and Elixir-to-Rust verification,
-   tamper/canonicality/expiry/rotation tests and clean no-Rust consumer builds.
-   Independent security review remains a merge gate.
+## Build and release
 
-## Alternatives investigated
-
-- `blake3 1.0.2`: Rust binding; not needed if pure B3 passes parity/review.
-- `branca 0.3.0`: depends on native libsalty2; adds a native build and older stack.
-- `branca_erl 0.3.0`: pins enacl 1.1.1, also native.
-- `kryptos 1.6.0`: offers XChaCha over OTP but requires OTP 27 and adds a Gleam
-  build/dependency surface, conflicting with the current OTP 26 floor.
-- `chacha20 1.0.4`: pure Elixir but no complete XChaCha AEAD; its undocumented
-  round helpers would leave more security implementation to this project.
-- Hand-written HChaCha/BLAKE3: unnecessary new cipher/hash maintenance.
-- Tiny wrapper over existing Rust libraries: reconsider only if the BEAM choices
-  fail compatibility, runtime-floor or security review; requires separate scope
-  approval for transport/scheduler/build/safety implications.
-
-Investigation used published Hex metadata and release source archives. Candidate
-source was inspected under ignored `_build/research/`; none is vendored or used
-by the production package.
-
-Approval: pending owner decision in the implementation conversation.
+The first slice builds from the repository with Rustler and the pinned workspace
+Rust toolchain, reusing local core path dependencies. No artifact is published by
+this work. Before release, produce checksummed precompiled artifacts for the
+supported targets and test clean source-archive/source-build fallback consumers.
+Do not publish an archive with broken repository-relative path dependencies.
+The initial local build is not proof of a working Hex distribution or of Linux
+minimum-runtime compatibility. Native artifact downloads and cross-compilation
+infrastructure are deliberately deferred until this bounded source slice passes.

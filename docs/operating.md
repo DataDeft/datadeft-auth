@@ -33,9 +33,10 @@ mise run verify
 
 `verify` runs fmt-check, clippy, test, test-default-features, docs, audit,
 token-core-guard, ts-verify, elixir-verify, spec, spec-mutants, release-check, and
-workflow-check, plus shared Rust/Elixir compatibility vectors. The Elixir-only
-gate requires Elixir >= 1.16 / OTP >= 26, not Rust. Cross-language checks use the
-workspace Rust toolchain; CI provisions the runtime pairs. See
+workflow-check, plus shared Rust/Elixir compatibility vectors. The Elixir
+gate requires Elixir >= 1.16 / OTP >= 26 and the workspace Rust toolchain to
+source-build the owner-approved tiny crypto NIF. CI provisions the runtime pairs
+and native source toolchain; clean precompiled consumers remain a release gate. See
 [`hex/datadeft_auth`](../hex/datadeft_auth/README.md).
 
 Other tasks:

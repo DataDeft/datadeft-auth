@@ -56,6 +56,10 @@
           "path": "hex/datadeft_auth/mix.exs"
         },
         {
+          "type": "generic",
+          "path": "hex/datadeft_auth/native/datadeft_auth_nif/Cargo.toml"
+        },
+        {
           "type": "json",
           "path": "bun.lock",
           "jsonpath": "$.workspaces[\"packages/dd-protect-client\"].version"

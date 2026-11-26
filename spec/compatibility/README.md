@@ -4,7 +4,9 @@ Reference: Rust 0.7.0. All fixture inputs are synthetic public test material,
 never credentials or production/customer data.
 
 Run `mise run compatibility-test` from the repository root. It requires Rust and
-Elixir, but the Elixir library itself does not require Rust.
+Elixir. Package source builds now require Rust for the owner-approved tiny
+crypto NIF. No Rust executable or compiler is needed in a bundled Mix release;
+precompiled Hex consumer builds remain a release gate.
 
 ## Vectors
 
