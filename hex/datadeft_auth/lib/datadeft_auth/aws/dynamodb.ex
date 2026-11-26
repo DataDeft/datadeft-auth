@@ -2,8 +2,8 @@ defmodule DatadeftAuth.AWS.DynamoDB do
   @moduledoc """
   Rust-compatible DynamoDB adapter, implemented incrementally.
 
-  Currently provides current-key account lookup, fixed-window limits and lifetime
-  PoW budgets. Storage-key fallback/rekeying and authentication commits are not
+  Currently provides account lookup with storage-key rotation/rekeying,
+  fixed-window limits and lifetime PoW budgets. Authentication commits are not
   implemented yet; do not use this partial adapter for a production cutover.
   The client is an explicit `{module, state}` implementing
   `DatadeftAuth.AWS.DynamoDB.Client`; no production HTTP client is bundled yet.
@@ -13,11 +13,12 @@ defmodule DatadeftAuth.AWS.DynamoDB do
   alias DatadeftAuth.AWS.StorageKey
 
   @enforce_keys [:table, :storage_key, :client, :cleanup_grace_secs]
-  defstruct [:table, :storage_key, :client, :cleanup_grace_secs]
+  defstruct [:table, :storage_key, :client, :cleanup_grace_secs, previous_storage_key: nil]
 
   @opaque t :: %__MODULE__{
             table: String.t(),
             storage_key: StorageKey.t(),
+            previous_storage_key: StorageKey.t() | nil,
             client: {module(), term()},
             cleanup_grace_secs: non_neg_integer()
           }
@@ -44,6 +45,24 @@ defmodule DatadeftAuth.AWS.DynamoDB do
   end
 
   def new(_, _, _, _), do: {:error, :invalid_config}
+
+  @doc "Configure a verify/read-only previous storage key for a rotation window."
+  @spec with_previous_storage_key(t(), StorageKey.t()) :: {:ok, t()} | {:error, :invalid_config}
+  def with_previous_storage_key(%__MODULE__{} = store, %StorageKey{} = key) do
+    if StorageKey.same?(key, key) do
+      previous = if StorageKey.same?(store.storage_key, key), do: nil, else: key
+      {:ok, %{store | previous_storage_key: previous}}
+    else
+      {:error, :invalid_config}
+    end
+  end
+
+  def with_previous_storage_key(_, _), do: {:error, :invalid_config}
+
+  @doc "Idempotently rekey email lookups before retiring the previous storage key."
+  @spec rekey_email_lookups(t()) :: {:ok, non_neg_integer()} | {:error, atom()}
+  def rekey_email_lookups(%__MODULE__{} = store),
+    do: DatadeftAuth.AWS.DynamoDB.Rotation.rekey(store)
 
   @doc "Read a normalized account through its keyed lookup and authoritative profile."
   @spec find_user_for_authentication(t(), DatadeftAuth.MagicLink.Core.Email.t()) ::

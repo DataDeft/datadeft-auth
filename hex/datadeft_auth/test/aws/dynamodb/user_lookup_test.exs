@@ -48,6 +48,83 @@ defmodule DatadeftAuth.AWS.DynamoDB.UserLookupTest do
 
   defp reply(item), do: send(self(), {:reply, {:ok, %{"Item" => item}}})
 
+  test "previous-key fallback migrates the exact current lookup row", context do
+    {:ok, previous} = StorageKey.new(:binary.copy(<<0x22>>, 32))
+    assert {:ok, store} = DynamoDB.with_previous_storage_key(context.store, previous)
+    send(self(), {:reply, {:ok, %{}}})
+    reply(lookup())
+    reply(profile())
+    send(self(), {:reply, {:ok, %{}}})
+    assert {:ok, user} = DynamoDB.find_user_for_authentication(store, context.email)
+    assert UserId.value(user.user_id) == user_id()
+    assert_receive {:request, "GetItem", _}
+    assert_receive {:request, "GetItem", %{"Key" => previous_key}}
+    assert Keys.user_email(previous, context.email) == {:ok, previous_key}
+    assert_receive {:request, "GetItem", _}
+
+    assert_receive {:request, "PutItem",
+                    %{"Item" => item, "ConditionExpression" => "attribute_not_exists(pk)"}}
+
+    assert {:ok, current_key} = Keys.user_email(context.key, context.email)
+    assert item == Map.merge(current_key, lookup())
+  end
+
+  test "equal previous keys are dropped and outages do not trigger fallback", context do
+    assert {:ok, same} = DynamoDB.with_previous_storage_key(context.store, context.key)
+    assert same.previous_storage_key == nil
+    {:ok, previous} = StorageKey.new(:binary.copy(<<0x22>>, 32))
+    assert {:ok, store} = DynamoDB.with_previous_storage_key(context.store, previous)
+    send(self(), {:reply, {:error, :unavailable}})
+    assert DynamoDB.find_user_for_authentication(store, context.email) == {:error, :unavailable}
+    assert_receive {:request, "GetItem", _}
+    refute_receive {:request, _, _}
+  end
+
+  test "rekey scans every page and counts only conditional writes that won", context do
+    send(
+      self(),
+      {:reply,
+       {:ok,
+        %{
+          "Items" => [profile()],
+          "LastEvaluatedKey" => %{"pk" => %{"S" => "synthetic"}, "sk" => %{"S" => "PROFILE"}}
+        }}}
+    )
+
+    send(self(), {:reply, {:ok, %{}}})
+    send(self(), {:reply, {:ok, %{"Items" => [profile()]}}})
+    send(self(), {:reply, {:error, :conditional_write_failed}})
+    assert DynamoDB.rekey_email_lookups(context.store) == {:ok, 1}
+    assert_receive {:request, "Scan", first}
+    refute Map.has_key?(first, "ExclusiveStartKey")
+    assert first["FilterExpression"] == "entity_type = :user_profile"
+    assert first["ProjectionExpression"] == "user_id, email_normalized"
+    assert_receive {:request, "PutItem", _}
+    assert_receive {:request, "Scan", second}
+
+    assert second["ExclusiveStartKey"] == %{
+             "pk" => %{"S" => "synthetic"},
+             "sk" => %{"S" => "PROFILE"}
+           }
+
+    assert_receive {:request, "PutItem", _}
+  end
+
+  test "rekey fails closed on malformed identities and provider failures", context do
+    send(
+      self(),
+      {:reply,
+       {:ok,
+        %{"Items" => [Map.put(profile(), "email_normalized", %{"S" => "User@example.test"})]}}}
+    )
+
+    assert DynamoDB.rekey_email_lookups(context.store) == {:error, :internal}
+    assert_receive {:request, "Scan", _}
+    refute_receive {:request, "PutItem", _}
+    send(self(), {:reply, {:error, :unavailable}})
+    assert DynamoDB.rekey_email_lookups(context.store) == {:error, :unavailable}
+  end
+
   test "reads Rust's email lookup and profile with strong consistency", context do
     reply(lookup())
     reply(profile())

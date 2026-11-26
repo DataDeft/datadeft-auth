@@ -104,6 +104,20 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
     assert user.privacy_version == "privacy-v1"
     assert user.consented_at_unix > 0
 
+    # Rotate in Elixir while Rust-created accounts still live under the old
+    # storage key. Login lookup migrates one row; the scan rekeys a dormant one.
+    assert {:ok, next_key} = StorageKey.new(:binary.copy(<<0x33>>, 32))
+    assert {:ok, current_only} = DynamoDB.new(table, next_key, {LocalDynamo, endpoint})
+    assert {:ok, rotating} = DynamoDB.with_previous_storage_key(current_only, key)
+    assert {:ok, ^user} = DynamoDB.find_user_for_authentication(rotating, email)
+    assert {:ok, ^user} = DynamoDB.find_user_for_authentication(current_only, email)
+    assert DynamoDB.rekey_email_lookups(rotating) == {:ok, 1}
+    assert DynamoDB.rekey_email_lookups(rotating) == {:ok, 0}
+    assert {:ok, dormant_email} = Email.normalize("dormant@example.test")
+    assert {:ok, dormant} = DynamoDB.find_user_for_authentication(current_only, dormant_email)
+    assert [_, dormant_id] = Regex.run(~r/compatibility_dormant_id=(usr-[0-9a-f]{32})/, output)
+    assert UserId.value(dormant.user_id) == dormant_id
+
     assert DynamoDB.check_lifetime_limit(store, "pow:compatibility:sequential", 3, 999, 100) ==
              {:ok, :allowed}
 

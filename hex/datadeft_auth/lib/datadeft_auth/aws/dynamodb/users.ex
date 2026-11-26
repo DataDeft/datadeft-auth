@@ -3,22 +3,33 @@ defmodule DatadeftAuth.AWS.DynamoDB.Users do
 
   alias DatadeftAuth.AWS.DynamoDB.Items
   alias DatadeftAuth.AWS.DynamoDB.Keys
+  alias DatadeftAuth.AWS.DynamoDB.Rotation
   alias DatadeftAuth.MagicLink.Core.Email
   alias DatadeftAuth.MagicLink.Service.User
   alias DatadeftAuth.MagicLink.Service.UserId
 
   def find(store, email) do
-    with {:ok, key} <- Keys.user_email(store.storage_key, email),
-         {:ok, lookup} <- get(store, key) do
+    with {:ok, lookup, migrate?} <-
+           Rotation.get_with_fallback(store, &Keys.user_email(&1, email)) do
       case lookup do
         nil -> {:ok, nil}
-        item -> read_profile(store, email, item)
+        item -> read_and_migrate(store, email, item, migrate?)
       end
     else
       {:error, :unavailable} -> {:error, :unavailable}
       _ -> {:error, :internal}
     end
   end
+
+  defp read_and_migrate(store, email, lookup, migrate?) do
+    with {:ok, user} <- read_profile(store, email, lookup),
+         {:ok, _} <- maybe_migrate(store, email, user.user_id, migrate?) do
+      {:ok, user}
+    end
+  end
+
+  defp maybe_migrate(store, email, id, true), do: Rotation.put_lookup(store, email, id)
+  defp maybe_migrate(_, _, _, false), do: {:ok, false}
 
   defp read_profile(store, email, lookup) do
     with {:ok, "user_email_lookup"} <- Items.required_string(lookup, "entity_type"),
@@ -63,18 +74,5 @@ defmodule DatadeftAuth.AWS.DynamoDB.Users do
     end
   end
 
-  defp get(store, key) do
-    {module, state} = store.client
-
-    case module.request(state, "GetItem", %{
-           "TableName" => store.table,
-           "Key" => key,
-           "ConsistentRead" => true
-         }) do
-      {:ok, %{"Item" => item}} when is_map(item) -> {:ok, item}
-      {:ok, output} when is_map(output) and not is_map_key(output, "Item") -> {:ok, nil}
-      {:error, :unavailable} -> {:error, :unavailable}
-      _ -> {:error, :internal}
-    end
-  end
+  defp get(store, key), do: Rotation.get(store, key)
 end
