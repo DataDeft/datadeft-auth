@@ -1,5 +1,15 @@
 defmodule DatadeftAuth.MagicLink.Service.Challenge do
   @moduledoc "Keyed magic-link repository record/candidate. Contains no raw bearer token."
+  @type t :: %__MODULE__{
+          selector_lookup_hmac: DatadeftAuth.MagicLink.Core.Lookup.t(),
+          verifier_hash: DatadeftAuth.MagicLink.Core.Lookup.t(),
+          email: DatadeftAuth.MagicLink.Core.Email.t(),
+          expires_at_unix: non_neg_integer(),
+          terms_version: String.t(),
+          privacy_version: String.t(),
+          consented_at_unix: non_neg_integer(),
+          consumed_at_unix: non_neg_integer() | nil
+        }
   @enforce_keys [
     :selector_lookup_hmac,
     :verifier_hash,

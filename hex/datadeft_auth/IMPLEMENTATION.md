@@ -31,8 +31,10 @@ not a completed authentication system.
 - [x] Shared-table Rust/Elixir quota exhaustion and barrier-started race test.
 - [x] Previous-key fallback, email lookup migration and rekeying (including Rust-created dormant accounts).
 - [x] Magic-link record encoding/strict decoding, read by both Rust and Elixir.
-- [ ] Atomic consume + account + session + index transaction.
-- [ ] Cross-language consume and account-creation contention tests.
+- [x] Atomic consume + account + session + index transaction.
+- [x] Cross-language same-challenge consume/create contention and Rust reads of Elixir-created account/session.
+- [x] Distinct-challenge account-creation contention, disable checks and immutable-field binding in DynamoDB Local.
+- [ ] Distinct-challenge account-creation contention across Rust and Elixir.
 - [ ] Session reads, owner status and revocation across implementations.
 - [ ] Audited administration, pagination and enable/disable race contracts.
 - [ ] Production AWS client/signing/credential adapter.
@@ -130,3 +132,23 @@ all required fields and optional consumption timestamps decode strictly.
 DynamoDB Local proves Rust reads Elixir-written challenges and vice versa.
 The mixed gate reports 50 tests, zero failures, two vector exclusions; full
 `mise run verify` passed. Crypto dependency selection remains pending approval.
+
+## Atomic authentication repository increment
+
+One DynamoDB transaction binds every immutable challenge field, checks unconsumed
+and unexpired state plus nonzero consent, claims both email keys during rotation,
+and creates the keyed session and permanent audit index. Existing profiles must
+still be enabled and linked to the exact account; stored consent is preserved.
+No raw bearer, session ID, attempt ID or verifier-derived material is persisted
+in transaction rows/conditions (the attempt ID is only the idempotency token).
+Cancellation attribution and identical-command retry semantics match Rust.
+
+DynamoDB Local proves exact retry succeeds, changed-payload ID reuse fails,
+replay cannot create a second session, mixed Rust/Elixir consume has one winner,
+and distinct-challenge creation cannot split an account. Tests also reject disabled
+profiles, session collisions, stale/expired/changed challenge expectations and
+zero consent without partial writes. Rust resolves an Elixir-created account
+through its old-key row and reads its session. The mixed gate reports 58 tests,
+zero failures, two vector exclusions. Existing Rust DynamoDB regressions and full
+workspace verification passed. Framework-neutral authentication orchestration,
+cookie minting and production IO remain unimplemented.

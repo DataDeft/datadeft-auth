@@ -37,10 +37,19 @@ defmodule DatadeftAuth.Test.LocalDynamo do
 
       {:ok, {{_, 400, _}, _, body}} ->
         case Jason.decode(body) do
-          {:ok, %{"__type" => type}} ->
-            if String.ends_with?(type, "#ConditionalCheckFailedException"),
-              do: {:error, :conditional_write_failed},
-              else: {:error, :internal}
+          {:ok, %{"__type" => type} = output} ->
+            cond do
+              String.ends_with?(type, "#ConditionalCheckFailedException") ->
+                {:error, :conditional_write_failed}
+
+              String.ends_with?(type, "#TransactionCanceledException") ->
+                {:error,
+                 {:transaction_canceled,
+                  Enum.map(Map.get(output, "CancellationReasons", []), &Map.get(&1, "Code"))}}
+
+              true ->
+                {:error, :internal}
+            end
 
           _ ->
             {:error, :internal}

@@ -20,7 +20,7 @@ use datadeft_magic_link_service::{
     MagicLinkAuthenticationUser, MagicLinkConfirmCookie, MagicLinkFlowService, MagicLinkRecord,
     MagicLinkRepository, MagicLinkRequestService, MagicLinkServiceConfig, NormalizedEmail,
     RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkCommand, SessionCookie,
-    SessionId, UserId, validate_session,
+    SessionId, SessionRepository, UserId, validate_session,
 };
 use rand_core::{OsRng, RngCore};
 
@@ -629,6 +629,12 @@ async fn shared_elixir_counters() {
         table.clone(),
         StorageHmacKey::new([0x11; 32]),
     );
+    let authentication = DynamoDbAuthStore::new(
+        client.clone(),
+        table.clone(),
+        StorageHmacKey::new([0x33; 32]),
+    )
+    .with_previous_storage_hmac_key(StorageHmacKey::new([0x11; 32]));
     let rotated = DynamoDbAuthStore::new(client, table, StorageHmacKey::new([0x22; 32]));
     let lookup = LookupHmacKey::new([0x42; 32]);
     let elixir_token =
@@ -643,6 +649,25 @@ async fn shared_elixir_counters() {
         .expect("record exists");
     assert_eq!(elixir_record.email.as_str(), "elixir@example.test");
     assert_eq!(elixir_record.expires_at_unix, 200);
+    assert_eq!(elixir_record.consumed_at_unix, Some(150));
+    let elixir_user = old
+        .find_user_for_authentication(&elixir_record.email)
+        .await
+        .expect("old-key account read")
+        .expect("account");
+    assert_eq!(
+        elixir_user.user_id.as_str(),
+        format!("usr-{}", "a".repeat(32))
+    );
+    let elixir_session = authentication
+        .find_session(
+            &SessionId::parse(&format!("sid-{}", "b".repeat(64))).expect("session id"),
+            150,
+        )
+        .await
+        .expect("Elixir session read")
+        .expect("session");
+    assert_eq!(elixir_session.user_id, elixir_user.user_id);
     assert!(elixir_record.verifier_hash.matches_hash_constant_time(
         &verifier_hash(&lookup, elixir_token.verifier()).expect("verifier")
     ));
@@ -693,6 +718,37 @@ async fn shared_elixir_counters() {
         );
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
+    let authentication_result = authentication
+        .commit_magic_link_authentication(&CommitMagicLinkAuthentication {
+            magic_link: MagicLinkAuthenticationExpectation {
+                selector_lookup_hmac: selector_lookup_hmac(&lookup, rust_token.selector())
+                    .expect("selector"),
+                email: NormalizedEmail::normalize("rust@example.test").expect("email"),
+                expires_at_unix: 200,
+                terms_version: "terms-v1".into(),
+                privacy_version: "privacy-v1".into(),
+                consented_at_unix: 100,
+            },
+            now_unix: 150,
+            attempt_id: AuthenticationAttemptId::parse(&format!("aid-{}", random_hex(16)))
+                .expect("attempt"),
+            user: MagicLinkAuthenticationUser::Create {
+                user_id: UserId::parse(&format!("usr-{}", "e".repeat(32))).expect("user"),
+            },
+            session_id: SessionId::parse(&format!("sid-{}", "f".repeat(64))).expect("session"),
+            session_expires_at_unix: 300,
+        })
+        .await;
+    let committed = match authentication_result {
+        Ok(()) => 1,
+        Err(
+            CommitMagicLinkAuthenticationError::Rejected
+            | CommitMagicLinkAuthenticationError::UserConflict
+            | CommitMagicLinkAuthenticationError::DependencyUnavailable,
+        ) => 0,
+        Err(error) => panic!("unexpected commit result: {error:?}"),
+    };
+    println!("compatibility_rust_committed={committed}");
     let race = RateLimitKey::parse("pow:compatibility:race").expect("key");
     let mut allowed = 0;
     for _ in 0..12 {
