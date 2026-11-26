@@ -30,7 +30,7 @@ not a completed authentication system.
 - [x] Conditional counters, first-use expiry, TTL saturation and fail-closed errors.
 - [x] Shared-table Rust/Elixir quota exhaustion and barrier-started race test.
 - [x] Previous-key fallback, email lookup migration and rekeying (including Rust-created dormant accounts).
-- [ ] Magic-link record encoding/strict decoding.
+- [x] Magic-link record encoding/strict decoding, read by both Rust and Elixir.
 - [ ] Atomic consume + account + session + index transaction.
 - [ ] Cross-language consume and account-creation contention tests.
 - [ ] Session reads, owner status and revocation across implementations.
@@ -43,11 +43,11 @@ Elixir HTTP client is loopback-only test support, not a production AWS adapter.
 
 ## 3. Crypto and pure cores
 
-- [ ] Dependency investigation and owner approval before selecting crypto packages.
+- [ ] Owner approval of investigated crypto candidates ([proposal](CRYPTO-DEPENDENCIES.md)); no dependency added.
 - [x] Rust-compatible Base62 integer codec, golden vectors and round trips.
 - [ ] Exact Branca/XChaCha20-Poly1305, including token-level canonicality gates.
 - [ ] HKDF and purpose/key-ID-bound cookie keyrings.
-- [ ] Magic-link grammar, independently drawn selector/verifier, lookup HMACs.
+- [x] Magic-link grammar, independently drawn selector/verifier, lookup HMACs.
 - [ ] Confirm/session/proof cookie bodies, expiry, skew and key-window parity.
 - [ ] BLAKE3 PoW identity and exact challenge/tag/work formats.
 - [ ] Bidirectional cookie/token/proof verification, tamper and rotation vectors.
@@ -119,3 +119,14 @@ idempotent. Unit tests cover outages/corruption and equal-key deduplication;
 DynamoDB Local proves login-time migration and dormant-account rekeying over
 accounts created by the real Rust workflow. Full workspace verification and the
 mixed-language Docker gate passed.
+
+## Magic-link primitive/storage increment
+
+Strict `mlv1` grammar, independently requested entropy, role-bound lookup HMACs,
+canonical stored hashes and redacted token/key/record inspection are implemented.
+Challenge writes use conditional creation, store keyed material only and retain
+Rust's TTL policy. Candidate reads are strongly consistent and side-effect-free;
+all required fields and optional consumption timestamps decode strictly.
+DynamoDB Local proves Rust reads Elixir-written challenges and vice versa.
+The mixed gate reports 50 tests, zero failures, two vector exclusions; full
+`mise run verify` passed. Crypto dependency selection remains pending approval.

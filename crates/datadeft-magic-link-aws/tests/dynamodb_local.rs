@@ -630,6 +630,39 @@ async fn shared_elixir_counters() {
         StorageHmacKey::new([0x11; 32]),
     );
     let rotated = DynamoDbAuthStore::new(client, table, StorageHmacKey::new([0x22; 32]));
+    let lookup = LookupHmacKey::new([0x42; 32]);
+    let elixir_token =
+        MagicLinkToken::parse(&format!("mlv1.{}.{}", "ab".repeat(16), "cd".repeat(32)))
+            .expect("fixture token");
+    let elixir_record = old
+        .find_magic_link_for_authentication(
+            &selector_lookup_hmac(&lookup, elixir_token.selector()).expect("selector"),
+        )
+        .await
+        .expect("read Elixir record")
+        .expect("record exists");
+    assert_eq!(elixir_record.email.as_str(), "elixir@example.test");
+    assert_eq!(elixir_record.expires_at_unix, 200);
+    assert!(elixir_record.verifier_hash.matches_hash_constant_time(
+        &verifier_hash(&lookup, elixir_token.verifier()).expect("verifier")
+    ));
+    let rust_token =
+        MagicLinkToken::parse(&format!("mlv1.{}.{}", "01".repeat(16), "02".repeat(32)))
+            .expect("fixture token");
+    old.put_magic_link_if_absent(MagicLinkRecord {
+        selector_lookup_hmac: selector_lookup_hmac(&lookup, rust_token.selector())
+            .expect("selector"),
+        verifier_hash: verifier_hash(&lookup, rust_token.verifier()).expect("verifier"),
+        email: NormalizedEmail::normalize("rust@example.test").expect("email"),
+        expires_at_unix: 200,
+        consumed_at_unix: None,
+        terms_version: "terms-v1".into(),
+        privacy_version: "privacy-v1".into(),
+        consented_at_unix: 100,
+    })
+    .await
+    .expect("write Rust record");
+
     let sequential = RateLimitKey::parse("pow:compatibility:sequential").expect("key");
     assert_eq!(
         rotated

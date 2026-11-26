@@ -5,7 +5,8 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
   alias DatadeftAuth.AWS.DynamoDB.Keys
   alias DatadeftAuth.AWS.StorageKey
   alias DatadeftAuth.Test.LocalDynamo
-  alias DatadeftAuth.MagicLink.Core.Email
+  alias DatadeftAuth.MagicLink.Core.{Email, Lookup, LookupKey, Token}
+  alias DatadeftAuth.MagicLink.Service.Challenge
   alias DatadeftAuth.MagicLink.Service.UserId
 
   @moduletag :dynamodb
@@ -42,6 +43,13 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
     barrier = Path.join(System.tmp_dir!(), table)
     File.mkdir_p!(barrier)
     on_exit(fn -> File.rm_rf!(barrier) end)
+
+    assert {:ok, lookup_key} = LookupKey.new(:binary.copy(<<0x42>>, 32))
+    elixir_record = challenge("ab", "cd", "elixir@example.test", lookup_key)
+    assert DynamoDB.put_magic_link_if_absent(store, elixir_record) == :ok
+
+    assert DynamoDB.put_magic_link_if_absent(store, elixir_record) ==
+             {:error, :conditional_write_failed}
 
     # Rust uses its existing store, not a second implementation in test glue.
     # It rotates the storage key for lifetime counters and races for one budget.
@@ -93,6 +101,15 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
     assert {output, 0} = Task.await(rust, 150_000)
     assert [_, rust_allowed] = Regex.run(~r/compatibility_rust_allowed=(\d+)/, output)
     assert elixir_allowed + String.to_integer(rust_allowed) == 5
+    rust_record = challenge("01", "02", "rust@example.test", lookup_key)
+
+    assert {:ok, from_rust} =
+             DynamoDB.find_magic_link_for_authentication(store, rust_record.selector_lookup_hmac)
+
+    assert from_rust.email == rust_record.email
+    assert Lookup.matches?(from_rust.verifier_hash, rust_record.verifier_hash)
+    assert from_rust.expires_at_unix == rust_record.expires_at_unix
+    assert from_rust.consumed_at_unix == nil
 
     assert [_, rust_user_id] = Regex.run(~r/compatibility_user_id=(usr-[0-9a-f]{32})/, output)
     assert {:ok, email} = Email.normalize(" SHARED@EXAMPLE.TEST ")
@@ -139,6 +156,27 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
 
   test "local-only test client refuses non-loopback endpoints" do
     assert LocalDynamo.request("https://example.test", "UpdateItem", %{}) == {:error, :internal}
+  end
+
+  defp challenge(selector, verifier, address, key) do
+    {:ok, token} =
+      Token.parse(
+        "mlv1." <> String.duplicate(selector, 16) <> "." <> String.duplicate(verifier, 32)
+      )
+
+    {:ok, selector} = Lookup.selector(key, token)
+    {:ok, verifier} = Lookup.verifier(key, token)
+    {:ok, email} = Email.normalize(address)
+
+    %Challenge{
+      selector_lookup_hmac: selector,
+      verifier_hash: verifier,
+      email: email,
+      expires_at_unix: 200,
+      terms_version: "terms-v1",
+      privacy_version: "privacy-v1",
+      consented_at_unix: 100
+    }
   end
 
   defp wait_ready(path, attempts) do

@@ -64,6 +64,14 @@ defmodule DatadeftAuth.AWS.DynamoDB do
   def rekey_email_lookups(%__MODULE__{} = store),
     do: DatadeftAuth.AWS.DynamoDB.Rotation.rekey(store)
 
+  @doc "Conditionally persist a keyed challenge; never stores raw selector/verifier material."
+  def put_magic_link_if_absent(%__MODULE__{} = store, record),
+    do: DatadeftAuth.AWS.DynamoDB.MagicLinks.put(store, record)
+
+  @doc "Read a candidate without consuming it. Service policy owns expiry and verifier checks."
+  def find_magic_link_for_authentication(%__MODULE__{} = store, selector),
+    do: DatadeftAuth.AWS.DynamoDB.MagicLinks.find(store, selector)
+
   @doc "Read a normalized account through its keyed lookup and authoritative profile."
   @spec find_user_for_authentication(t(), DatadeftAuth.MagicLink.Core.Email.t()) ::
           {:ok, DatadeftAuth.MagicLink.Service.User.t() | nil}
