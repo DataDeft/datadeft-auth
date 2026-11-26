@@ -34,6 +34,14 @@ defmodule DatadeftAuth.AWS.DynamoDB.Items do
     end
   end
 
+  def required_u64(item, name) do
+    with {:ok, value} when not is_nil(value) <- optional_u64(item, name) do
+      {:ok, value}
+    else
+      _ -> {:error, :internal}
+    end
+  end
+
   def optional_u64(item, name) do
     case Map.fetch(item, name) do
       :error ->
