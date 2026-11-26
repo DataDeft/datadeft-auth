@@ -2,9 +2,10 @@ defmodule DatadeftAuth.AWS.DynamoDB do
   @moduledoc """
   Rust-compatible DynamoDB adapter, implemented incrementally.
 
-  Currently provides account lookup with storage-key rotation/rekeying,
-  fixed-window limits and lifetime PoW budgets. Authentication commits are not
-  implemented yet; do not use this partial adapter for a production cutover.
+  Provides account lookup with storage-key rotation/rekeying, challenge storage,
+  atomic authentication commits, fixed-window limits and lifetime PoW budgets.
+  Full authentication services and production IO are still incomplete; do not
+  use this partial package for a production cutover.
   The client is an explicit `{module, state}` implementing
   `DatadeftAuth.AWS.DynamoDB.Client`; no production HTTP client is bundled yet.
   """
@@ -65,12 +66,31 @@ defmodule DatadeftAuth.AWS.DynamoDB do
     do: DatadeftAuth.AWS.DynamoDB.Rotation.rekey(store)
 
   @doc "Conditionally persist a keyed challenge; never stores raw selector/verifier material."
+  @spec put_magic_link_if_absent(t(), DatadeftAuth.MagicLink.Service.Challenge.t()) ::
+          :ok | {:error, atom()}
   def put_magic_link_if_absent(%__MODULE__{} = store, record),
     do: DatadeftAuth.AWS.DynamoDB.MagicLinks.put(store, record)
 
   @doc "Read a candidate without consuming it. Service policy owns expiry and verifier checks."
+  @spec find_magic_link_for_authentication(t(), DatadeftAuth.MagicLink.Core.Lookup.t()) ::
+          {:ok, DatadeftAuth.MagicLink.Service.Challenge.t() | nil} | {:error, atom()}
   def find_magic_link_for_authentication(%__MODULE__{} = store, selector),
     do: DatadeftAuth.AWS.DynamoDB.MagicLinks.find(store, selector)
+
+  @doc """
+  Atomically consume the exact challenge and create its account/session/index.
+  This is a trusted-service repository boundary, not token verification. An
+  unavailable result may have committed: retry only an identical command with
+  its original attempt ID. Confirmed conflicts leave every item unchanged.
+  """
+  @spec commit_magic_link_authentication(
+          t(),
+          DatadeftAuth.MagicLink.Service.CommitAuthentication.t()
+        ) ::
+          :ok
+          | {:error, :rejected | :user_conflict | :session_conflict | :unavailable | :internal}
+  def commit_magic_link_authentication(%__MODULE__{} = store, command),
+    do: DatadeftAuth.AWS.DynamoDB.Authentication.commit(store, command)
 
   @doc "Read a normalized account through its keyed lookup and authoritative profile."
   @spec find_user_for_authentication(t(), DatadeftAuth.MagicLink.Core.Email.t()) ::
