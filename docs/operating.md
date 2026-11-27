@@ -52,8 +52,11 @@ Other tasks:
 ## Agent ownership
 
 [AGENTS.md](../AGENTS.md) defines the multi-agent model. Only one writer
-changes a crate at a time. All work goes to `main`. Do not use feature
-branches or worktrees.
+changes a crate at a time. The default is work on `main`, without feature
+branches or worktrees. Owner-approved exception: ongoing Elixir 0.8 work uses
+`feat/elixir-0.8` and a draft PR, requested in the implementation conversation.
+Its already-landed foundation remains on `main`; no revert/history rewrite is
+part of that request. No worktree is needed.
 
 | Lane | Owns | Output |
 | --- | --- | --- |
