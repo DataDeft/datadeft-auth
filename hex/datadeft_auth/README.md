@@ -5,6 +5,11 @@ tiny Rustler crypto NIF over the existing Rust core. This package is incomplete
 and is not ready for authentication or production use. The repository version
 stays aligned at 0.7.0 until the 0.8 release is prepared.
 
+## Usage
+
+See [USAGE.md](USAGE.md) for local installation, working API examples and the
+boundary between available primitives and the unfinished login integration.
+
 ## Development
 
 Requires Elixir >= 1.16, OTP >= 26, and the repository's pinned Rust toolchain:

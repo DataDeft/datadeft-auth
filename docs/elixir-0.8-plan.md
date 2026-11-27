@@ -12,7 +12,10 @@ justification, safety and build/release contract are recorded in
 [`hex/datadeft_auth/CRYPTO-DEPENDENCIES.md`](../hex/datadeft_auth/CRYPTO-DEPENDENCIES.md).
 This amendment supersedes the original no-NIF/no-Rust acceptance wording below;
 precompiled consumers plus a working source-build fallback replace that gate.
-Delivery: one PR, built in small tested commits. Do not publish from this work.
+Delivery: ongoing work is now on `feat/elixir-0.8` in a draft PR, per the owner's
+request. Foundation commits through `211b3e3` are already on `main` and remain
+there; the PR tracks the remaining 0.8 scope rather than reintroducing landed
+changes. Build small tested commits. Do not publish from this work.
 
 ## Goal
 

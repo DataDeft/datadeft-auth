@@ -1,7 +1,9 @@
 # Elixir 0.8 implementation checklist
 
 Owner-approved scope: [the plan](../../docs/elixir-0.8-plan.md).
-One implementation PR; no publication. Current package version remains 0.7.0
+Ongoing work: draft PR from `feat/elixir-0.8`; no publication. Earlier foundation
+commits through `211b3e3` are already on `main`, not part of the new PR's diff.
+Current package version remains 0.7.0
 to match repository release checks until the 0.8 release is prepared.
 
 Work one observable feature at a time: failing test, minimal implementation,
