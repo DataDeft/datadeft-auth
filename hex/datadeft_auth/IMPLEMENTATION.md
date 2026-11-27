@@ -1,8 +1,10 @@
 # Elixir 0.8 implementation checklist
 
 Owner-approved scope: [the plan](../../docs/elixir-0.8-plan.md).
-Ongoing work: draft PR from `feat/elixir-0.8`; no publication. Earlier foundation
-commits through `211b3e3` are already on `main`, not part of the new PR's diff.
+All 0.8 work: [draft PR #45](https://github.com/DataDeft/datadeft-auth/pull/45)
+from `feat/elixir-0.8`; no publication. Includes the foundation commits through
+`211b3e3`, moved off `main` with owner approval. See
+[release readiness](RELEASE-READINESS.md) for current evidence and blockers.
 Current package version remains 0.7.0
 to match repository release checks until the 0.8 release is prepared.
 
@@ -78,7 +80,8 @@ crypto wrapper over existing Rust libraries; no native service or generic bridge
 - [ ] Independent Plug PoW middleware using the shared lifetime budget.
 - [ ] Bandit example consuming the one shared browser client.
 - [ ] End-to-end HTTP and browser interoperability tests.
-- [ ] Supported runtime/platform matrix and clean consumer archive/release tests.
+- [x] Current source-build Linux/BEAM CI matrix (four jobs at `4dea18f`).
+- [ ] Supported precompiled artifact matrix and clean consumer archive/release tests.
 - [ ] Independent security/API review and full verification before merge.
 
 ## Validation commands
@@ -173,6 +176,7 @@ round-trip/tamper/canonicality/argument tests, mixed-language DynamoDB gate
 release exercising its bundled NIF. Rustler/Jason remain compile-time dependencies.
 CI now provisions the native source toolchain for the Linux BEAM matrix.
 
-Not yet validated: the updated Linux container matrix, clean source archive
-fallback, precompiled artifacts and independent native-boundary security review.
-Those remain release gates; no artifact has been published.
+Subsequent CI at `4dea18f` passed all four Linux source-build matrix jobs;
+see [release readiness](RELEASE-READINESS.md) for the exact run and runtime pairs.
+Clean source archive fallback, precompiled artifacts and independent
+native-boundary security review remain release gates; no artifact was published.

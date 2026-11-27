@@ -55,8 +55,10 @@ Other tasks:
 changes a crate at a time. The default is work on `main`, without feature
 branches or worktrees. Owner-approved exception: ongoing Elixir 0.8 work uses
 `feat/elixir-0.8` and a draft PR, requested in the implementation conversation.
-Its already-landed foundation remains on `main`; no revert/history rewrite is
-part of that request. No worktree is needed.
+The owner subsequently approved moving all 0.8 commits into that PR and resetting
+`main` with an explicit force-with-lease, only after preserving the full branch
+remotely. Keep the unrelated URL security fix on the 0.7 baseline. No worktree
+is needed; preserve unrelated staged/working-tree changes.
 
 | Lane | Owns | Output |
 | --- | --- | --- |

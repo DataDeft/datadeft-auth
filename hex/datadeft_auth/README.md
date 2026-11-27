@@ -9,6 +9,8 @@ stays aligned at 0.7.0 until the 0.8 release is prepared.
 
 See [USAGE.md](USAGE.md) for local installation, working API examples and the
 boundary between available primitives and the unfinished login integration.
+See [RELEASE-READINESS.md](RELEASE-READINESS.md) for CI evidence and release blockers;
+a green draft implementation PR is not a ready 0.8.0 release.
 
 ## Development
 

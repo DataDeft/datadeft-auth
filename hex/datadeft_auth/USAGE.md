@@ -37,7 +37,9 @@ Then use your application's normal `mix deps.get` and `mix compile` commands.
 The native library compiles at build time. A bundled Mix release needs the native
 library, but not a Rust compiler or separate Rust process at runtime. Build for
 the deployment OS/architecture/libc; do not copy a macOS artifact into Linux.
-The Linux minimum-runtime/platform matrix remains a validation gate.
+The current four-job Linux source-build matrix has passed CI; see
+[release readiness](RELEASE-READINESS.md) for revision-specific evidence.
+Precompiled artifact and clean-consumer validation remain release gates.
 
 ## 2. Email identity: available now
 
@@ -151,8 +153,9 @@ controls. The completed library will support this scanner-safe sequence:
    cookie. Independent PoW middleware owns its own proof-cookie lifecycle.
 
 There is no drop-in Plug router or Bandit example to copy yet. The eventual
-example belongs in `hex/examples/bandit_magic_link/`. The 0.8 draft PR tracks this
-remaining work; earlier foundation commits are already on `main`.
+example belongs in `hex/examples/bandit_magic_link/`. Draft PR #45 contains the
+entire 0.8 implementation, including the foundation moved off `main`, and tracks
+the remaining work.
 
 ## Validation
 
