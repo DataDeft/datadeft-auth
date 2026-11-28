@@ -6,13 +6,15 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
   alias DatadeftAuth.AWS.StorageKey
   alias DatadeftAuth.Test.LocalDynamo
   alias DatadeftAuth.Token.Keyring
-  alias DatadeftAuth.MagicLink.Core.{Email, Lookup, LookupKey, Token}
+  alias DatadeftAuth.MagicLink.Core.{ConfirmCookie, Email, Lookup, LookupKey, Token}
 
   alias DatadeftAuth.MagicLink.Service.{
     AuthenticationAttemptId,
     AuthenticationExpectation,
     Challenge,
     CommitAuthentication,
+    CountryPolicy,
+    Flow,
     LocaleAllowlist,
     Request,
     Session,
@@ -244,6 +246,8 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
     assert {:ok, race} = Keys.lifetime_rate("pow:compatibility:race")
     assert {:ok, %{"Item" => item}} = get(endpoint, table, race)
     assert item["count"] == %{"N" => "5"}
+
+    assert_request_to_logout(rotating, lookup_key)
   end
 
   test "atomic account creation, disable checks and immutable challenge binding leave no partial writes" do
@@ -395,6 +399,68 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
 
   test "local-only test client refuses non-loopback endpoints" do
     assert LocalDynamo.request("https://example.test", "UpdateItem", %{}) == {:error, :internal}
+  end
+
+  defp assert_request_to_logout(store, lookup_key) do
+    now = 150
+    versions = {"terms-v1", "privacy-v1"}
+    db = {DynamoDB, store}
+    clock = fn -> {:ok, now} end
+    io = %{repository: db, limiter: db, clock: clock, outbox: {Mailbox, self()}}
+    policy = CountryPolicy.eu27()
+
+    assert {:ok, confirm_keys} =
+             Keyring.new(:confirm, [{:active, "conf", :binary.copy(<<82>>, 32), 300, 600}])
+
+    assert {:ok, session_keys} =
+             Keyring.new(:session, [
+               {:active, "session", :binary.copy(<<83>>, 32), 300, 2_592_300}
+             ])
+
+    assert {:ok, request} = Request.new(lookup_key, versions, io)
+
+    assert {:ok, flow} =
+             Flow.new(lookup_key, {confirm_keys, session_keys}, versions, io,
+               country_policy: policy
+             )
+
+    assert {:ok, sessions} = Session.new(session_keys, db, clock, {86_400, 2_592_000}, policy)
+
+    assert {:ok, :sent} = Request.request(request, "flow@example.test", true, true)
+    assert_receive {:mail, mail}
+    assert {:ok, landing} = Flow.land(flow, Token.value(mail.token))
+    cookie = ConfirmCookie.cookie_value(landing.flow)
+    assert {:ok, state} = Flow.read_state(flow, cookie)
+    assert state.account == "f•••••@example.test"
+    assert {:ok, nil} = DynamoDB.find_user_for_authentication(store, mail.email)
+    assert {:ok, selector} = Lookup.selector(lookup_key, mail.token)
+
+    assert {:ok, %{consumed_at_unix: nil}} =
+             DynamoDB.find_magic_link_for_authentication(store, selector)
+
+    outcomes =
+      1..2
+      |> Task.async_stream(fn _ -> Flow.confirm(flow, cookie, state.confirmation, "HU") end)
+      |> Enum.map(fn {:ok, result} -> result end)
+
+    assert [{:ok, authenticated}] = Enum.filter(outcomes, &match?({:ok, _}, &1))
+    assert {:error, :magic_link_unavailable} in outcomes
+    assert {:error, :magic_link_unavailable} = Flow.read_state(flow, cookie)
+
+    assert {:ok, %{consumed_at_unix: ^now}} =
+             DynamoDB.find_magic_link_for_authentication(store, selector)
+
+    assert {:ok, validated} = Session.validate(sessions, authenticated.session_cookie, "AT")
+    assert Session.record(validated).email == mail.email
+
+    assert {:error, :invalid_session} =
+             Session.validate(sessions, authenticated.session_cookie, "GB")
+
+    assert {:ok, target} = Session.validate_for_logout(sessions, authenticated.session_cookie)
+    assert :ok = Session.revoke(sessions, target.session_id)
+
+    assert {:error, :invalid_session} =
+             Session.validate(sessions, authenticated.session_cookie, "HU")
   end
 
   defp assert_request_quotas(store, lookup_key) do

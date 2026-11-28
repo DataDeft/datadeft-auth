@@ -47,7 +47,7 @@ can actually be used now, and [IMPLEMENTATION.md](IMPLEMENTATION.md) for details
 | Area | Still required |
 | --- | --- |
 | Cookie/crypto parity | Confirm/session interop and rotating keyrings pass; proof bodies, full PoW and their bidirectional vectors remain |
-| Authentication services | Request/locale, session validation/refresh/revoke and country policy are implemented; scanner-safe landing/flow state/confirmation and independent proof admission remain |
+| Authentication services | Request/locale, scanner-safe landing/flow state/confirmation, session validation/refresh/revoke and country policy are implemented; independent proof admission remains |
 | Repository/admin behavior | Shared session reads/revocation pass; audited administration, enable/disable race safety and distinct-challenge cross-language account-creation contention remain |
 | Production AWS | DynamoDB transport/signing/credentials/error mapping, SES and Secrets Manager integration |
 | HTTP/application delivery | Plug parsing/refusal/cookie/CSRF policy, independent PoW middleware, Bandit example and end-to-end/browser interoperability |
