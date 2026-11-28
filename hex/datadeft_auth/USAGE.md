@@ -159,7 +159,19 @@ Construct `Session.new/3` with a session keyring, a repository such as
   and cannot feed refresh. Require a CSRF-protected same-origin POST and revoke
   server state before clearing the cookie. HTTP glue is not bundled yet.
 
-## 6. Intended application integration — still to be delivered
+## 6. Requesting magic links with injected delivery
+
+Use `DatadeftAuth.MagicLink.Service.Request.new/4` with a purpose-separated
+lookup key, your terms/privacy version pair, and injected repository, limiter,
+outbox and clock. The DynamoDB adapter implements both repository and limiter.
+An optional `LocaleAllowlist` resolves request hints to configured email locales.
+
+`Request.request/5` checks both consents, applies the four keyed limits,
+persists the challenge, then passes a redacted `Mail` to the outbox. Render its
+bearer token only for delivery. The host application must render the same
+public response for sent and throttled outcomes and own edge/IP/global limits.
+
+## 7. Intended application integration — still to be delivered
 
 Your Plug/Bandit application will own routes, rendering, authorization and edge
 controls. The completed library will support this scanner-safe sequence:

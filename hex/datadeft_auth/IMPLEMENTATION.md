@@ -65,13 +65,14 @@ crypto wrapper over existing Rust libraries; no native service or generic bridge
 
 ## 4. Framework-neutral services
 
-- [ ] Request (consent, locale, keyed request/outbox limits, generic response).
+- [x] Request service (consent, locale, keyed request/outbox limits, persist before send).
+  Plug must still map both outcomes to the same generic response.
 - [ ] Landing (selector limit, dummy work, account display, bound flow cookie).
 - [ ] Read flow state (same binding, limits and terminal-state handling).
 - [ ] Confirm (nonce/account/verifier binding, one-time atomic commit).
 - [x] Live session validation, logout-specific validation, refresh and revoke.
 - [x] Exact/grouped trusted-edge country pinning.
-- [ ] Locale allowlists.
+- [x] Locale allowlists.
 - [ ] Account/admin queries and audited mutations, including disable/enable safety.
 - [ ] Independent proof admission and per-solve policy.
 
