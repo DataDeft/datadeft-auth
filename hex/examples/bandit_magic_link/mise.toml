@@ -4,12 +4,13 @@ run = "mix deps.get"
 [tasks.fmt]
 run = "mix format"
 
+[tasks.fmt-check]
+run = "mix format --check-formatted"
+
 [tasks.verify]
 description = "Check formatting and compile the standalone Bandit consumer"
-run = """
-mix format --check-formatted
-mix compile --warnings-as-errors
-"""
+depends = ["fmt-check"]
+run = "mix compile --warnings-as-errors"
 
 [tasks.serve]
 description = "Start the loopback-only example on PORT (default 4000)"
