@@ -53,7 +53,11 @@
         "packages/dd-protect-client/package.json",
         {
           "type": "generic",
-          "path": "packages/datadeft-auth-elixir/mix.exs"
+          "path": "hex/datadeft_auth/mix.exs"
+        },
+        {
+          "type": "generic",
+          "path": "hex/datadeft_auth/native/datadeft_auth_nif/Cargo.toml"
         },
         {
           "type": "json",

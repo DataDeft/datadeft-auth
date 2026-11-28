@@ -20,7 +20,7 @@ use datadeft_magic_link_service::{
     MagicLinkAuthenticationUser, MagicLinkConfirmCookie, MagicLinkFlowService, MagicLinkRecord,
     MagicLinkRepository, MagicLinkRequestService, MagicLinkServiceConfig, NormalizedEmail,
     RateLimitDecision, RateLimitKey, RateLimiter, RequestMagicLinkCommand, SessionCookie,
-    SessionId, UserId, validate_session,
+    SessionId, SessionRepository, UserId, validate_session,
 };
 use rand_core::{OsRng, RngCore};
 
@@ -614,6 +614,181 @@ async fn a_zero_limit_denies_against_dynamodb() {
             .await
             .expect("windowed"),
         RateLimitDecision::Denied
+    );
+}
+
+/// Minimal cross-language glue: Elixir owns the disposable table and asserts
+/// the combined results. All Rust writes go through the existing store.
+#[tokio::test]
+#[ignore = "mixed-language table: mise run dynamodb-compatibility-test"]
+async fn shared_elixir_counters() {
+    let client = client().await;
+    let table = std::env::var("DD_AUTH_COMPATIBILITY_TABLE").expect("shared table");
+    let old = DynamoDbAuthStore::new(
+        client.clone(),
+        table.clone(),
+        StorageHmacKey::new([0x11; 32]),
+    );
+    let authentication = DynamoDbAuthStore::new(
+        client.clone(),
+        table.clone(),
+        StorageHmacKey::new([0x33; 32]),
+    )
+    .with_previous_storage_hmac_key(StorageHmacKey::new([0x11; 32]));
+    let rotated = DynamoDbAuthStore::new(client, table, StorageHmacKey::new([0x22; 32]));
+    let lookup = LookupHmacKey::new([0x42; 32]);
+    let elixir_token =
+        MagicLinkToken::parse(&format!("mlv1.{}.{}", "ab".repeat(16), "cd".repeat(32)))
+            .expect("fixture token");
+    let elixir_record = old
+        .find_magic_link_for_authentication(
+            &selector_lookup_hmac(&lookup, elixir_token.selector()).expect("selector"),
+        )
+        .await
+        .expect("read Elixir record")
+        .expect("record exists");
+    assert_eq!(elixir_record.email.as_str(), "elixir@example.test");
+    assert_eq!(elixir_record.expires_at_unix, 200);
+    assert_eq!(elixir_record.consumed_at_unix, Some(150));
+    let elixir_user = old
+        .find_user_for_authentication(&elixir_record.email)
+        .await
+        .expect("old-key account read")
+        .expect("account");
+    assert_eq!(
+        elixir_user.user_id.as_str(),
+        format!("usr-{}", "a".repeat(32))
+    );
+    let elixir_session = authentication
+        .find_session(
+            &SessionId::parse(&format!("sid-{}", "b".repeat(64))).expect("session id"),
+            150,
+        )
+        .await
+        .expect("Elixir session read")
+        .expect("session");
+    assert_eq!(elixir_session.user_id, elixir_user.user_id);
+    authentication
+        .revoke_session(&elixir_session.session_id, 160)
+        .await
+        .expect("Rust revokes Elixir session");
+    assert!(elixir_record.verifier_hash.matches_hash_constant_time(
+        &verifier_hash(&lookup, elixir_token.verifier()).expect("verifier")
+    ));
+    let rust_token =
+        MagicLinkToken::parse(&format!("mlv1.{}.{}", "01".repeat(16), "02".repeat(32)))
+            .expect("fixture token");
+    old.put_magic_link_if_absent(MagicLinkRecord {
+        selector_lookup_hmac: selector_lookup_hmac(&lookup, rust_token.selector())
+            .expect("selector"),
+        verifier_hash: verifier_hash(&lookup, rust_token.verifier()).expect("verifier"),
+        email: NormalizedEmail::normalize("rust@example.test").expect("email"),
+        expires_at_unix: 200,
+        consumed_at_unix: None,
+        terms_version: "terms-v1".into(),
+        privacy_version: "privacy-v1".into(),
+        consented_at_unix: 100,
+    })
+    .await
+    .expect("write Rust record");
+
+    let sequential = RateLimitKey::parse("pow:compatibility:sequential").expect("key");
+    assert_eq!(
+        rotated
+            .check_lifetime_limit(&sequential, 3, 999, 100)
+            .await
+            .expect("spend"),
+        RateLimitDecision::Allowed
+    );
+    let windowed = RateLimitKey::parse("req:compatibility").expect("key");
+    assert_eq!(
+        old.check_rate_limit(&windowed, 2, 60, 119)
+            .await
+            .expect("spend"),
+        RateLimitDecision::Allowed
+    );
+
+    // Release both implementations together, rather than spending the whole
+    // budget in one language while the other is still compiling/starting.
+    let barrier = std::path::PathBuf::from(
+        std::env::var("DD_AUTH_COMPATIBILITY_BARRIER").expect("barrier directory"),
+    );
+    let keys = keys();
+    let outcome = login(&old, &keys, &mut OsRng, "shared@example.test").await;
+    let session_id = outcome.authentication().session_id();
+    std::fs::write(barrier.join("rust-session"), session_id.as_str())
+        .expect("synthetic session fixture");
+    std::fs::write(barrier.join("ready"), "ready").expect("signal ready");
+    let start = std::time::Instant::now();
+    while !barrier.join("release").exists() {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(10),
+            "barrier timeout"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(
+        old.find_session(session_id, now())
+            .await
+            .expect("read Rust session")
+            .is_none(),
+        "Rust sees Elixir revocation"
+    );
+    let authentication_result = authentication
+        .commit_magic_link_authentication(&CommitMagicLinkAuthentication {
+            magic_link: MagicLinkAuthenticationExpectation {
+                selector_lookup_hmac: selector_lookup_hmac(&lookup, rust_token.selector())
+                    .expect("selector"),
+                email: NormalizedEmail::normalize("rust@example.test").expect("email"),
+                expires_at_unix: 200,
+                terms_version: "terms-v1".into(),
+                privacy_version: "privacy-v1".into(),
+                consented_at_unix: 100,
+            },
+            now_unix: 150,
+            attempt_id: AuthenticationAttemptId::parse(&format!("aid-{}", random_hex(16)))
+                .expect("attempt"),
+            user: MagicLinkAuthenticationUser::Create {
+                user_id: UserId::parse(&format!("usr-{}", "e".repeat(32))).expect("user"),
+            },
+            session_id: SessionId::parse(&format!("sid-{}", "f".repeat(64))).expect("session"),
+            session_expires_at_unix: 300,
+        })
+        .await;
+    let committed = match authentication_result {
+        Ok(()) => 1,
+        Err(
+            CommitMagicLinkAuthenticationError::Rejected
+            | CommitMagicLinkAuthenticationError::UserConflict
+            | CommitMagicLinkAuthenticationError::DependencyUnavailable,
+        ) => 0,
+        Err(error) => panic!("unexpected commit result: {error:?}"),
+    };
+    println!("compatibility_rust_committed={committed}");
+    let race = RateLimitKey::parse("pow:compatibility:race").expect("key");
+    let mut allowed = 0;
+    for _ in 0..12 {
+        if rotated
+            .check_lifetime_limit(&race, 5, 200, 100)
+            .await
+            .expect("spend")
+            == RateLimitDecision::Allowed
+        {
+            allowed += 1;
+        }
+    }
+    println!("compatibility_rust_allowed={allowed}");
+
+    // Populate an account through the real Rust login workflow; Elixir must
+    // resolve the same authoritative profile, not infer identity from email.
+    println!(
+        "compatibility_user_id={}",
+        outcome.authentication().user_id().as_str()
+    );
+    let dormant = login(&old, &keys, &mut OsRng, "dormant@example.test").await;
+    println!(
+        "compatibility_dormant_id={}",
+        dormant.authentication().user_id().as_str()
     );
 }
 

@@ -34,9 +34,10 @@ jobs:
       # workflow-check in parallel, and installs the tools it needs (bun,
       # cargo-deny, tla-checker, actionlint). See mise.toml.
       - run: mise run verify
-      # Exercise real DynamoDB transactions/rotation/budgets through the Port,
-      # not only the ignored-by-default test compilation. Uses local Docker.
+      - run: mise -C hex/datadeft_auth run native-release-smoke
+      # Real Rust transactions plus mixed-language shared-counter admission.
       - run: mise run dynamodb-local-test
+      - run: mise run dynamodb-compatibility-test
       - run: mise run package-crates
 
   elixir-platforms:
@@ -53,8 +54,8 @@ jobs:
           - { distro: alpine, runner: ubuntu-24.04-arm, image: 'elixir:1.16.3-otp-26-alpine' }
     name: elixir-platforms (${{ matrix.distro }}, ${{ matrix.runner }}, ${{ matrix.image }})
     runs-on: ${{ matrix.runner }}
-    # The host only runs the Bun script; Rust is installed inside the image
-    # from a pinned, checksum-verified rustup-init.
+    # The host orchestrates; the container source-builds the tiny crypto NIF
+    # with the pinned toolchain from an official Rust image.
     env:
       MISE_DISABLE_TOOLS: rust
     steps:

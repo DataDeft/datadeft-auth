@@ -33,9 +33,11 @@ mise run verify
 
 `verify` runs fmt-check, clippy, test, test-default-features, docs, audit,
 token-core-guard, ts-verify, elixir-verify, spec, spec-mutants, release-check, and
-workflow-check. The Elixir gate requires an installed Elixir >= 1.16 / OTP >= 26
-and Rust toolchain; CI provisions the tested runtime pairs. See
-[`packages/datadeft-auth-elixir`](../packages/datadeft-auth-elixir/README.md).
+workflow-check, plus shared Rust/Elixir compatibility vectors. The Elixir
+gate requires Elixir >= 1.16 / OTP >= 26 and the workspace Rust toolchain to
+source-build the owner-approved tiny crypto NIF. CI provisions the runtime pairs
+and native source toolchain; clean precompiled consumers remain a release gate. See
+[`hex/datadeft_auth`](../hex/datadeft_auth/README.md).
 
 Other tasks:
 
@@ -43,13 +45,20 @@ Other tasks:
 | --- | --- | --- |
 | `spec`, `spec-mutants` | Check the TLA+ models and prove each invariant can fail. | Yes |
 | `fuzz` | Fuzz every untrusted-input parser for 60 s each. It needs nightly Rust and `cargo install cargo-fuzz`. | No |
-| `dynamodb-local-test` | Run integration tests against DynamoDB Local. It needs Docker. | No |
+| `dynamodb-local-test` | Rust integration tests against DynamoDB Local. It needs Docker. | No |
+| `dynamodb-compatibility-test` | Mixed Rust/Elixir account lookup and shared counter/race tests. It needs Docker. | No |
+| `compatibility-test` | Shared storage-HMAC and email vectors asserted by Rust and Elixir. | Yes |
 
 ## Agent ownership
 
 [AGENTS.md](../AGENTS.md) defines the multi-agent model. Only one writer
-changes a crate at a time. All work goes to `main`. Do not use feature
-branches or worktrees.
+changes a crate at a time. The default is work on `main`, without feature
+branches or worktrees. Owner-approved exception: ongoing Elixir 0.8 work uses
+`feat/elixir-0.8` and a draft PR, requested in the implementation conversation.
+The owner subsequently approved moving all 0.8 commits into that PR and resetting
+`main` with an explicit force-with-lease, only after preserving the full branch
+remotely. Keep the unrelated URL security fix on the 0.7 baseline. No worktree
+is needed; preserve unrelated staged/working-tree changes.
 
 | Lane | Owns | Output |
 | --- | --- | --- |
@@ -62,7 +71,7 @@ branches or worktrees.
 | Axum adapter | `crates/datadeft-magic-link-axum` | HTTP integration |
 | AWS adapter | `crates/datadeft-magic-link-aws` | DynamoDB and SES adapters |
 | Browser client | `@datadeft/protect-client` (`packages/dd-protect-client`) | Browser PoW client |
-| Elixir bindings | `packages/datadeft-auth-elixir` (including unpublished Rust executable) | Separate-process transport; auth integration in progress |
+| Elixir implementation | `hex/` | Native Elixir package, tests and examples; implementation in progress |
 | Example | `examples/axum-magic-link` | Integration proof |
 
 ## Work packet

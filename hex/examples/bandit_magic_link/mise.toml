@@ -1,0 +1,31 @@
+[tasks.deps]
+run = "mix deps.get"
+
+[tasks.fmt]
+run = "mix format"
+
+[tasks.fmt-check]
+run = "mix format --check-formatted"
+
+[tasks.verify]
+description = "Check formatting and compile the standalone Bandit consumer"
+depends = ["fmt-check"]
+run = "mix compile --warnings-as-errors"
+
+[tasks.serve]
+description = "Start the loopback-only example on PORT (default 4000)"
+run = "mix run --no-halt"
+
+[tasks.browser-lock]
+run = "npm install --package-lock-only --ignore-scripts"
+
+[tasks.browser-setup]
+description = "Install the example-only test runner and Chromium"
+run = """
+npm ci --ignore-scripts
+npx --no-install playwright install chromium --only-shell
+"""
+
+[tasks.browser-test]
+description = "Start Bandit and test confirmation and logout in Chromium"
+run = "node scripts/browser-test.mjs"

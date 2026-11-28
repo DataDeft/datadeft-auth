@@ -75,8 +75,7 @@ run = """
 docker run --rm -d --name datadeft-dynamodb-local -p 18000:8000 amazon/dynamodb-local -jar DynamoDBLocal.jar -inMemory -sharedDb >/dev/null
 trap 'docker stop datadeft-dynamodb-local >/dev/null' EXIT
 sleep 2
-DYNAMODB_LOCAL_ENDPOINT=http://localhost:18000 cargo test -p datadeft-magic-link-aws --features aws --test dynamodb_local -- --ignored --test-threads 1
-DYNAMODB_LOCAL_ENDPOINT=http://localhost:18000 cargo test -p datadeft-auth-port --test dynamodb_local -- --ignored --test-threads 1
+DYNAMODB_LOCAL_ENDPOINT=http://localhost:18000 cargo test -p datadeft-magic-link-aws --features aws --test dynamodb_local -- --ignored --skip shared_elixir_counters --test-threads 1
 """
 
 [tasks.fuzz]
@@ -106,10 +105,7 @@ run = "bun scripts/ci-image-verify.ts"
 
 [tasks.package-crates]
 description = "Package and build all seven crates, staging unpublished workspace dependencies"
-# datadeft-auth-port is publish = false (it ships inside the Hex package via
-# the vendored stage), but `cargo package --workspace` still tries to verify
-# its path-only manifest, so exclude it like the example binary.
-run = "cargo package --workspace --exclude axum-magic-link --exclude datadeft-auth-port --all-features --locked"
+run = "cargo package --workspace --exclude axum-magic-link --exclude datadeft_auth_nif --all-features --locked"
 
 [tasks.crates-dry-run]
 description = "Try every crate against crates.io in dependency order; never uploads"
@@ -131,29 +127,42 @@ run = "npm publish --access public --ignore-scripts"
 [tasks.test-default-features]
 description = "Build every crate's tests with default features, one crate at a time (workspace feature unification hides gaps)"
 run = """
-for crate in datadeft-auth-token-core datadeft-magic-link-core datadeft-magic-link-service datadeft-magic-link-axum datadeft-magic-link-aws datadeft-pow-core datadeft-pow-axum datadeft-auth-port; do
+for crate in datadeft-auth-token-core datadeft-magic-link-core datadeft-magic-link-service datadeft-magic-link-axum datadeft-magic-link-aws datadeft-pow-core datadeft-pow-axum; do
   cargo test -q -p "$crate" --no-run || exit 1
 done
 """
 
 [tasks.elixir-verify]
-description = "Verify the Elixir Port package and isolated Hex source/release builds (requires Elixir/OTP)"
+description = "Verify the Elixir package and its tiny Rust crypto NIF"
 run = """
-mise -C packages/datadeft-auth-elixir run deps
-mise -C packages/datadeft-auth-elixir run verify
+mise -C hex/datadeft_auth run deps
+mise -C hex/datadeft_auth run verify
 """
 
-[tasks.port-test]
-description = "Test the private Rust Port executable"
-run = "cargo test -p datadeft-auth-port"
+[tasks.bandit-verify]
+description = "Compile the standalone local Bandit consumer"
+depends = ["elixir-verify"]
+run = """
+mise -C hex/examples/bandit_magic_link run deps
+mise -C hex/examples/bandit_magic_link run verify
+"""
 
-[tasks.port-clippy]
-description = "Lint the private Rust Port executable"
-run = "cargo clippy -p datadeft-auth-port --all-targets -- -D warnings"
+[tasks.compatibility-test]
+description = "Assert shared storage/email vectors against Rust and Elixir"
+depends = ["elixir-verify"]
+run = """
+export DD_AUTH_COMPATIBILITY_DIR="$PWD/spec/compatibility/vectors"
+cargo test -p datadeft-magic-link-aws --lib shared_storage_and_email_vectors -- --ignored
+mise -C hex/datadeft_auth run compatibility-test
+"""
+
+[tasks.dynamodb-compatibility-test]
+description = "Mixed Rust/Elixir DynamoDB Local counter and race tests (Docker required)"
+run = "bash hex/datadeft_auth/scripts/dynamodb_compatibility.sh"
 
 [tasks.verify]
 description = "Full verification: Rust + browser + Elixir + formal models + release/workflow checks"
-depends = ["fmt-check", "clippy", "test", "test-default-features", "docs", "audit", "token-core-guard", "ts-verify", "elixir-verify", "spec", "spec-mutants", "release-check", "workflow-check"]
+depends = ["fmt-check", "clippy", "test", "test-default-features", "docs", "audit", "token-core-guard", "ts-verify", "elixir-verify", "bandit-verify", "compatibility-test", "spec", "spec-mutants", "release-check", "workflow-check"]
 
 [tasks.js-lock]
 description = "Update Bun dependencies and normalize the lockfile for release-please"
