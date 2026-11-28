@@ -62,20 +62,23 @@ async function foreignForm(context, foreign, target, fields = {}) {
     await attacker.goto(foreign + "/form");
     const [response] = await Promise.all([
       attacker.waitForResponse((r) => r.url() === target),
-      attacker.evaluate(({ target, fields }) => {
-        const form = document.createElement("form");
-        form.setAttribute("method", "post");
-        form.setAttribute("action", target);
-        for (const [name, value] of Object.entries(fields)) {
-          const input = document.createElement("input");
-          input.setAttribute("type", "hidden");
-          input.setAttribute("name", name);
-          input.value = value;
-          form.append(input);
-        }
-        document.body.append(form);
-        form.submit();
-      }, { target, fields }),
+      attacker.evaluate(
+        ({ target, fields }) => {
+          const form = document.createElement("form");
+          form.setAttribute("method", "post");
+          form.setAttribute("action", target);
+          for (const [name, value] of Object.entries(fields)) {
+            const input = document.createElement("input");
+            input.setAttribute("type", "hidden");
+            input.setAttribute("name", name);
+            input.value = value;
+            form.append(input);
+          }
+          document.body.append(form);
+          form.submit();
+        },
+        { target, fields },
+      ),
     ]);
     check(response.status() === 400, "a foreign-origin form was not refused");
     check((await response.headerValue("set-cookie")) === null, "a foreign form cleared state");
@@ -120,7 +123,10 @@ try {
   await scannerPage.goto(link);
   check(scannerPage.url() === base + confirmPage, "landing did not scrub the URL");
   const scannerCookies = await scanner.cookies();
-  check(scannerCookies.some((c) => c.name === "dd_auth_confirm"), "scanner received no confirm cookie");
+  check(
+    scannerCookies.some((c) => c.name === "dd_auth_confirm"),
+    "scanner received no confirm cookie",
+  );
   check(!scannerCookies.some((c) => c.name === "dd_session"), "scanner got a session from a GET");
   check((await scannerPage.goto(base + "/me")).status() === 401, "scanner accessed the protected page");
 
@@ -128,8 +134,8 @@ try {
   const relatedRequests = [];
   page.on("request", (r) => relatedRequests.push(r));
   const pageResponse = await page.goto(link);
-  check(await pageResponse.headerValue("cache-control") === "no-store", "confirm page was cacheable");
-  check(await pageResponse.headerValue("x-frame-options") === "DENY", "confirm page allowed framing");
+  check((await pageResponse.headerValue("cache-control")) === "no-store", "confirm page was cacheable");
+  check((await pageResponse.headerValue("x-frame-options")) === "DENY", "confirm page allowed framing");
   const button = page.getByRole("button", { name: "Continue sign in" });
   await button.waitFor();
   check((await page.locator("#account").textContent()) === "a•••••@example.test", "account was not displayed");
@@ -174,13 +180,13 @@ try {
   phase = "reject a real cross-origin logout and revoke on the intended POST";
   await foreignForm(human, foreign, base + "/auth/logout");
   check((await page.reload()).status() === 200, "foreign form ended the session");
-  await Promise.all([
-    page.waitForURL(base + "/"),
-    page.getByRole("button", { name: "Sign out" }).click(),
-  ]);
+  await Promise.all([page.waitForURL(base + "/"), page.getByRole("button", { name: "Sign out" }).click()]);
   check(!(await human.cookies()).some((c) => c.name === "dd_session"), "logout did not clear the cookie");
   const revoked = await fetch(base + "/me", { headers: { cookie: `dd_session=${session.value}` } });
-  check(revoked.status === 401 && revoked.headers.get("www-authenticate") === "DD-Session", "saved cookie still authenticated after logout");
+  check(
+    revoked.status === 401 && revoked.headers.get("www-authenticate") === "DD-Session",
+    "saved cookie still authenticated after logout",
+  );
 
   console.log("Bandit + Chromium: scanner, confirmation, protected page, replay and logout passed.");
 } catch (error) {

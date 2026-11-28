@@ -28,14 +28,26 @@ const sha = MISE_SHA256[process.arch];
 requireCondition(sha, `unsupported architecture: ${process.arch}`);
 const tools = await mkdtemp(join(tmpdir(), "ci-image-tools-"));
 const container = `ci-image-verify-${process.pid}`;
-const rustVersion = TOML.parse(await Bun.file("Cargo.toml").text()).workspace.package["rust-version"];
+const cargo = TOML.parse(await Bun.file("Cargo.toml").text()) as {
+  workspace: { package: { "rust-version": string } };
+};
+const rustVersion = cargo.workspace.package["rust-version"];
 const nativeImage = `${container}-native`;
-const exec = (args: string[]) => run([
-  "docker", "exec", "-e", "PATH=/tools:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-  "-e", `RUSTFLAGS=${image.includes("alpine") ? "-C target-feature=-crt-static" : ""}`,
-  "-e", "MISE_TRUSTED_CONFIG_PATHS=/work", "-e", "MISE_DISABLE_TOOLS=bun,node,rust",
-  container, ...args,
-]);
+const exec = (args: string[]) =>
+  run([
+    "docker",
+    "exec",
+    "-e",
+    "PATH=/tools:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "-e",
+    `RUSTFLAGS=${image.includes("alpine") ? "-C target-feature=-crt-static" : ""}`,
+    "-e",
+    "MISE_TRUSTED_CONFIG_PATHS=/work",
+    "-e",
+    "MISE_DISABLE_TOOLS=bun,node,rust",
+    container,
+    ...args,
+  ]);
 
 try {
   const url = `https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${process.arch}-musl`;
@@ -48,10 +60,17 @@ try {
   await chmod(binary, 0o755);
 
   await run([
-    "docker", "build", "-t", nativeImage,
-    "--build-arg", `BEAM_IMAGE=${image}`,
-    "--build-arg", `RUST_IMAGE=rust:${rustVersion}-${image.includes("alpine") ? "alpine" : "bookworm"}`,
-    "-f", "hex/datadeft_auth/scripts/native-ci.Dockerfile", "hex/datadeft_auth/scripts",
+    "docker",
+    "build",
+    "-t",
+    nativeImage,
+    "--build-arg",
+    `BEAM_IMAGE=${image}`,
+    "--build-arg",
+    `RUST_IMAGE=rust:${rustVersion}-${image.includes("alpine") ? "alpine" : "bookworm"}`,
+    "-f",
+    "hex/datadeft_auth/scripts/native-ci.Dockerfile",
+    "hex/datadeft_auth/scripts",
   ]);
 
   // CI checkout is mounted read-write for Mix build products. Never mount

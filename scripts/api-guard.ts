@@ -37,7 +37,12 @@ if (fnIndex === -1) {
 // Only workspace manifest locations: a repo-wide `**` scan walks `target/`,
 // which a concurrent `cargo doc` rewrites, and crashes on vanished dirs.
 const manifestPaths: string[] = [];
-for (const pattern of ["Cargo.toml", "crates/*/Cargo.toml", "examples/*/Cargo.toml", "hex/datadeft_auth/native/*/Cargo.toml"]) {
+for (const pattern of [
+  "Cargo.toml",
+  "crates/*/Cargo.toml",
+  "examples/*/Cargo.toml",
+  "hex/datadeft_auth/native/*/Cargo.toml",
+]) {
   for await (const path of new Glob(pattern).scan({ onlyFiles: true })) {
     manifestPaths.push(path);
   }
