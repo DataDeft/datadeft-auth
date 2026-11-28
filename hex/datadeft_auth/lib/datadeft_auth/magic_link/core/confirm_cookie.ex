@@ -31,14 +31,13 @@ defmodule DatadeftAuth.MagicLink.Core.ConfirmCookie do
           nonce: binary()
         }
   @type bindings :: {Lookup.t(), Lookup.t(), Lookup.t()}
+  @type entropy :: (pos_integer() -> {:ok, binary()} | {:error, term()})
 
   @doc """
   Mint bound flow state. Entropy must be an independent CSPRNG draw in production.
   The caller must cap expiry by the challenge's remaining lifetime.
   """
-  @spec mint(Keyring.t(), bindings(), non_neg_integer(), non_neg_integer(), (pos_integer() ->
-                                                                               {:ok, binary()}
-                                                                               | {:error, term()})) ::
+  @spec mint(Keyring.t(), bindings(), non_neg_integer(), non_neg_integer(), entropy()) ::
           {:ok, Minted.t()} | {:error, atom()}
   def mint(
         %Keyring{purpose: :confirm} = ring,

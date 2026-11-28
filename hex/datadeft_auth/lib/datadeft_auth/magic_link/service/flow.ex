@@ -429,7 +429,9 @@ defmodule DatadeftAuth.MagicLink.Service.Flow do
   defp flow_error({:error, :invalid_token}), do: {:error, :magic_link_unavailable}
 
   defp flow_error({:error, error} = result)
-       when error in [:magic_link_unavailable, :bad_request, :unavailable], do: result
+       when error in [:magic_link_unavailable, :bad_request, :unavailable] do
+    result
+  end
 
   defp flow_error({:error, reason}) when reason in [:key_expired, :entropy_unavailable],
     do: {:error, :unavailable}
