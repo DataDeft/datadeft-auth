@@ -46,9 +46,9 @@ can actually be used now, and [IMPLEMENTATION.md](IMPLEMENTATION.md) for details
 
 | Area | Still required |
 | --- | --- |
-| Cookie/crypto parity | Purpose/key-ID-bound HKDF keyrings, exact confirm/session/proof bodies, freshness/skew/rotation checks, complete PoW and bidirectional vectors |
-| Authentication services | Request, scanner-safe landing/flow state/confirmation, session validation, refresh/logout, locale/country policy and independent proof admission |
-| Repository/admin behavior | Session reads/revocation, audited administration, enable/disable race safety and remaining cross-language account-creation contention |
+| Cookie/crypto parity | Confirm/session interop and rotating keyrings pass; proof bodies, full PoW and their bidirectional vectors remain |
+| Authentication services | Session validation/refresh/revoke and country policy are implemented; request, scanner-safe landing/flow state/confirmation, locale and independent proof admission remain |
+| Repository/admin behavior | Shared session reads/revocation pass; audited administration, enable/disable race safety and distinct-challenge cross-language account-creation contention remain |
 | Production AWS | DynamoDB transport/signing/credentials/error mapping, SES and Secrets Manager integration |
 | HTTP/application delivery | Plug parsing/refusal/cookie/CSRF policy, independent PoW middleware, Bandit example and end-to-end/browser interoperability |
 | Native distribution | Checksummed precompiled artifacts, clean archive consumers and source-build fallback without broken repository-relative Cargo paths |

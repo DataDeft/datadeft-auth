@@ -7,8 +7,8 @@ alignment. Do not add an assumed `~> 0.8` Hex dependency yet.
 
 The small crypto and storage APIs described below exist today, including
 purpose-bound confirm and session cookie codecs. Request/landing/confirmation
-services, live session validation/logout, Plug integration, and production AWS
-transport are still being completed. Follow
+services, Plug integration, and production AWS transport are still being
+completed. The live session service is available with injected storage/clock. Follow
 [IMPLEMENTATION.md](IMPLEMENTATION.md) for the actual acceptance checklist.
 
 ## 1. Develop against the full repository checkout
@@ -100,7 +100,8 @@ example payload into an improvised session format: Rust compatibility requires
 the exact higher-level framing. `DatadeftAuth.Token.Keyring`,
 `DatadeftAuth.MagicLink.Core.ConfirmCookie`, and
 `DatadeftAuth.MagicLink.Service.SessionCookie` now implement that crypto framing
-and freshness. They do not replace the unfinished service and storage checks.
+and freshness. For session admission use `DatadeftAuth.MagicLink.Service.Session`
+with an injected live session repository, not `SessionCookie.open/4` alone.
 
 Never print/log keys, tokens or plaintext. NIF load failure has no alternate
 crypto fallback. A native fault can crash BEAM; Rustler is not process isolation.
@@ -120,6 +121,8 @@ The adapter is `DatadeftAuth.AWS.DynamoDB`. It currently provides:
   challenge creation and side-effect-free candidate reads.
 - `commit_magic_link_authentication/2`: atomic consume/account/session/index
   transaction, **for a trusted service that has already performed verification**.
+- `find_session/3`, `is_session_owner_active/3`, and `revoke_session/3`: strongly
+  read and revoke live sessions, including across the rotation window.
 - `check_rate_limit/5` and `check_lifetime_limit/5`: shared atomic counters.
 
 The client must implement `DatadeftAuth.AWS.DynamoDB.Client.request/3` with the
@@ -139,7 +142,24 @@ The real mixed-language test is
 It demonstrates shared account identity and transaction/counter behavior, not a
 complete production login integration.
 
-## 5. Intended application integration — still to be delivered
+## 5. Session admission: available with injected IO
+
+Construct `Session.new/3` with a session keyring, a repository such as
+`{DatadeftAuth.AWS.DynamoDB, store}`, and a function returning
+`{:ok, unix_seconds}`. Default bounds are 24 hours idle and 30 days absolute;
+`Session.new/5` takes stricter ages and a country policy.
+
+- `Session.validate/3` accepts a cookie and a **trusted-edge** country (or
+  `nil`). It checks both freshness bounds, live storage and owner status.
+- `Session.refresh/2` accepts only the normal validation result, in the same
+  request. It returns `{:ok, nil}` until reissue is due and preserves original
+  issue time, session ID and country. Send any fresh cookie with `no-store`.
+- For logout, call `Session.validate_for_logout/2` and pass the returned record's
+  session ID to `Session.revoke/2`. It skips only idle/country admission checks,
+  and cannot feed refresh. Require a CSRF-protected same-origin POST and revoke
+  server state before clearing the cookie. HTTP glue is not bundled yet.
+
+## 6. Intended application integration — still to be delivered
 
 Your Plug/Bandit application will own routes, rendering, authorization and edge
 controls. The completed library will support this scanner-safe sequence:

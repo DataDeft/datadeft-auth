@@ -5,6 +5,7 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
   alias DatadeftAuth.AWS.DynamoDB.Keys
   alias DatadeftAuth.AWS.StorageKey
   alias DatadeftAuth.Test.LocalDynamo
+  alias DatadeftAuth.Token.Keyring
   alias DatadeftAuth.MagicLink.Core.{Email, Lookup, LookupKey, Token}
 
   alias DatadeftAuth.MagicLink.Service.{
@@ -12,6 +13,8 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
     AuthenticationExpectation,
     Challenge,
     CommitAuthentication,
+    Session,
+    SessionCookie,
     SessionId,
     UserId
   }
@@ -81,6 +84,18 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
     assert {:ok, true} = DynamoDB.is_session_owner_active(rotating, initial_session.user_id, 150)
     assert {:ok, nil} = DynamoDB.find_session(rotating, elixir_command.session_id, 301)
 
+    root = :binary.copy(<<0x7E>>, 32)
+    assert {:ok, keyring} = Keyring.new(:session, [{:active, "test", root, 200, 2_592_200}])
+
+    assert {:ok, session_service} =
+             Session.new(keyring, {DynamoDB, rotating}, fn -> {:ok, 160} end, {100, 150})
+
+    assert {:ok, session_cookie} =
+             SessionCookie.mint(keyring, elixir_command.session_id, "HU", 150, 150)
+
+    assert {:ok, validated} = Session.validate(session_service, session_cookie, "HU")
+    assert Session.record(validated) == initial_session
+
     # Rust uses its existing store, not a second implementation in test glue.
     # It rotates the storage key for lifetime counters and races for one budget.
     rust =
@@ -113,6 +128,7 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
 
     wait_ready(Path.join(barrier, "ready"), 1_000, rust)
     assert {:ok, nil} = DynamoDB.find_session(rotating, elixir_command.session_id, 160)
+    assert {:error, :invalid_session} = Session.validate(session_service, session_cookie, "HU")
 
     assert {:ok, rust_sid} =
              barrier |> Path.join("rust-session") |> File.read!() |> SessionId.parse()

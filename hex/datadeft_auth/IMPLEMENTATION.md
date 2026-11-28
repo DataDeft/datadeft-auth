@@ -69,8 +69,9 @@ crypto wrapper over existing Rust libraries; no native service or generic bridge
 - [ ] Landing (selector limit, dummy work, account display, bound flow cookie).
 - [ ] Read flow state (same binding, limits and terminal-state handling).
 - [ ] Confirm (nonce/account/verifier binding, one-time atomic commit).
-- [ ] Validate session, logout-specific validation, refresh and revoke.
-- [ ] Exact/grouped country policy and locale allowlists.
+- [x] Live session validation, logout-specific validation, refresh and revoke.
+- [x] Exact/grouped trusted-edge country pinning.
+- [ ] Locale allowlists.
 - [ ] Account/admin queries and audited mutations, including disable/enable safety.
 - [ ] Independent proof admission and per-solve policy.
 
