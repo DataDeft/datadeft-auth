@@ -5,9 +5,10 @@ repository release is Rust 0.7.0; this native Elixir 0.8 implementation is not a
 published Hex release. Its package version remains 0.7.0 for repository release
 alignment. Do not add an assumed `~> 0.8` Hex dependency yet.
 
-The small crypto and storage APIs described below exist today. Request/landing/
-confirmation services, purpose-bound cookies, session validation/logout, Plug
-integration and production AWS transport are still being completed. Follow
+The small crypto and storage APIs described below exist today, including
+purpose-bound confirm and session cookie codecs. Request/landing/confirmation
+services, live session validation/logout, Plug integration, and production AWS
+transport are still being completed. Follow
 [IMPLEMENTATION.md](IMPLEMENTATION.md) for the actual acceptance checklist.
 
 ## 1. Develop against the full repository checkout
@@ -96,7 +97,10 @@ bad shape and may return `{:error, :unavailable}`. Decode returns
 future skew, purpose, key windows, country, account status or server-side session
 revocation. Never authorize a request from its result alone. Do not turn the
 example payload into an improvised session format: Rust compatibility requires
-the exact higher-level cookie framing and policy, still in progress.
+the exact higher-level framing. `DatadeftAuth.Token.Keyring`,
+`DatadeftAuth.MagicLink.Core.ConfirmCookie`, and
+`DatadeftAuth.MagicLink.Service.SessionCookie` now implement that crypto framing
+and freshness. They do not replace the unfinished service and storage checks.
 
 Never print/log keys, tokens or plaintext. NIF load failure has no alternate
 crypto fallback. A native fault can crash BEAM; Rustler is not process isolation.

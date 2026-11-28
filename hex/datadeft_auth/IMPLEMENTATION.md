@@ -52,10 +52,11 @@ Elixir HTTP client is loopback-only test support, not a production AWS adapter.
 - [x] Owner-approved crypto-only Rustler boundary ([contract](CRYPTO-DEPENDENCIES.md)); b3/JOSE not selected.
 - [x] Rust-compatible Base62 integer codec, golden vectors and round trips.
 - [x] Bounded Branca encode/decode over the existing Rust production API, including canonicality/tamper checks.
-- [ ] Higher-level purpose-bound cookie/keyring API and clean native artifact/source-archive consumers.
-- [ ] HKDF and purpose/key-ID-bound cookie keyrings.
+- [x] HKDF purpose/key-ID binding, active/verify-only keyrings, and bound envelope.
+- [ ] Clean native artifact/source-archive consumers.
 - [x] Magic-link grammar, independently drawn selector/verifier, lookup HMACs.
-- [ ] Confirm/session/proof cookie bodies, expiry, skew and key-window parity.
+- [x] Confirm/session body framing, expiry, skew and key windows; bidirectional Rust/Elixir cookie checks.
+- [ ] PoW proof-cookie body and interoperability.
 - [ ] BLAKE3 PoW identity and exact challenge/tag/work formats.
 - [ ] Bidirectional cookie/token/proof verification, tamper and rotation vectors.
 
