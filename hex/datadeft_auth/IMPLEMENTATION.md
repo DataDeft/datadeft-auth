@@ -66,7 +66,7 @@ crypto wrapper over existing Rust libraries; no native service or generic bridge
 ## 4. Framework-neutral services
 
 - [x] Request service (consent, locale, keyed request/outbox limits, persist before send).
-  Plug must still map both outcomes to the same generic response.
+  Plug maps sent and throttled outcomes to the same generic response.
 - [x] Landing (selector limit, dummy work, account display, bound flow cookie).
 - [x] Read flow state (same binding, limits and terminal-state handling).
 - [x] Confirm (nonce/account/verifier binding, one-time atomic commit).
@@ -79,11 +79,12 @@ crypto wrapper over existing Rust libraries; no native service or generic bridge
 
 ## 5. Plug and delivery
 
-- [ ] Strict body/header/cookie parsing and HTTP refusal parity.
-- [ ] Cookie defaults/clearing, same-origin POST/CSRF, fixed redirects and safe headers.
+- [x] Magic-link/session body, header and cookie parsing, with fixed refusal bodies.
+- [x] Cookie defaults/clearing, same-origin POST/CSRF, fixed redirects and safe headers.
+- [x] Standalone Bandit login/logout example with loopback-only demo storage and delivery.
 - [ ] Independent Plug PoW middleware using the shared lifetime budget.
-- [ ] Bandit example consuming the one shared browser client.
-- [ ] End-to-end HTTP and browser interoperability tests.
+- [ ] Wire the one shared browser client into the Bandit example for PoW.
+- [ ] Browser interoperability across Rust/Elixir and PoW; the example has its own Chromium smoke test.
 - [x] Current source-build Linux/BEAM CI matrix (four jobs at `4dea18f`).
 - [ ] Supported precompiled artifact matrix and clean consumer archive/release tests.
 - [ ] Independent security/API review and full verification before merge.

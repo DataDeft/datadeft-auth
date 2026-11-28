@@ -1,7 +1,7 @@
 # Elixir implementation
 
 - [`datadeft_auth/`](datadeft_auth/): one native Elixir Hex package.
-- `examples/bandit_magic_link/`: planned independent Plug/Bandit consumer.
+- [`examples/bandit_magic_link/`](examples/bandit_magic_link/README.md): runnable loopback-only Plug/Bandit consumer.
 
 All Elixir code, tests, examples and package-specific scripts live here. There is
 no Mix umbrella. A tiny owner-approved Rustler crypto NIF reuses the existing
