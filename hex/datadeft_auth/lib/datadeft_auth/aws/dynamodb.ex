@@ -11,6 +11,8 @@ defmodule DatadeftAuth.AWS.DynamoDB do
   `DatadeftAuth.AWS.DynamoDB.Client`; no production HTTP client is bundled yet.
   """
 
+  @behaviour DatadeftAuth.MagicLink.Service.SessionRepository
+
   alias DatadeftAuth.AWS.DynamoDB.Keys
   alias DatadeftAuth.AWS.StorageKey
 
@@ -101,6 +103,7 @@ defmodule DatadeftAuth.AWS.DynamoDB do
     do: DatadeftAuth.AWS.DynamoDB.Users.find(store, email)
 
   @doc "Strongly read a live session, trying the previous storage key only on a miss."
+  @impl true
   @spec find_session(t(), DatadeftAuth.MagicLink.Service.SessionId.t(), non_neg_integer()) ::
           {:ok, DatadeftAuth.MagicLink.Service.SessionRecord.t() | nil}
           | {:error, :unavailable | :internal}
@@ -108,12 +111,14 @@ defmodule DatadeftAuth.AWS.DynamoDB do
     do: DatadeftAuth.AWS.DynamoDB.Sessions.find(store, session_id, now)
 
   @doc "Revoke an existing session without creating a row or overwriting an earlier revocation."
+  @impl true
   @spec revoke_session(t(), DatadeftAuth.MagicLink.Service.SessionId.t(), non_neg_integer()) ::
           :ok | {:error, :conditional_write_failed | :unavailable | :internal}
   def revoke_session(%__MODULE__{} = store, session_id, now),
     do: DatadeftAuth.AWS.DynamoDB.Sessions.revoke(store, session_id, now)
 
   @doc "Check the enabled authoritative profile and the re-enable watermark."
+  @impl true
   @spec is_session_owner_active(t(), DatadeftAuth.MagicLink.Service.UserId.t(), non_neg_integer()) ::
           {:ok, boolean()} | {:error, :unavailable | :internal}
   def is_session_owner_active(%__MODULE__{} = store, user_id, created),
