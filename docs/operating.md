@@ -24,6 +24,7 @@ Use `mise` tasks. Do not type long command chains by hand.
 
 ```sh
 mise run fmt
+mise run ts-fmt
 mise run check
 mise run test
 mise run clippy
@@ -36,6 +37,10 @@ token-core-guard, ts-verify, elixir-verify, spec, spec-mutants, release-check, a
 workflow-check. The Elixir gate requires an installed Elixir >= 1.16 / OTP >= 26
 and Rust toolchain; CI provisions the tested runtime pairs. See
 [`packages/datadeft-auth-elixir`](../packages/datadeft-auth-elixir/README.md).
+
+`ts-verify` checks every TypeScript and JavaScript file against Prettier,
+type-checks and lints the workspace `scripts/`, then runs the npm package gate.
+`mise run ts-fmt` applies the formatting.
 
 Other tasks:
 

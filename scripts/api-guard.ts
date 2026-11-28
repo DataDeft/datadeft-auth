@@ -22,15 +22,15 @@ const brancaLines = (await Bun.file(brancaPath).text()).split("\n");
 const fnIndex = brancaLines.findIndex((line) => line.includes("pub fn encode_with_nonce"));
 
 if (fnIndex === -1) {
-    errors.push(`${brancaPath}: pub fn encode_with_nonce not found`);
+  errors.push(`${brancaPath}: pub fn encode_with_nonce not found`);
 } else {
-    const gate = brancaLines[fnIndex - 1] ?? "";
-    if (!gate.includes('cfg(any(test, feature = "test-support"))')) {
-        errors.push(
-            `${brancaPath}:${fnIndex + 1}: encode_with_nonce is not gated behind ` +
-                `#[cfg(any(test, feature = "test-support"))]`,
-        );
-    }
+  const gate = brancaLines[fnIndex - 1] ?? "";
+  if (!gate.includes('cfg(any(test, feature = "test-support"))')) {
+    errors.push(
+      `${brancaPath}:${fnIndex + 1}: encode_with_nonce is not gated behind ` +
+        `#[cfg(any(test, feature = "test-support"))]`,
+    );
+  }
 }
 
 // -- Check 2: test-support only under [dev-dependencies] --------------------
@@ -38,41 +38,36 @@ if (fnIndex === -1) {
 // which a concurrent `cargo doc` rewrites, and crashes on vanished dirs.
 const manifestPaths: string[] = [];
 for (const pattern of ["Cargo.toml", "crates/*/Cargo.toml", "examples/*/Cargo.toml"]) {
-    for await (const path of new Glob(pattern).scan({ onlyFiles: true })) {
-        manifestPaths.push(path);
-    }
+  for await (const path of new Glob(pattern).scan({ onlyFiles: true })) {
+    manifestPaths.push(path);
+  }
 }
 if (manifestPaths.length < 2) {
-    errors.push(`found only ${manifestPaths.length} Cargo.toml files; manifest scan is broken`);
+  errors.push(`found only ${manifestPaths.length} Cargo.toml files; manifest scan is broken`);
 }
 for (const path of manifestPaths) {
+  let underDevDependencies = false;
+  (await Bun.file(path).text()).split("\n").forEach((line, index) => {
+    const header = line.match(/^\s*\[([^\]]+)\]/);
+    if (header) underDevDependencies = header[1]!.includes("dev-dependencies");
 
-    let underDevDependencies = false;
-    (await Bun.file(path).text()).split("\n").forEach((line, index) => {
-        const header = line.match(/^\s*\[([^\]]+)\]/);
-        if (header) underDevDependencies = header[1]!.includes("dev-dependencies");
-
-        const enablesTestSupport =
-            line.includes("datadeft-auth-token-core") && line.includes("test-support");
-        if (enablesTestSupport && !underDevDependencies) {
-            errors.push(
-                `${path}:${index + 1}: test-support enabled outside ` +
-                    `[dev-dependencies]: ${line.trim()}`,
-            );
-        }
-    });
+    const enablesTestSupport = line.includes("datadeft-auth-token-core") && line.includes("test-support");
+    if (enablesTestSupport && !underDevDependencies) {
+      errors.push(`${path}:${index + 1}: test-support enabled outside ` + `[dev-dependencies]: ${line.trim()}`);
+    }
+  });
 }
 
 // -- Check 3: no hidden .mise.toml -----------------------------------------
 if (await Bun.file(".mise.toml").exists()) {
-    errors.push(".mise.toml exists: root mise config must live at mise.toml, not the hidden name");
+  errors.push(".mise.toml exists: root mise config must live at mise.toml, not the hidden name");
 }
 
 // -- Report ----------------------------------------------------------------
 if (errors.length > 0) {
-    console.error("api-guard failed:");
-    for (const error of errors) console.error(`  - ${error}`);
-    process.exit(1);
+  console.error("api-guard failed:");
+  for (const error of errors) console.error(`  - ${error}`);
+  process.exit(1);
 }
 
 console.log("api-guard ok: encode_with_nonce gated, test-support is dev-only, no hidden .mise.toml.");

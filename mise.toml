@@ -93,10 +93,20 @@ description = "Prove every TLA+ invariant can fail: each mutant must be caught"
 tools = { "cargo:tla-checker" = "0.3.9" }
 run = "bun scripts/spec-mutants.ts"
 
-[tasks.ts-verify]
-description = "Verify the npm package including its built and packed consumer surface"
+[tasks.ts-fmt]
+description = "Format all TypeScript and JavaScript with Prettier"
 run = """
 bun install --frozen-lockfile --ignore-scripts
+bun run fmt
+"""
+
+[tasks.ts-verify]
+description = "Verify all TypeScript: Prettier formatting, workspace scripts type-check and lint, and the npm package including its built and packed consumer surface"
+run = """
+bun install --frozen-lockfile --ignore-scripts
+bun run fmt:check
+bun run typecheck
+bun run lint
 mise -C packages/dd-protect-client run verify
 """
 
