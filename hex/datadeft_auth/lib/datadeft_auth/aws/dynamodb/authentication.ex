@@ -1,6 +1,5 @@
 defmodule DatadeftAuth.AWS.DynamoDB.Authentication do
   @moduledoc false
-  alias DatadeftAuth.AWS.StorageKey
   alias DatadeftAuth.AWS.DynamoDB.{Keys, MagicLinks}
   alias DatadeftAuth.MagicLink.Core.Email
 
@@ -39,11 +38,10 @@ defmodule DatadeftAuth.AWS.DynamoDB.Authentication do
       )
       when branch in [:create, :existing] do
     with {:ok, _} <- UserId.parse(UserId.value(user)),
-         {:ok, _} <- SessionId.parse(SessionId.value(session)),
          {:ok, _} <- AuthenticationAttemptId.parse(AuthenticationAttemptId.value(attempt)),
          :ok <- validate(command),
          {:ok, challenge_key} <- MagicLinks.key(expected.selector_lookup_hmac),
-         {:ok, hmac} <- StorageKey.hmac(store.storage_key, "sih", SessionId.value(session)),
+         {:ok, hmac} <- Keys.session_hmac(store.storage_key, session),
          {:ok, user_actions} <- user_actions(store, command, branch, user) do
       challenge =
         action("Update", store, %{
@@ -64,7 +62,7 @@ defmodule DatadeftAuth.AWS.DynamoDB.Authentication do
 
       # Permanent audit rows: never put raw session IDs, attempt IDs or TTL on these items.
       session_item =
-        Map.merge(key("SESSION#" <> hmac, "SESSION"), %{
+        Map.merge(Keys.session(hmac), %{
           "entity_type" => string("session"),
           "user_id" => string(UserId.value(user)),
           "email_normalized" => string(Email.value(expected.email)),
@@ -115,7 +113,7 @@ defmodule DatadeftAuth.AWS.DynamoDB.Authentication do
            }
          }),
          action("ConditionCheck", store, %{
-           "Key" => key("USERID#" <> UserId.value(user), "PROFILE"),
+           "Key" => Keys.profile(user),
            "ConditionExpression" =>
              "entity_type = :user_profile AND user_id = :expected_user AND email_normalized = :expected_email AND disabled = :false",
            "ExpressionAttributeValues" => %{
@@ -138,7 +136,7 @@ defmodule DatadeftAuth.AWS.DynamoDB.Authentication do
     }
 
     profile =
-      key("USERID#" <> UserId.value(user), "PROFILE")
+      Keys.profile(user)
       |> Map.merge(fields)
       |> Map.merge(%{
         "entity_type" => string("user_profile"),

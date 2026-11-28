@@ -75,6 +75,12 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
              | attempt_id: attempt_id()
            }) == {:error, :rejected}
 
+    assert {:ok, initial_session} =
+             DynamoDB.find_session(rotating, elixir_command.session_id, 300)
+
+    assert {:ok, true} = DynamoDB.is_session_owner_active(rotating, initial_session.user_id, 150)
+    assert {:ok, nil} = DynamoDB.find_session(rotating, elixir_command.session_id, 301)
+
     # Rust uses its existing store, not a second implementation in test glue.
     # It rotates the storage key for lifetime counters and races for one budget.
     rust =
@@ -106,6 +112,28 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
       end)
 
     wait_ready(Path.join(barrier, "ready"), 1_000, rust)
+    assert {:ok, nil} = DynamoDB.find_session(rotating, elixir_command.session_id, 160)
+
+    assert {:ok, rust_sid} =
+             barrier |> Path.join("rust-session") |> File.read!() |> SessionId.parse()
+
+    now = System.system_time(:second)
+    assert {:ok, nil} = DynamoDB.find_session(current_only, rust_sid, now)
+    assert {:ok, rust_session} = DynamoDB.find_session(rotating, rust_sid, now)
+
+    assert {:ok, true} =
+             DynamoDB.is_session_owner_active(
+               rotating,
+               rust_session.user_id,
+               rust_session.created_at_unix
+             )
+
+    assert :ok = DynamoDB.revoke_session(rotating, rust_sid, now)
+    assert {:ok, nil} = DynamoDB.find_session(store, rust_sid, now)
+
+    assert {:error, :conditional_write_failed} =
+             DynamoDB.revoke_session(rotating, rust_sid, now + 1)
+
     rust_record = challenge("01", "02", "rust@example.test", lookup_key)
     race_command = plan(rust_record, "c", "d")
     File.write!(Path.join(barrier, "release"), "release")

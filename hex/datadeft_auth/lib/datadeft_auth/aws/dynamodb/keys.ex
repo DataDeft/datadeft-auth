@@ -3,6 +3,7 @@ defmodule DatadeftAuth.AWS.DynamoDB.Keys do
 
   alias DatadeftAuth.AWS.StorageKey
   alias DatadeftAuth.MagicLink.Core.Email
+  alias DatadeftAuth.MagicLink.Service.{SessionId, UserId}
 
   @u64_max 18_446_744_073_709_551_615
   @rate_key ~r/\A[A-Za-z0-9:_-]+\z/
@@ -16,6 +17,18 @@ defmodule DatadeftAuth.AWS.DynamoDB.Keys do
       {:ok, attributes("USER#" <> hmac, "PROFILE")}
     end
   end
+
+  def profile(%UserId{} = id), do: attributes("USERID#" <> UserId.value(id), "PROFILE")
+
+  def session_hmac(key, %SessionId{} = id) do
+    with {:ok, valid} <- SessionId.parse(SessionId.value(id)) do
+      StorageKey.hmac(key, "sih", SessionId.value(valid))
+    end
+  end
+
+  def session_hmac(_, _), do: {:error, :invalid_input}
+
+  def session(hmac), do: attributes("SESSION#" <> hmac, "SESSION")
 
   @spec rate(StorageKey.t(), String.t(), non_neg_integer(), non_neg_integer()) ::
           {:ok, map()} | {:error, atom()}

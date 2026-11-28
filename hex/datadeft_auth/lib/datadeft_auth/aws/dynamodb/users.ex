@@ -37,11 +37,7 @@ defmodule DatadeftAuth.AWS.DynamoDB.Users do
          {:ok, ^email} <- Email.from_normalized(stored_email),
          {:ok, id} <- Items.required_string(lookup, "user_id"),
          {:ok, id} <- UserId.parse(id),
-         {:ok, profile} when is_map(profile) <-
-           get(store, %{
-             "pk" => %{"S" => "USERID#" <> UserId.value(id)},
-             "sk" => %{"S" => "PROFILE"}
-           }),
+         {:ok, profile} when is_map(profile) <- Rotation.get(store, Keys.profile(id)),
          {:ok, user} <- decode_profile(profile, id, email) do
       {:ok, user}
     else
@@ -73,6 +69,4 @@ defmodule DatadeftAuth.AWS.DynamoDB.Users do
       _ -> {:error, :internal}
     end
   end
-
-  defp get(store, key), do: Rotation.get(store, key)
 end
