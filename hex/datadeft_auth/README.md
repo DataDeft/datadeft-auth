@@ -8,7 +8,7 @@ stays aligned at 0.7.0 until the 0.8 release is prepared.
 ## Usage
 
 See [USAGE.md](USAGE.md) for local installation, working API examples and the
-boundary between available primitives and the unfinished login integration.
+boundary between the working service flow and the unfinished HTTP integration.
 See [RELEASE-READINESS.md](RELEASE-READINESS.md) for CI evidence and release blockers;
 a green draft implementation PR is not a ready 0.8.0 release.
 
@@ -20,12 +20,11 @@ Requires Elixir >= 1.16, OTP >= 26, and the repository's pinned Rust toolchain:
 mise run elixir-verify
 ```
 
-Implemented slices: email identity, lookup-key rotation/rekeying, challenge
-storage, atomic consume/account/session transactions, shared counters and bounded
-Branca encode/decode, plus purpose-bound confirm and session cookies with key
-rotation. Framework-neutral authentication orchestration, HTTP integration and
-production AWS IO remain incomplete.
-See [the checklist](IMPLEMENTATION.md).
+The framework-neutral request-to-logout flow runs with injected delivery and
+storage. DynamoDB Local covers read-only landing, atomic confirmation, live
+session checks and revocation, including Rust↔Elixir interoperability on shared
+rows. HTTP integration, PoW, administration and production AWS IO remain
+incomplete. See [the checklist](IMPLEMENTATION.md).
 
 ## Tiny native boundary
 

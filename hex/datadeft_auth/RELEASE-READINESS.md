@@ -19,7 +19,7 @@ for release yet.** This is a feature-completeness decision, not a CI failure.
   this work. A future release PR must be created through the release process,
   after implementation acceptance; do not rename #44 to imply readiness.
 
-## Evidence: green current foundation
+## Verification evidence
 
 GitHub CI run [46017758099](https://github.com/DataDeft/datadeft-auth/actions/runs/46017758099)
 passed for #45 at commit `4dea18f`:
@@ -34,8 +34,15 @@ passed for #45 at commit `4dea18f`:
 
 These matrix checks **source-build the NIF from the repository**. They do not
 prove precompiled artifact downloads, clean Hex archive/source fallback,
-complete login flows or production readiness. Later commits need their own green
-checks; the cited run is evidence for that specific revision.
+browser login flows or production readiness. The cited run is evidence for that
+specific revision.
+
+At `726a145`, [run 46097066607](https://github.com/DataDeft/datadeft-auth/actions/runs/46097066607)
+passed all four source-build platform jobs. Local `mise run verify`,
+`mise run dynamodb-local-test` and `mise run dynamodb-compatibility-test` passed
+for the service changes. The combined DynamoDB suite includes Elixir request
+through logout with one concurrent confirmation winner and Rust↔Elixir live
+session reads and revocation.
 
 The documented email/Branca examples were executed successfully. The foundation
 also has exact Rust vectors, crypto tamper/canonicality tests, atomic transaction
