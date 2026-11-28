@@ -22,8 +22,9 @@ mise run elixir-verify
 
 Implemented slices: email identity, lookup-key rotation/rekeying, challenge
 storage, atomic consume/account/session transactions, shared counters and bounded
-Branca encode/decode. Framework-neutral authentication orchestration, purpose-bound
-cookies, HTTP integration and production AWS IO remain incomplete.
+Branca encode/decode, plus purpose-bound confirm and session cookies with key
+rotation. Framework-neutral authentication orchestration, HTTP integration and
+production AWS IO remain incomplete.
 See [the checklist](IMPLEMENTATION.md).
 
 ## Tiny native boundary
