@@ -2,7 +2,7 @@ defmodule DatadeftAuth.MixProject do
   use Mix.Project
 
   # x-release-please-start-version
-  @version "0.7.0"
+  @version "0.7.1"
   # x-release-please-end
 
   def project do

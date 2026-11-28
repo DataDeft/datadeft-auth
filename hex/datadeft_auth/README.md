@@ -3,7 +3,7 @@
 Elixir server implementation of datadeft-auth, compatible with Rust 0.7, using a
 tiny Rustler crypto NIF over the existing Rust core. This package is incomplete
 and is not ready for authentication or production use. The repository version
-stays aligned at 0.7.0 until the 0.8 release is prepared.
+stays aligned with the 0.7.x maintenance line until the 0.8 release is prepared.
 
 ## Usage
 

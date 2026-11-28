@@ -891,7 +891,7 @@ dependencies = [
 
 [[package]]
 name = "datadeft_auth_nif"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "datadeft-auth-token-core",
  "rand_core 0.6.4",

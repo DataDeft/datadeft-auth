@@ -16,6 +16,6 @@ workspace = true
 [dependencies]
 # FFI/scheduling only. No application runtime or infrastructure.
 rustler = { version = "=0.38.0", default-features = false, features = ["nif_version_2_16"] }
-datadeft-auth-token-core = { path = "../../../../crates/datadeft-auth-token-core", version = "0.7.0" } # x-release-please-version
+datadeft-auth-token-core = { path = "../../../../crates/datadeft-auth-token-core", version = "0.7.1" } # x-release-please-version
 # Adapter-owned OS entropy; never enable core test-support to inject a nonce.
 rand_core = { version = "0.6", features = ["getrandom"] }

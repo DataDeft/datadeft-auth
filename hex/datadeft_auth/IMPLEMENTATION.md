@@ -5,8 +5,8 @@ All 0.8 work: [draft PR #45](https://github.com/DataDeft/datadeft-auth/pull/45)
 from `feat/elixir-0.8`; no publication. Includes the foundation commits through
 `211b3e3`, moved off `main` with owner approval. See
 [release readiness](RELEASE-READINESS.md) for current evidence and blockers.
-Current package version remains 0.7.0
-to match repository release checks until the 0.8 release is prepared.
+The preview package tracks the repository's 0.7.x version until the 0.8
+release is prepared.
 
 Work one observable feature at a time: failing test, minimal implementation,
 green focused suite, then compatibility/regression checks. A green slice is

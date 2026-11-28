@@ -2,8 +2,8 @@
 
 **Development preview, not a complete login library yet.** The latest published
 repository release is Rust 0.7.0; this native Elixir 0.8 implementation is not a
-published Hex release. Its package version remains 0.7.0 for repository release
-alignment. Do not add an assumed `~> 0.8` Hex dependency yet.
+published Hex release. Its preview package version tracks the repository's
+0.7.x release metadata. Do not add an assumed `~> 0.8` Hex dependency yet.
 
 The crypto, storage and framework-neutral request, confirmation and session
 services described below run with injected IO. Optional Plug helpers handle the
