@@ -67,9 +67,10 @@ crypto wrapper over existing Rust libraries; no native service or generic bridge
 
 - [x] Request service (consent, locale, keyed request/outbox limits, persist before send).
   Plug must still map both outcomes to the same generic response.
-- [ ] Landing (selector limit, dummy work, account display, bound flow cookie).
-- [ ] Read flow state (same binding, limits and terminal-state handling).
-- [ ] Confirm (nonce/account/verifier binding, one-time atomic commit).
+- [x] Landing (selector limit, dummy work, account display, bound flow cookie).
+- [x] Read flow state (same binding, limits and terminal-state handling).
+- [x] Confirm (nonce/account/verifier binding, one-time atomic commit).
+  DynamoDB Local covers the framework-neutral request-to-logout flow.
 - [x] Live session validation, logout-specific validation, refresh and revoke.
 - [x] Exact/grouped trusted-edge country pinning.
 - [x] Locale allowlists.

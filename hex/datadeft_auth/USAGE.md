@@ -5,10 +5,9 @@ repository release is Rust 0.7.0; this native Elixir 0.8 implementation is not a
 published Hex release. Its package version remains 0.7.0 for repository release
 alignment. Do not add an assumed `~> 0.8` Hex dependency yet.
 
-The small crypto and storage APIs described below exist today, including
-purpose-bound confirm and session cookie codecs. Request/landing/confirmation
-services, Plug integration, and production AWS transport are still being
-completed. The live session service is available with injected storage/clock. Follow
+The crypto, storage and framework-neutral request, confirmation and session
+services described below run with injected IO. Plug integration and production
+AWS transport are not bundled yet. Follow
 [IMPLEMENTATION.md](IMPLEMENTATION.md) for the actual acceptance checklist.
 
 ## 1. Develop against the full repository checkout
@@ -171,10 +170,16 @@ persists the challenge, then passes a redacted `Mail` to the outbox. Render its
 bearer token only for delivery. The host application must render the same
 public response for sent and throttled outcomes and own edge/IP/global limits.
 
-## 7. Intended application integration — still to be delivered
+## 7. Scanner-safe flow with injected storage
 
 Your Plug/Bandit application will own routes, rendering, authorization and edge
-controls. The completed library will support this scanner-safe sequence:
+controls. The framework-neutral `DatadeftAuth.MagicLink.Service.Flow` provides
+`land/2`, `read_state/2` and `confirm/4`. Use the same lookup key, consent
+versions and challenge TTL as the request service. Pair with your session
+service using the same session keyring, absolute lifetime and country policy.
+The Plug adapter and browser example are still to be delivered:
+
+The application integration must follow this scanner-safe sequence:
 
 1. Request: validate identity/consent/locale, apply keyed limits, enqueue email,
    and return a generic public response.
