@@ -3,7 +3,8 @@ defmodule DatadeftAuth.AWS.DynamoDB do
   Rust-compatible DynamoDB adapter, implemented incrementally.
 
   Provides account lookup with storage-key rotation/rekeying, challenge storage,
-  atomic authentication commits, fixed-window limits and lifetime PoW budgets.
+  atomic authentication commits, live session checks and revocation, fixed-window
+  limits and lifetime PoW budgets.
   Full authentication services and production IO are still incomplete; do not
   use this partial package for a production cutover.
   The client is an explicit `{module, state}` implementing
@@ -98,6 +99,25 @@ defmodule DatadeftAuth.AWS.DynamoDB do
           | {:error, :unavailable | :internal}
   def find_user_for_authentication(%__MODULE__{} = store, email),
     do: DatadeftAuth.AWS.DynamoDB.Users.find(store, email)
+
+  @doc "Strongly read a live session, trying the previous storage key only on a miss."
+  @spec find_session(t(), DatadeftAuth.MagicLink.Service.SessionId.t(), non_neg_integer()) ::
+          {:ok, DatadeftAuth.MagicLink.Service.SessionRecord.t() | nil}
+          | {:error, :unavailable | :internal}
+  def find_session(%__MODULE__{} = store, session_id, now),
+    do: DatadeftAuth.AWS.DynamoDB.Sessions.find(store, session_id, now)
+
+  @doc "Revoke an existing session without creating a row or overwriting an earlier revocation."
+  @spec revoke_session(t(), DatadeftAuth.MagicLink.Service.SessionId.t(), non_neg_integer()) ::
+          :ok | {:error, :conditional_write_failed | :unavailable | :internal}
+  def revoke_session(%__MODULE__{} = store, session_id, now),
+    do: DatadeftAuth.AWS.DynamoDB.Sessions.revoke(store, session_id, now)
+
+  @doc "Check the enabled authoritative profile and the re-enable watermark."
+  @spec is_session_owner_active(t(), DatadeftAuth.MagicLink.Service.UserId.t(), non_neg_integer()) ::
+          {:ok, boolean()} | {:error, :unavailable | :internal}
+  def is_session_owner_active(%__MODULE__{} = store, user_id, created),
+    do: DatadeftAuth.AWS.DynamoDB.Sessions.owner_active(store, user_id, created)
 
   @doc "Admit at most `limit` uses over the proof's entire lifetime, across nodes."
   @spec check_lifetime_limit(

@@ -39,7 +39,7 @@ not a completed authentication system.
 - [x] Cross-language same-challenge consume/create contention and Rust reads of Elixir-created account/session.
 - [x] Distinct-challenge account-creation contention, disable checks and immutable-field binding in DynamoDB Local.
 - [ ] Distinct-challenge account-creation contention across Rust and Elixir.
-- [ ] Session reads, owner status and revocation across implementations.
+- [x] Strongly consistent live session reads, owner watermark checks, and cross-language revocation.
 - [ ] Audited administration, pagination and enable/disable race contracts.
 - [ ] Production AWS client/signing/credential adapter.
 - [ ] SES and Secrets Manager loading/rotation.

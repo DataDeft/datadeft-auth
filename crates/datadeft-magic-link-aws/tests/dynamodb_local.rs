@@ -668,6 +668,10 @@ async fn shared_elixir_counters() {
         .expect("Elixir session read")
         .expect("session");
     assert_eq!(elixir_session.user_id, elixir_user.user_id);
+    authentication
+        .revoke_session(&elixir_session.session_id, 160)
+        .await
+        .expect("Rust revokes Elixir session");
     assert!(elixir_record.verifier_hash.matches_hash_constant_time(
         &verifier_hash(&lookup, elixir_token.verifier()).expect("verifier")
     ));
@@ -709,6 +713,11 @@ async fn shared_elixir_counters() {
     let barrier = std::path::PathBuf::from(
         std::env::var("DD_AUTH_COMPATIBILITY_BARRIER").expect("barrier directory"),
     );
+    let keys = keys();
+    let outcome = login(&old, &keys, &mut OsRng, "shared@example.test").await;
+    let session_id = outcome.authentication().session_id();
+    std::fs::write(barrier.join("rust-session"), session_id.as_str())
+        .expect("synthetic session fixture");
     std::fs::write(barrier.join("ready"), "ready").expect("signal ready");
     let start = std::time::Instant::now();
     while !barrier.join("release").exists() {
@@ -718,6 +727,13 @@ async fn shared_elixir_counters() {
         );
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
+    assert!(
+        old.find_session(session_id, now())
+            .await
+            .expect("read Rust session")
+            .is_none(),
+        "Rust sees Elixir revocation"
+    );
     let authentication_result = authentication
         .commit_magic_link_authentication(&CommitMagicLinkAuthentication {
             magic_link: MagicLinkAuthenticationExpectation {
@@ -765,8 +781,6 @@ async fn shared_elixir_counters() {
 
     // Populate an account through the real Rust login workflow; Elixir must
     // resolve the same authoritative profile, not infer identity from email.
-    let keys = keys();
-    let outcome = login(&old, &keys, &mut OsRng, "shared@example.test").await;
     println!(
         "compatibility_user_id={}",
         outcome.authentication().user_id().as_str()
