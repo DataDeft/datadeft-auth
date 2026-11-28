@@ -29,8 +29,10 @@ if Code.ensure_loaded?(Plug.Conn) do
 
     defp decode_request(conn, body) do
       with {:ok, fields} <- json_fields(body),
-           %{"email" => email, "terms_accepted" => terms, "privacy_accepted" => privacy} <- fields,
-           locale = Map.get(fields, "locale"),
+           email = fields["email"],
+           terms = fields["terms_accepted"],
+           privacy = fields["privacy_accepted"],
+           locale = fields["locale"],
            true <- is_binary(email) and is_boolean(terms) and is_boolean(privacy),
            true <- is_nil(locale) or is_binary(locale),
            true <-
