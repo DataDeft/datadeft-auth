@@ -13,6 +13,8 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
     AuthenticationExpectation,
     Challenge,
     CommitAuthentication,
+    LocaleAllowlist,
+    Request,
     Session,
     SessionCookie,
     SessionId,
@@ -21,6 +23,13 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
 
   @moduletag :dynamodb
   @moduletag timeout: 180_000
+
+  defmodule Mailbox do
+    def enqueue_magic_link(pid, mail) do
+      send(pid, {:mail, mail})
+      :ok
+    end
+  end
 
   test "Rust and Elixir share accounts, counters, atomic admission and lifetime expiry" do
     endpoint = System.fetch_env!("DYNAMODB_LOCAL_ENDPOINT")
@@ -55,6 +64,7 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
     on_exit(fn -> File.rm_rf!(barrier) end)
 
     assert {:ok, lookup_key} = LookupKey.new(:binary.copy(<<0x42>>, 32))
+    assert_request_quotas(store, lookup_key)
     elixir_record = challenge("ab", "cd", "elixir@example.test", lookup_key)
     assert DynamoDB.put_magic_link_if_absent(store, elixir_record) == :ok
 
@@ -385,6 +395,35 @@ defmodule DatadeftAuth.Compatibility.DynamoDBTest do
 
   test "local-only test client refuses non-loopback endpoints" do
     assert LocalDynamo.request("https://example.test", "UpdateItem", %{}) == {:error, :internal}
+  end
+
+  defp assert_request_quotas(store, lookup_key) do
+    assert {:ok, locales} = LocaleAllowlist.new("en", ["hu"])
+
+    io = %{
+      repository: {DynamoDB, store},
+      limiter: {DynamoDB, store},
+      outbox: {Mailbox, self()},
+      clock: fn -> {:ok, 100} end
+    }
+
+    assert {:ok, request} =
+             Request.new(lookup_key, {"terms-v1", "privacy-v1"}, io, locales: locales)
+
+    for _ <- 1..3 do
+      assert {:ok, :sent} = Request.request(request, " QUOTA@EXAMPLE.TEST ", true, true, "hu-HU")
+      assert_receive {:mail, mail}
+      assert mail.locale == "hu"
+      assert {:ok, selector} = Lookup.selector(lookup_key, mail.token)
+      assert {:ok, challenge} = DynamoDB.find_magic_link_for_authentication(store, selector)
+      assert challenge.email == mail.email
+      assert challenge.expires_at_unix == 700
+    end
+
+    assert {:ok, {:throttled, :email_short_window}} =
+             Request.request(request, "quota@example.test", true, true)
+
+    refute_received {:mail, _}
   end
 
   defp challenge(selector, verifier, address, key) do
