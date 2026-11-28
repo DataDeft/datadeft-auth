@@ -6,6 +6,16 @@ All notable changes to this workspace are recorded here. The format follows
 
 ## Unreleased
 
+## 0.7.2 (2026-11-28)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* chore(ts): format and verify every TypeScript file by @l1x in https://github.com/DataDeft/datadeft-auth/pull/43
+
+
+**Full Changelog**: https://github.com/DataDeft/datadeft-auth/compare/v0.7.1...v0.7.2
+
 ## 0.7.1 (2026-11-27)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
