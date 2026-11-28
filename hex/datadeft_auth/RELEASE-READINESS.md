@@ -44,6 +44,11 @@ for the service changes. The combined DynamoDB suite includes Elixir request
 through logout with one concurrent confirmation winner and Rust↔Elixir live
 session reads and revocation.
 
+The [Bandit example](../examples/bandit_magic_link/README.md) also passed a
+real Chromium smoke for scanner opens, cross-origin form rejection, explicit
+confirmation, replay rejection, and logout. That check uses isolated local
+storage and delivery, not production AWS or the shared browser PoW client.
+
 The documented email/Branca examples were executed successfully. The foundation
 also has exact Rust vectors, crypto tamper/canonicality tests, atomic transaction
 and mixed-language DynamoDB contention tests. See [USAGE.md](USAGE.md) for what
@@ -57,7 +62,7 @@ can actually be used now, and [IMPLEMENTATION.md](IMPLEMENTATION.md) for details
 | Authentication services | Request/locale, scanner-safe landing/flow state/confirmation, session validation/refresh/revoke and country policy are implemented; independent proof admission remains |
 | Repository/admin behavior | Shared session reads/revocation pass; audited administration, enable/disable race safety and distinct-challenge cross-language account-creation contention remain |
 | Production AWS | DynamoDB transport/signing/credentials/error mapping, SES and Secrets Manager integration |
-| HTTP/application delivery | Plug parsing/refusal/cookie/CSRF policy, independent PoW middleware, Bandit example and end-to-end/browser interoperability |
+| HTTP/application delivery | Plug magic-link/session helpers and the local Bandit example are implemented. Shared browser PoW client, independent proof middleware and full cross-language browser interoperability remain |
 | Native distribution | Checksummed precompiled artifacts, clean archive consumers and source-build fallback without broken repository-relative Cargo paths |
 | Acceptance/release | Independent security/API review, full final verification, supported artifact matrix, version/release metadata and release notes |
 

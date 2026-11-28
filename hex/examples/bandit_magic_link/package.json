@@ -1,0 +1,7 @@
+{
+  "name": "datadeft-auth-bandit-browser-tests",
+  "private": true,
+  "devDependencies": {
+    "playwright": "1.65.1"
+  }
+}

@@ -149,6 +149,14 @@ mise -C hex/datadeft_auth run deps
 mise -C hex/datadeft_auth run verify
 """
 
+[tasks.bandit-verify]
+description = "Compile the standalone local Bandit consumer"
+depends = ["elixir-verify"]
+run = """
+mise -C hex/examples/bandit_magic_link run deps
+mise -C hex/examples/bandit_magic_link run verify
+"""
+
 [tasks.compatibility-test]
 description = "Assert shared storage/email vectors against Rust and Elixir"
 depends = ["elixir-verify"]
@@ -164,7 +172,7 @@ run = "bash hex/datadeft_auth/scripts/dynamodb_compatibility.sh"
 
 [tasks.verify]
 description = "Full verification: Rust + browser + Elixir + formal models + release/workflow checks"
-depends = ["fmt-check", "clippy", "test", "test-default-features", "docs", "audit", "token-core-guard", "ts-verify", "elixir-verify", "compatibility-test", "spec", "spec-mutants", "release-check", "workflow-check"]
+depends = ["fmt-check", "clippy", "test", "test-default-features", "docs", "audit", "token-core-guard", "ts-verify", "elixir-verify", "bandit-verify", "compatibility-test", "spec", "spec-mutants", "release-check", "workflow-check"]
 
 [tasks.js-lock]
 description = "Update Bun dependencies and normalize the lockfile for release-please"

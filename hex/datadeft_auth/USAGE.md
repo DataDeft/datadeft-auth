@@ -6,8 +6,8 @@ published Hex release. Its package version remains 0.7.0 for repository release
 alignment. Do not add an assumed `~> 0.8` Hex dependency yet.
 
 The crypto, storage and framework-neutral request, confirmation and session
-services described below run with injected IO. Plug integration and production
-AWS transport are not bundled yet. Follow
+services described below run with injected IO. Optional Plug helpers handle the
+magic-link/session HTTP flow; production AWS transport is not bundled yet. Follow
 [IMPLEMENTATION.md](IMPLEMENTATION.md) for the actual acceptance checklist.
 
 ## 1. Develop against the full repository checkout
@@ -156,7 +156,8 @@ Construct `Session.new/3` with a session keyring, a repository such as
 - For logout, call `Session.validate_for_logout/2` and pass the returned record's
   session ID to `Session.revoke/2`. It skips only idle/country admission checks,
   and cannot feed refresh. Require a CSRF-protected same-origin POST and revoke
-  server state before clearing the cookie. HTTP glue is not bundled yet.
+  server state before clearing the cookie. Plug consumers can use the `logout/2`
+  helper below.
 
 ## 6. Requesting magic links with injected delivery
 
@@ -172,14 +173,12 @@ public response for sent and throttled outcomes and own edge/IP/global limits.
 
 ## 7. Scanner-safe flow with injected storage
 
-Your Plug/Bandit application will own routes, rendering, authorization and edge
+Your Plug/Bandit application owns routes, rendering, authorization and edge
 controls. The framework-neutral `DatadeftAuth.MagicLink.Service.Flow` provides
 `land/2`, `read_state/2` and `confirm/4`. Use the same lookup key, consent
 versions and challenge TTL as the request service. Pair with your session
 service using the same session keyring, absolute lifetime and country policy.
-The Plug adapter and browser example are still to be delivered:
-
-The application integration must follow this scanner-safe sequence:
+The framework-neutral application integration follows this scanner-safe sequence:
 
 1. Request: validate identity/consent/locale, apply keyed limits, enqueue email,
    and return a generic public response.
@@ -193,10 +192,37 @@ The application integration must follow this scanner-safe sequence:
 5. Logout: CSRF-protected `POST`; revoke server-side state before clearing the
    cookie. Independent PoW middleware owns its own proof-cookie lifecycle.
 
-There is no drop-in Plug router or Bandit example to copy yet. The eventual
-example belongs in `hex/examples/bandit_magic_link/`. Draft PR #45 contains the
-entire 0.8 implementation, including the foundation moved off `main`, and tracks
-the remaining work.
+## 8. Optional Plug adapter
+
+Add `{:plug, "~> 1.20 and >= 1.20.4"}` to the consuming project to enable
+`DatadeftAuth.MagicLink.Plug`. Build its configuration with `new/5`, passing the
+canonical public HTTPS origin, request service, flow service, session service,
+and optional fixed redirect paths. Do not construct the origin or redirect
+paths from a request. For loopback development only, pass `insecure_local: true`.
+Country binding is opt-in via `country_header:`, and only safe when the edge
+overwrites the header and direct origin access is blocked.
+
+| Route (example mounting) | Helper |
+| --- | --- |
+| `POST /auth/magic-link/request` | `request/2` — bounded JSON; sent and throttled share one response |
+| `GET /auth/magic-link/open?token=…` | `open/2` — redirect to a fixed confirmation page without echoing the token |
+| `GET /auth/magic-link/flow-state` | `flow_state/2` — same-origin fetch metadata required, no CORS; returns the account label and nonce |
+| `POST /auth/magic-link/consume` | `confirm/2` — checks exact origin and nonce, sets session, clears flow, redirects |
+| An authenticated route | `authenticate/2` — returns the live record and an unsent no-store connection, or sends `401`/`503` |
+| `POST /auth/logout` | `logout/2` — checks exact origin, revokes, then clears the session and redirects |
+
+Alternatively, use `landing/3` and a server-rendered, escaped confirmation form
+instead of `open/2` and `flow_state/2`. Mount flow-state and confirmation under
+`/auth` so the short-lived `dd_auth_confirm` cookie is in scope. The handlers
+read their own bounded bodies; don't run generic body parsers first. Log only
+`conn.private[:datadeft_auth_reason]` for these handlers, never the raw request,
+full connection, URL query, body, or cookie and response headers. Apply this
+logging exclusion at the app, proxy, and edge before deployment.
+
+The [independent Bandit example](../examples/bandit_magic_link/README.md) shows
+browser login and logout with local-only storage and delivery. It has no PoW,
+production transport or deployment configuration. Draft PR #45 tracks the
+remaining work.
 
 ## Validation
 
@@ -210,5 +236,5 @@ mise -C hex/datadeft_auth run native-release-smoke
 ```
 
 No release is published by these tasks. Precompiled artifacts, clean archive
-consumers, complete HTTP flows and independent security review remain release
-acceptance gates.
+consumers, shared-browser PoW integration and independent security review remain
+release acceptance gates.

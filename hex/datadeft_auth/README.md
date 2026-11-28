@@ -8,7 +8,8 @@ stays aligned at 0.7.0 until the 0.8 release is prepared.
 ## Usage
 
 See [USAGE.md](USAGE.md) for local installation, working API examples and the
-boundary between the working service flow and the unfinished HTTP integration.
+available services and optional Plug helpers. To try browser sign-in and logout,
+see the [standalone Bandit example](../examples/bandit_magic_link/README.md).
 See [RELEASE-READINESS.md](RELEASE-READINESS.md) for CI evidence and release blockers;
 a green draft implementation PR is not a ready 0.8.0 release.
 
@@ -23,8 +24,9 @@ mise run elixir-verify
 The framework-neutral request-to-logout flow runs with injected delivery and
 storage. DynamoDB Local covers read-only landing, atomic confirmation, live
 session checks and revocation, including Rust↔Elixir interoperability on shared
-rows. HTTP integration, PoW, administration and production AWS IO remain
-incomplete. See [the checklist](IMPLEMENTATION.md).
+rows. Plug adds scanner-safe login, live session admission and logout. PoW,
+administration and production AWS IO remain incomplete. See
+[the checklist](IMPLEMENTATION.md).
 
 ## Tiny native boundary
 
@@ -34,8 +36,9 @@ service, infrastructure, solver or custom cipher. Inputs are bounded in Elixir
 and Rust, calls run on dirty CPU schedulers, and encoding uses OS entropy.
 Decode alone never establishes freshness, purpose or session validity.
 
-Rustler/Jason are build dependencies; no Rustler application process runs.
-Tests also use Jason and OTP HTTP against loopback-only DynamoDB Local.
+Rustler is build-only; no Rustler application process runs. Optional Plug
+integration uses Jason to decode bounded JSON bodies. Tests also use Jason and
+OTP HTTP against loopback-only DynamoDB Local.
 No production DynamoDB HTTP client is bundled: IO is explicitly injected.
 
 Source-checkout compilation works today. Precompiled artifacts and clean Hex
